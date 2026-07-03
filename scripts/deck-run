@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# cockpit-run <TaskID> — spike ① spawn primitive (UI-agnostico) di loom-deck.
+# deck-run <TaskID> — spike ① spawn primitive (UI-agnostico) di loom-deck.
 #
-# Apre una tab Ptyxis nella window ATTIVA (quella col focus = il cockpit) e vi
+# Apre una tab Ptyxis nella window ATTIVA (quella col focus = il deck) e vi
 # avvia una sessione Claude Code già bound alla task via LOOM_TASK, dritta su
 # /loom-works:run-task <TaskID>. Riusabile identico da TUI (Ink) e da web.
 #
@@ -24,7 +24,7 @@ set -euo pipefail
 
 TASK="${1:-}"
 if [[ -z "$TASK" ]]; then
-  echo "uso: cockpit-run <TaskID>   (es. cockpit-run T18)" >&2
+  echo "uso: deck-run <TaskID>   (es. deck-run T18)" >&2
   exit 2
 fi
 

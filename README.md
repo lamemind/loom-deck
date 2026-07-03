@@ -1,6 +1,6 @@
 # loom-deck
 
-Cockpit TUI (Ink) **per-progetto** della famiglia [loom](https://github.com/lamemind/loom-works).
+Deck TUI (Ink) **per-progetto** della famiglia [loom](https://github.com/lamemind/loom-works).
 
 Legge il `tasks.md` del progetto e, con un tasto (poi un click), **spawna** una tab
 [Ptyxis](https://gitlab.gnome.org/chergert/ptyxis) che avvia una sessione Claude Code
@@ -23,27 +23,27 @@ ridefinisce. Divisione dei ruoli con Compass:
 
 ## Architettura di processo
 
-Il cockpit è **UN processo Node**: spawna ma **non contiene** le sessioni CC — le possiede
-Ptyxis. Chiudere il cockpit non uccide le sessioni. La tab nasce nella window *attiva*
-(quella col focus = il cockpit) → desktop isolation "gratis".
+Il deck è **UN processo Node**: spawna ma **non contiene** le sessioni CC — le possiede
+Ptyxis. Chiudere il deck non uccide le sessioni. La tab nasce nella window *attiva*
+(quella col focus = il deck) → desktop isolation "gratis".
 
 ## Stato
 
 Bootstrap + **spike ①** (spawn primitive UI-agnostico). Roadmap:
 
 ```
-① spike spawn-tab + LOOM_TASK   ✅ questo repo (scripts/cockpit-run)
+① spike spawn-tab + LOOM_TASK   ✅ questo repo (scripts/deck-run)
 ② gradino $LOOM_TASK nelle skill loom-works
 ③ TUI Ink sopra (lista tasks.md, ↑↓/⏎ → chiama ①)
 ④ mouse opzionale (SGR enable+parse+hit-test)
-⑤ azioni extra (start/preflight/checkpoint/merge dal cockpit)
+⑤ azioni extra (start/preflight/checkpoint/merge dal deck)
 ```
 
 ## Uso (spike ①)
 
 ```bash
 # dalla project dir con un tasks.md
-scripts/cockpit-run T18
+scripts/deck-run T18
 ```
 
 Apre una tab Ptyxis nella window attiva con `LOOM_TASK=T18 claude '/loom-works:run-task T18'`.
