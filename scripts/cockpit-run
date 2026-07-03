@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# cockpit-run <TaskID> — spike ① spawn primitive (UI-agnostico) di loom-deck.
+#
+# Apre una tab Ptyxis nella window ATTIVA (quella col focus = il cockpit) e vi
+# avvia una sessione Claude Code già bound alla task via LOOM_TASK, dritta su
+# /loom-works:run-task <TaskID>. Riusabile identico da TUI (Ink) e da web.
+#
+# Modalità spawn (LOOM_DECK_SPAWN_MODE):
+#   inline   → ptyxis --tab -- <cmd>            (default)  comando inline, LOOM_TASK diretta, zero dconf
+#   profile  → ptyxis --tab-with-profile=<UUID>            riusa il profilo, riscrive il custom-command via dconf
+#
+# La scelta fra le due è la Decisione aperta §9 della proposta: la modalità
+# "inline" è il default perché non muta stato dconf condiviso. Vedi la nota
+# di decisione nella task folder di T18.
+#
+# Env:
+#   LOOM_DECK_SPAWN_MODE   inline|profile          (default: inline)
+#   LOOM_DECK_PROFILE_UUID UUID profilo Ptyxis     (default: cc-host)
+#   LOOM_DECK_WORKDIR      dir di lavoro della tab (default: $PWD)
+#   LOOM_DECK_INTAB_CMD    override comando in-tab (default: la sessione CC; usato per i test)
+#
+set -euo pipefail
+
+TASK="${1:-}"
+if [[ -z "$TASK" ]]; then
+  echo "uso: cockpit-run <TaskID>   (es. cockpit-run T18)" >&2
+  exit 2
+fi
+
+MODE="${LOOM_DECK_SPAWN_MODE:-inline}"
+PROFILE_UUID="${LOOM_DECK_PROFILE_UUID:-5a36ae48df1c4d4882f43060e3e59656}"
+WORKDIR="${LOOM_DECK_WORKDIR:-$PWD}"
+
+# Comando eseguito dentro la tab: bind LOOM_TASK per la sessione, avvia CC sulla run-task.
+# Override-abile via LOOM_DECK_INTAB_CMD per i test empirici (probe non-CC).
+IN_TAB_CMD="${LOOM_DECK_INTAB_CMD:-LOOM_TASK=${TASK} claude '/loom-works:run-task ${TASK}'}"
+
+case "$MODE" in
+  inline)
+    # --tab: tab nella window attiva. -- <cmd>: comando inline nella tab.
+    # LOOM_TASK viaggia dentro il comando → nessuna scrittura dconf.
+    exec ptyxis --tab -d "$WORKDIR" -T "cc ${TASK}" -- bash -lc "$IN_TAB_CMD"
+    ;;
+  profile)
+    # --tab-with-profile: riusa il profilo (custom-command FISSO) → per iniettare
+    # LOOM_TASK+task va riscritto il custom-command al volo via dconf (stato condiviso).
+    dpath="/org/gnome/Ptyxis/Profiles/${PROFILE_UUID}/"
+    dconf write "${dpath}use-custom-command" true
+    dconf write "${dpath}custom-command" "'bash -lc \"${IN_TAB_CMD//\"/\\\"}\"'"
+    exec ptyxis --tab-with-profile="$PROFILE_UUID" -d "$WORKDIR" -T "cc ${TASK}"
+    ;;
+  *)
+    echo "LOOM_DECK_SPAWN_MODE ignoto: '$MODE' (usa 'inline' o 'profile')" >&2
+    exit 2
+    ;;
+esac

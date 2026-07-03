@@ -1,0 +1,39 @@
+{
+  "name": "loom-deck",
+  "version": "0.1.0",
+  "description": "Cockpit TUI Ink per-progetto della famiglia loom: legge tasks.md e spawna sessioni Claude Code bound via LOOM_TASK",
+  "type": "module",
+  "bin": {
+    "loom-deck": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "scripts"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli.tsx",
+    "build": "tsc",
+    "start": "node dist/cli.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "loom",
+    "ink",
+    "tui",
+    "cockpit",
+    "claude-code"
+  ],
+  "author": "lamemind",
+  "license": "MIT",
+  "dependencies": {
+    "ink": "^5.1.0",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
