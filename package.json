@@ -1,6 +1,6 @@
 {
   "name": "loom-deck",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Deck TUI Ink per-progetto della famiglia loom: legge tasks.md e spawna sessioni Claude Code bound via LOOM_TASK",
   "type": "module",
   "bin": {
@@ -32,6 +32,7 @@
     "react": "^18.3.1"
   },
   "devDependencies": {
+    "@types/node": "^22.20.0",
     "@types/react": "^18.3.12",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"

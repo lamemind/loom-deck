@@ -29,12 +29,12 @@ Ptyxis. Chiudere il deck non uccide le sessioni. La tab nasce nella window *atti
 
 ## Stato
 
-Bootstrap + **spike ①** (spawn primitive UI-agnostico). Roadmap:
+Bootstrap + spike ① + **TUI ③** funzionante (legge `tasks.md`, `⏎` spawna). Roadmap:
 
 ```
-① spike spawn-tab + LOOM_TASK   ✅ questo repo (scripts/deck-run)
+① spike spawn-tab + LOOM_TASK   ✅ scripts/deck-run
 ② gradino $LOOM_TASK nelle skill loom-works
-③ TUI Ink sopra (lista tasks.md, ↑↓/⏎ → chiama ①)
+③ TUI Ink sopra (lista tasks.md, ↑↓/⏎ → chiama ①)   ✅ src/
 ④ mouse opzionale (SGR enable+parse+hit-test)
 ⑤ azioni extra (start/preflight/checkpoint/merge dal deck)
 ```
@@ -48,13 +48,19 @@ scripts/deck-run T18
 
 Apre una tab Ptyxis nella window attiva con `LOOM_TASK=T18 claude '/loom-works:run-task T18'`.
 
-## Sviluppo (scaffold Ink)
+## Sviluppo (TUI Ink)
 
 ```bash
 npm install
-npm run dev      # tsx src/cli.tsx — box placeholder, ↑↓/⏎/q
+npm run dev      # tsx src/cli.tsx — lista tasks.md reale, ↑↓ naviga · ⏎ spawn · q esci
 npm run build    # tsc → dist/
 ```
+
+Il deck cerca `tasks.md` in `$PWD/${LOOM_DECK_DOCS_ROOT:-docs}/tasks.md`. Progetti
+con docs-root non-standard esportano la variabile, es. `LOOM_DECK_DOCS_ROOT=runtime`.
+
+La lista si **auto-aggiorna** quando `tasks.md` cambia sotto (poll su `mtime`, ~1.5s):
+crei/checkpoint una task da un'altra sessione → il deck la riflette senza riavvio.
 
 ## Licenza
 
