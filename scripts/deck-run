@@ -22,9 +22,24 @@
 #
 set -euo pipefail
 
-TASK="${1:-}"
+TASK=""
+SESSION_ID=""
+# Positional <TaskID> + flag opzionale --session-id <uuid> (T27): il deck genera
+# l'UUID e lo pinna così il binding sidecar sessionId↔taskId è deterministico.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --session-id)
+      SESSION_ID="${2:-}"; shift 2 ;;
+    --session-id=*)
+      SESSION_ID="${1#*=}"; shift ;;
+    *)
+      if [[ -z "$TASK" ]]; then TASK="$1"; shift
+      else echo "argomento inatteso: '$1'" >&2; exit 2; fi ;;
+  esac
+done
+
 if [[ -z "$TASK" ]]; then
-  echo "uso: deck-run <TaskID>   (es. deck-run T18)" >&2
+  echo "uso: deck-run <TaskID> [--session-id <uuid>]   (es. deck-run T18)" >&2
   exit 2
 fi
 
@@ -32,9 +47,14 @@ MODE="${LOOM_DECK_SPAWN_MODE:-inline}"
 PROFILE_UUID="${LOOM_DECK_PROFILE_UUID:-5a36ae48df1c4d4882f43060e3e59656}"
 WORKDIR="${LOOM_DECK_WORKDIR:-$PWD}"
 
+# --session-id per la tab: pinna il sessionId della sessione CC (vuoto → CC ne
+# genera uno). Lo spazio finale tiene la concatenazione pulita quando è assente.
+SID_FLAG=""
+[[ -n "$SESSION_ID" ]] && SID_FLAG="--session-id ${SESSION_ID} "
+
 # Comando eseguito dentro la tab: bind LOOM_TASK per la sessione, avvia CC sulla run-task.
 # Override-abile via LOOM_DECK_INTAB_CMD per i test empirici (probe non-CC).
-IN_TAB_CMD="${LOOM_DECK_INTAB_CMD:-LOOM_TASK=${TASK} claude '/loom-works:run-task ${TASK}'}"
+IN_TAB_CMD="${LOOM_DECK_INTAB_CMD:-LOOM_TASK=${TASK} claude ${SID_FLAG}'/loom-works:run-task ${TASK}'}"
 
 case "$MODE" in
   inline)
