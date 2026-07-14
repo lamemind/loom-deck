@@ -52,6 +52,27 @@ function spawnDeck(id: string, cwd: string, sessionId: string) {
   return child;
 }
 
+// Editor esterni: aprono l'IDE sulla project root. Il comando risolve attraverso
+// la shell login+interattiva dell'utente (bash -lic) → alias/funzioni in ~/.bashrc
+// (es. `codium`=alias flatpak, `idea`=funzione) risolvono come nel terminale.
+// Override via env per ambienti senza quegli alias (loom-deck è destinato a NPM).
+const EDITOR_CMD = {
+  codium: process.env.LOOM_DECK_EDITOR_CODIUM ?? 'codium',
+  idea: process.env.LOOM_DECK_EDITOR_IDEA ?? 'idea',
+};
+
+// Spawn detached come spawnDeck: il deck lancia ma non possiede l'IDE. La project
+// root arriva via $PWD (spawn cwd) → niente interpolazione di path, zero injection.
+function openEditor(cmd: string, cwd: string) {
+  const child = spawn('bash', ['-lic', `${cmd} "$PWD"`], {
+    cwd,
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  return child;
+}
+
 // Carica tasks.md e lo ri-legge quando cambia sotto (poll su mtime). Poll
 // (non fs.watch) perché i writer di tasks.md — checkpoint-task/create-task —
 // riscrivono il file (probabile replace atomico), che rompe il watch sull'inode
@@ -165,6 +186,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const [note, setNote] = useState('');
 
   const isSpot = selParent === 0;
+  const projectName = cwd.split('/').pop() || cwd;
   const selectedTaskId = isSpot ? null : tasks[selParent - 1]?.id ?? null;
   const detail = useTaskDetail(tasksDir, selectedTaskId ?? undefined);
 
@@ -230,6 +252,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       } else {
         setNote('sessioni read-only in T27 · fork/resume → T28');
       }
+    } else if (input === 'C') {
+      const child = openEditor(EDITOR_CMD.codium, cwd);
+      child.on('error', () => setNote(`⚠ codium: '${EDITOR_CMD.codium}' non lanciabile`));
+      setNote(`C → codium su ${projectName}`);
+    } else if (input === 'I') {
+      const child = openEditor(EDITOR_CMD.idea, cwd);
+      child.on('error', () => setNote(`⚠ idea: '${EDITOR_CMD.idea}' non lanciabile`));
+      setNote(`I → idea su ${projectName}`);
     } else if (input === 'q' || key.escape) {
       exit();
     }
@@ -243,8 +273,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
       <Text bold color="cyan">loom-deck</Text>
       <Text dimColor>
-        ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : '—'} · q esci · focus:{' '}
-        <Text color="cyan">{focus}</Text>
+        ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : '—'} · C codium · I idea · q esci ·
+        focus: <Text color="cyan">{focus}</Text>
       </Text>
       <Box flexDirection="row" marginTop={1}>
         <TasksPane
