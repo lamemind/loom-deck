@@ -73,6 +73,66 @@ function openEditor(cmd: string, cwd: string) {
   return child;
 }
 
+// Comando claude (override per ambienti dove non è su PATH; loom-deck → NPM).
+const CLAUDE_CMD = process.env.LOOM_DECK_CLAUDE_CMD ?? 'claude';
+
+// T30: create-task inline. Spawna CC HEADLESS (`-p`) con `--session-id` pinnato
+// che invoca la skill create-task. Differenze da spawnDeck:
+//  - headless (`-p`), non una tab Ptyxis interattiva → il deck osserva l'esito;
+//  - `yolo` FORZATO: create-task è interattiva di default (AskUserQuestion) e in
+//    `-p` non può ricevere risposte → si impianterebbe. yolo = zero domande.
+//  - `--output-format stream-json` (richiede `--verbose`): l'ultima riga è
+//    `{type:"result", is_error}`, segnale di completamento robusto (> exit code).
+//  - detached (own process-group) → il create sopravvive alla chiusura del deck e
+//    completa commit+push da sé; stdout in pipe SOLO per leggere il result event.
+// Il prompt viaggia come singolo argv (no shell) → nessuna injection dal testo utente.
+function spawnCreateTask(
+  text: string,
+  cwd: string,
+  sessionId: string,
+  onResult: (ok: boolean) => void,
+) {
+  const child = spawn(
+    CLAUDE_CMD,
+    [
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--session-id',
+      sessionId,
+      `/loom-works:create-task yolo ${text}`,
+    ],
+    { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+
+  let buf = '';
+  let isError: boolean | null = null;
+  child.stdout?.on('data', (chunk: Buffer) => {
+    buf += chunk.toString();
+    let nl: number;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      try {
+        const obj = JSON.parse(line) as { type?: string; is_error?: boolean };
+        if (obj.type === 'result') isError = obj.is_error ?? false;
+      } catch {
+        // riga parziale / non-json → skip
+      }
+    }
+  });
+  // Drena stderr per non riempire il buffer pipe (deadlock del figlio).
+  child.stderr?.on('data', () => {});
+
+  child.on('error', () => onResult(false));
+  child.on('close', (code) => {
+    onResult(isError === null ? code === 0 : !isError);
+  });
+  return child;
+}
+
 // Carica tasks.md e lo ri-legge quando cambia sotto (poll su mtime). Poll
 // (non fs.watch) perché i writer di tasks.md — checkpoint-task/create-task —
 // riscrivono il file (probabile replace atomico), che rompe il watch sull'inode
@@ -184,6 +244,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const [selParent, setSelParent] = useState(0);
   const [selSession, setSelSession] = useState(0);
   const [note, setNote] = useState('');
+  // T30: modale di creazione task inline. mode='create' → useInput cattura il
+  // testo (gating della navigazione normale) e mostra l'input box.
+  const [mode, setMode] = useState<'normal' | 'create'>('normal');
+  const [draft, setDraft] = useState('');
 
   const isSpot = selParent === 0;
   const projectName = cwd.split('/').pop() || cwd;
@@ -221,7 +285,60 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     setSelSession((s) => Math.min(s, Math.max(0, visibleSessions.length - 1)));
   }, [visibleSessions.length]);
 
+  // T30: submit dell'input box. Il taskId nasce DOPO create-task (lo assegna la
+  // skill scrivendo tasks.md) → non è noto allo spawn. Il sessionId invece è
+  // pinnato qui: snapshot degli id PRIMA, poi al completamento re-leggo tasks.md
+  // e il diff dà il nuovo id → appendTaskBinding lega la sessione (scoped).
+  function submitCreate() {
+    const text = draft.trim();
+    setMode('normal');
+    setDraft('');
+    if (!text) {
+      setNote('c → create annullato (vuoto)');
+      return;
+    }
+    const sid = randomUUID();
+    const beforeIds = new Set(tasks.map((t) => t.id));
+    setNote(`⏳ creando task… "${truncate(text, 40)}" (sid ${sid.slice(0, 8)})`);
+    const child = spawnCreateTask(text, cwd, sid, (ok) => {
+      if (!ok) {
+        setNote(`⚠ create-task fallito (${CLAUDE_CMD} -p)`);
+        return;
+      }
+      let newId: string | undefined;
+      try {
+        newId = loadTasks(tasksPath).find((t) => !beforeIds.has(t.id))?.id;
+      } catch {
+        // tasks.md illeggibile → id non rilevato, sotto
+      }
+      if (newId) {
+        appendTaskBinding(cwd, sid, newId);
+        setNote(`✔ ${newId} creata · sessione scoped (sid ${sid.slice(0, 8)})`);
+      } else {
+        setNote(`✔ task creata (id non rilevato) · sid ${sid.slice(0, 8)}`);
+      }
+    });
+    child.on('error', () => setNote(`⚠ create-task: '${CLAUDE_CMD}' non lanciabile`));
+  }
+
   useInput((input, key) => {
+    // T30: in modalità create l'handler cattura il testo e corto-circuita la
+    // navigazione normale (incl. q/esc → quit: qui esc annulla, non esce).
+    if (mode === 'create') {
+      if (key.escape) {
+        setMode('normal');
+        setDraft('');
+        setNote('c → create annullato');
+      } else if (key.return) {
+        submitCreate();
+      } else if (key.backspace || key.delete) {
+        setDraft((d) => d.slice(0, -1));
+      } else if (input && !key.ctrl && !key.meta) {
+        setDraft((d) => d + input);
+      }
+      return;
+    }
+
     if (key.leftArrow || key.rightArrow || key.tab) {
       setFocus((f) => (f === 'tasks' ? 'sessions' : 'tasks'));
     } else if (key.upArrow) {
@@ -252,6 +369,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       } else {
         setNote('sessioni read-only in T27 · fork/resume → T28');
       }
+    } else if (input === 'c') {
+      setNote('');
+      setMode('create');
     } else if (input === 'C') {
       const child = openEditor(EDITOR_CMD.codium, cwd);
       child.on('error', () => setNote(`⚠ codium: '${EDITOR_CMD.codium}' non lanciabile`));
@@ -272,10 +392,23 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
       <Text bold color="cyan">loom-deck</Text>
-      <Text dimColor>
-        ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : '—'} · C codium · I idea · q esci ·
-        focus: <Text color="cyan">{focus}</Text>
-      </Text>
+      {mode === 'create' ? (
+        <Text dimColor>
+          nuova task · <Text color="yellow">⏎</Text> crea · <Text color="yellow">esc</Text> annulla
+        </Text>
+      ) : (
+        <Text dimColor>
+          ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : '—'} · c nuova · C codium · I idea · q esci ·
+          focus: <Text color="cyan">{focus}</Text>
+        </Text>
+      )}
+      {mode === 'create' ? (
+        <Box borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
+          <Text color="yellow">c › </Text>
+          <Text>{draft}</Text>
+          <Text inverse> </Text>
+        </Box>
+      ) : null}
       <Box flexDirection="row" marginTop={1}>
         <TasksPane
           tasks={tasks}
