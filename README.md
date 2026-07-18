@@ -39,6 +39,24 @@ Bootstrap + spike ① + **TUI ③** funzionante (legge `tasks.md`, `⏎` spawna)
 ⑤ azioni extra (start/preflight/checkpoint/merge dal deck)
 ```
 
+## Installazione
+
+```bash
+npm install -g @lamemind/loom-deck   # comando globale `loom-deck`
+# oppure senza install permanente:
+npx @lamemind/loom-deck
+```
+
+## Requisiti runtime
+
+- **Node.js ≥ 18** (dichiarato in `engines`).
+- **[Ptyxis](https://gitlab.gnome.org/chergert/ptyxis)** (terminale GNOME) — **dipendenza
+  di runtime, non risolvibile da npm**. Lo spawn di una tab (`scripts/deck-run`) invoca il
+  binario `ptyxis`: l'**install riesce anche senza**, ma al momento dello spawn il comando
+  fallisce (gestito: handler `error` → la TUI resta viva, mostra la nota). Senza una GUI
+  GNOME con Ptyxis installato, il deck naviga i task ma **non apre sessioni**.
+- **[Claude Code](https://claude.com/claude-code)** nel `PATH` — la tab spawnata avvia `claude`.
+
 ## Uso (spike ①)
 
 ```bash
