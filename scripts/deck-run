@@ -4,8 +4,8 @@
 #
 # Apre una tab Ptyxis nella window ATTIVA (quella col focus = il deck) e vi
 # avvia una sessione Claude Code già bound alla task via LOOM_TASK, dritta sul
-# prompt iniziale (default: /loom-works:start-task <TaskID> detached — attiva e
-# presenta, NON esegue → più controllo). Riusabile identico da TUI (Ink) e da web.
+# prompt iniziale (default: prompt diretto "recap stato task <TaskID>" — no skill,
+# solo recap → più controllo). Riusabile identico da TUI (Ink) e da web.
 #
 # Modalità spawn (LOOM_DECK_SPAWN_MODE):
 #   inline   → ptyxis --tab -- <cmd>            (default)  comando inline, LOOM_TASK diretta, zero dconf
@@ -19,7 +19,7 @@
 #   LOOM_DECK_SPAWN_MODE   inline|profile          (default: inline)
 #   LOOM_DECK_PROFILE_UUID UUID profilo Ptyxis     (default: cc-host)
 #   LOOM_DECK_WORKDIR      dir di lavoro della tab (default: $PWD)
-#   LOOM_DECK_ENTER_PROMPT prompt iniziale sessione, {TASK}=TaskID (default: start-task detached)
+#   LOOM_DECK_ENTER_PROMPT prompt iniziale sessione, {TASK}=TaskID (default: "recap stato task <TaskID>")
 #   LOOM_DECK_INTAB_CMD    override comando in-tab (default: la sessione CC; usato per i test)
 #
 set -euo pipefail
@@ -84,9 +84,9 @@ fi
 SID_FLAG=""
 [[ -n "$SESSION_ID" ]] && SID_FLAG="--session-id ${SESSION_ID} "
 
-# Prompt iniziale della sessione. Default: start-task detached — ATTIVA e presenta
-# la task ma NON la esegue (l'utente rivede/steera prima di lanciare = più controllo);
-# `detached` = niente symlink current-task, task ID esplicito. Override completo via
+# Prompt iniziale della sessione. Default: prompt DIRETTO (no skill) che chiede
+# a Claude un recap dello stato della task — l'utente rivede/steera prima di
+# lanciare (= più controllo), nessuna esecuzione automatica. Override completo via
 # LOOM_DECK_ENTER_PROMPT, con placeholder {TASK} rimpiazzato dal TaskID. Vincolo: il
 # template NON deve contenere apici singoli (viaggia dentro '...' nel comando in-tab).
 # NB: il default NON può stare nel `${VAR:-...}` perché conterrebbe `{TASK}` e la sua
@@ -95,7 +95,7 @@ SID_FLAG=""
 if [[ -n "${LOOM_DECK_ENTER_PROMPT:-}" ]]; then
   PROMPT="${LOOM_DECK_ENTER_PROMPT//\{TASK\}/${TASK}}"
 else
-  PROMPT="/loom-works:start-task ${TASK} detached, se progresso > 0 fammi anche un recap"
+  PROMPT="recap stato task ${TASK}"
 fi
 
 # Comando eseguito dentro la tab: bind LOOM_TASK per la sessione, avvia CC sul PROMPT.
