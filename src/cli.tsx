@@ -236,6 +236,19 @@ function forceEmojiWidth(s: string): string {
   return s;
 }
 
+// Normalizza il marker Done per il display. `✔` (U+2714) è text-presentation-
+// default: string-width — quindi Ink, sia per il layout sia per il troncamento —
+// lo misura 2 (rispetta il VS16 di `✔️`), ma VTE/Ptyxis lo disegna largo 1
+// (ignora il VS16). Risultato: le righe Done finivano 1 colonna più strette del
+// riservato → la coda della riga (bordo destro del pane incluso) slittava a
+// sinistra, sfasando il layout solo su quelle righe. `✅` (U+2705) è invece
+// emoji-presentation-default → largo 2 sia per string-width sia per il terminale,
+// come 🔵/🟡: colonna Prog allineata. Cambia SOLO il display: `task.prog` resta
+// `✔️` così `isDone()` continua a matchare.
+function displayProg(prog: string): string {
+  return forceEmojiWidth(prog.replace(/✔️?/g, '✅'));
+}
+
 // Età relativa compatta (ms epoch → "2m"/"3h"/"5d") per il preview sessioni.
 function relTime(ts: number): string {
   const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
@@ -499,7 +512,7 @@ function TasksPane({
               wrap="truncate-end"
             >
               {sel ? '▶ ' : '  '}
-              {task.id}  {forceEmojiWidth(task.pri)}  {forceEmojiWidth(task.prog)}  {task.desc}
+              {task.id}  {forceEmojiWidth(task.pri)}  {displayProg(task.prog)}  {task.desc}
               {n > 0 ? ` (${n})` : ''}
             </Text>
           );
