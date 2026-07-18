@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 
 export interface Task {
   id: string;
+  pri: string;
   prog: string;
   desc: string;
 }
@@ -43,10 +44,13 @@ export function parseTasks(content: string): Task[] {
     // cells[0] = '' (prima del primo |), cells[last] = '' (dopo l'ultimo |)
     const id = cells[1];
     if (!/^T\d+$/.test(id)) continue;
+    // Colonne overview: | ID | Pri | K | Prog | Task | → cells[2]=Pri (icona
+    // priorità), cells[4]=Prog. K (Kind, cells[3]) non serve al deck.
+    const pri = cells[2] ?? '';
     const prog = cells[4] ?? '';
     // desc = colonna finale; join per resistere a eventuali `|` nella descrizione.
     const desc = cells.slice(5, -1).join('|').trim();
-    tasks.push({ id, prog, desc });
+    tasks.push({ id, pri, prog, desc });
   }
   return tasks;
 }

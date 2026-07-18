@@ -221,6 +221,21 @@ function truncate(s: string, n: number): string {
   return flat.length > n ? flat.slice(0, n - 1).trimEnd() + '…' : flat;
 }
 
+// Forza la presentazione emoji (larghezza 2 non-ambigua) su un glifo BMP
+// text-default come ⚡ (U+26A1, range simboli U+2190–U+2BFF). Senza il variation
+// selector VS16 questi glifi sono larghi-ambigui: Ink li misura 1, ma string-width
+// e il terminale li disegnano 2 → la riga esce 1 colonna troppo larga, sfonda il
+// pane e va a capo (righe vuote spurie). Gli emoji astrali (🔥🔵🟡…, U+1F000+) sono
+// già width-2 non-ambigui e le sequenze con VS16 (✔️) sono >1 code point → intatti.
+const VS16 = '️';
+function forceEmojiWidth(s: string): string {
+  const cps = [...s];
+  if (cps.length !== 1) return s;
+  const cp = cps[0].codePointAt(0)!;
+  if (cp >= 0x2190 && cp <= 0x2bff) return s + VS16;
+  return s;
+}
+
 // Età relativa compatta (ms epoch → "2m"/"3h"/"5d") per il preview sessioni.
 function relTime(ts: number): string {
   const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
@@ -484,7 +499,7 @@ function TasksPane({
               wrap="truncate-end"
             >
               {sel ? '▶ ' : '  '}
-              {task.id}  {task.prog}  {task.desc}
+              {task.id}  {forceEmojiWidth(task.pri)}  {forceEmojiWidth(task.prog)}  {task.desc}
               {n > 0 ? ` (${n})` : ''}
             </Text>
           );
