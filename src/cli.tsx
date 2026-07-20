@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { render, Box, Text, useApp, useInput } from 'ink';
+import { render, Box, Text, useApp, useInput, useStdout } from 'ink';
 import { useState, useEffect, useMemo } from 'react';
 import { spawn } from 'node:child_process';
 import { statSync } from 'node:fs';
@@ -17,6 +17,13 @@ import {
 import { discoverProjectSessions, type Session } from './sessions.js';
 import { appendTaskBinding, loadTaskBindings } from './task-index.js';
 import { launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
+import {
+  layoutBudget,
+  windowRange,
+  wrapLines,
+  type Budget,
+  type Mode as ViewportMode,
+} from './viewport.js';
 import {
   applyView,
   cycleSort,
@@ -63,7 +70,12 @@ type Focus = 'tasks' | 'sessions';
 // Standard shortcut (T39): MAIUSCOLA apre un modale, minuscola è azione
 // immediata, 1..9 sono le voci launch del file config. I modali catturano tutti
 // i tasti: dentro, `esc` annulla e non esce dal deck.
-type Mode = 'normal' | 'create' | 'sort' | 'filter' | 'edit';
+//
+// Il tipo vive in viewport.ts perché ogni modale ha un COSTO IN RIGHE che il
+// budget d'altezza deve conoscere: tenerli in due posti li farebbe divergere in
+// silenzio, e una modale non contabilizzata è esattamente ciò che fa sforare il
+// frame.
+type Mode = ViewportMode;
 
 // Griglia del modale filtri: riga 0 = priorità, riga 1 = stato.
 interface FilterCursor {
@@ -245,6 +257,30 @@ function commitTaskEdit(
   return child;
 }
 
+// Dimensioni del terminale, live sul resize.
+//
+// Non è una comodità di layout: senza `rows` il frame non ha tetto, e un frame
+// più alto del terminale fa cadere Ink nel ramo `clearTerminal` (ink.js:121)
+// che su VTE/Ptyxis riversa ogni redraw nello scrollback.
+//
+// Il valore iniziale conta quanto il resize: una tab Ptyxis appena aperta parte
+// spesso a 24 righe e riceve il SIGWINCH subito dopo. Nella finestra fra i due
+// il deck disegnava già a piena altezza — motivo per cui lo scrollback risultava
+// sporco fin dall'avvio, prima ancora di toccare un tasto.
+function useTerminalSize() {
+  const { stdout } = useStdout();
+  const [size, setSize] = useState({ rows: stdout.rows || 24, columns: stdout.columns || 80 });
+  useEffect(() => {
+    const onResize = () => setSize({ rows: stdout.rows || 24, columns: stdout.columns || 80 });
+    stdout.on('resize', onResize);
+    onResize(); // allinea se il resize è arrivato prima del mount
+    return () => {
+      stdout.off('resize', onResize);
+    };
+  }, [stdout]);
+  return size;
+}
+
 // Carica tasks.md e lo ri-legge quando cambia sotto (poll su mtime). Poll
 // (non fs.watch) perché i writer di tasks.md — checkpoint-task/create-task —
 // riscrivono il file (probabile replace atomico), che rompe il watch sull'inode
@@ -398,6 +434,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // T41 — bozza dell'edit (null fuori dal modale) e riga attiva della griglia.
   const [edit, setEdit] = useState<EditDraft | null>(null);
   const [editRow, setEditRow] = useState<EditRow>(0);
+
+  // Dimensioni vive del terminale: sono l'input del budget d'altezza sotto.
+  const { rows, columns } = useTerminalSize();
 
   // Voci launch del progetto (T32): lette una volta, raggiunte per indice 1..9.
   const launch = useMemo(() => loadLaunch(cwd), [cwd]);
@@ -748,35 +787,75 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const selSessionId = visibleSessions[selSession]?.sessionId;
   const parentLabel = isSpot ? 'spot' : selectedTaskId ?? '—';
   const canSpawn = focus === 'tasks' && !isSpot;
-  // Larghezza letta a ogni render (non memoizzata): dopo un resize il primo
-  // re-render utile ricalcola la legenda senza bisogno di un listener dedicato.
-  const legend = launchLegend(launch, process.stdout.columns || 80);
+  // Larghezza dal medesimo hook che dà l'altezza: dopo un resize la legenda si
+  // ricalcola con lo stesso re-render che ridimensiona i pane.
+  const legend = launchLegend(launch, columns);
+
+  // ── Budget d'altezza ────────────────────────────────────────────────────
+  // Il frame deve restare sotto `rows`, sempre: oltre quella soglia Ink smette
+  // di aggiornare per differenza e pulisce lo schermo a ogni redraw, che su
+  // Ptyxis significa un frame intero versato nello scrollback per ogni tick del
+  // poll. Tutto ciò che varia in altezza (le due liste e la descrizione del
+  // dettaglio) riceve qui la propria capienza.
+  const launchLine = mode === 'normal' && launch.length > 0;
+  const detailParts = detail ? detailMetaOf(detail) : null;
+  const budget: Budget = layoutBudget({
+    rows,
+    mode,
+    launchLine,
+    noteLine: Boolean(note),
+    hasDetail: Boolean(detail),
+    detailMetaLines: detailParts?.metaLines ?? 0,
+  });
+
+  // Finestre di rendering. Le liste "logiche" (viewTasks, visibleSessions)
+  // restano intere: navigazione, selezione e spawn continuano a ragionare su
+  // quelle, la finestra è solo ciò che finisce a schermo.
+  const taskWin = windowRange(viewTasks.length, selIndex - 1, budget.taskRows);
+  const windowTasks = viewTasks.slice(taskWin.start, taskWin.end);
+  const sessionWin = windowRange(visibleSessions.length, selSession, budget.sessionRows);
+  const windowSessions = visibleSessions.slice(sessionWin.start, sessionWin.end);
+
+  // Sotto la soglia minima il layout a box non entra a nessun costo: si scende
+  // a una riga sola. Perdere il deck per un terminale basso è meglio che
+  // sporcare la cronologia del terminale a ogni poll.
+  if (budget.compact) {
+    return (
+      <Text wrap="truncate-end">
+        <Text bold color="cyan">loom-deck</Text>
+        <Text dimColor>
+          {' '}· {viewTasks.length} task · sel {selectedTaskId ?? 'spot'} · terminale {rows}×
+          {columns}: troppo basso, allarga
+        </Text>
+      </Text>
+    );
+  }
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
       <Text bold color="cyan">loom-deck</Text>
       {mode === 'create' ? (
-        <Text dimColor>
+        <Text dimColor wrap="truncate-end">
           nuova task · <Text color="yellow">⏎</Text> crea · <Text color="yellow">esc</Text> annulla
         </Text>
       ) : mode === 'sort' ? (
-        <Text dimColor>
+        <Text dimColor wrap="truncate-end">
           sort · <Text color="yellow">p</Text> pri <Text color="yellow">s</Text> stato{' '}
           <Text color="yellow">i</Text> id (asc→desc→off) · <Text color="yellow">⏎</Text> ok ·{' '}
           <Text color="yellow">esc</Text> annulla
         </Text>
       ) : mode === 'filter' ? (
-        <Text dimColor>
+        <Text dimColor wrap="truncate-end">
           filtri · <Text color="yellow">↑↓←→</Text> naviga · <Text color="yellow">spazio</Text>{' '}
           mostra/nascondi · <Text color="yellow">⏎</Text> ok · <Text color="yellow">esc</Text> annulla
         </Text>
       ) : mode === 'edit' ? (
-        <Text dimColor>
+        <Text dimColor wrap="truncate-end">
           edit · <Text color="yellow">↑↓</Text> campo · <Text color="yellow">←→</Text> valore ·{' '}
           <Text color="yellow">⏎</Text> salva+commit · <Text color="yellow">esc</Text> annulla
         </Text>
       ) : (
-        <Text dimColor>
+        <Text dimColor wrap="truncate-end">
           ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : '—'} · C nuova · E edit · S sort · F filtri · w
           salva · t term · c claude · q esci · focus: <Text color="cyan">{focus}</Text>
         </Text>
@@ -784,7 +863,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       {/* T43 — riga dedicata alla mappa indice→launch. Nessuna voce configurata
           → riga assente e footer identico a prima (nessuna regressione). */}
       {mode === 'normal' && launch.length > 0 ? (
-        <Text dimColor>
+        <Text dimColor wrap="truncate-end">
           launch {legend.shown}
           {legend.overflow > 0 ? (
             <Text color="yellow"> · +{legend.overflow} fuori riga</Text>
@@ -808,7 +887,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       ) : null}
       <Box flexDirection="row" marginTop={1}>
         <TasksPane
-          tasks={viewTasks}
+          tasks={windowTasks}
+          filtered={viewTasks.length}
           total={tasks.length}
           hidden={hiddenTasks}
           view={view}
@@ -818,18 +898,25 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           focused={focus === 'tasks'}
           loadError={loadError}
           detail={detail}
+          windowStart={taskWin.start}
+          above={taskWin.start}
+          below={viewTasks.length - taskWin.end}
+          detailLines={budget.detailLines}
+          columns={columns}
         />
         <SessionsPane
           parentLabel={parentLabel}
           isSpot={isSpot}
-          sessions={visibleSessions}
+          sessions={windowSessions}
           total={childSessions.length}
           hidden={hiddenSessions}
           selectedId={selSessionId}
           focused={focus === 'sessions'}
+          above={sessionWin.start}
+          below={visibleSessions.length - sessionWin.end}
         />
       </Box>
-      {note ? <Text color="green">{note}</Text> : null}
+      {note ? <Text color="green" wrap="truncate-end">{note}</Text> : null}
     </Box>
   );
 }
@@ -926,6 +1013,7 @@ function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: Edit
 
 function TasksPane({
   tasks,
+  filtered,
   total,
   hidden,
   view,
@@ -935,17 +1023,34 @@ function TasksPane({
   focused,
   loadError,
   detail,
+  windowStart,
+  above,
+  below,
+  detailLines,
+  columns,
 }: {
+  /** Solo la finestra visibile, non la lista completa. */
   tasks: Task[];
+  /** Task superstiti ai filtri — NON `tasks.length`, che è la sola finestra. */
+  filtered: number;
   total: number;
   hidden: number;
   view: ViewState;
+  /** Indice nella lista COMPLETA (0 = riga spot). */
   selected: number;
   spotCount: number;
   childCount: Map<string, number>;
   focused: boolean;
   loadError: string;
   detail: TaskDetail | null;
+  /** Offset della finestra nella lista completa. */
+  windowStart: number;
+  /** Task fuori finestra sopra / sotto. */
+  above: number;
+  below: number;
+  /** Righe di descrizione concesse al dettaglio; 0 = pannello omesso. */
+  detailLines: number;
+  columns: number;
 }) {
   const spotSelected = selected === 0;
   return (
@@ -959,10 +1064,17 @@ function TasksPane({
     >
       {/* Truncation MAI silenziosa: con un filtro attivo il conteggio delle
           nascoste è sempre a schermo, come `+N più vecchie` per le sessioni.
-          Il deck non finge mai una lista completa. */}
-      <Text bold color={focused ? 'cyan' : undefined}>
-        Tasks ({hidden > 0 ? `${tasks.length}/${total}` : tasks.length})
+          Il deck non finge mai una lista completa.
+
+          Le task fuori finestra sono un secondo tipo di invisibile, distinto
+          dalle filtrate: non sono escluse dalla vista, solo oltre il bordo del
+          terminale. Il contatore ↑↓ sta nell'header perché una riga dedicata
+          costerebbe proprio la riga di lista che sta segnalando come mancante. */}
+      <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
+        Tasks ({hidden > 0 ? `${filtered}/${total}` : filtered})
         {hidden > 0 ? <Text color="yellow"> · {hidden} nascoste</Text> : null}
+        {above > 0 ? <Text dimColor> · ↑{above}</Text> : null}
+        {below > 0 ? <Text dimColor> · ↓{below}</Text> : null}
       </Text>
       <Text dimColor wrap="truncate-end">
         sort: {describeSort(view.sort)}
@@ -987,7 +1099,9 @@ function TasksPane({
         <Text color="red" wrap="truncate-end">{loadError}</Text>
       ) : (
         tasks.map((task, i) => {
-          const sel = i + 1 === selected; // +1: lo 0 è spot
+          // windowStart riporta l'indice di finestra a quello della lista
+          // completa, su cui è keyata la selezione. +1: lo 0 è spot.
+          const sel = windowStart + i + 1 === selected;
           const n = childCount.get(task.id) ?? 0;
           return (
             <Text
@@ -1004,7 +1118,11 @@ function TasksPane({
           );
         })
       )}
-      {detail ? <DetailPane detail={detail} /> : null}
+      {/* detailLines a 0 = il budget non ha spazio per il pannello: si omette
+          del tutto, non si rende una cornice vuota che ruberebbe altre righe. */}
+      {detail && detailLines > 0 ? (
+        <DetailPane detail={detail} maxLines={detailLines} columns={columns} />
+      ) : null}
     </Box>
   );
 }
@@ -1017,14 +1135,20 @@ function SessionsPane({
   hidden,
   selectedId,
   focused,
+  above,
+  below,
 }: {
   parentLabel: string;
   isSpot: boolean;
+  /** Solo la finestra visibile. */
   sessions: Session[];
   total: number;
   hidden: number;
   selectedId: string | undefined;
   focused: boolean;
+  /** Sessioni fuori finestra sopra / sotto. */
+  above: number;
+  below: number;
 }) {
   return (
     <Box
@@ -1034,9 +1158,11 @@ function SessionsPane({
       borderColor={focused ? 'cyan' : 'gray'}
       paddingX={1}
     >
-      <Text bold color={focused ? 'cyan' : undefined}>
+      <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
         Sessions · {parentLabel} ({total})
         {hidden > 0 ? <Text dimColor> · +{hidden} più vecchie</Text> : null}
+        {above > 0 ? <Text dimColor> · ↑{above}</Text> : null}
+        {below > 0 ? <Text dimColor> · ↓{below}</Text> : null}
       </Text>
       {total === 0 ? (
         <Text color="yellow" wrap="truncate-end">
@@ -1059,18 +1185,55 @@ function SessionsPane({
   );
 }
 
-function DetailPane({ detail }: { detail: TaskDetail }) {
+/**
+ * Righe non-wrappabili del dettaglio (titolo + meta + commit) e loro conteggio.
+ * Estratto dal componente perché il budget deve saperlo PRIMA di renderizzare:
+ * sono righe fisse che tolgono spazio alla descrizione.
+ */
+function detailMetaOf(detail: TaskDetail) {
   const meta = META_KEYS.map((k) => detail.fields[k])
     .filter(Boolean)
     .join('  ·  ');
-  const commit = detail.fields['Last tracked commit'];
+  const commit = detail.fields['Last tracked commit'] ?? '';
+  return { meta, commit, metaLines: 1 + (meta ? 1 : 0) + (commit ? 1 : 0) };
+}
+
+/**
+ * Larghezza utile del testo di descrizione, ricavata dalle colonne del
+ * terminale: box esterno (2 bordi + 2 padding) → pane al 50% → box dettaglio
+ * (2 bordi + 2 padding).
+ *
+ * Volutamente prudente: sottostimare tronca qualche carattere in più,
+ * sovrastimare farebbe andare a capo una riga e sforare il tetto d'altezza.
+ */
+function detailTextWidth(columns: number) {
+  return Math.max(10, Math.floor(((columns || 80) - 4) / 2) - 9);
+}
+
+function DetailPane({
+  detail,
+  maxLines,
+  columns,
+}: {
+  detail: TaskDetail;
+  maxLines: number;
+  columns: number;
+}) {
+  const { meta, commit } = detailMetaOf(detail);
+  // Wrap calcolato qui, non delegato a `<Text wrap="wrap">`: il budget ha
+  // riservato ESATTAMENTE `maxLines` righe, e un wrap deciso da Ink a runtime
+  // ne produrrebbe un numero che il budget non conosce — cioè il frame torna a
+  // sforare e il bug si riapre da questa singola casella di testo.
+  const lines = wrapLines(detail.description ?? '', detailTextWidth(columns), maxLines);
 
   return (
     <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
-      <Text bold>{detail.title || detail.id}</Text>
-      {meta ? <Text dimColor>{meta}</Text> : null}
-      {detail.description ? <Text wrap="wrap">{truncate(detail.description, 300)}</Text> : null}
-      {commit ? <Text dimColor>↳ {commit}</Text> : null}
+      <Text bold wrap="truncate-end">{detail.title || detail.id}</Text>
+      {meta ? <Text dimColor wrap="truncate-end">{meta}</Text> : null}
+      {lines.map((line, i) => (
+        <Text key={i} wrap="truncate-end">{line}</Text>
+      ))}
+      {commit ? <Text dimColor wrap="truncate-end">↳ {commit}</Text> : null}
     </Box>
   );
 }
