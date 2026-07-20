@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { normalizeEmoji } from './viewport.js';
 
 export interface Task {
   id: string;
@@ -50,7 +51,16 @@ export function parseTasks(content: string): Task[] {
     const prog = cells[4] ?? '';
     // desc = colonna finale; join per resistere a eventuali `|` nella descrizione.
     const desc = cells.slice(5, -1).join('|').trim();
-    tasks.push({ id, pri, prog, desc });
+    // Normalizzazione larghezza glifi AL CONFINE: tutto ciò che entra da
+    // tasks.md è testo arbitrario e può contenere emoji BMP che Ink misura una
+    // cella in meno del terminale (vedi normalizeEmoji). Farlo qui invece che a
+    // ogni sito di render è ciò che impedisce di dimenticarne uno.
+    tasks.push({
+      id,
+      pri: normalizeEmoji(pri),
+      prog: normalizeEmoji(prog),
+      desc: normalizeEmoji(desc),
+    });
   }
   return tasks;
 }
@@ -106,7 +116,17 @@ export function parseTaskDetail(id: string, content: string): TaskDetail {
     }
   }
 
-  return { id, title, fields, description: descLines.join('\n').trim() };
+  // Stessa normalizzazione dell'overview: il task file è testo libero, e la
+  // descrizione finisce nel pannello dettaglio dove un glifo mal misurato
+  // allarga la riga oltre il bordo del pane.
+  const normFields: Record<string, string> = {};
+  for (const [k, v] of Object.entries(fields)) normFields[k] = normalizeEmoji(v);
+  return {
+    id,
+    title: normalizeEmoji(title),
+    fields: normFields,
+    description: normalizeEmoji(descLines.join('\n').trim()),
+  };
 }
 
 export function loadTaskDetail(dir: string, id: string): TaskDetail | null {

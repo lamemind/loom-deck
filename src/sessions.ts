@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
+import { normalizeEmoji } from './viewport.js';
 
 // ADAPTER ISOLATO sullo store interno di Claude Code (T27).
 //
@@ -119,7 +120,7 @@ function parseSessionFile(path: string, mtime: number): Session | null {
     cwd,
     gitBranch,
     parentUuid,
-    title: customTitle || firstUserText || '(senza titolo)',
+    title: normalizeEmoji(customTitle || firstUserText || '(senza titolo)'),
     ts: mtime,
     path,
   };

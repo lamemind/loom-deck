@@ -19,6 +19,7 @@ import { appendTaskBinding, loadTaskBindings } from './task-index.js';
 import { launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
 import {
   layoutBudget,
+  normalizeEmoji,
   windowRange,
   wrapLines,
   type Budget,
@@ -369,20 +370,24 @@ function truncate(s: string, n: number): string {
   return flat.length > n ? flat.slice(0, n - 1).trimEnd() + '…' : flat;
 }
 
-// Forza la presentazione emoji (larghezza 2 non-ambigua) su un glifo BMP
-// text-default come ⚡ (U+26A1, range simboli U+2190–U+2BFF). Senza il variation
-// selector VS16 questi glifi sono larghi-ambigui: Ink li misura 1, ma string-width
-// e il terminale li disegnano 2 → la riga esce 1 colonna troppo larga, sfonda il
-// pane e va a capo (righe vuote spurie). Gli emoji astrali (🔥🔵🟡…, U+1F000+) sono
-// già width-2 non-ambigui e le sequenze con VS16 (✔️) sono >1 code point → intatti.
-const VS16 = '️';
-function forceEmojiWidth(s: string): string {
-  const cps = [...s];
-  if (cps.length !== 1) return s;
-  const cp = cps[0].codePointAt(0)!;
-  if (cp >= 0x2190 && cp <= 0x2bff) return s + VS16;
-  return s;
-}
+// Normalizzazione larghezza glifi → `normalizeEmoji` in viewport.ts.
+//
+// Sostituisce il precedente `forceEmojiWidth`, che aveva l'intuizione giusta
+// (timbrare il VS16) ma due limiti che lasciavano passare il difetto:
+//  - agiva solo su stringhe di UN codepoint, quindi non toccava mai un testo
+//    composto — la riga della legenda launch, una descrizione task con emoji
+//    dentro, il titolo di una sessione;
+//  - decideva per intervallo di codepoint invece che per larghezza misurata,
+//    quindi avrebbe timbrato anche `↓` `↑` `−` (larghi 1) se gli fossero
+//    arrivati da soli, accorciando la riga invece di allargarla.
+const forceEmojiWidth = normalizeEmoji;
+
+// Glifi LETTERALI del JSX che ricadono nella classe mal misurata (BMP largo 2
+// senza VS16). I dati passano dai loader, questi no: normalizzati una volta
+// qui, così nessun sito di render li scrive nudi. `↳ ○ ▸ ⏎ · − ↑ ↓` sono
+// larghi 1 e restano intatti.
+const CARET = normalizeEmoji('▶ ');
+const CARET_OFF = '  ';
 
 // Normalizza il marker Done per il display. `✔` (U+2714) è text-presentation-
 // default: string-width — quindi Ink, sia per il layout sia per il troncamento —
@@ -916,7 +921,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           below={visibleSessions.length - sessionWin.end}
         />
       </Box>
-      {note ? <Text color="green" wrap="truncate-end">{note}</Text> : null}
+      {note ? <Text color="green" wrap="truncate-end">{normalizeEmoji(note)}</Text> : null}
     </Box>
   );
 }
@@ -975,7 +980,7 @@ function FilterModal({ view, cursor }: { view: ViewState; cursor: FilterCursor }
 // La riga di anteprima mostra il testo ESATTO che finirà nel campo `Progress`
 // del task file — così il default (`✔️ Done at <oggi>`) non è una sorpresa.
 function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: EditRow }) {
-  const mark = (r: EditRow) => (row === r ? '▶ ' : '  ');
+  const mark = (r: EditRow) => (row === r ? CARET : CARET_OFF);
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
       <Text color="yellow">E › {id} · priorità e stato</Text>
@@ -1006,7 +1011,11 @@ function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: Edit
         {row === 2 ? <Text inverse> </Text> : null}
         {!draft.detail && row !== 2 ? <Text dimColor>(default)</Text> : null}
       </Text>
-      <Text dimColor>↳ {progressText(draft.prog, draft.detail)}</Text>
+      {/* normalizeEmoji SOLO qui, non dentro progressText: quel testo finisce
+          nel campo `Progress` del task file, dove il glifo va scritto nudo. */}
+      <Text dimColor wrap="truncate-end">
+        ↳ {normalizeEmoji(progressText(draft.prog, draft.detail))}
+      </Text>
     </Box>
   );
 }
@@ -1085,14 +1094,14 @@ function TasksPane({
               ...PRI_ENTRIES.filter((e) => view.hiddenPri.includes(e.name)),
               ...PROG_ENTRIES.filter((e) => view.hiddenProg.includes(e.name)),
             ]
-              .map((e) => `−${e.glyph}`)
+              .map((e) => `−${normalizeEmoji(e.glyph)}`)
               .join(' ')}
           </Text>
         ) : null}
       </Text>
       {/* riga meta "spot" come PRIMA voce: sessioni non legate ad alcuna task */}
       <Text inverse={spotSelected && focused} bold={spotSelected && !focused} wrap="truncate-end">
-        {spotSelected ? '▶ ' : '  '}
+        {spotSelected ? CARET : CARET_OFF}
         ○ spot  sessioni libere{spotCount > 0 ? ` (${spotCount})` : ''}
       </Text>
       {loadError ? (
@@ -1111,7 +1120,7 @@ function TasksPane({
               dimColor={!sel && isDone(task.prog)}
               wrap="truncate-end"
             >
-              {sel ? '▶ ' : '  '}
+              {sel ? CARET : CARET_OFF}
               {task.id}  {forceEmojiWidth(task.pri)}  {displayProg(task.prog)}  {task.desc}
               {n > 0 ? ` (${n})` : ''}
             </Text>
@@ -1173,7 +1182,7 @@ function SessionsPane({
           const sel = s.sessionId === selectedId;
           return (
             <Text key={s.sessionId} inverse={sel && focused} bold={sel && !focused} wrap="truncate-end">
-              {sel ? '▶ ' : '  '}
+              {sel ? CARET : CARET_OFF}
               {isSpot ? <Text dimColor>○</Text> : <Text color="green">🔗</Text>}{' '}
               {truncate(s.title, 44)}{' '}
               <Text dimColor>· {s.gitBranch || '-'} · {relTime(s.ts)}</Text>

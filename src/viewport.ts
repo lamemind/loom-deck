@@ -14,6 +14,44 @@
 //
 // Logica pura, zero React/Ink: testabile senza pseudo-terminale.
 
+import stringWidth from 'string-width';
+
+/** Variation Selector-16: forza la presentazione emoji del carattere che precede. */
+const VS16 = '️';
+
+/**
+ * Riallinea la larghezza dei glifi fra Ink e il terminale.
+ *
+ * Secondo meccanismo di sporcamento dello scrollback, indipendente dal budget
+ * d'altezza. Ink assembla ogni riga su una griglia di CARATTERI: per un emoji
+ * BMP senza VS16 (`☕` U+2615, `✔` U+2714, `⚡` U+26A1, `✅` U+2705, `▶` U+25B6)
+ * riserva una sola posizione, mentre il terminale ne disegna due. La riga esce
+ * larga `columns + 1`, il terminale la manda a capo, e l'altezza reale supera
+ * quella che Ink crede — senza mai passare dal ramo `clearTerminal`. Con più
+ * glifi sulla stessa riga l'eccesso si somma.
+ *
+ * Il VS16 esplicito fa contare 2 anche a Ink, riallineando le due contabilità.
+ *
+ * Il predicato è la LARGHEZZA MISURATA, non l'intervallo di codepoint: nello
+ * stesso blocco U+2190–U+2BFF vivono anche `↓` `↑` `−`, larghi 1, e timbrarli
+ * col VS16 li porterebbe a 2 accorciando la riga — l'errore opposto, con lo
+ * stesso effetto di layout rotto. Gli astrali (U+1F000+) Ink li conta già bene.
+ *
+ * Idempotente: un glifo che ha già il VS16 non viene ri-timbrato.
+ */
+export function normalizeEmoji(s: string): string {
+  if (!s) return s;
+  const cps = [...s];
+  let out = '';
+  for (let i = 0; i < cps.length; i++) {
+    const ch = cps[i]!;
+    out += ch;
+    const cp = ch.codePointAt(0)!;
+    if (cp < 0x10000 && stringWidth(ch) === 2 && cps[i + 1] !== VS16) out += VS16;
+  }
+  return out;
+}
+
 /** Righe lasciate libere sotto il frame. La condizione di Ink è `>=`, quindi
  *  basterebbe 1; ne teniamo 1 come margine per l'a-capo del cursore. */
 export const SLACK = 1;

@@ -231,7 +231,10 @@ test('legenda: nessuna voce → riga vuota, nessun contatore', () => {
 
 test('legenda: label mancante → parseLaunch mette il comando, la legenda lo mostra', () => {
   const entries = parseLaunch({ launch: [{ emoji: '☕', command: 'idea ud-maven-parent' }] });
-  assert.equal(launchLegend(entries, 200).shown, '1 ☕ idea ud-maven-parent');
+  // `☕️` con VS16: parseLaunch normalizza la larghezza dei glifi al confine
+  // (vedi normalizeEmoji). Senza il timbro Ink riserva una cella sola per `☕`
+  // mentre il terminale ne disegna due, e la riga della legenda va a capo.
+  assert.equal(launchLegend(entries, 200).shown, '1 ☕️ idea ud-maven-parent');
 });
 
 test('legenda: emoji mancante → fallback ▸, non voce vuota', () => {
