@@ -59,13 +59,25 @@ Assegnazioni correnti:
 | | Tasto | Cosa fa |
 |---|---|---|
 | modale | `C` | nuova task (create-task inline) |
+| modale | `E` | edit priorità/stato della task selezionata (salva + commit) |
 | modale | `S` | sort chain |
 | modale | `F` | filtri |
+| immediata | `t` | terminale @project-root (surface standard launch) |
+| immediata | `c` | sessione Claude **nuda**: nessuna task, nessun prompt iniziale |
 | immediata | `w` | salva la vista corrente su disco |
 | launch | `1`…`9` | esegue il `command` della voce, con `cwd` = project root |
 
-Le minuscole sono deliberatamente quasi tutte libere: le consumeranno le azioni
-in arrivo (start/preflight/checkpoint, fork/resume, terminale @project-root).
+Le voci `launch` sono elencate in una **riga di legenda** sotto il footer
+(`launch 1 📝 codium · 2 ☕ idea`): l'indice da solo è opaco, perché le voci sono
+custom per-progetto e non hanno una lettera fissa per app. Se non entrano in
+larghezza, la legenda si ferma a voci intere e mostra il contatore di quelle
+fuori riga — mai un troncamento silenzioso. Il cap a `9` è imposto dai tasti-cifra,
+non dallo schema: un progetto può dichiarare più di 9 voci, quelle oltre la nona
+sono configurate ma non raggiungibili (e la legenda lo dice).
+
+`t` e `c` sono gemelle: entrambe aprono una surface del cappello nella stessa
+finestra Ptyxis, senza passare da un modale. `c` (minuscola, azione) e `C`
+(maiuscola, modale create-task) restano distinte per la regola sopra.
 
 > **Nota di migrazione (0.6.0)**: `c` → **`C`** per creare una task, e le voci
 > `codium`/`idea` non hanno più una lettera dedicata (erano `C`/`I` hardcoded):

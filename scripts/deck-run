@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 #
-# deck-run <TaskID> — spike ① spawn primitive (UI-agnostico) di loom-deck.
+# deck-run <TaskID> | deck-run --no-task — spawn primitive (UI-agnostico) di loom-deck.
 #
 # Apre una tab Ptyxis nella window ATTIVA (quella col focus = il deck) e vi
 # avvia una sessione Claude Code già bound alla task via LOOM_TASK, dritta sul
 # prompt iniziale (default: prompt diretto "recap stato task <TaskID>" — no skill,
 # solo recap → più controllo). Riusabile identico da TUI (Ink) e da web.
+#
+# Con --no-task la sessione è NUDA: niente LOOM_TASK, niente prompt iniziale,
+# niente --session-id. Serve al lavoro spot che non appartiene a nessuna task.
 #
 # Modalità spawn (LOOM_DECK_SPAWN_MODE):
 #   inline   → ptyxis --tab -- <cmd>            (default)  comando inline, LOOM_TASK diretta, zero dconf
@@ -21,27 +24,42 @@
 #   LOOM_DECK_WORKDIR      dir di lavoro della tab (default: $PWD)
 #   LOOM_DECK_ENTER_PROMPT prompt iniziale sessione, {TASK}=TaskID (default: "recap stato task <TaskID>")
 #   LOOM_DECK_INTAB_CMD    override comando in-tab (default: la sessione CC; usato per i test)
+#   LOOM_DECK_PERMISSION_MODE  override del permissionMode del file config (default: campo file, poi 'manual')
 #
 set -euo pipefail
 
 TASK=""
 SESSION_ID=""
+NO_TASK=0
 # Positional <TaskID> + flag opzionale --session-id <uuid> (T27): il deck genera
 # l'UUID e lo pinna così il binding sidecar sessionId↔taskId è deterministico.
+# --no-task (T42): modalità NUDA, senza TaskID — nessuna LOOM_TASK, nessun prompt
+# iniziale, nessun sessionId pinnato. Flag esplicito e non "positional opzionale"
+# perché un `deck-run` a mani vuote resta un errore d'uso, non una sessione spot.
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --session-id)
       SESSION_ID="${2:-}"; shift 2 ;;
     --session-id=*)
       SESSION_ID="${1#*=}"; shift ;;
+    --no-task)
+      NO_TASK=1; shift ;;
     *)
       if [[ -z "$TASK" ]]; then TASK="$1"; shift
       else echo "argomento inatteso: '$1'" >&2; exit 2; fi ;;
   esac
 done
 
-if [[ -z "$TASK" ]]; then
-  echo "uso: deck-run <TaskID> [--session-id <uuid>]   (es. deck-run T18)" >&2
+USAGE="uso: deck-run <TaskID> [--session-id <uuid>]   (es. deck-run T18)
+     | deck-run --no-task                          (sessione nuda, senza task)"
+
+if [[ $NO_TASK -eq 1 && -n "$TASK" ]]; then
+  echo "--no-task e <TaskID> sono mutuamente esclusivi" >&2
+  echo "$USAGE" >&2
+  exit 2
+fi
+if [[ $NO_TASK -eq 0 && -z "$TASK" ]]; then
+  echo "$USAGE" >&2
   exit 2
 fi
 
@@ -68,16 +86,46 @@ _find_project_root() {  # <start-dir> → dir con .claude/loom-works.json, o vuo
   return 1
 }
 
-TITLE="cc ${TASK}"
+# Project root risolta UNA volta: la usano sia la label sia permissionMode (T45).
+_proot=""
 if command -v jq >/dev/null 2>&1; then
   _proot="$(_find_project_root "$WORKDIR" || true)"
-  if [[ -n "${_proot:-}" ]]; then
-    _label="$(jq -r 'if (.emoji and .owner and .name)
-                     then "\(.emoji) \(.owner) \(.name)" else empty end' \
-              "${_proot}/.claude/loom-works.json" 2>/dev/null || true)"
-    [[ -n "${_label:-}" ]] && TITLE="${_label} · ${TASK}"
+fi
+_cfg=""
+[[ -n "$_proot" ]] && _cfg="${_proot}/.claude/loom-works.json"
+
+# La label vale per OGNI surface claude, task o no (T42): il match compass è
+# window-level e non sa nulla di task → legare la titolazione alla presenza di
+# una task sarebbe un errore di layer. Cambia solo il suffisso: `· <task>` quando
+# la sessione è bound, nessun suffisso quando è nuda.
+if [[ $NO_TASK -eq 1 ]]; then TITLE="cc"; else TITLE="cc ${TASK}"; fi
+if [[ -n "$_cfg" ]]; then
+  _label="$(jq -r 'if (.emoji and .owner and .name)
+                   then "\(.emoji) \(.owner) \(.name)" else empty end' \
+            "$_cfg" 2>/dev/null || true)"
+  if [[ -n "${_label:-}" ]]; then
+    if [[ $NO_TASK -eq 1 ]]; then TITLE="${_label}"; else TITLE="${_label} · ${TASK}"; fi
   fi
 fi
+
+# ── permissionMode (T45) ─────────────────────────────────────────────────────
+# Precedenza: env LOOM_DECK_PERMISSION_MODE > campo del file config > 'manual'.
+# Il flag è passato SEMPRE, anche per 'manual': lo spawn resta deterministico e
+# leggibile nel process tree, invece di dipendere dal default del CLI (che può
+# cambiare fra versioni). Un valore fuori enum NON viene passato al CLI (che
+# rifiuterebbe, lasciando una tab con un comando rotto): fallback su 'manual'
+# con segnalazione su stderr.
+PERM_MODE="${LOOM_DECK_PERMISSION_MODE:-}"
+if [[ -z "$PERM_MODE" && -n "$_cfg" ]]; then
+  PERM_MODE="$(jq -r '.permissionMode // empty' "$_cfg" 2>/dev/null || true)"
+fi
+case "${PERM_MODE:-}" in
+  acceptEdits|auto|bypassPermissions|manual|dontAsk|plan) ;;
+  '') PERM_MODE="manual" ;;
+  *)  echo "permissionMode ignoto: '${PERM_MODE}' → fallback 'manual'" >&2
+      PERM_MODE="manual" ;;
+esac
+MODE_FLAG="--permission-mode ${PERM_MODE} "
 
 # --session-id per la tab: pinna il sessionId della sessione CC (vuoto → CC ne
 # genera uno). Lo spazio finale tiene la concatenazione pulita quando è assente.
@@ -102,7 +150,15 @@ fi
 # `--name '<TITLE>'` = canale AUTORITATIVO del terminal-title (Ptyxis -T è solo il
 # titolo iniziale, prima che CC parta): CC lo setta e nomina anche la sessione nel
 # picker. Override-abile via LOOM_DECK_INTAB_CMD per i test empirici (probe non-CC).
-IN_TAB_CMD="${LOOM_DECK_INTAB_CMD:-LOOM_TASK=${TASK} claude --name '${TITLE}' ${SID_FLAG}'${PROMPT}'}"
+# Ramo --no-task (T42): saltano i TRE elementi che legano la sessione alla task —
+# iniezione LOOM_TASK, prompt iniziale, --session-id pinnato. Resta claude nudo,
+# titolato e con il permission mode del progetto.
+if [[ $NO_TASK -eq 1 ]]; then
+  _default_intab="claude --name '${TITLE}' ${MODE_FLAG}"
+else
+  _default_intab="LOOM_TASK=${TASK} claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}'${PROMPT}'"
+fi
+IN_TAB_CMD="${LOOM_DECK_INTAB_CMD:-$_default_intab}"
 
 case "$MODE" in
   inline)

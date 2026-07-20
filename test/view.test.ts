@@ -17,7 +17,7 @@ import {
   type ViewState,
 } from '../src/view.js';
 import { loadView, saveView, parseView } from '../src/view-store.js';
-import { parseIdentity, parseLaunch } from '../src/config.js';
+import { cellWidth, launchLegend, parseIdentity, parseLaunch } from '../src/config.js';
 import type { Task } from '../src/tasks.js';
 
 const t = (id: string, pri: string, prog: string): Task => ({ id, pri, prog, desc: id });
@@ -211,4 +211,53 @@ test('identity: owner+name presenti → identità; campi mancanti o vuoti → nu
   assert.equal(parseIdentity({ owner: 'LOCAL' }), null);
   assert.equal(parseIdentity({ owner: '', name: 'loom-works' }), null);
   assert.equal(parseIdentity(null), null);
+});
+
+// ── T43 · legenda launch ─────────────────────────────────────────────────────
+
+const L = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({ emoji: '📝', label: `app${i + 1}`, command: `app${i + 1}` }));
+
+test('legenda: indice base-1 + emoji + label, concorde col dispatch dei tasti', () => {
+  const legend = launchLegend(L(3), 200);
+  assert.equal(legend.shown, '1 📝 app1 · 2 📝 app2 · 3 📝 app3');
+  assert.equal(legend.overflow, 0);
+  assert.equal(legend.unreachable, 0);
+});
+
+test('legenda: nessuna voce → riga vuota, nessun contatore', () => {
+  assert.deepEqual(launchLegend([], 200), { shown: '', overflow: 0, unreachable: 0 });
+});
+
+test('legenda: label mancante → parseLaunch mette il comando, la legenda lo mostra', () => {
+  const entries = parseLaunch({ launch: [{ emoji: '☕', command: 'idea ud-maven-parent' }] });
+  assert.equal(launchLegend(entries, 200).shown, '1 ☕ idea ud-maven-parent');
+});
+
+test('legenda: emoji mancante → fallback ▸, non voce vuota', () => {
+  const entries = parseLaunch({ launch: [{ command: 'lazygit' }] });
+  assert.equal(launchLegend(entries, 200).shown, '1 ▸ lazygit');
+});
+
+test('legenda: terminale stretto → tronca a voci intere e conta le fuori riga', () => {
+  const legend = launchLegend(L(6), 40);
+  assert.ok(legend.shown.length > 0);
+  assert.ok(legend.overflow > 0);
+  // Degradazione NON silenziosa: mostrate + fuori riga = tutte le raggiungibili.
+  assert.equal(legend.shown.split(' · ').length + legend.overflow, 6);
+  // La riga non deve sfondare il box: budget = columns - 12, con 10 di riserva.
+  assert.ok(cellWidth(legend.shown) <= 40 - 12);
+});
+
+test('legenda: oltre la nona voce → configurate ma non raggiungibili, contate a parte', () => {
+  const legend = launchLegend(L(12), 400);
+  assert.equal(legend.unreachable, 3);
+  assert.equal(legend.shown.split(' · ').length, 9);
+  assert.ok(!legend.shown.includes('app10'));
+});
+
+test('cellWidth: emoji largo 2, VS16 a larghezza 0, ascii 1', () => {
+  assert.equal(cellWidth('ab'), 2);
+  assert.equal(cellWidth('📝'), 2);
+  assert.equal(cellWidth('⚡️'), 2); // simbolo BMP + VS16 → 2, non 3
 });

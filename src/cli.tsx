@@ -16,7 +16,7 @@ import {
 } from './tasks.js';
 import { discoverProjectSessions, type Session } from './sessions.js';
 import { appendTaskBinding, loadTaskBindings } from './task-index.js';
-import { loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
+import { launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
 import {
   applyView,
   cycleSort,
@@ -102,6 +102,22 @@ function isDone(prog: string): boolean {
 // sessionId pinnato (T27) → il binding sidecar è deterministico allo spawn.
 function spawnDeck(id: string, cwd: string, sessionId: string) {
   const child = spawn(DECK_RUN, [id, '--session-id', sessionId], {
+    cwd,
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+  return child;
+}
+
+// T42 — sessione Claude NUDA: nessuna task, nessun prompt iniziale, nessun
+// sessionId pinnato (quindi nessuna entry nel sidecar session-tasks.jsonl: senza
+// task non c'è nulla da legare). Funzione separata e non un parametro opzionale
+// di spawnDeck: i tre argomenti mancano tutti insieme, un `if` per ciascuno
+// sporcherebbe il percorso bound. Il titolo tab resta la label loom — lo mette
+// deck-run, perché il match compass è window-level e non sa nulla di task.
+function spawnClaudeEmpty(cwd: string) {
+  const child = spawn(DECK_RUN, ['--no-task'], {
     cwd,
     detached: true,
     stdio: 'ignore',
@@ -699,6 +715,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       const child = spawnTerminal(cwd, title);
       child.on('error', () => setNote('⚠ t → ptyxis non lanciabile'));
       setNote(`t → terminale su ${projectName}`);
+    } else if (input === 'c') {
+      // Minuscola = azione immediata (convenzione T39), gemella di `t`: entrambe
+      // aprono una surface del cappello senza passare da un modale. `C` (create
+      // task) resta distinta — stessa lettera, ma la maiuscola è per i modali.
+      const child = spawnClaudeEmpty(cwd);
+      child.on('error', () => setNote(`⚠ c → spawn claude fallito (${DECK_RUN})`));
+      setNote(`c → claude nuda su ${projectName} (nessuna task)`);
     } else if (input === 'w') {
       // Salvataggio ESPLICITO: comporre una vista non tocca il disco, così
       // sperimentare non sporca lo stato persistito.
@@ -725,7 +748,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const selSessionId = visibleSessions[selSession]?.sessionId;
   const parentLabel = isSpot ? 'spot' : selectedTaskId ?? '—';
   const canSpawn = focus === 'tasks' && !isSpot;
-  const launchHint = launch.length > 0 ? `1-${Math.min(9, launch.length)} launch · ` : '';
+  // Larghezza letta a ogni render (non memoizzata): dopo un resize il primo
+  // re-render utile ricalcola la legenda senza bisogno di un listener dedicato.
+  const legend = launchLegend(launch, process.stdout.columns || 80);
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
@@ -753,9 +778,22 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       ) : (
         <Text dimColor>
           ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : '—'} · C nuova · E edit · S sort · F filtri · w
-          salva · t term · {launchHint}q esci · focus: <Text color="cyan">{focus}</Text>
+          salva · t term · c claude · q esci · focus: <Text color="cyan">{focus}</Text>
         </Text>
       )}
+      {/* T43 — riga dedicata alla mappa indice→launch. Nessuna voce configurata
+          → riga assente e footer identico a prima (nessuna regressione). */}
+      {mode === 'normal' && launch.length > 0 ? (
+        <Text dimColor>
+          launch {legend.shown}
+          {legend.overflow > 0 ? (
+            <Text color="yellow"> · +{legend.overflow} fuori riga</Text>
+          ) : null}
+          {legend.unreachable > 0 ? (
+            <Text color="yellow"> · {legend.unreachable} oltre la 9ª (non raggiungibili)</Text>
+          ) : null}
+        </Text>
+      ) : null}
       {mode === 'create' ? (
         <Box borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
           <Text color="yellow">C › </Text>
