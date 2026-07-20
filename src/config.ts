@@ -44,3 +44,28 @@ export function loadLaunch(projectRoot: string): LaunchEntry[] {
     return [];
   }
 }
+
+// T37 — identità del progetto. Serve a titolare le tab spawnate dal deck col core
+// `<owner> <name>`, che è la chiave con cui compass matcha la finestra al progetto
+// (match window-level sul titolo della tab ATTIVA). Senza titolo la finestra
+// esce dal radar mentre quella tab è in primo piano.
+export interface Identity {
+  owner: string;
+  name: string;
+}
+
+export function parseIdentity(raw: unknown): Identity | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const { owner, name } = raw as Record<string, unknown>;
+  if (typeof owner !== 'string' || !owner || typeof name !== 'string' || !name) return null;
+  return { owner, name };
+}
+
+/** File assente o malformato → nessuna identità. Mai un throw. */
+export function loadIdentity(projectRoot: string): Identity | null {
+  try {
+    return parseIdentity(JSON.parse(readFileSync(configFilePath(projectRoot), 'utf8')));
+  } catch {
+    return null;
+  }
+}

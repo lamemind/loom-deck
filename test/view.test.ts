@@ -17,7 +17,7 @@ import {
   type ViewState,
 } from '../src/view.js';
 import { loadView, saveView, parseView } from '../src/view-store.js';
-import { parseLaunch } from '../src/config.js';
+import { parseIdentity, parseLaunch } from '../src/config.js';
 import type { Task } from '../src/tasks.js';
 
 const t = (id: string, pri: string, prog: string): Task => ({ id, pri, prog, desc: id });
@@ -201,4 +201,14 @@ test('launch: label opzionale con fallback sul comando, voci invalide scartate',
 test('launch: config assente o senza array → nessuna voce', () => {
   assert.deepEqual(parseLaunch({}), []);
   assert.deepEqual(parseLaunch(null), []);
+});
+
+test('identity: owner+name presenti → identità; campi mancanti o vuoti → null', () => {
+  assert.deepEqual(parseIdentity({ owner: 'LOCAL', name: 'loom-works' }), {
+    owner: 'LOCAL',
+    name: 'loom-works',
+  });
+  assert.equal(parseIdentity({ owner: 'LOCAL' }), null);
+  assert.equal(parseIdentity({ owner: '', name: 'loom-works' }), null);
+  assert.equal(parseIdentity(null), null);
 });

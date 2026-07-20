@@ -16,7 +16,7 @@ import {
 } from './tasks.js';
 import { discoverProjectSessions, type Session } from './sessions.js';
 import { appendTaskBinding, loadTaskBindings } from './task-index.js';
-import { loadLaunch, type LaunchEntry } from './config.js';
+import { loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
 import {
   applyView,
   cycleSort,
@@ -124,6 +124,23 @@ function runLaunch(entry: LaunchEntry, cwd: string) {
     detached: true,
     stdio: 'ignore',
   });
+  child.unref();
+  return child;
+}
+
+// T37 — surface STANDARD LAUNCH `terminal`: built-in e universale (nessuna
+// dichiarazione in `launch[]`), ma di natura launch — fire-once, nessuno stato.
+// Il deck gira già DENTRO una tab Ptyxis → `--tab` mette il terminale accanto a
+// sé nella stessa finestra, invece di sparpagliare finestre.
+// Nessun `-- CMD`: l'azione È aprire la shell (differenza dalle launch custom,
+// che eseguono un comando dentro `bash -lic`).
+// `-T <title>` col core `<owner> <name>` tiene la finestra matchabile da compass
+// anche mentre la tab attiva è il terminale; senza identità nel file config si
+// spawna senza titolo (la surface resta funzionante, il progetto risulta assente
+// dal radar finché quella tab è in primo piano).
+function spawnTerminal(cwd: string, title: string | null) {
+  const args = title ? ['--tab', '-T', title, '-d', cwd] : ['--tab', '-d', cwd];
+  const child = spawn('ptyxis', args, { cwd, detached: true, stdio: 'ignore' });
   child.unref();
   return child;
 }
@@ -368,6 +385,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
 
   // Voci launch del progetto (T32): lette una volta, raggiunte per indice 1..9.
   const launch = useMemo(() => loadLaunch(cwd), [cwd]);
+  // Identità (T37): titolo delle tab terminale spawnate col tasto `t`.
+  const identity = useMemo(() => loadIdentity(cwd), [cwd]);
   // La vista è una trasformazione DERIVATA, applicata a valle del load: il
   // polling di tasks.md continua a funzionare senza saperne nulla.
   const { visible: viewTasks, hidden: hiddenTasks } = useMemo(
@@ -675,6 +694,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       setViewBackup(view);
       setNote('');
       setMode('filter');
+    } else if (input === 't') {
+      const title = identity ? `🖥️ ${identity.owner} ${identity.name} [term]` : null;
+      const child = spawnTerminal(cwd, title);
+      child.on('error', () => setNote('⚠ t → ptyxis non lanciabile'));
+      setNote(`t → terminale su ${projectName}`);
     } else if (input === 'w') {
       // Salvataggio ESPLICITO: comporre una vista non tocca il disco, così
       // sperimentare non sporca lo stato persistito.
@@ -729,7 +753,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       ) : (
         <Text dimColor>
           ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : '—'} · C nuova · E edit · S sort · F filtri · w
-          salva · {launchHint}q esci · focus: <Text color="cyan">{focus}</Text>
+          salva · t term · {launchHint}q esci · focus: <Text color="cyan">{focus}</Text>
         </Text>
       )}
       {mode === 'create' ? (
