@@ -21,6 +21,8 @@ import {
   applyView,
   cycleSort,
   describeSort,
+  priName,
+  progName,
   toggleHidden,
   PRI_ENTRIES,
   PROG_ENTRIES,
@@ -30,6 +32,14 @@ import {
   type SortKey,
   type ViewState,
 } from './view.js';
+import {
+  initialDetail,
+  progressText,
+  writeTaskEdit,
+  PRI_GLYPH,
+  PRI_LABEL,
+  PROG_GLYPH,
+} from './task-edit.js';
 import { loadView, saveView, viewFilePath } from './view-store.js';
 
 // scripts/deck-run è un sibling della dir del bundle: src/ (dev, tsx) e dist/
@@ -53,7 +63,7 @@ type Focus = 'tasks' | 'sessions';
 // Standard shortcut (T39): MAIUSCOLA apre un modale, minuscola è azione
 // immediata, 1..9 sono le voci launch del file config. I modali catturano tutti
 // i tasti: dentro, `esc` annulla e non esce dal deck.
-type Mode = 'normal' | 'create' | 'sort' | 'filter';
+type Mode = 'normal' | 'create' | 'sort' | 'filter' | 'edit';
 
 // Griglia del modale filtri: riga 0 = priorità, riga 1 = stato.
 interface FilterCursor {
@@ -61,9 +71,27 @@ interface FilterCursor {
   col: number;
 }
 
+// T41 — Bozza del modale edit: valori scelti, non ancora scritti su disco.
+// `detail` è il progresso arbitrario (`85%`, `In Progress`, …); vuoto = default
+// dello stato. Righe del modale: 0 priorità · 1 stato · 2 progresso libero.
+interface EditDraft {
+  pri: PriName;
+  prog: ProgName;
+  detail: string;
+}
+type EditRow = 0 | 1 | 2;
+
 // Modale sort a grammatica libera: un tasto per chiave, pressioni successive
 // ciclano asc → desc → fuori dalla chain.
 const SORT_TASTI: Record<string, SortKey> = { p: 'pri', s: 'prog', i: 'id' };
+
+// T41 — ordine dei valori nel modale edit. Deliberatamente DIVERSO da
+// PRI_ENTRIES/PROG_ENTRIES (che seguono il rango di sort): qui si sceglie un
+// valore, non si ordina, quindi vince l'ordine del CICLO DI VITA — da fare →
+// in corso → chiusa → bloccata. La priorità resta alta→bassa, che è già
+// l'ordine naturale di lettura.
+const EDIT_PRI: readonly PriName[] = ['high', 'med', 'low'];
+const EDIT_PROG: readonly ProgName[] = ['todo', 'wip', 'done', 'locked'];
 
 function isDone(prog: string): boolean {
   return prog.includes('✔');
@@ -157,6 +185,30 @@ function spawnCreateTask(
   child.on('close', (code) => {
     onResult(isError === null ? code === 0 : !isError);
   });
+  return child;
+}
+
+// T41 — Commit dell'edit. `git commit -- <paths>` committa lo stato working-tree
+// SOLO di quei path, ignorando l'index: se l'utente ha altro in stage (o altri
+// file sporchi) non finisce dentro per errore. NON detached: è un'operazione
+// veloce e il suo esito va riportato nella nota. stderr raccolto per dire perché
+// ha fallito (identità git assente, hook che rifiuta, …) invece di un generico ⚠.
+function commitTaskEdit(
+  cwd: string,
+  paths: string[],
+  message: string,
+  onResult: (ok: boolean, err: string) => void,
+) {
+  const child = spawn('git', ['commit', '-m', message, '--', ...paths], {
+    cwd,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  let err = '';
+  child.stderr?.on('data', (c: Buffer) => {
+    err += c.toString();
+  });
+  child.on('error', () => onResult(false, 'git non lanciabile'));
+  child.on('close', (code) => onResult(code === 0, err.trim().split('\n')[0] ?? ''));
   return child;
 }
 
@@ -310,6 +362,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const [view, setView] = useState<ViewState>(() => loadView(cwd));
   const [viewBackup, setViewBackup] = useState<ViewState | null>(null);
   const [filterCursor, setFilterCursor] = useState<FilterCursor>({ row: 0, col: 0 });
+  // T41 — bozza dell'edit (null fuori dal modale) e riga attiva della griglia.
+  const [edit, setEdit] = useState<EditDraft | null>(null);
+  const [editRow, setEditRow] = useState<EditRow>(0);
 
   // Voci launch del progetto (T32): lette una volta, raggiunte per indice 1..9.
   const launch = useMemo(() => loadLaunch(cwd), [cwd]);
@@ -399,6 +454,59 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     child.on('error', () => setNote(`⚠ create-task: '${CLAUDE_CMD}' non lanciabile`));
   }
 
+  // T41 — apertura dell'edit: la bozza parte dai valori ATTUALI della task, non
+  // da default. La priorità arriva dal glifo di tasks.md (già in `selTask`), lo
+  // stato dal suo glifo Prog; il progresso arbitrario dal campo `Progress` del
+  // task file — ma solo se è davvero custom (vedi `initialDetail`).
+  function openEdit() {
+    if (!selTask) return;
+    const prog = progName(selTask.prog) ?? 'todo';
+    setEdit({
+      pri: priName(selTask.pri) ?? 'med',
+      prog,
+      detail: initialDetail(detail?.fields['Progress'] ?? '', prog),
+    });
+    setEditRow(0);
+    setNote('');
+    setMode('edit');
+  }
+
+  // T41 — ⏎ nell'edit: scrive tasks.md + task file, poi committa. Il commit è
+  // immediato e non confermato (scelta esplicita: l'edit è una micro-modifica,
+  // la storia granulare vale più di un batch). Se nessuno dei due lati è stato
+  // scritto non si committa nulla — `paths` vuoto renderebbe `git commit --`
+  // un commit di TUTTO il working tree, che è l'opposto di ciò che vogliamo.
+  function submitEdit() {
+    const task = selTask;
+    const draft = edit;
+    setMode('normal');
+    setEdit(null);
+    if (!task || !draft) return;
+
+    let res: ReturnType<typeof writeTaskEdit>;
+    try {
+      res = writeTaskEdit({ tasksPath, tasksDir, id: task.id, ...draft });
+    } catch (e) {
+      setNote(`⚠ ${task.id}: scrittura fallita (${(e as Error).message})`);
+      return;
+    }
+    if (res.paths.length === 0) {
+      setNote(`⚠ ${task.id}: nessun campo aggiornabile (riga o task file assenti)`);
+      return;
+    }
+
+    const summary = `${PRI_GLYPH[draft.pri]} ${PRI_LABEL[draft.pri]} · ${res.progress}`;
+    setNote(`⏳ ${task.id} → ${summary} · commit…`);
+    commitTaskEdit(
+      cwd,
+      res.paths,
+      `chore(${task.id}): pri ${PRI_LABEL[draft.pri]} · stato ${res.progress}`,
+      (ok, err) => {
+        setNote(ok ? `✔ ${task.id} → ${summary} · committato` : `⚠ ${task.id} salvato, commit fallito: ${err}`);
+      },
+    );
+  }
+
   // Chiusura di un modale di vista: `restore` rimette la fotografia scattata
   // all'apertura (esc = annulla), altrimenti tiene ciò che si è composto (⏎).
   function closeViewModal(restore: boolean) {
@@ -485,6 +593,46 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       return;
     }
 
+    // T41 — modale edit: griglia a 3 righe. Righe 0/1 = scelta a valore singolo
+    // (←→ scorre), riga 2 = testo libero (ogni carattere stampabile entra nel
+    // progresso). Come gli altri modali cattura tutto: `esc` annulla senza
+    // scrivere né uscire dal deck.
+    if (mode === 'edit') {
+      if (key.escape) {
+        setMode('normal');
+        setEdit(null);
+        setNote('E → edit annullato');
+      } else if (key.return) {
+        submitEdit();
+      } else if (key.upArrow) {
+        setEditRow((r) => ((r + 2) % 3) as EditRow);
+      } else if (key.downArrow) {
+        setEditRow((r) => ((r + 1) % 3) as EditRow);
+      } else if (key.leftArrow || key.rightArrow) {
+        const d = key.leftArrow ? -1 : 1;
+        // Scorrimento CICLICO (wrap) e non clampato: le liste sono di 3-4 voci,
+        // arrivare in fondo e ripartire costa meno di invertire direzione.
+        if (editRow === 0) {
+          setEdit((e) =>
+            e ? { ...e, pri: EDIT_PRI[(EDIT_PRI.indexOf(e.pri) + d + EDIT_PRI.length) % EDIT_PRI.length] } : e,
+          );
+        } else if (editRow === 1) {
+          setEdit((e) =>
+            e
+              ? { ...e, prog: EDIT_PROG[(EDIT_PROG.indexOf(e.prog) + d + EDIT_PROG.length) % EDIT_PROG.length] }
+              : e,
+          );
+        }
+      } else if (editRow === 2) {
+        if (key.backspace || key.delete) {
+          setEdit((e) => (e ? { ...e, detail: e.detail.slice(0, -1) } : e));
+        } else if (input && !key.ctrl && !key.meta) {
+          setEdit((e) => (e ? { ...e, detail: e.detail + input } : e));
+        }
+      }
+      return;
+    }
+
     if (key.leftArrow || key.rightArrow || key.tab) {
       setFocus((f) => (f === 'tasks' ? 'sessions' : 'tasks'));
     } else if (key.upArrow) {
@@ -515,6 +663,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     } else if (input === 'C') {
       setNote('');
       setMode('create');
+    } else if (input === 'E') {
+      // L'edit ha senso solo su una task reale: la riga meta "spot" non ne è una.
+      if (isSpot || !selTask) setNote('E → nessuna task selezionata');
+      else openEdit();
     } else if (input === 'S') {
       setViewBackup(view);
       setNote('');
@@ -569,10 +721,15 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           filtri · <Text color="yellow">↑↓←→</Text> naviga · <Text color="yellow">spazio</Text>{' '}
           mostra/nascondi · <Text color="yellow">⏎</Text> ok · <Text color="yellow">esc</Text> annulla
         </Text>
+      ) : mode === 'edit' ? (
+        <Text dimColor>
+          edit · <Text color="yellow">↑↓</Text> campo · <Text color="yellow">←→</Text> valore ·{' '}
+          <Text color="yellow">⏎</Text> salva+commit · <Text color="yellow">esc</Text> annulla
+        </Text>
       ) : (
         <Text dimColor>
-          ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : '—'} · C nuova · S sort · F filtri · w salva ·{' '}
-          {launchHint}q esci · focus: <Text color="cyan">{focus}</Text>
+          ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : '—'} · C nuova · E edit · S sort · F filtri · w
+          salva · {launchHint}q esci · focus: <Text color="cyan">{focus}</Text>
         </Text>
       )}
       {mode === 'create' ? (
@@ -584,6 +741,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       ) : null}
       {mode === 'sort' ? <SortModal sort={view.sort} /> : null}
       {mode === 'filter' ? <FilterModal view={view} cursor={filterCursor} /> : null}
+      {mode === 'edit' && edit && selTask ? (
+        <EditModal id={selTask.id} draft={edit} row={editRow} />
+      ) : null}
       <Box flexDirection="row" marginTop={1}>
         <TasksPane
           tasks={viewTasks}
@@ -657,6 +817,47 @@ function FilterModal({ view, cursor }: { view: ViewState; cursor: FilterCursor }
           })}
         </Text>
       ))}
+    </Box>
+  );
+}
+
+// T41 — modale edit, in flusso come gli altri (spinge giù i pane invece di
+// coprirli: la riga che stai modificando resta visibile sopra la lista).
+// La riga di anteprima mostra il testo ESATTO che finirà nel campo `Progress`
+// del task file — così il default (`✔️ Done at <oggi>`) non è una sorpresa.
+function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: EditRow }) {
+  const mark = (r: EditRow) => (row === r ? '▶ ' : '  ');
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
+      <Text color="yellow">E › {id} · priorità e stato</Text>
+      <Text>
+        {mark(0)}
+        <Text dimColor>pri  </Text>
+        {EDIT_PRI.map((p) => (
+          <Text key={p} inverse={draft.pri === p} color={draft.pri === p ? 'green' : 'gray'}>
+            {'  '}
+            {forceEmojiWidth(PRI_GLYPH[p])} {PRI_LABEL[p]}
+          </Text>
+        ))}
+      </Text>
+      <Text>
+        {mark(1)}
+        <Text dimColor>stato</Text>
+        {EDIT_PROG.map((p) => (
+          <Text key={p} inverse={draft.prog === p} color={draft.prog === p ? 'green' : 'gray'}>
+            {'  '}
+            {forceEmojiWidth(PROG_GLYPH[p])} {p}
+          </Text>
+        ))}
+      </Text>
+      <Text>
+        {mark(2)}
+        <Text dimColor>prog </Text>
+        <Text>{'  '}{draft.detail}</Text>
+        {row === 2 ? <Text inverse> </Text> : null}
+        {!draft.detail && row !== 2 ? <Text dimColor>(default)</Text> : null}
+      </Text>
+      <Text dimColor>↳ {progressText(draft.prog, draft.detail)}</Text>
     </Box>
   );
 }
