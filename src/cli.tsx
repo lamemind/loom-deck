@@ -15,7 +15,12 @@ import {
   type TaskDetail,
 } from './tasks.js';
 import { discoverProjectSessions, type Session } from './sessions.js';
-import { appendTaskBinding, loadTaskBindings } from './task-index.js';
+import {
+  appendSessionRecord,
+  appendTaskBinding,
+  loadSessionIndex,
+  type SessionIndex,
+} from './task-index.js';
 import { launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
 import {
   layoutBudget,
@@ -131,6 +136,28 @@ function spawnDeck(id: string, cwd: string, sessionId: string) {
 // continuarla, non iniettarle un messaggio (lo salta deck-run).
 function spawnDeckResume(taskId: string | null, cwd: string, sessionId: string) {
   const args = taskId ? [taskId, '--resume', sessionId] : ['--no-task', '--resume', sessionId];
+  const child = spawn(DECK_RUN, args, { cwd, detached: true, stdio: 'ignore' });
+  child.unref();
+  return child;
+}
+
+// T28 — FORK: `deck-run <task|--no-task> --resume <origine> --fork --session-id
+// <nuovo>`. Variante del resume, non una terza forma: cambia solo che CC apre un
+// id nuovo (`--fork-session`) invece di riprendere a scrivere sull'origine —
+// due writer sullo stesso JSONL non esistono mai, che è l'intero punto del fork.
+// Il nuovo id lo genera il DECK e lo pinna, come in spawnDeck: è l'unico modo di
+// conoscerlo prima che la sessione esista, e senza conoscerlo non si possono
+// scrivere né il binding task né il record di lineage (il transcript del fork
+// non nomina da nessuna parte la sessione d'origine).
+function spawnDeckFork(taskId: string | null, cwd: string, originId: string, newId: string) {
+  const args = [
+    ...(taskId ? [taskId] : ['--no-task']),
+    '--resume',
+    originId,
+    '--fork',
+    '--session-id',
+    newId,
+  ];
   const child = spawn(DECK_RUN, args, { cwd, detached: true, stdio: 'ignore' });
   child.unref();
   return child;
@@ -331,30 +358,41 @@ function useTasks(tasksPath: string) {
 // re-render inutile con una signature (sessionId:ts + binding entries): setState
 // solo quando cambia davvero qualcosa.
 function useSessions(projectRoot: string) {
-  const [state, setState] = useState<{ sessions: Session[]; bindings: Map<string, string> }>({
+  const [state, setState] = useState<{
+    sessions: Session[];
+    bindings: Map<string, string>;
+    forkOf: Map<string, string>;
+  }>({
     sessions: [],
     bindings: new Map(),
+    forkOf: new Map(),
   });
 
   useEffect(() => {
     let lastSig = '';
     const reload = () => {
       let sessions: Session[];
-      let bindings: Map<string, string>;
+      let index: SessionIndex;
       try {
         sessions = discoverProjectSessions(projectRoot);
-        bindings = loadTaskBindings(projectRoot);
+        index = loadSessionIndex(projectRoot);
       } catch {
         sessions = [];
-        bindings = new Map();
+        index = { bindings: new Map(), forkOf: new Map() };
       }
+      const { bindings, forkOf } = index;
+      // La signature copre anche i fork: un record di lineage appena scritto
+      // cambia il marker della riga, quindi deve forzare il re-render come
+      // farebbe un binding nuovo.
       const sig =
         sessions.map((s) => `${s.sessionId}:${s.ts}`).join('|') +
         '#' +
-        [...bindings.entries()].map(([k, v]) => `${k}=${v}`).sort().join(',');
+        [...bindings.entries()].map(([k, v]) => `${k}=${v}`).sort().join(',') +
+        '#' +
+        [...forkOf.entries()].map(([k, v]) => `${k}<${v}`).sort().join(',');
       if (sig === lastSig) return;
       lastSig = sig;
-      setState({ sessions, bindings });
+      setState({ sessions, bindings, forkOf });
     };
     reload();
     const id = setInterval(reload, POLL_MS);
@@ -446,7 +484,7 @@ const META_KEYS = ['Priority', 'Size', 'Estimated Time', 'Progress'];
 function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; tasksDir: string }) {
   const { exit } = useApp();
   const { tasks, loadError } = useTasks(tasksPath);
-  const { sessions, bindings } = useSessions(cwd);
+  const { sessions, bindings, forkOf } = useSessions(cwd);
   const [focus, setFocus] = useState<Focus>('tasks');
   // T39 — selezione KEYED SU ID, non su indice. Con una vista trasformata
   // (filtro/sort) l'indice non identifica più la stessa task: leggere l'array
@@ -794,6 +832,36 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       setViewBackup(view);
       setNote('');
       setMode('filter');
+    } else if (input === 'f') {
+      // T28 — fork della sessione selezionata. Minuscola come `t`/`c` (T39):
+      // azione immediata, nessun modale — la `F` maiuscola resta ai filtri.
+      // Vive solo sul pane sessioni: il fork ha per oggetto una conversazione,
+      // e senza focus lì non ce n'è una selezionata su cui agire.
+      if (focus !== 'sessions') {
+        setNote('f → fork: seleziona una sessione (←→ per il pane)');
+      } else {
+        const s = visibleSessions[selSession];
+        if (!s) {
+          setNote('f → nessuna sessione da forkare');
+        } else {
+          // L'id del ramo nasce qui, prima dello spawn: pinnandolo posso
+          // scrivere subito binding e lineage. Il binding task si eredita
+          // dall'origine (un ramo appartiene alla stessa task), il lineage
+          // registra la provenienza che il transcript non porta.
+          const newId = randomUUID();
+          const bound = bindings.get(s.sessionId) ?? null;
+          appendSessionRecord(cwd, {
+            sessionId: newId,
+            ...(bound ? { taskId: bound } : {}),
+            forkOf: s.sessionId,
+          });
+          const child = spawnDeckFork(bound, cwd, s.sessionId, newId);
+          child.on('error', () => setNote(`⚠ fork fallito (${DECK_RUN})`));
+          setNote(
+            `⑂ fork ${s.sessionId.slice(0, 8)} → ${newId.slice(0, 8)}${bound ? ` (${bound})` : ' (spot)'}`,
+          );
+        }
+      }
     } else if (input === 't') {
       const title = identity ? `🖥️ ${identity.owner} ${identity.name} [term]` : null;
       const child = spawnTerminal(cwd, title);
@@ -911,8 +979,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         </Text>
       ) : (
         <Text dimColor wrap="truncate-end">
-          ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : canResume ? 'resume' : '—'} · C nuova · E
-          edit · S sort · F filtri · w salva · t term · c claude · q esci · focus:{' '}
+          ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : canResume ? 'resume' : '—'}
+          {canResume ? ' · f fork' : ''} · C nuova · E edit · S sort · F filtri · w salva · t term ·
+          c claude · q esci · focus:{' '}
           <Text color="cyan">{focus}</Text>
         </Text>
       )}
@@ -974,6 +1043,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           firstLines={budget.sessionFirstLines}
           lastLines={budget.sessionLastLines}
           columns={columns}
+          forkOf={forkOf}
         />
       </Box>
       {note ? <Text color="green" wrap="truncate-end">{normalizeEmoji(note)}</Text> : null}
@@ -1205,6 +1275,7 @@ function SessionsPane({
   firstLines,
   lastLines,
   columns,
+  forkOf,
 }: {
   parentLabel: string;
   isSpot: boolean;
@@ -1214,6 +1285,8 @@ function SessionsPane({
   hidden: number;
   selectedId: string | undefined;
   focused: boolean;
+  /** T28 — sessionId → origine, per marcare i rami nella lista. */
+  forkOf: Map<string, string>;
   /** Sessioni fuori finestra sopra / sotto. */
   above: number;
   below: number;
@@ -1246,18 +1319,29 @@ function SessionsPane({
       ) : (
         sessions.map((s) => {
           const sel = s.sessionId === selectedId;
+          // T28 — un ramo eredita il titolo dell'origine: senza marcatore le due
+          // righe sarebbero identiche a occhio. `⑂` sta PRIMA del titolo, dove
+          // la troncatura non arriva mai.
+          const forked = forkOf.has(s.sessionId);
           return (
             <Text key={s.sessionId} inverse={sel && focused} bold={sel && !focused} wrap="truncate-end">
               {sel ? CARET : CARET_OFF}
               {isSpot ? <Text dimColor>○</Text> : <Text color="green">🔗</Text>}{' '}
-              {truncate(s.title, 44)}{' '}
+              {forked ? <Text color="magenta">⑂ </Text> : null}
+              {truncate(s.title, forked ? 42 : 44)}{' '}
               <Text dimColor>· {s.gitBranch || '-'} · {relTime(s.ts)}</Text>
             </Text>
           );
         })
       )}
       {detail ? (
-        <SessionDetailPane s={detail} firstLines={firstLines} lastLines={lastLines} columns={columns} />
+        <SessionDetailPane
+          s={detail}
+          firstLines={firstLines}
+          lastLines={lastLines}
+          columns={columns}
+          origin={forkOf.get(detail.sessionId) ?? null}
+        />
       ) : null}
     </Box>
   );
@@ -1276,11 +1360,14 @@ function SessionDetailPane({
   firstLines,
   lastLines,
   columns,
+  origin,
 }: {
   s: Session;
   firstLines: number;
   lastLines: number;
   columns: number;
+  /** T28 — id d'origine se la sessione è un ramo, altrimenti null. */
+  origin: string | null;
 }) {
   const width = detailTextWidth(columns);
   const first = s.customTitle && firstLines > 0 ? wrapLines(s.firstPrompt, width, firstLines) : [];
@@ -1288,8 +1375,12 @@ function SessionDetailPane({
   return (
     <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
       <Text bold wrap="truncate-end">{s.title}</Text>
+      {/* La provenienza va IN CODA alla riga meta esistente, non su una riga
+          propria: il budget d'altezza conta le righe fisse del pannello e una
+          riga in più le sforerebbe senza passare da layoutBudget. */}
       <Text dimColor wrap="truncate-end">
         {fmtSize(s.sizeBytes)} · {s.turns} turni · {fmtDateTime(s.ts)}
+        {origin ? ` · ⑂ da ${origin.slice(0, 8)}` : ''}
       </Text>
       {first.map((line, i) => (
         <Text key={`f${i}`} dimColor wrap="truncate-end">

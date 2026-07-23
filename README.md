@@ -62,6 +62,7 @@ Assegnazioni correnti:
 | modale | `E` | edit priorità/stato della task selezionata (salva + commit) |
 | modale | `S` | sort chain |
 | modale | `F` | filtri |
+| immediata | `f` | **forka** la sessione selezionata (solo col focus sul pane Sessions) |
 | immediata | `t` | terminale @project-root (surface standard launch) |
 | immediata | `c` | sessione Claude **nuda**: nessuna task, nessun prompt iniziale |
 | immediata | `w` | salva la vista corrente su disco |
@@ -77,7 +78,30 @@ sono configurate ma non raggiungibili (e la legenda lo dice).
 
 `t` e `c` sono gemelle: entrambe aprono una surface del cappello nella stessa
 finestra Ptyxis, senza passare da un modale. `c` (minuscola, azione) e `C`
-(maiuscola, modale create-task) restano distinte per la regola sopra.
+(maiuscola, modale create-task) restano distinte per la regola sopra — così come
+`f` (fork) e `F` (filtri).
+
+### `f` — forkare una conversazione
+
+Il fork rama la sessione selezionata: `claude --resume <origine> --fork-session`
+apre un **sessionId nuovo** con il transcript copiato, lasciando l'origine
+intatta. Serve quando vuoi ripartire da un certo stato senza perdere il ramo
+originale — e siccome i due id sono distinti, non esistono mai due processi che
+scrivono lo stesso file (il vincolo *single-writer* dello store di Claude Code).
+
+Il nuovo id lo genera il deck e lo pinna con `--session-id`, per due ragioni:
+
+- il ramo **eredita la task** dell'origine (senza id noto in anticipo il fork
+  di una sessione scoped comparirebbe come spot);
+- il **lineage** finisce nel sidecar `.claude/loom/session-tasks.jsonl` come
+  campo `forkOf`. Serve perché il transcript del fork **non nomina** la sessione
+  d'origine da nessuna parte: è una copia verbatim (stessi uuid dei messaggi) e
+  `parentUuid` incatena i messaggi dentro un transcript, non le sessioni fra
+  loro. Senza quel record un ramo sarebbe una riga gemella dell'originale, di
+  cui eredita anche il titolo.
+
+Un ramo si riconosce dal marker `⑂` nella lista e dalla riga `⑂ da <id>` nel
+pannello di dettaglio; la sua tab Ptyxis titola `<label> · <task> · fork`.
 
 > **Nota di migrazione (0.6.0)**: `c` → **`C`** per creare una task, e le voci
 > `codium`/`idea` non hanno più una lettera dedicata (erano `C`/`I` hardcoded):

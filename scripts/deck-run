@@ -10,6 +10,10 @@
 # Con --no-task la sessione è NUDA: niente LOOM_TASK, niente prompt iniziale,
 # niente --session-id. Serve al lavoro spot che non appartiene a nessuna task.
 #
+# Con --resume <sid> riprende una conversazione esistente; aggiungendo --fork la
+# riprende RAMANDOLA (`--fork-session`): id nuovo, transcript copiato, l'origine
+# resta intatta e scrivibile.
+#
 # Modalità spawn (LOOM_DECK_SPAWN_MODE):
 #   inline   → ptyxis --tab -- <cmd>            (default)  comando inline, LOOM_TASK diretta, zero dconf
 #   profile  → ptyxis --tab-with-profile=<UUID>            riusa il profilo, riscrive il custom-command via dconf
@@ -32,6 +36,7 @@ TASK=""
 SESSION_ID=""
 RESUME_ID=""
 NO_TASK=0
+FORK=0
 # Positional <TaskID> + flag opzionale --session-id <uuid> (T27): il deck genera
 # l'UUID e lo pinna così il binding sidecar sessionId↔taskId è deterministico.
 # --no-task (T42): modalità NUDA, senza TaskID — nessuna LOOM_TASK, nessun prompt
@@ -43,6 +48,13 @@ NO_TASK=0
 # <sid>` (spot: resume nudo). Su resume niente prompt iniziale (si continua la
 # conversazione, non se ne inietta una nuova) e niente --session-id (l'id ce
 # l'ha già la sessione ripresa).
+# --fork (T28): MODIFICATORE di --resume, speculare al `--fork-session` del CLI
+# (che è definito allo stesso modo: "when resuming, create a new session ID").
+# Non è una terza forma di spawn ma una variante della ripresa → richiede
+# --resume, e senza di esso è un errore d'uso, non un fork "dell'ultima".
+# Sotto --fork il --session-id torna AMMESSO (anzi: è il punto) — la mutua
+# esclusione con --resume esiste perché una ripresa nuda riscrive il transcript
+# dell'id ripreso, mentre il fork ne apre uno NUOVO, che possiamo quindi pinnare.
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --session-id)
@@ -53,6 +65,8 @@ while [[ $# -gt 0 ]]; do
       RESUME_ID="${2:-}"; shift 2 ;;
     --resume=*)
       RESUME_ID="${1#*=}"; shift ;;
+    --fork)
+      FORK=1; shift ;;
     --no-task)
       NO_TASK=1; shift ;;
     *)
@@ -64,7 +78,9 @@ done
 USAGE="uso: deck-run <TaskID> [--session-id <uuid>]   (es. deck-run T18)
      | deck-run --no-task                          (sessione nuda, senza task)
      | deck-run <TaskID> --resume <uuid>           (riprende sessione scoped)
-     | deck-run --no-task --resume <uuid>          (riprende sessione spot)"
+     | deck-run --no-task --resume <uuid>          (riprende sessione spot)
+     | deck-run <TaskID> --resume <uuid> --fork [--session-id <nuovo-uuid>]
+                                                   (forka: ramo con id NUOVO)"
 
 if [[ $NO_TASK -eq 1 && -n "$TASK" ]]; then
   echo "--no-task e <TaskID> sono mutuamente esclusivi" >&2
@@ -75,8 +91,14 @@ if [[ $NO_TASK -eq 0 && -z "$TASK" ]]; then
   echo "$USAGE" >&2
   exit 2
 fi
-if [[ -n "$RESUME_ID" && -n "$SESSION_ID" ]]; then
+if [[ $FORK -eq 1 && -z "$RESUME_ID" ]]; then
+  echo "--fork richiede --resume <uuid>: si forka una conversazione esistente, non il nulla" >&2
+  echo "$USAGE" >&2
+  exit 2
+fi
+if [[ -n "$RESUME_ID" && -n "$SESSION_ID" && $FORK -eq 0 ]]; then
   echo "--resume e --session-id sono mutuamente esclusivi (la sessione ripresa ha già il suo id)" >&2
+  echo "usa --fork se vuoi un ramo con id nuovo" >&2
   echo "$USAGE" >&2
   exit 2
 fi
@@ -125,6 +147,11 @@ if [[ -n "$_cfg" ]]; then
     if [[ $NO_TASK -eq 1 ]]; then TITLE="${_label}"; else TITLE="${_label} · ${TASK}"; fi
   fi
 fi
+# Suffisso fork (T28): un ramo eredita task e label dell'origine, quindi senza
+# marcatore le due tab risulterebbero omonime nella stessa window. Suffisso e
+# non prefisso perché il match compass è `.includes(label)` e la label deve
+# restare intatta in testa — stesso schema di `· <task>` e `· deck`.
+[[ $FORK -eq 1 ]] && TITLE="${TITLE} · fork"
 
 # ── permissionMode (T45) ─────────────────────────────────────────────────────
 # Precedenza: env LOOM_DECK_PERMISSION_MODE > campo del file config > 'manual'.
@@ -155,6 +182,13 @@ SID_FLAG=""
 RES_FLAG=""
 [[ -n "$RESUME_ID" ]] && RES_FLAG="--resume ${RESUME_ID} "
 
+# --fork-session per la tab (T28): CC apre un id NUOVO invece di riscrivere
+# quello ripreso → mai due writer sullo stesso JSONL. Terzo gemello del pattern
+# flag-opzionale, per la stessa ragione degli altri due: la variante non deve
+# duplicare IN_TAB_CMD.
+FORK_FLAG=""
+[[ $FORK -eq 1 ]] && FORK_FLAG="--fork-session "
+
 # Prompt iniziale della sessione. Default: prompt DIRETTO (no skill) che chiede
 # a Claude un recap dello stato della task — l'utente rivede/steera prima di
 # lanciare (= più controllo), nessuna esecuzione automatica. Override completo via
@@ -177,13 +211,18 @@ fi
 # iniezione LOOM_TASK, prompt iniziale, --session-id pinnato. Resta claude nudo,
 # titolato e con il permission mode del progetto.
 # Su resume (T49) il prompt iniziale salta anche nel ramo task: riprendere una
-# conversazione significa continuarla, non iniettarle un nuovo messaggio.
+# conversazione significa continuarla, non iniettarle un nuovo messaggio. Il
+# fork (T28) ricade nello stesso ramo — è una ripresa, con id nuovo.
 PROMPT_ARG="'${PROMPT}'"
 [[ -n "$RESUME_ID" ]] && PROMPT_ARG=""
+# Il SID_FLAG entra anche nel ramo --no-task, che altrimenti lo scarta insieme
+# agli altri elementi task-bound: nel fork di una sessione SPOT il sessionId
+# pinnato non serve a legare una task (non c'è) ma a rendere noto in anticipo
+# l'id del ramo, senza il quale il lineage non sarebbe registrabile.
 if [[ $NO_TASK -eq 1 ]]; then
-  _default_intab="claude --name '${TITLE}' ${MODE_FLAG}${RES_FLAG}"
+  _default_intab="claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}"
 else
-  _default_intab="LOOM_TASK=${TASK} claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}${RES_FLAG}${PROMPT_ARG}"
+  _default_intab="LOOM_TASK=${TASK} claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}${PROMPT_ARG}"
 fi
 IN_TAB_CMD="${LOOM_DECK_INTAB_CMD:-$_default_intab}"
 
