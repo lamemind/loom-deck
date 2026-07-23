@@ -1,6 +1,6 @@
 {
   "name": "@lamemind/loom-deck",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Deck TUI Ink per-progetto della famiglia loom: legge tasks.md e spawna sessioni Claude Code bound via LOOM_TASK",
   "type": "module",
   "bin": {

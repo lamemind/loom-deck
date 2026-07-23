@@ -18,6 +18,8 @@ const input = (over: Partial<BudgetInput> = {}): BudgetInput => ({
   hasDetail: false,
   detailMetaLines: 0,
   hasSessionDetail: false,
+  sessionHasFirstPreview: false,
+  sessionHasLastPreview: false,
   ...over,
 });
 
@@ -32,9 +34,10 @@ const frameHeight = (i: BudgetInput, b: ReturnType<typeof layoutBudget>) => {
     2 + 1 + 1 + (i.launchLine ? 1 : 0) + MODAL_HEIGHT[i.mode] + 1 + (i.noteLine ? 1 : 0);
   const tasksCol =
     5 + b.taskRows + (b.detailLines > 0 ? 3 + i.detailMetaLines + b.detailLines : 0);
-  // Detail pane sessione (T49): 3 chrome + 2 fisse (titolo, meta) + preview.
+  // Detail pane sessione (T49): 3 chrome + 2 fisse (titolo, meta) + le due
+  // preview (primo prompt + ultima risposta).
   const sessionsCol =
-    3 + b.sessionRows + (b.sessionDetail ? 3 + 2 + b.sessionPreviewLines : 0);
+    3 + b.sessionRows + (b.sessionDetail ? 3 + 2 + b.sessionFirstLines + b.sessionLastLines : 0);
   return outer + Math.max(tasksCol, sessionsCol);
 };
 
@@ -46,22 +49,31 @@ test('layoutBudget: il frame resta sotto stdout.rows su ogni combinazione', () =
         for (const noteLine of [false, true]) {
           for (const hasDetail of [false, true]) {
             for (const hasSessionDetail of [false, true]) {
-              for (const detailMetaLines of [1, 2, 3]) {
-                const i = input({
-                  rows,
-                  mode,
-                  launchLine,
-                  noteLine,
-                  hasDetail,
-                  detailMetaLines,
-                  hasSessionDetail,
-                });
-                const h = frameHeight(i, layoutBudget(i));
-                // Condizione di Ink: `outputHeight >= rows` → ramo clearTerminal.
-                assert.ok(
-                  h <= rows - SLACK,
-                  `frame ${h} > ${rows - SLACK} (rows=${rows} mode=${mode} detail=${hasDetail} sessionDetail=${hasSessionDetail})`,
-                );
+              for (const previews of [
+                [false, false],
+                [true, false],
+                [false, true],
+                [true, true],
+              ] as const) {
+                for (const detailMetaLines of [1, 2, 3]) {
+                  const i = input({
+                    rows,
+                    mode,
+                    launchLine,
+                    noteLine,
+                    hasDetail,
+                    detailMetaLines,
+                    hasSessionDetail,
+                    sessionHasFirstPreview: hasSessionDetail && previews[0],
+                    sessionHasLastPreview: hasSessionDetail && previews[1],
+                  });
+                  const h = frameHeight(i, layoutBudget(i));
+                  // Condizione di Ink: `outputHeight >= rows` → ramo clearTerminal.
+                  assert.ok(
+                    h <= rows - SLACK,
+                    `frame ${h} > ${rows - SLACK} (rows=${rows} mode=${mode} detail=${hasDetail} sessionDetail=${hasSessionDetail} previews=${previews})`,
+                  );
+                }
               }
             }
           }
@@ -102,17 +114,44 @@ test('layoutBudget: un pane non-compact mostra sempre almeno una task', () => {
   }
 });
 
-test('layoutBudget: detail pane sessione su terminale alto → preview piena, lista ridotta del costo', () => {
+test('layoutBudget: detail pane sessione su terminale alto → entrambe le preview piene, lista ridotta del costo', () => {
   const base = layoutBudget(input({ rows: 60 }));
-  const b = layoutBudget(input({ rows: 60, hasSessionDetail: true }));
+  const b = layoutBudget(
+    input({ rows: 60, hasSessionDetail: true, sessionHasFirstPreview: true, sessionHasLastPreview: true }),
+  );
   assert.equal(b.sessionDetail, true);
-  assert.equal(b.sessionPreviewLines, 2);
-  // Costo intero del pannello: 3 chrome + 2 fisse + 2 preview.
-  assert.equal(base.sessionRows - b.sessionRows, 7);
+  assert.equal(b.sessionFirstLines, 2);
+  assert.equal(b.sessionLastLines, 2);
+  // Costo intero del pannello: 3 chrome + 2 fisse + 2 first + 2 last.
+  assert.equal(base.sessionRows - b.sessionRows, 9);
+});
+
+test('layoutBudget: solo ultima risposta (nessun titolo custom) → riservate solo le sue righe', () => {
+  const b = layoutBudget(input({ rows: 60, hasSessionDetail: true, sessionHasLastPreview: true }));
+  assert.equal(b.sessionFirstLines, 0);
+  assert.equal(b.sessionLastLines, 2);
+});
+
+test('layoutBudget: primo prompt ha priorità sull\'ultima risposta quando lo spazio è poco', () => {
+  // spare = 1: basta per 1 riga di preview, va al primo prompt, l'ultima resta a 0.
+  // rows scelto per lasciare esattamente 1 riga di spare al pannello.
+  let found = false;
+  for (let rows = 8; rows <= 80; rows++) {
+    const b = layoutBudget(
+      input({ rows, hasSessionDetail: true, sessionHasFirstPreview: true, sessionHasLastPreview: true }),
+    );
+    if (b.sessionDetail && b.sessionFirstLines === 1) {
+      assert.equal(b.sessionLastLines, 0, `rows=${rows}: con 1 sola riga di preview vince il primo prompt`);
+      found = true;
+    }
+  }
+  assert.ok(found, 'nessun rows produce esattamente 1 riga di preview — copertura mancante');
 });
 
 test('layoutBudget: detail pane sessione sacrificato prima della lista minima', () => {
-  const b = layoutBudget(input({ rows: 14, hasSessionDetail: true }));
+  const b = layoutBudget(
+    input({ rows: 14, hasSessionDetail: true, sessionHasFirstPreview: true, sessionHasLastPreview: true }),
+  );
   assert.equal(b.compact, false);
   assert.equal(b.sessionDetail, false);
   assert.ok(b.sessionRows >= 3);
@@ -120,7 +159,9 @@ test('layoutBudget: detail pane sessione sacrificato prima della lista minima', 
 
 test('layoutBudget: detail pane sessione concesso → lista sessioni mai sotto il minimo', () => {
   for (let rows = 8; rows <= 80; rows++) {
-    const b = layoutBudget(input({ rows, hasSessionDetail: true }));
+    const b = layoutBudget(
+      input({ rows, hasSessionDetail: true, sessionHasFirstPreview: true, sessionHasLastPreview: true }),
+    );
     if (b.sessionDetail) assert.ok(b.sessionRows >= 3, `rows=${rows} → lista sotto il minimo`);
   }
 });

@@ -69,7 +69,8 @@ const SESSIONS_PANE_CHROME = 3; // 2 bordi + header "Sessions · …"
 const DETAIL_CHROME = 3; // marginTop + 2 bordi
 
 /** Detail pane sessione (T49): righe fisse = titolo + riga meta (size · turni ·
- *  ultima attività). La preview del primo prompt è la parte variabile. */
+ *  ultima attività). Le preview (primo prompt + ultima risposta) sono variabili,
+ *  ciascuna al più MAX_SESSION_PREVIEW righe. */
 const SESSION_DETAIL_FIXED = 2;
 const MAX_SESSION_PREVIEW = 2;
 /** Gemello di MIN_TASK_ROWS: sotto questa soglia la lista sessioni non serve
@@ -97,8 +98,10 @@ export type Budget = {
   detailLines: number;
   /** Detail pane sessione (T49): richiesto E con spazio; false = omesso. */
   sessionDetail: boolean;
-  /** Righe di preview primo-prompt concesse al detail pane sessione. */
-  sessionPreviewLines: number;
+  /** Righe di preview del PRIMO prompt concesse al detail pane sessione. */
+  sessionFirstLines: number;
+  /** Righe di preview dell'ULTIMA risposta del modello. */
+  sessionLastLines: number;
   /**
    * Il terminale non ospita nemmeno la cornice a righe zero: il layout a box va
    * abbandonato per una riga singola. Non è un caso di lusso — un terminale
@@ -122,6 +125,11 @@ export type BudgetInput = {
   detailMetaLines: number;
   /** Detail pane sessione richiesto (focus sessions + sessione selezionata). */
   hasSessionDetail: boolean;
+  /** La sessione selezionata ha un titolo custom → la preview del primo prompt
+   *  aggiunge info (senza, titolo === primo prompt e la riga duplicherebbe). */
+  sessionHasFirstPreview: boolean;
+  /** La sessione selezionata ha un'ultima risposta del modello da mostrare. */
+  sessionHasLastPreview: boolean;
 };
 
 /**
@@ -157,25 +165,34 @@ export function layoutBudget(input: BudgetInput): Budget {
       sessionRows: 0,
       detailLines: 0,
       sessionDetail: false,
-      sessionPreviewLines: 0,
+      sessionFirstLines: 0,
+      sessionLastLines: 0,
       compact: true,
     };
   }
 
   // Detail pane sessione (T49): stesso schema del dettaglio task — prima la
-  // lista minima, poi la cornice, la preview solo con lo spazio che avanza.
+  // lista minima, poi la cornice, le preview solo con lo spazio che avanza.
   // A differenza del dettaglio task il box regge anche senza righe variabili:
-  // titolo + meta sono il valore, la preview è bonus.
+  // titolo + meta sono il valore, le preview (primo prompt + ultima risposta)
+  // sono bonus. Priorità al primo prompt, poi l'ultima risposta prende ciò che
+  // resta: su terminale stretto cade prima l'ultima risposta, non il primo.
+  // Riservo righe solo per le preview che davvero renderizzeranno (i due
+  // `has…Preview`), così non sottraggo righe alla lista per un blocco vuoto.
   let sessionDetail = false;
   let sessionDetailCost = 0;
-  let sessionPreviewLines = 0;
+  let sessionFirstLines = 0;
+  let sessionLastLines = 0;
   if (input.hasSessionDetail) {
     const fixed = DETAIL_CHROME + SESSION_DETAIL_FIXED;
     const spare = avail - SESSIONS_PANE_CHROME - MIN_SESSION_ROWS - fixed;
     if (spare >= 0) {
       sessionDetail = true;
-      sessionPreviewLines = Math.min(MAX_SESSION_PREVIEW, spare);
-      sessionDetailCost = fixed + sessionPreviewLines;
+      if (input.sessionHasFirstPreview) sessionFirstLines = Math.min(MAX_SESSION_PREVIEW, spare);
+      if (input.sessionHasLastPreview) {
+        sessionLastLines = Math.min(MAX_SESSION_PREVIEW, spare - sessionFirstLines);
+      }
+      sessionDetailCost = fixed + sessionFirstLines + sessionLastLines;
     }
   }
 
@@ -197,7 +214,15 @@ export function layoutBudget(input: BudgetInput): Budget {
 
   const taskRows = Math.max(0, avail - TASKS_PANE_CHROME - detailChrome - detailLines);
 
-  return { taskRows, sessionRows, detailLines, sessionDetail, sessionPreviewLines, compact: false };
+  return {
+    taskRows,
+    sessionRows,
+    detailLines,
+    sessionDetail,
+    sessionFirstLines,
+    sessionLastLines,
+    compact: false,
+  };
 }
 
 /**

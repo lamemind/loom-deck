@@ -34,6 +34,9 @@ export interface Session {
   customTitle: string;
   /** Primo prompt utente, già ripulito (preview nel detail pane T49). */
   firstPrompt: string;
+  /** Ultima risposta del modello, già ripulita, last-wins (preview nel detail
+   *  pane accanto al primo prompt: "da dove parte, dove è arrivata"). */
+  lastReply: string;
 }
 
 export interface SessionGroup {
@@ -62,7 +65,12 @@ function cleanPreview(s: string): string {
     .trim();
 }
 
-function extractUserText(message: unknown): string {
+// Estrae il primo blocco di testo dal `message` di un record. Funziona sia sui
+// record `type:user` sia sugli `type:assistant`: entrambi portano `content` come
+// stringa o array di blocchi, e un blocco di testo è `{type:'text', text}`. Il
+// nome è generico apposta — l'ultima risposta del modello (T49 first+last) esce
+// dallo stesso estrattore del primo prompt utente.
+function extractText(message: unknown): string {
   if (!message || typeof message !== 'object') return '';
   const content = (message as { content?: unknown }).content;
   if (typeof content === 'string') return cleanPreview(content);
@@ -101,6 +109,7 @@ function parseSessionFile(path: string, mtime: number, sizeBytes: number): Sessi
   let parentUuid: string | null = null;
   let customTitle = '';
   let firstUserText = '';
+  let lastAssistantText = '';
   let turns = 0;
 
   for (const line of content.split('\n')) {
@@ -120,12 +129,18 @@ function parseSessionFile(path: string, mtime: number, sizeBytes: number): Sessi
     if (typeof d.customTitle === 'string' && d.customTitle) customTitle = d.customTitle; // last-wins
     if (d.type === 'user') {
       // T49: turno = prompt umano. I tool_result viaggiano anch'essi come
-      // type:user ma senza blocchi text → extractUserText '' li esclude.
-      const t = extractUserText(d.message);
+      // type:user ma senza blocchi text → extractText '' li esclude.
+      const t = extractText(d.message);
       if (t) {
         turns++;
         if (!firstUserText) firstUserText = t;
       }
+    } else if (d.type === 'assistant') {
+      // Ultima risposta del modello: last-wins (come customTitle), niente
+      // early-stop — l'ultima riga assistant con testo è quella buona. I
+      // record assistant di solo tool_use danno '' e non sovrascrivono.
+      const t = extractText(d.message);
+      if (t) lastAssistantText = t;
     }
   }
 
@@ -143,6 +158,7 @@ function parseSessionFile(path: string, mtime: number, sizeBytes: number): Sessi
     turns,
     customTitle,
     firstPrompt: firstUserText,
+    lastReply: lastAssistantText,
   };
 }
 

@@ -856,6 +856,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     // T49 — il detail pane sessione esiste solo con il focus sul pane: è
     // l'hover, non uno stato persistente; navigando le task non ruba righe.
     hasSessionDetail: canResume,
+    // Riservo righe di preview solo per i blocchi che davvero renderizzano: il
+    // primo prompt aggiunge info solo con un titolo custom (senza, titolo ===
+    // primo prompt); l'ultima risposta solo se il modello ha già risposto.
+    sessionHasFirstPreview: canResume && Boolean(selSessionObj?.customTitle),
+    sessionHasLastPreview: canResume && Boolean(selSessionObj?.lastReply),
   });
 
   // Finestre di rendering. Le liste "logiche" (viewTasks, visibleSessions)
@@ -966,7 +971,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           above={sessionWin.start}
           below={visibleSessions.length - sessionWin.end}
           detail={budget.sessionDetail ? selSessionObj : null}
-          previewLines={budget.sessionPreviewLines}
+          firstLines={budget.sessionFirstLines}
+          lastLines={budget.sessionLastLines}
           columns={columns}
         />
       </Box>
@@ -1196,7 +1202,8 @@ function SessionsPane({
   above,
   below,
   detail,
-  previewLines,
+  firstLines,
+  lastLines,
   columns,
 }: {
   parentLabel: string;
@@ -1212,8 +1219,10 @@ function SessionsPane({
   below: number;
   /** T49 — sessione nel detail pane; null = pannello omesso (dal budget). */
   detail: Session | null;
-  /** Righe di preview primo-prompt concesse dal budget. */
-  previewLines: number;
+  /** Righe di preview del primo prompt concesse dal budget. */
+  firstLines: number;
+  /** Righe di preview dell'ultima risposta del modello. */
+  lastLines: number;
   columns: number;
 }) {
   return (
@@ -1248,7 +1257,7 @@ function SessionsPane({
         })
       )}
       {detail ? (
-        <SessionDetailPane s={detail} previewLines={previewLines} columns={columns} />
+        <SessionDetailPane s={detail} firstLines={firstLines} lastLines={lastLines} columns={columns} />
       ) : null}
     </Box>
   );
@@ -1256,31 +1265,41 @@ function SessionsPane({
 
 // T49 — detail pane della sessione selezionata (hover), gemello del DetailPane
 // task. Tutti i campi vengono dal parse già cached dell'adapter (mtime-keyed):
-// il pannello non costa I/O al movimento di selezione. La preview del primo
-// prompt compare SOLO con un titolo custom — senza, il titolo È già il primo
-// prompt e la riga lo duplicherebbe (D4 preflight). Renderizzare meno righe del
-// riservato è sicuro: il frame esce più corto, mai più alto del budget.
+// il pannello non costa I/O al movimento di selezione. Mostra "da dove parte,
+// dove è arrivata": il primo prompt utente (`» `) e l'ultima risposta del
+// modello (`« `). La preview del primo prompt compare SOLO con un titolo custom
+// — senza, il titolo È già il primo prompt e la riga lo duplicherebbe (D4
+// preflight). Le righe rese non superano mai il riservato dal budget
+// (`firstLines`/`lastLines`); renderne meno è sicuro (frame più corto).
 function SessionDetailPane({
   s,
-  previewLines,
+  firstLines,
+  lastLines,
   columns,
 }: {
   s: Session;
-  previewLines: number;
+  firstLines: number;
+  lastLines: number;
   columns: number;
 }) {
-  const lines = s.customTitle
-    ? wrapLines(s.firstPrompt, detailTextWidth(columns), previewLines)
-    : [];
+  const width = detailTextWidth(columns);
+  const first = s.customTitle && firstLines > 0 ? wrapLines(s.firstPrompt, width, firstLines) : [];
+  const last = s.lastReply && lastLines > 0 ? wrapLines(s.lastReply, width, lastLines) : [];
   return (
     <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
       <Text bold wrap="truncate-end">{s.title}</Text>
       <Text dimColor wrap="truncate-end">
         {fmtSize(s.sizeBytes)} · {s.turns} turni · {fmtDateTime(s.ts)}
       </Text>
-      {lines.map((line, i) => (
-        <Text key={i} dimColor wrap="truncate-end">
+      {first.map((line, i) => (
+        <Text key={`f${i}`} dimColor wrap="truncate-end">
           {i === 0 ? '» ' : '  '}
+          {line}
+        </Text>
+      ))}
+      {last.map((line, i) => (
+        <Text key={`l${i}`} dimColor wrap="truncate-end">
+          {i === 0 ? '« ' : '  '}
           {line}
         </Text>
       ))}
