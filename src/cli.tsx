@@ -123,6 +123,19 @@ function spawnDeck(id: string, cwd: string, sessionId: string) {
   return child;
 }
 
+// T49 — resume di una sessione esistente come nuova tab Ptyxis. Scoped (taskId
+// presente) → `deck-run <task> --resume <sid>`: la ripresa eredita LOOM_TASK +
+// titolo `· <task>` (D2 preflight, l'hook SessionStart ricarica il contesto
+// task). Spot → `--no-task --resume`: resume nudo, solo label progetto. Nessun
+// prompt iniziale in entrambi i casi: riprendere una conversazione significa
+// continuarla, non iniettarle un messaggio (lo salta deck-run).
+function spawnDeckResume(taskId: string | null, cwd: string, sessionId: string) {
+  const args = taskId ? [taskId, '--resume', sessionId] : ['--no-task', '--resume', sessionId];
+  const child = spawn(DECK_RUN, args, { cwd, detached: true, stdio: 'ignore' });
+  child.unref();
+  return child;
+}
+
 // T42 — sessione Claude NUDA: nessuna task, nessun prompt iniziale, nessun
 // sessionId pinnato (quindi nessuna entry nel sidecar session-tasks.jsonl: senza
 // task non c'è nulla da legare). Funzione separata e non un parametro opzionale
@@ -400,6 +413,21 @@ const CARET_OFF = '  ';
 // `✔️` così `isDone()` continua a matchare.
 function displayProg(prog: string): string {
   return forceEmojiWidth(prog.replace(/✔️?/g, '✅'));
+}
+
+// T49 — size umana compatta per il detail pane sessione.
+function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// T49 — ultima attività ESTESA (giorno/mese ora:minuti) per il detail pane;
+// nella riga di lista resta il relTime compatto.
+function fmtDateTime(ts: number): string {
+  const d = new Date(ts);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 // Età relativa compatta (ms epoch → "2m"/"3h"/"5d") per il preview sessioni.
@@ -737,7 +765,19 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           setNote(`⏎ spawn ${selTask.id} → tab CC (sid ${sid.slice(0, 8)})`);
         }
       } else {
-        setNote('sessioni read-only in T27 · fork/resume → T28');
+        // T49 — ⏎ su una sessione = resume in nuova tab. Il binding si rilegge
+        // dal sidecar (non dal padre selezionato): vale anche per le spot.
+        const s = visibleSessions[selSession];
+        if (!s) {
+          setNote('nessuna sessione da riprendere');
+        } else {
+          const bound = bindings.get(s.sessionId) ?? null;
+          const child = spawnDeckResume(bound, cwd, s.sessionId);
+          child.on('error', () => setNote(`⚠ resume fallito (${DECK_RUN})`));
+          setNote(
+            `⏎ resume ${s.sessionId.slice(0, 8)} → tab CC${bound ? ` (${bound})` : ' (spot)'}`,
+          );
+        }
       }
     } else if (input === 'C') {
       setNote('');
@@ -789,9 +829,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     }
   });
 
-  const selSessionId = visibleSessions[selSession]?.sessionId;
+  const selSessionObj = visibleSessions[selSession] ?? null;
+  const selSessionId = selSessionObj?.sessionId;
   const parentLabel = isSpot ? 'spot' : selectedTaskId ?? '—';
   const canSpawn = focus === 'tasks' && !isSpot;
+  const canResume = focus === 'sessions' && selSessionObj !== null;
   // Larghezza dal medesimo hook che dà l'altezza: dopo un resize la legenda si
   // ricalcola con lo stesso re-render che ridimensiona i pane.
   const legend = launchLegend(launch, columns);
@@ -811,6 +853,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     noteLine: Boolean(note),
     hasDetail: Boolean(detail),
     detailMetaLines: detailParts?.metaLines ?? 0,
+    // T49 — il detail pane sessione esiste solo con il focus sul pane: è
+    // l'hover, non uno stato persistente; navigando le task non ruba righe.
+    hasSessionDetail: canResume,
   });
 
   // Finestre di rendering. Le liste "logiche" (viewTasks, visibleSessions)
@@ -861,8 +906,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         </Text>
       ) : (
         <Text dimColor wrap="truncate-end">
-          ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : '—'} · C nuova · E edit · S sort · F filtri · w
-          salva · t term · c claude · q esci · focus: <Text color="cyan">{focus}</Text>
+          ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : canResume ? 'resume' : '—'} · C nuova · E
+          edit · S sort · F filtri · w salva · t term · c claude · q esci · focus:{' '}
+          <Text color="cyan">{focus}</Text>
         </Text>
       )}
       {/* T43 — riga dedicata alla mappa indice→launch. Nessuna voce configurata
@@ -919,6 +965,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           focused={focus === 'sessions'}
           above={sessionWin.start}
           below={visibleSessions.length - sessionWin.end}
+          detail={budget.sessionDetail ? selSessionObj : null}
+          previewLines={budget.sessionPreviewLines}
+          columns={columns}
         />
       </Box>
       {note ? <Text color="green" wrap="truncate-end">{normalizeEmoji(note)}</Text> : null}
@@ -1146,6 +1195,9 @@ function SessionsPane({
   focused,
   above,
   below,
+  detail,
+  previewLines,
+  columns,
 }: {
   parentLabel: string;
   isSpot: boolean;
@@ -1158,6 +1210,11 @@ function SessionsPane({
   /** Sessioni fuori finestra sopra / sotto. */
   above: number;
   below: number;
+  /** T49 — sessione nel detail pane; null = pannello omesso (dal budget). */
+  detail: Session | null;
+  /** Righe di preview primo-prompt concesse dal budget. */
+  previewLines: number;
+  columns: number;
 }) {
   return (
     <Box
@@ -1190,6 +1247,43 @@ function SessionsPane({
           );
         })
       )}
+      {detail ? (
+        <SessionDetailPane s={detail} previewLines={previewLines} columns={columns} />
+      ) : null}
+    </Box>
+  );
+}
+
+// T49 — detail pane della sessione selezionata (hover), gemello del DetailPane
+// task. Tutti i campi vengono dal parse già cached dell'adapter (mtime-keyed):
+// il pannello non costa I/O al movimento di selezione. La preview del primo
+// prompt compare SOLO con un titolo custom — senza, il titolo È già il primo
+// prompt e la riga lo duplicherebbe (D4 preflight). Renderizzare meno righe del
+// riservato è sicuro: il frame esce più corto, mai più alto del budget.
+function SessionDetailPane({
+  s,
+  previewLines,
+  columns,
+}: {
+  s: Session;
+  previewLines: number;
+  columns: number;
+}) {
+  const lines = s.customTitle
+    ? wrapLines(s.firstPrompt, detailTextWidth(columns), previewLines)
+    : [];
+  return (
+    <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+      <Text bold wrap="truncate-end">{s.title}</Text>
+      <Text dimColor wrap="truncate-end">
+        {fmtSize(s.sizeBytes)} · {s.turns} turni · {fmtDateTime(s.ts)}
+      </Text>
+      {lines.map((line, i) => (
+        <Text key={i} dimColor wrap="truncate-end">
+          {i === 0 ? '» ' : '  '}
+          {line}
+        </Text>
+      ))}
     </Box>
   );
 }

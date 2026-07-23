@@ -24,6 +24,16 @@ export interface Session {
   title: string;
   ts: number; // ordering key = file mtimeMs
   path: string;
+  /** Dimensione del transcript su disco (stat, non parse). */
+  sizeBytes: number;
+  /** Turni = messaggi user con testo estraibile. Esclude i record type:user
+   *  che portano solo tool_result (stesso type, ma non sono prompt umani). */
+  turns: number;
+  /** Titolo custom esplicito ('' se mai settato) — il campo `title` è la
+   *  derivata display (custom || primo prompt || placeholder). */
+  customTitle: string;
+  /** Primo prompt utente, già ripulito (preview nel detail pane T49). */
+  firstPrompt: string;
 }
 
 export interface SessionGroup {
@@ -77,7 +87,7 @@ function extractUserText(message: unknown): string {
 // dentro l'adapter così l'invariante "unico modulo che tocca lo store" regge.
 const cache = new Map<string, { mtime: number; session: Session | null }>();
 
-function parseSessionFile(path: string, mtime: number): Session | null {
+function parseSessionFile(path: string, mtime: number, sizeBytes: number): Session | null {
   let content: string;
   try {
     content = readFileSync(path, 'utf8');
@@ -91,6 +101,7 @@ function parseSessionFile(path: string, mtime: number): Session | null {
   let parentUuid: string | null = null;
   let customTitle = '';
   let firstUserText = '';
+  let turns = 0;
 
   for (const line of content.split('\n')) {
     if (!line.trim()) continue;
@@ -107,9 +118,14 @@ function parseSessionFile(path: string, mtime: number): Session | null {
       parentUuid = d.parentUuid;
     }
     if (typeof d.customTitle === 'string' && d.customTitle) customTitle = d.customTitle; // last-wins
-    if (!firstUserText && d.type === 'user') {
+    if (d.type === 'user') {
+      // T49: turno = prompt umano. I tool_result viaggiano anch'essi come
+      // type:user ma senza blocchi text → extractUserText '' li esclude.
       const t = extractUserText(d.message);
-      if (t) firstUserText = t;
+      if (t) {
+        turns++;
+        if (!firstUserText) firstUserText = t;
+      }
     }
   }
 
@@ -123,6 +139,10 @@ function parseSessionFile(path: string, mtime: number): Session | null {
     title: normalizeEmoji(customTitle || firstUserText || '(senza titolo)'),
     ts: mtime,
     path,
+    sizeBytes,
+    turns,
+    customTitle,
+    firstPrompt: firstUserText,
   };
 }
 
@@ -144,8 +164,11 @@ export function discoverProjectSessions(projectRoot: string): Session[] {
     const path = join(dir, f);
     seen.add(path);
     let mtime: number;
+    let sizeBytes: number;
     try {
-      mtime = statSync(path).mtimeMs;
+      const st = statSync(path);
+      mtime = st.mtimeMs;
+      sizeBytes = st.size;
     } catch {
       continue;
     }
@@ -154,7 +177,7 @@ export function discoverProjectSessions(projectRoot: string): Session[] {
     if (cached && cached.mtime === mtime) {
       session = cached.session;
     } else {
-      session = parseSessionFile(path, mtime);
+      session = parseSessionFile(path, mtime, sizeBytes);
       cache.set(path, { mtime, session });
     }
     if (session && (session.cwd === projectRoot || session.cwd.startsWith(projectRoot + '/'))) {

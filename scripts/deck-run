@@ -30,18 +30,29 @@ set -euo pipefail
 
 TASK=""
 SESSION_ID=""
+RESUME_ID=""
 NO_TASK=0
 # Positional <TaskID> + flag opzionale --session-id <uuid> (T27): il deck genera
 # l'UUID e lo pinna così il binding sidecar sessionId↔taskId è deterministico.
 # --no-task (T42): modalità NUDA, senza TaskID — nessuna LOOM_TASK, nessun prompt
 # iniziale, nessun sessionId pinnato. Flag esplicito e non "positional opzionale"
 # perché un `deck-run` a mani vuote resta un errore d'uso, non una sessione spot.
+# --resume <sid> (T49): riapre una sessione esistente con `claude --resume`.
+# Componibile con entrambe le forme: `deck-run <TaskID> --resume <sid>` (scoped:
+# la ripresa eredita LOOM_TASK + titolo · task) e `deck-run --no-task --resume
+# <sid>` (spot: resume nudo). Su resume niente prompt iniziale (si continua la
+# conversazione, non se ne inietta una nuova) e niente --session-id (l'id ce
+# l'ha già la sessione ripresa).
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --session-id)
       SESSION_ID="${2:-}"; shift 2 ;;
     --session-id=*)
       SESSION_ID="${1#*=}"; shift ;;
+    --resume)
+      RESUME_ID="${2:-}"; shift 2 ;;
+    --resume=*)
+      RESUME_ID="${1#*=}"; shift ;;
     --no-task)
       NO_TASK=1; shift ;;
     *)
@@ -51,7 +62,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 USAGE="uso: deck-run <TaskID> [--session-id <uuid>]   (es. deck-run T18)
-     | deck-run --no-task                          (sessione nuda, senza task)"
+     | deck-run --no-task                          (sessione nuda, senza task)
+     | deck-run <TaskID> --resume <uuid>           (riprende sessione scoped)
+     | deck-run --no-task --resume <uuid>          (riprende sessione spot)"
 
 if [[ $NO_TASK -eq 1 && -n "$TASK" ]]; then
   echo "--no-task e <TaskID> sono mutuamente esclusivi" >&2
@@ -59,6 +72,11 @@ if [[ $NO_TASK -eq 1 && -n "$TASK" ]]; then
   exit 2
 fi
 if [[ $NO_TASK -eq 0 && -z "$TASK" ]]; then
+  echo "$USAGE" >&2
+  exit 2
+fi
+if [[ -n "$RESUME_ID" && -n "$SESSION_ID" ]]; then
+  echo "--resume e --session-id sono mutuamente esclusivi (la sessione ripresa ha già il suo id)" >&2
   echo "$USAGE" >&2
   exit 2
 fi
@@ -132,6 +150,11 @@ MODE_FLAG="--permission-mode ${PERM_MODE} "
 SID_FLAG=""
 [[ -n "$SESSION_ID" ]] && SID_FLAG="--session-id ${SESSION_ID} "
 
+# --resume per la tab (T49): riprende la sessione esistente. Stesso pattern
+# flag-opzionale di SID_FLAG — la variante resta dentro l'unico IN_TAB_CMD.
+RES_FLAG=""
+[[ -n "$RESUME_ID" ]] && RES_FLAG="--resume ${RESUME_ID} "
+
 # Prompt iniziale della sessione. Default: prompt DIRETTO (no skill) che chiede
 # a Claude un recap dello stato della task — l'utente rivede/steera prima di
 # lanciare (= più controllo), nessuna esecuzione automatica. Override completo via
@@ -153,10 +176,14 @@ fi
 # Ramo --no-task (T42): saltano i TRE elementi che legano la sessione alla task —
 # iniezione LOOM_TASK, prompt iniziale, --session-id pinnato. Resta claude nudo,
 # titolato e con il permission mode del progetto.
+# Su resume (T49) il prompt iniziale salta anche nel ramo task: riprendere una
+# conversazione significa continuarla, non iniettarle un nuovo messaggio.
+PROMPT_ARG="'${PROMPT}'"
+[[ -n "$RESUME_ID" ]] && PROMPT_ARG=""
 if [[ $NO_TASK -eq 1 ]]; then
-  _default_intab="claude --name '${TITLE}' ${MODE_FLAG}"
+  _default_intab="claude --name '${TITLE}' ${MODE_FLAG}${RES_FLAG}"
 else
-  _default_intab="LOOM_TASK=${TASK} claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}'${PROMPT}'"
+  _default_intab="LOOM_TASK=${TASK} claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}${RES_FLAG}${PROMPT_ARG}"
 fi
 IN_TAB_CMD="${LOOM_DECK_INTAB_CMD:-$_default_intab}"
 

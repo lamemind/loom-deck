@@ -48,7 +48,7 @@ senza collisioni:
 |---|---|---|
 | `↑` `↓` | naviga nella lista | |
 | `←` `→` `tab` | cambia pane | |
-| `⏎` | azione primaria del pane | Tasks → spawna la task selezionata |
+| `⏎` | azione primaria del pane | Tasks → spawna la task selezionata · Sessions → riprende (`claude --resume`) la sessione selezionata |
 | **MAIUSCOLA** | **apre un modale** | cattura tutti i tasti; `esc` annulla, non esce |
 | minuscola | azione immediata, one-shot | |
 | `1`…`9` | voce `launch` n-esima del progetto | da `.claude/loom-works.json` |

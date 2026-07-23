@@ -68,6 +68,14 @@ const TASKS_PANE_CHROME = 5; // 2 bordi + header "Tasks (n)" + riga sort + riga 
 const SESSIONS_PANE_CHROME = 3; // 2 bordi + header "Sessions · …"
 const DETAIL_CHROME = 3; // marginTop + 2 bordi
 
+/** Detail pane sessione (T49): righe fisse = titolo + riga meta (size · turni ·
+ *  ultima attività). La preview del primo prompt è la parte variabile. */
+const SESSION_DETAIL_FIXED = 2;
+const MAX_SESSION_PREVIEW = 2;
+/** Gemello di MIN_TASK_ROWS: sotto questa soglia la lista sessioni non serve
+ *  più — meglio sacrificare il detail pane. */
+const MIN_SESSION_ROWS = 3;
+
 /** Altezza di ciascuna modale, marginTop incluso. In flusso, non in overlay:
  *  spingono giù i pane, quindi il loro costo va scalato dal budget. */
 export const MODAL_HEIGHT = {
@@ -87,6 +95,10 @@ export type Budget = {
   sessionRows: number;
   /** Righe di descrizione nel pannello dettaglio; 0 = pannello omesso. */
   detailLines: number;
+  /** Detail pane sessione (T49): richiesto E con spazio; false = omesso. */
+  sessionDetail: boolean;
+  /** Righe di preview primo-prompt concesse al detail pane sessione. */
+  sessionPreviewLines: number;
   /**
    * Il terminale non ospita nemmeno la cornice a righe zero: il layout a box va
    * abbandonato per una riga singola. Non è un caso di lusso — un terminale
@@ -108,6 +120,8 @@ export type BudgetInput = {
   hasDetail: boolean;
   /** Righe non-wrappabili del dettaglio: titolo + meta + commit. */
   detailMetaLines: number;
+  /** Detail pane sessione richiesto (focus sessions + sessione selezionata). */
+  hasSessionDetail: boolean;
 };
 
 /**
@@ -138,10 +152,34 @@ export function layoutBudget(input: BudgetInput): Budget {
   // regolamentare con zero task dentro — occupa 5 righe per non mostrare nulla,
   // mentre la riga compatta dice le stesse cose in una.
   if (avail < TASKS_PANE_CHROME + 1) {
-    return { taskRows: 0, sessionRows: 0, detailLines: 0, compact: true };
+    return {
+      taskRows: 0,
+      sessionRows: 0,
+      detailLines: 0,
+      sessionDetail: false,
+      sessionPreviewLines: 0,
+      compact: true,
+    };
   }
 
-  const sessionRows = Math.max(0, avail - SESSIONS_PANE_CHROME);
+  // Detail pane sessione (T49): stesso schema del dettaglio task — prima la
+  // lista minima, poi la cornice, la preview solo con lo spazio che avanza.
+  // A differenza del dettaglio task il box regge anche senza righe variabili:
+  // titolo + meta sono il valore, la preview è bonus.
+  let sessionDetail = false;
+  let sessionDetailCost = 0;
+  let sessionPreviewLines = 0;
+  if (input.hasSessionDetail) {
+    const fixed = DETAIL_CHROME + SESSION_DETAIL_FIXED;
+    const spare = avail - SESSIONS_PANE_CHROME - MIN_SESSION_ROWS - fixed;
+    if (spare >= 0) {
+      sessionDetail = true;
+      sessionPreviewLines = Math.min(MAX_SESSION_PREVIEW, spare);
+      sessionDetailCost = fixed + sessionPreviewLines;
+    }
+  }
+
+  const sessionRows = Math.max(0, avail - SESSIONS_PANE_CHROME - sessionDetailCost);
 
   let detailLines = 0;
   let detailChrome = 0;
@@ -159,7 +197,7 @@ export function layoutBudget(input: BudgetInput): Budget {
 
   const taskRows = Math.max(0, avail - TASKS_PANE_CHROME - detailChrome - detailLines);
 
-  return { taskRows, sessionRows, detailLines, compact: false };
+  return { taskRows, sessionRows, detailLines, sessionDetail, sessionPreviewLines, compact: false };
 }
 
 /**

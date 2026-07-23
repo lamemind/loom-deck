@@ -17,6 +17,7 @@ const input = (over: Partial<BudgetInput> = {}): BudgetInput => ({
   noteLine: false,
   hasDetail: false,
   detailMetaLines: 0,
+  hasSessionDetail: false,
   ...over,
 });
 
@@ -31,7 +32,9 @@ const frameHeight = (i: BudgetInput, b: ReturnType<typeof layoutBudget>) => {
     2 + 1 + 1 + (i.launchLine ? 1 : 0) + MODAL_HEIGHT[i.mode] + 1 + (i.noteLine ? 1 : 0);
   const tasksCol =
     5 + b.taskRows + (b.detailLines > 0 ? 3 + i.detailMetaLines + b.detailLines : 0);
-  const sessionsCol = 3 + b.sessionRows;
+  // Detail pane sessione (T49): 3 chrome + 2 fisse (titolo, meta) + preview.
+  const sessionsCol =
+    3 + b.sessionRows + (b.sessionDetail ? 3 + 2 + b.sessionPreviewLines : 0);
   return outer + Math.max(tasksCol, sessionsCol);
 };
 
@@ -42,14 +45,24 @@ test('layoutBudget: il frame resta sotto stdout.rows su ogni combinazione', () =
       for (const launchLine of [false, true]) {
         for (const noteLine of [false, true]) {
           for (const hasDetail of [false, true]) {
-            for (const detailMetaLines of [1, 2, 3]) {
-              const i = input({ rows, mode, launchLine, noteLine, hasDetail, detailMetaLines });
-              const h = frameHeight(i, layoutBudget(i));
-              // Condizione di Ink: `outputHeight >= rows` → ramo clearTerminal.
-              assert.ok(
-                h <= rows - SLACK,
-                `frame ${h} > ${rows - SLACK} (rows=${rows} mode=${mode} detail=${hasDetail})`,
-              );
+            for (const hasSessionDetail of [false, true]) {
+              for (const detailMetaLines of [1, 2, 3]) {
+                const i = input({
+                  rows,
+                  mode,
+                  launchLine,
+                  noteLine,
+                  hasDetail,
+                  detailMetaLines,
+                  hasSessionDetail,
+                });
+                const h = frameHeight(i, layoutBudget(i));
+                // Condizione di Ink: `outputHeight >= rows` → ramo clearTerminal.
+                assert.ok(
+                  h <= rows - SLACK,
+                  `frame ${h} > ${rows - SLACK} (rows=${rows} mode=${mode} detail=${hasDetail} sessionDetail=${hasSessionDetail})`,
+                );
+              }
             }
           }
         }
@@ -86,6 +99,29 @@ test('layoutBudget: un pane non-compact mostra sempre almeno una task', () => {
   for (let rows = 8; rows <= 80; rows++) {
     const b = layoutBudget(input({ rows, launchLine: true }));
     if (!b.compact) assert.ok(b.taskRows >= 1, `rows=${rows} → pane vuoto`);
+  }
+});
+
+test('layoutBudget: detail pane sessione su terminale alto → preview piena, lista ridotta del costo', () => {
+  const base = layoutBudget(input({ rows: 60 }));
+  const b = layoutBudget(input({ rows: 60, hasSessionDetail: true }));
+  assert.equal(b.sessionDetail, true);
+  assert.equal(b.sessionPreviewLines, 2);
+  // Costo intero del pannello: 3 chrome + 2 fisse + 2 preview.
+  assert.equal(base.sessionRows - b.sessionRows, 7);
+});
+
+test('layoutBudget: detail pane sessione sacrificato prima della lista minima', () => {
+  const b = layoutBudget(input({ rows: 14, hasSessionDetail: true }));
+  assert.equal(b.compact, false);
+  assert.equal(b.sessionDetail, false);
+  assert.ok(b.sessionRows >= 3);
+});
+
+test('layoutBudget: detail pane sessione concesso → lista sessioni mai sotto il minimo', () => {
+  for (let rows = 8; rows <= 80; rows++) {
+    const b = layoutBudget(input({ rows, hasSessionDetail: true }));
+    if (b.sessionDetail) assert.ok(b.sessionRows >= 3, `rows=${rows} → lista sotto il minimo`);
   }
 });
 
