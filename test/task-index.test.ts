@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  appendPin,
   appendSessionRecord,
   appendTaskBinding,
   loadSessionIndex,
@@ -79,4 +80,53 @@ test('righe corrotte o senza sessionId: skippate senza affondare la lettura', ()
   assert.equal(bindings.get('buona'), 'T28');
   assert.equal(forkOf.get('ramo'), 'buona');
   assert.equal(bindings.size, 1);
+});
+
+// ── T50 · pin store ─────────────────────────────────────────────────────────
+
+test('pin: append pinned:true → la sessione è nella mappa pinned', () => {
+  const r = root();
+  appendPin(r, 'sid-1', true);
+  const { pinned } = loadSessionIndex(r);
+  assert.equal(pinned.has('sid-1'), true);
+});
+
+test('unpin last-wins: pinned:false finale toglie la chiave', () => {
+  const r = root();
+  appendPin(r, 'sid', true);
+  appendPin(r, 'sid', false);
+  assert.equal(loadSessionIndex(r).pinned.has('sid'), false);
+});
+
+test('re-pin dopo unpin: la sessione torna pinnata, in cima (rango più alto)', () => {
+  const r = root();
+  appendPin(r, 'A', true); // rango 0
+  appendPin(r, 'B', true); // rango 1
+  appendPin(r, 'A', false); // A spinnata
+  appendPin(r, 'A', true); // A ripinnata → rango 2 > B
+  const { pinned } = loadSessionIndex(r);
+  assert.equal(pinned.has('A'), true);
+  assert.equal(pinned.has('B'), true);
+  assert.ok((pinned.get('A') ?? -1) > (pinned.get('B') ?? -1), 'A pinnata più di recente di B');
+});
+
+test('rango di pin crescente nell’ordine di append (ultima pinnata = rango massimo)', () => {
+  const r = root();
+  appendPin(r, 'A', true);
+  appendPin(r, 'B', true);
+  const { pinned } = loadSessionIndex(r);
+  assert.ok((pinned.get('B') ?? -1) > (pinned.get('A') ?? -1));
+});
+
+test('campi indipendenti: un pin non cancella il binding, e viceversa', () => {
+  const r = root();
+  appendTaskBinding(r, 'sid', 'T50');
+  appendPin(r, 'sid', true);
+  const idx = loadSessionIndex(r);
+  assert.equal(idx.bindings.get('sid'), 'T50', 'il pin non tocca il binding');
+  assert.equal(idx.pinned.has('sid'), true);
+});
+
+test('pin: file assente → mappa pinned vuota, nessun throw', () => {
+  assert.equal(loadSessionIndex(root()).pinned.size, 0);
 });

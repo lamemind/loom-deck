@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { render, Box, Text, useApp, useInput, useStdout } from 'ink';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { spawn } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -16,11 +16,20 @@ import {
 } from './tasks.js';
 import { discoverProjectSessions, type Session } from './sessions.js';
 import {
+  appendPin,
   appendSessionRecord,
   appendTaskBinding,
   loadSessionIndex,
   type SessionIndex,
 } from './task-index.js';
+import {
+  assembleSessionList,
+  firstSelectableId,
+  moveSelection,
+  rowIndexOf,
+  selectedSession,
+  type SessionRow,
+} from './session-list.js';
 import { launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
 import {
   layoutBudget,
@@ -362,11 +371,17 @@ function useSessions(projectRoot: string) {
     sessions: Session[];
     bindings: Map<string, string>;
     forkOf: Map<string, string>;
+    pinned: Map<string, number>;
   }>({
     sessions: [],
     bindings: new Map(),
     forkOf: new Map(),
+    pinned: new Map(),
   });
+  // T50 — pin/unpin scrive il sidecar e vuole feedback IMMEDIATO, non al
+  // prossimo tick del poll (1.5s): la reload è esposta via ref così il toggle la
+  // richiama senza risottoscrivere l'intervallo.
+  const reloadRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     let lastSig = '';
@@ -378,28 +393,31 @@ function useSessions(projectRoot: string) {
         index = loadSessionIndex(projectRoot);
       } catch {
         sessions = [];
-        index = { bindings: new Map(), forkOf: new Map() };
+        index = { bindings: new Map(), forkOf: new Map(), pinned: new Map() };
       }
-      const { bindings, forkOf } = index;
-      // La signature copre anche i fork: un record di lineage appena scritto
-      // cambia il marker della riga, quindi deve forzare il re-render come
-      // farebbe un binding nuovo.
+      const { bindings, forkOf, pinned } = index;
+      // La signature copre anche fork e pin: un record di lineage o un toggle di
+      // pin appena scritto cambia la lista renderizzata, quindi deve forzare il
+      // re-render come farebbe un binding nuovo.
       const sig =
         sessions.map((s) => `${s.sessionId}:${s.ts}`).join('|') +
         '#' +
         [...bindings.entries()].map(([k, v]) => `${k}=${v}`).sort().join(',') +
         '#' +
-        [...forkOf.entries()].map(([k, v]) => `${k}<${v}`).sort().join(',');
+        [...forkOf.entries()].map(([k, v]) => `${k}<${v}`).sort().join(',') +
+        '#' +
+        [...pinned.entries()].map(([k, v]) => `${k}@${v}`).sort().join(',');
       if (sig === lastSig) return;
       lastSig = sig;
-      setState({ sessions, bindings, forkOf });
+      setState({ sessions, bindings, forkOf, pinned });
     };
+    reloadRef.current = reload;
     reload();
     const id = setInterval(reload, POLL_MS);
     return () => clearInterval(id);
   }, [projectRoot]);
 
-  return state;
+  return { ...state, reload: () => reloadRef.current() };
 }
 
 // Legge il task file della task selezionata (Q1+B T20). On-id-change: navigare
@@ -439,6 +457,14 @@ const forceEmojiWidth = normalizeEmoji;
 // larghi 1 e restano intatti.
 const CARET = normalizeEmoji('▶ ');
 const CARET_OFF = '  ';
+
+// T50 — glifo warning della riga pin-stale: BMP largo 2 senza VS16 → va timbrato
+// (come CARET), altrimenti la riga slitta di una colonna.
+const WARN = normalizeEmoji('⚠');
+// T50 — separatore leggero fra blocco pinnate e contestuali. `─` (box-drawing) è
+// largo 1 sia per string-width sia per il terminale → nessun timbro. Corto +
+// wrap="truncate-end" così non va mai a capo nel pane al 50%.
+const SESSION_SEP = '─'.repeat(16);
 
 // Normalizza il marker Done per il display. `✔` (U+2714) è text-presentation-
 // default: string-width — quindi Ink, sia per il layout sia per il troncamento —
@@ -484,14 +510,17 @@ const META_KEYS = ['Priority', 'Size', 'Estimated Time', 'Progress'];
 function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; tasksDir: string }) {
   const { exit } = useApp();
   const { tasks, loadError } = useTasks(tasksPath);
-  const { sessions, bindings, forkOf } = useSessions(cwd);
+  const { sessions, bindings, forkOf, pinned, reload: reloadSessions } = useSessions(cwd);
   const [focus, setFocus] = useState<Focus>('tasks');
   // T39 — selezione KEYED SU ID, non su indice. Con una vista trasformata
   // (filtro/sort) l'indice non identifica più la stessa task: leggere l'array
   // grezzo per posizione spawnerebbe la task sbagliata, in silenzio. `null` = la
   // riga meta "spot", sempre in testa alla lista.
   const [selId, setSelId] = useState<string | null>(null);
-  const [selSession, setSelSession] = useState(0);
+  // T50 — selezione del pane sessioni KEYED SU sessionId (non indice): la lista
+  // a due gruppi + separatore è una vista trasformata, un indice grezzo punterebbe
+  // alla riga sbagliata dopo un pin o un cambio di contesto (stesso trap T39).
+  const [selSessionId, setSelSessionId] = useState<string | null>(null);
   const [note, setNote] = useState('');
   // Modali: catturano i tasti e corto-circuitano la navigazione normale.
   // T30 create · T39 sort/filter.
@@ -540,12 +569,25 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
 
   // Figli della selezione: sessioni bound alla task selezionata, oppure (spot)
   // le sessioni senza binding. sessions è già ts desc → l'ordine si eredita.
-  const childSessions = sessions.filter((s) => {
-    const bound = bindings.get(s.sessionId);
-    return selectedTaskId ? bound === selectedTaskId : !bound;
-  });
-  const visibleSessions = childSessions.slice(0, MAX_SESSIONS);
-  const hiddenSessions = childSessions.length - visibleSessions.length;
+  // Memoizzato così `sessionRows` resta stabile fra render che non cambiano gli
+  // input: l'effect di validità della selezione non rigira a vuoto.
+  const childSessions = useMemo(
+    () =>
+      sessions.filter((s) => {
+        const bound = bindings.get(s.sessionId);
+        return selectedTaskId ? bound === selectedTaskId : !bound;
+      }),
+    [sessions, bindings, selectedTaskId],
+  );
+  // T50 — lista a due gruppi: pinnate (sempre, in cima) + separatore +
+  // contestuali. Dedup, cap solo sulle contestuali, righe stale per le pinnate
+  // orfane. Core PURO in session-list.ts (testabile senza Ink).
+  const assembled = useMemo(
+    () => assembleSessionList(childSessions, sessions, pinned, MAX_SESSIONS),
+    [childSessions, sessions, pinned],
+  );
+  const sessionRows = assembled.rows;
+  const selSessionObj = selectedSession(sessionRows, selSessionId);
 
   // T39 — selezione stabile sotto trasformazione. Se la task selezionata esce
   // dalla vista (filtro appena attivato, oppure sparita da tasks.md), si cade
@@ -555,13 +597,15 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       setSelId(viewTasks[0]?.id ?? null);
     }
   }, [viewTasks, selId]);
-  // Cambio padre → riparti dalla prima sessione figlia.
+  // T50 — la selezione (id) resta valida sotto la vista a due gruppi: se l'id
+  // non è più una riga selezionabile (cambio parent, lista mutata, pin rimosso,
+  // sessione sparita) cade sulla prima riga — fallback deterministico, mai una
+  // posizione a caso. Sostituisce il reset-a-0 e il clamp index-based.
   useEffect(() => {
-    setSelSession(0);
-  }, [selId]);
-  useEffect(() => {
-    setSelSession((s) => Math.min(s, Math.max(0, visibleSessions.length - 1)));
-  }, [visibleSessions.length]);
+    if (rowIndexOf(sessionRows, selSessionId) < 0) {
+      setSelSessionId(firstSelectableId(sessionRows));
+    }
+  }, [sessionRows, selSessionId]);
 
   // T30: submit dell'input box. Il taskId nasce DOPO create-task (lo assegna la
   // skill scrivendo tasks.md) → non è noto allo spawn. Il sessionId invece è
@@ -782,10 +826,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       setFocus((f) => (f === 'tasks' ? 'sessions' : 'tasks'));
     } else if (key.upArrow) {
       if (focus === 'tasks') moveTaskSel(-1);
-      else setSelSession((i) => Math.max(0, i - 1));
+      else setSelSessionId((id) => moveSelection(sessionRows, id, -1));
     } else if (key.downArrow) {
       if (focus === 'tasks') moveTaskSel(1);
-      else setSelSession((i) => Math.min(visibleSessions.length - 1, i + 1));
+      else setSelSessionId((id) => moveSelection(sessionRows, id, 1));
     } else if (key.return) {
       if (focus === 'tasks') {
         if (isSpot) {
@@ -805,9 +849,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       } else {
         // T49 — ⏎ su una sessione = resume in nuova tab. Il binding si rilegge
         // dal sidecar (non dal padre selezionato): vale anche per le spot.
-        const s = visibleSessions[selSession];
+        const s = selSessionObj;
         if (!s) {
-          setNote('nessuna sessione da riprendere');
+          setNote(selSessionId ? 'pin stale: transcript non più presente' : 'nessuna sessione da riprendere');
         } else {
           const bound = bindings.get(s.sessionId) ?? null;
           const child = spawnDeckResume(bound, cwd, s.sessionId);
@@ -840,9 +884,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       if (focus !== 'sessions') {
         setNote('f → fork: seleziona una sessione (←→ per il pane)');
       } else {
-        const s = visibleSessions[selSession];
+        const s = selSessionObj;
         if (!s) {
-          setNote('f → nessuna sessione da forkare');
+          setNote(selSessionId ? 'f → pin stale: niente da forkare' : 'f → nessuna sessione da forkare');
         } else {
           // L'id del ramo nasce qui, prima dello spawn: pinnandolo posso
           // scrivere subito binding e lineage. Il binding task si eredita
@@ -861,6 +905,22 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
             `⑂ fork ${s.sessionId.slice(0, 8)} → ${newId.slice(0, 8)}${bound ? ` (${bound})` : ' (spot)'}`,
           );
         }
+      }
+    } else if (input === 'p') {
+      // T50 — pin/unpin della conversazione selezionata. Minuscola = azione
+      // immediata (convenzione T39), gemella di `f`: opera sulla riga
+      // selezionata del pane sessioni, quindi vive solo lì. Vale anche su una
+      // pinnata STALE (l'unico modo di spinnarla). Scrive il sidecar e ricarica
+      // subito, senza attendere il tick del poll.
+      if (focus !== 'sessions') {
+        setNote('p → pin: seleziona una sessione (←→ per il pane)');
+      } else if (!selSessionId) {
+        setNote('p → nessuna sessione da pinnare');
+      } else {
+        const isPinned = pinned.has(selSessionId);
+        appendPin(cwd, selSessionId, !isPinned);
+        reloadSessions();
+        setNote(`${isPinned ? 'unpin' : '📌 pin'} ${selSessionId.slice(0, 8)}`);
       }
     } else if (input === 't') {
       const title = identity ? `🖥️ ${identity.owner} ${identity.name} [term]` : null;
@@ -897,11 +957,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     }
   });
 
-  const selSessionObj = visibleSessions[selSession] ?? null;
-  const selSessionId = selSessionObj?.sessionId;
   const parentLabel = isSpot ? 'spot' : selectedTaskId ?? '—';
   const canSpawn = focus === 'tasks' && !isSpot;
   const canResume = focus === 'sessions' && selSessionObj !== null;
+  // T50 — il pin agisce su qualunque riga selezionata (anche stale, per
+  // spinnarla); basta il focus sul pane e una selezione.
+  const canPin = focus === 'sessions' && selSessionId !== null;
   // Larghezza dal medesimo hook che dà l'altezza: dopo un resize la legenda si
   // ricalcola con lo stesso re-render che ridimensiona i pane.
   const legend = launchLegend(launch, columns);
@@ -931,13 +992,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     sessionHasLastPreview: canResume && Boolean(selSessionObj?.lastReply),
   });
 
-  // Finestre di rendering. Le liste "logiche" (viewTasks, visibleSessions)
+  // Finestre di rendering. Le liste "logiche" (viewTasks, sessionRows)
   // restano intere: navigazione, selezione e spawn continuano a ragionare su
   // quelle, la finestra è solo ciò che finisce a schermo.
   const taskWin = windowRange(viewTasks.length, selIndex - 1, budget.taskRows);
   const windowTasks = viewTasks.slice(taskWin.start, taskWin.end);
-  const sessionWin = windowRange(visibleSessions.length, selSession, budget.sessionRows);
-  const windowSessions = visibleSessions.slice(sessionWin.start, sessionWin.end);
+  const selRowIndex = rowIndexOf(sessionRows, selSessionId);
+  const sessionWin = windowRange(sessionRows.length, selRowIndex, budget.sessionRows);
+  const windowRows = sessionRows.slice(sessionWin.start, sessionWin.end);
 
   // Sotto la soglia minima il layout a box non entra a nessun costo: si scende
   // a una riga sola. Perdere il deck per un terminale basso è meglio che
@@ -980,8 +1042,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       ) : (
         <Text dimColor wrap="truncate-end">
           ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : canResume ? 'resume' : '—'}
-          {canResume ? ' · f fork' : ''} · C nuova · E edit · S sort · F filtri · w salva · t term ·
-          c claude · q esci · focus:{' '}
+          {canResume ? ' · f fork' : ''}{canPin ? ' · p pin' : ''} · C nuova · E edit · S sort · F filtri ·
+          w salva · t term · c claude · q esci · focus:{' '}
           <Text color="cyan">{focus}</Text>
         </Text>
       )}
@@ -1032,13 +1094,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         <SessionsPane
           parentLabel={parentLabel}
           isSpot={isSpot}
-          sessions={windowSessions}
-          total={childSessions.length}
-          hidden={hiddenSessions}
-          selectedId={selSessionId}
+          rows={windowRows}
+          total={assembled.pinnedCount + assembled.contextTotal}
+          pinnedCount={assembled.pinnedCount}
+          hidden={assembled.contextHidden}
+          selectedId={selSessionId ?? undefined}
           focused={focus === 'sessions'}
           above={sessionWin.start}
-          below={visibleSessions.length - sessionWin.end}
+          below={sessionRows.length - sessionWin.end}
           detail={budget.sessionDetail ? selSessionObj : null}
           firstLines={budget.sessionFirstLines}
           lastLines={budget.sessionLastLines}
@@ -1264,8 +1327,9 @@ function TasksPane({
 function SessionsPane({
   parentLabel,
   isSpot,
-  sessions,
+  rows,
   total,
+  pinnedCount,
   hidden,
   selectedId,
   focused,
@@ -1279,9 +1343,12 @@ function SessionsPane({
 }: {
   parentLabel: string;
   isSpot: boolean;
-  /** Solo la finestra visibile. */
-  sessions: Session[];
+  /** T50 — solo la finestra visibile della lista a due gruppi (pinnate +
+   *  separatore + contestuali). */
+  rows: SessionRow[];
   total: number;
+  /** T50 — quante delle `total` sono pinnate (badge 📌 nell'header). */
+  pinnedCount: number;
   hidden: number;
   selectedId: string | undefined;
   focused: boolean;
@@ -1308,6 +1375,7 @@ function SessionsPane({
     >
       <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
         Sessions · {parentLabel} ({total})
+        {pinnedCount > 0 ? <Text color="yellow"> · 📌{pinnedCount}</Text> : null}
         {hidden > 0 ? <Text dimColor> · +{hidden} più vecchie</Text> : null}
         {above > 0 ? <Text dimColor> · ↑{above}</Text> : null}
         {below > 0 ? <Text dimColor> · ↓{below}</Text> : null}
@@ -1317,8 +1385,36 @@ function SessionsPane({
           {isSpot ? 'nessuna sessione libera' : 'nessuna sessione legata a questa task'}
         </Text>
       ) : (
-        sessions.map((s) => {
-          const sel = s.sessionId === selectedId;
+        rows.map((row, i) => {
+          // T50 — separatore leggero fra pinnate e contestuali: riga dim, non un
+          // box pesante (coerente con lo styling delle Done dimmate).
+          if (row.kind === 'separator') {
+            return (
+              <Text key={`sep${i}`} dimColor wrap="truncate-end">
+                {SESSION_SEP}
+              </Text>
+            );
+          }
+          const sel = row.sessionId === selectedId;
+          // T50 — pin stale: transcript sparito, nessuna Session da mostrare.
+          // Riga navigabile e spinnabile (`p`), marcata, mai un crash.
+          if (row.kind === 'pinned' && row.stale) {
+            return (
+              <Text
+                key={row.sessionId}
+                inverse={sel && focused}
+                bold={sel && !focused}
+                dimColor
+                wrap="truncate-end"
+              >
+                {sel ? CARET : CARET_OFF}
+                <Text color="yellow">{WARN}</Text> pin stale{' '}
+                <Text dimColor>{row.sessionId.slice(0, 8)}</Text>
+              </Text>
+            );
+          }
+          const s = row.session as Session; // non-stale → session presente
+          const isPinnedRow = row.kind === 'pinned';
           // T28 — un ramo eredita il titolo dell'origine: senza marcatore le due
           // righe sarebbero identiche a occhio. `⑂` sta PRIMA del titolo, dove
           // la troncatura non arriva mai.
@@ -1326,7 +1422,13 @@ function SessionsPane({
           return (
             <Text key={s.sessionId} inverse={sel && focused} bold={sel && !focused} wrap="truncate-end">
               {sel ? CARET : CARET_OFF}
-              {isSpot ? <Text dimColor>○</Text> : <Text color="green">🔗</Text>}{' '}
+              {isPinnedRow ? (
+                <Text color="yellow">📌</Text>
+              ) : isSpot ? (
+                <Text dimColor>○</Text>
+              ) : (
+                <Text color="green">🔗</Text>
+              )}{' '}
               {forked ? <Text color="magenta">⑂ </Text> : null}
               {truncate(s.title, forked ? 42 : 44)}{' '}
               <Text dimColor>· {s.gitBranch || '-'} · {relTime(s.ts)}</Text>
