@@ -30,6 +30,7 @@ import {
   type SearchRow,
 } from './search.js';
 import {
+  appendNote,
   appendPin,
   appendSessionRecord,
   appendTaskBinding,
@@ -41,7 +42,9 @@ import {
   firstSelectableId,
   moveSelection,
   rowIndexOf,
+  rowLabel,
   selectedSession,
+  stripProjectCore,
   type SessionRow,
 } from './session-list.js';
 import { launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
@@ -52,6 +55,7 @@ import {
   readerCapacity,
   searchListCapacity,
   searchPreviewCapacity,
+  truncate,
   windowRange,
   wrapLines,
   wrapWithOffsets,
@@ -417,11 +421,13 @@ function useSessions(projectRoot: string) {
     bindings: Map<string, string>;
     forkOf: Map<string, string>;
     pinned: Map<string, number>;
+    notes: Map<string, string>;
   }>({
     sessions: [],
     bindings: new Map(),
     forkOf: new Map(),
     pinned: new Map(),
+    notes: new Map(),
   });
   // T50 — pin/unpin scrive il sidecar e vuole feedback IMMEDIATO, non al
   // prossimo tick del poll (1.5s): la reload è esposta via ref così il toggle la
@@ -438,12 +444,12 @@ function useSessions(projectRoot: string) {
         index = loadSessionIndex(projectRoot);
       } catch {
         sessions = [];
-        index = { bindings: new Map(), forkOf: new Map(), pinned: new Map() };
+        index = { bindings: new Map(), forkOf: new Map(), pinned: new Map(), notes: new Map() };
       }
-      const { bindings, forkOf, pinned } = index;
-      // La signature copre anche fork e pin: un record di lineage o un toggle di
-      // pin appena scritto cambia la lista renderizzata, quindi deve forzare il
-      // re-render come farebbe un binding nuovo.
+      const { bindings, forkOf, pinned, notes } = index;
+      // La signature copre anche fork, pin e note: un record di lineage, un
+      // toggle di pin o una nota appena scritta cambiano la lista renderizzata,
+      // quindi devono forzare il re-render come farebbe un binding nuovo.
       const sig =
         sessions.map((s) => `${s.sessionId}:${s.ts}`).join('|') +
         '#' +
@@ -451,10 +457,12 @@ function useSessions(projectRoot: string) {
         '#' +
         [...forkOf.entries()].map(([k, v]) => `${k}<${v}`).sort().join(',') +
         '#' +
-        [...pinned.entries()].map(([k, v]) => `${k}@${v}`).sort().join(',');
+        [...pinned.entries()].map(([k, v]) => `${k}@${v}`).sort().join(',') +
+        '#' +
+        [...notes.entries()].map(([k, v]) => `${k}"${v}`).sort().join(',');
       if (sig === lastSig) return;
       lastSig = sig;
-      setState({ sessions, bindings, forkOf, pinned });
+      setState({ sessions, bindings, forkOf, pinned, notes });
     };
     reloadRef.current = reload;
     reload();
@@ -475,13 +483,6 @@ function useTaskDetail(tasksDir: string, id: string | undefined) {
     setDetail(id ? loadTaskDetail(tasksDir, id) : null);
   }, [tasksDir, id]);
   return detail;
-}
-
-// Collassa gli spazi (description multi-paragrafo → blocco unico wrappabile) e
-// tronca: il pane resta compatto e d'altezza prevedibile sotto la lista.
-function truncate(s: string, n: number): string {
-  const flat = s.replace(/\s+/g, ' ').trim();
-  return flat.length > n ? flat.slice(0, n - 1).trimEnd() + '…' : flat;
 }
 
 // Normalizzazione larghezza glifi → `normalizeEmoji` in viewport.ts.
@@ -550,12 +551,37 @@ function relTime(ts: number): string {
   return `${Math.floor(hr / 24)}d`;
 }
 
+/**
+ * Ripulisce un chunk di stdin prima di scriverlo in un campo di testo.
+ *
+ * `useInput` consegna il CHUNK letto da stdin, non un tasto: un incollaggio — o
+ * una raffica piu' veloce di una read — arriva come stringa unica, byte di
+ * controllo compresi. Non si vedono a schermo, ma Ink li conta nella larghezza
+ * della riga, e in un campo che finisce su disco (la nota, T53) resterebbero
+ * li' per sempre. Le newline diventano SPAZIO invece di sparire: incollare due
+ * righe deve separare le parole, non fonderle.
+ */
+function sanitizeTyped(s: string): string {
+  return s.replace(/[\r\n]/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '');
+}
+
 const META_KEYS = ['Priority', 'Size', 'Estimated Time', 'Progress'];
 
 function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; tasksDir: string }) {
   const { exit } = useApp();
   const { tasks, loadError } = useTasks(tasksPath);
-  const { sessions, bindings, forkOf, pinned, reload: reloadSessions } = useSessions(cwd);
+  // `notes` esce dall'indice come `sessionNotes`: in questo componente `note` è
+  // già la riga di STATO in fondo al frame (il feedback di un'azione). Due
+  // concetti diversi a una lettera di distanza sarebbero una trappola di
+  // lettura — e di scrittura, visto che `setNote` compare in quasi ogni ramo.
+  const {
+    sessions,
+    bindings,
+    forkOf,
+    pinned,
+    notes: sessionNotes,
+    reload: reloadSessions,
+  } = useSessions(cwd);
   const [focus, setFocus] = useState<Focus>('tasks');
   // T39 — selezione KEYED SU ID, non su indice. Con una vista trasformata
   // (filtro/sort) l'indice non identifica più la stessa task: leggere l'array
@@ -571,6 +597,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // T30 create · T39 sort/filter.
   const [mode, setMode] = useState<Mode>('normal');
   const [draft, setDraft] = useState('');
+  // T53 — bozza della nota sulla conversazione selezionata. Si apre PRECARICATA
+  // con la nota esistente: annotare due volte è quasi sempre correggere, non
+  // riscrivere da zero, e un campo vuoto costringerebbe a ridigitare tutto per
+  // cambiare una parola. Confermare il campo vuoto cancella la nota.
+  const [noteDraft, setNoteDraft] = useState('');
   // T39 — vista corrente (filtri + sort) e sua fotografia all'apertura di un
   // modale: la lista si aggiorna dal vivo, quindi `esc` deve poter ripristinare.
   const [view, setView] = useState<ViewState>(() => loadView(cwd));
@@ -604,6 +635,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const launch = useMemo(() => loadLaunch(cwd), [cwd]);
   // Identità (T37): titolo delle tab terminale spawnate col tasto `t`.
   const identity = useMemo(() => loadIdentity(cwd), [cwd]);
+  // T53 — `<owner> <name>`: il core che ogni titolo di tab porta, quindi la
+  // colonna costante da togliere quando serve spazio. Hoistato qui perché ora
+  // lo consumano DUE schermate (lista e ricerca): calcolarlo su ogni call site
+  // è il modo in cui le due smettono di togliere la stessa cosa.
+  const projectCore = identity ? `${identity.owner} ${identity.name}` : null;
   // La vista è una trasformazione DERIVATA, applicata a valle del load: il
   // polling di tasks.md continua a funzionare senza saperne nulla.
   const { visible: viewTasks, hidden: hiddenTasks } = useMemo(
@@ -759,6 +795,40 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     child.on('error', () => setNote(`⚠ create-task: '${CLAUDE_CMD}' non lanciabile`));
   }
 
+  // T53 — apertura del modale nota sulla conversazione selezionata. Come
+  // `openEdit`, la bozza parte dal valore ATTUALE: annotare una seconda volta è
+  // quasi sempre correggere, e ripartire da vuoto costringerebbe a ridigitare
+  // tutto per cambiare una parola.
+  function openNote() {
+    if (!selSessionId) return;
+    setNoteDraft(sessionNotes.get(selSessionId) ?? '');
+    setNote('');
+    setMode('note');
+  }
+
+  // T53 — ⏎ nel modale nota: scrive il sidecar e ricarica subito, senza
+  // attendere il tick del poll (stesso feedback immediato del pin).
+  //
+  // Il campo VUOTO non è un annullamento: è la CANCELLAZIONE della nota. Sono
+  // due intenzioni diverse e hanno due tasti diversi — `esc` lascia tutto com'è,
+  // `⏎` su campo svuotato toglie la nota. Trattare il vuoto come un no-op (come
+  // fa `submitCreate`, dove però una task senza titolo non esiste) renderebbe
+  // impossibile disannotare una conversazione se non con un editor sul JSONL.
+  function submitNote() {
+    const sid = selSessionId;
+    const text = noteDraft.trim();
+    setMode('normal');
+    setNoteDraft('');
+    if (!sid) return;
+    appendNote(cwd, sid, text);
+    reloadSessions();
+    setNote(
+      text
+        ? `✎ nota su ${sid.slice(0, 8)}: "${truncate(text, 40)}"`
+        : `✎ nota rimossa da ${sid.slice(0, 8)}`,
+    );
+  }
+
   // T41 — apertura dell'edit: la bozza parte dai valori ATTUALI della task, non
   // da default. La priorità arriva dal glifo di tasks.md (già in `selTask`), lo
   // stato dal suo glifo Prog; il progresso arbitrario dal campo `Progress` del
@@ -905,8 +975,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // (T39), che cicla sui caratteri del chunk invece di leggerlo intero.
   function typeIntoField(chunk: string) {
     setNote('');
-    const clean = (s: string) =>
-      s.replace(/[\r\n]/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '');
+    const clean = sanitizeTyped;
 
     const parts = chunk.split('\t');
     let field = searchField;
@@ -1005,6 +1074,40 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         setDraft((d) => d.slice(0, -1));
       } else if (input && !key.ctrl && !key.meta) {
         setDraft((d) => d + input);
+      }
+      return;
+    }
+
+    // T53 — modale nota. Come create, cattura il testo e corto-circuita la
+    // navigazione (qui `q` è una lettera da scrivere, non il quit).
+    if (mode === 'note') {
+      if (key.escape) {
+        setMode('normal');
+        setNoteDraft('');
+        setNote('N → nota annullata');
+      } else if (key.return) {
+        submitNote();
+      } else if (key.ctrl && input === 'u') {
+        // Svuota il campo in un colpo. NON è una scorciatoia di comodo: il
+        // backspace tenuto premuto cancella UN carattere per CHUNK letto da
+        // stdin, non per pressione (`useInput` consegna il chunk, e per una
+        // raffica di DEL Ink alza `key.backspace` una volta sola) — misurato,
+        // 30 pressioni → 2 caratteri. Siccome «campo vuoto» qui è l'unico modo
+        // di CANCELLARE una nota, dipendere dal backspace renderebbe
+        // l'operazione praticamente non eseguibile. `^U` è il kill-line delle
+        // shell, quindi il gesto è già nelle dita di chi usa un terminale.
+        setNoteDraft('');
+      } else if (key.backspace || key.delete) {
+        setNoteDraft((d) => d.slice(0, -1));
+      } else if (input && !key.ctrl && !key.meta) {
+        // Sanificazione dei byte di controllo, come `typeIntoField` della
+        // ricerca: `useInput` consegna il CHUNK letto da stdin, quindi un
+        // incollaggio porta dentro newline e control char. Invisibili a schermo
+        // ma contati da Ink nella larghezza della riga — e qui finirebbero
+        // scritti su disco, dove resterebbero a sporcare la riga per sempre.
+        // Le newline diventano spazio: incollare due righe deve separare le
+        // parole, non fonderle.
+        setNoteDraft((d) => d + sanitizeTyped(input));
       }
       return;
     }
@@ -1217,6 +1320,20 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         reloadSessions();
         setNote(`${isPinned ? 'unpin' : '📌 pin'} ${selSessionId.slice(0, 8)}`);
       }
+    } else if (input === 'N') {
+      // T53 — nota sulla conversazione selezionata. MAIUSCOLA perché apre un
+      // modale: nel deck le minuscole sono azioni immediate (`f` fork, `p` pin,
+      // `t` term, `c` claude) e le maiuscole aprono un box (`C` create, `E`
+      // edit, `S` sort, `F` filtri). Vincolo di focus identico a `p`: vale anche
+      // su una pinnata STALE, perché annotare «questa non c'è più, era X» è
+      // proprio il caso in cui una nota serve.
+      if (focus !== 'sessions') {
+        setNote('N → nota: seleziona una sessione (←→ per il pane)');
+      } else if (!selSessionId) {
+        setNote('N → nessuna sessione da annotare');
+      } else {
+        openNote();
+      }
     } else if (input === 't') {
       const title = identity ? `🖥️ ${identity.owner} ${identity.name} [term]` : null;
       const child = spawnTerminal(cwd, title);
@@ -1337,7 +1454,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         capacity={searchCap}
         bindings={bindings}
         pinned={pinned}
-        projectCore={identity ? `${identity.owner} ${identity.name}` : null}
+        sessionNotes={sessionNotes}
+        projectCore={projectCore}
         columns={columns}
         note={note}
       />
@@ -1411,6 +1529,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           filtri · <Text color="yellow">↑↓←→</Text> naviga · <Text color="yellow">spazio</Text>{' '}
           mostra/nascondi · <Text color="yellow">⏎</Text> ok · <Text color="yellow">esc</Text> annulla
         </Text>
+      ) : mode === 'note' ? (
+        <Text dimColor wrap="truncate-end">
+          nota conversazione · <Text color="yellow">^U</Text> svuota ·{' '}
+          <Text color="yellow">⏎</Text> salva (vuoto = rimuove) ·{' '}
+          <Text color="yellow">esc</Text> annulla
+        </Text>
       ) : mode === 'edit' ? (
         <Text dimColor wrap="truncate-end">
           edit · <Text color="yellow">↑↓</Text> campo · <Text color="yellow">←→</Text> valore ·{' '}
@@ -1419,8 +1543,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       ) : (
         <Text dimColor wrap="truncate-end">
           ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : canResume ? 'resume' : '—'}
-          {canResume ? ' · f fork' : ''}{canPin ? ' · p pin' : ''} · ^F cerca · C nuova · E edit · S sort ·
-          F filtri · w salva · t term · c claude · q esci · focus:{' '}
+          {canResume ? ' · f fork' : ''}{canPin ? ' · p pin · N nota' : ''} · ^F cerca · C nuova · E edit ·
+          S sort · F filtri · w salva · t term · c claude · q esci · focus:{' '}
           <Text color="cyan">{focus}</Text>
         </Text>
       )}
@@ -1441,6 +1565,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         <Box borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
           <Text color="yellow">C › </Text>
           <Text>{draft}</Text>
+          <Text inverse> </Text>
+        </Box>
+      ) : null}
+      {/* T53 — gemello del box create. Il cursore sta in coda al testo (append
+          only, come create): un cursore mobile vorrebbe gestire frecce e Home/End,
+          e `Home`/`End` non sono nemmeno esposte da `useInput`. */}
+      {mode === 'note' ? (
+        <Box borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
+          <Text color="yellow">✎ › </Text>
+          <Text>{noteDraft}</Text>
           <Text inverse> </Text>
         </Box>
       ) : null}
@@ -1484,6 +1618,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           lastLines={budget.sessionLastLines}
           columns={columns}
           forkOf={forkOf}
+          sessionNotes={sessionNotes}
+          projectCore={projectCore}
         />
       </Box>
       {note ? <Text color="green" wrap="truncate-end">{normalizeEmoji(note)}</Text> : null}
@@ -1633,12 +1769,7 @@ function searchTitleWidth(columns: number): number {
  * conversazione e non un'altra.
  */
 function conversationLabel(s: Session, core: string | null, bound: string | undefined): string {
-  let t = s.title;
-  if (core) {
-    const at = t.indexOf(core);
-    if (at >= 0) t = t.slice(at + core.length);
-  }
-  t = t.replace(/^[\s·]+/, '').trim();
+  let t = stripProjectCore(s.title, core);
   if (bound && t === bound) t = '';
   return t || s.firstPrompt || '(senza titolo)';
 }
@@ -1755,6 +1886,7 @@ function SearchScreen({
   capacity,
   bindings,
   pinned,
+  sessionNotes,
   projectCore,
   columns,
   note,
@@ -1776,6 +1908,8 @@ function SearchScreen({
   capacity: number;
   bindings: Map<string, string>;
   pinned: Map<string, number>;
+  /** T53 — sessionId → nota umana (solo le sessioni annotate). */
+  sessionNotes: Map<string, string>;
   /** `<owner> <name>` del progetto: prefisso da togliere ai titoli di tab. */
   projectCore: string | null;
   columns: number;
@@ -1811,6 +1945,16 @@ function SearchScreen({
           if (row.kind === 'session') {
             const s = row.session;
             const bound = bindings.get(s.sessionId);
+            const rowNote = sessionNotes.get(s.sessionId);
+            const noteShown = rowNote ? truncate(rowNote, 24) : '';
+            // `+3` = i due caporali e lo spazio che li separa dall'etichetta.
+            // Il pavimento non è cosmetico: senza, un terminale stretto manda
+            // l'argomento di `truncate` sotto zero e `slice` conta dalla FINE
+            // della stringa — mostrerebbe la coda del titolo, in silenzio.
+            const restWidth = Math.max(
+              8,
+              searchTitleWidth(columns) - (noteShown ? noteShown.length + 3 : 0),
+            );
             return (
               <Text key={row.key} inverse={sel} wrap="truncate-end">
                 {sel ? CARET : CARET_OFF}
@@ -1819,7 +1963,14 @@ function SearchScreen({
                 <Text dimColor> · </Text>
                 {bound ?? <Text dimColor>spot</Text>}
                 <Text dimColor> · </Text>
-                {truncate(conversationLabel(s, projectCore, bound), searchTitleWidth(columns))}
+                {/* T53 — la nota precede l'etichetta derivata: se l'hai scritta
+                    è perché è il nome con cui riconosci quella conversazione, e
+                    non ritrovarla qui col nome che ha in lista sarebbe il
+                    difetto peggiore proprio dentro la ricerca. */}
+                {noteShown ? <Text color="yellow" bold>«{noteShown}» </Text> : null}
+                <Text dimColor={Boolean(noteShown)}>
+                  {truncate(conversationLabel(s, projectCore, bound), restWidth)}
+                </Text>
                 <Text dimColor>
                   {'  '}({row.hitCount}
                   {row.hidden > 0 ? `+${row.hidden}` : ''}) {fmtDateTime(s.ts)}
@@ -2070,6 +2221,8 @@ function SessionsPane({
   lastLines,
   columns,
   forkOf,
+  sessionNotes,
+  projectCore,
 }: {
   parentLabel: string;
   isSpot: boolean;
@@ -2094,6 +2247,10 @@ function SessionsPane({
   /** Righe di preview dell'ultima risposta del modello. */
   lastLines: number;
   columns: number;
+  /** T53 — sessionId → nota umana (solo le sessioni annotate). */
+  sessionNotes: Map<string, string>;
+  /** `<owner> <name>` del progetto: il prefisso che la nota fa sparire. */
+  projectCore: string | null;
 }) {
   return (
     <Box
@@ -2140,6 +2297,12 @@ function SessionsPane({
                 {sel ? CARET : CARET_OFF}
                 <Text color="yellow">{WARN}</Text> pin stale{' '}
                 <Text dimColor>{row.sessionId.slice(0, 8)}</Text>
+                {/* T53 — su una riga stale la nota è l'UNICA cosa rimasta che
+                    dica cosa fosse quella conversazione: il transcript non c'è
+                    più, quindi non esiste titolo né primo prompt da mostrare. */}
+                {sessionNotes.get(row.sessionId) ? (
+                  <Text color="yellow"> «{truncate(sessionNotes.get(row.sessionId)!, 30)}»</Text>
+                ) : null}
               </Text>
             );
           }
@@ -2149,6 +2312,14 @@ function SessionsPane({
           // righe sarebbero identiche a occhio. `⑂` sta PRIMA del titolo, dove
           // la troncatura non arriva mai.
           const forked = forkOf.has(s.sessionId);
+          // T53 — con una nota il prefisso di progetto sparisce e le sue colonne
+          // passano alla nota; senza, il titolo resta com'è (vedi `rowLabel`).
+          const label = rowLabel(
+            s.title,
+            sessionNotes.get(s.sessionId),
+            projectCore,
+            forked ? 42 : 44,
+          );
           return (
             <Text key={s.sessionId} inverse={sel && focused} bold={sel && !focused} wrap="truncate-end">
               {sel ? CARET : CARET_OFF}
@@ -2160,7 +2331,11 @@ function SessionsPane({
                 <Text color="green">🔗</Text>
               )}{' '}
               {forked ? <Text color="magenta">⑂ </Text> : null}
-              {truncate(s.title, forked ? 42 : 44)}{' '}
+              {label.note ? (
+                <Text color="yellow" bold>«{label.note}»</Text>
+              ) : null}
+              {label.note && label.rest ? ' ' : null}
+              {label.rest ? <Text dimColor={Boolean(label.note)}>{label.rest}</Text> : null}{' '}
               <Text dimColor>· {s.gitBranch || '-'} · {relTime(s.ts)}</Text>
             </Text>
           );
@@ -2173,6 +2348,7 @@ function SessionsPane({
           lastLines={lastLines}
           columns={columns}
           origin={forkOf.get(detail.sessionId) ?? null}
+          note={sessionNotes.get(detail.sessionId) ?? ''}
         />
       ) : null}
     </Box>
@@ -2193,6 +2369,7 @@ function SessionDetailPane({
   lastLines,
   columns,
   origin,
+  note,
 }: {
   s: Session;
   firstLines: number;
@@ -2200,13 +2377,23 @@ function SessionDetailPane({
   columns: number;
   /** T28 — id d'origine se la sessione è un ramo, altrimenti null. */
   origin: string | null;
+  /** T53 — nota umana; '' = nessuna. */
+  note: string;
 }) {
   const width = detailTextWidth(columns);
   const first = s.customTitle && firstLines > 0 ? wrapLines(s.firstPrompt, width, firstLines) : [];
   const last = s.lastReply && lastLines > 0 ? wrapLines(s.lastReply, width, lastLines) : [];
   return (
     <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
-      <Text bold wrap="truncate-end">{s.title}</Text>
+      {/* T53 — la nota va sulla riga del titolo, non su una propria: le righe
+          FISSE del pannello sono contate dal budget d'altezza (SESSION_DETAIL_FIXED)
+          e una riga in più sforerebbe senza passare da `layoutBudget`. Qui il
+          titolo resta INTERO anche con la nota — a differenza della lista, nel
+          pannello lo spazio c'è e il prefisso non si ripete su N righe. */}
+      <Text bold wrap="truncate-end">
+        {note ? <Text color="yellow">«{note}» </Text> : null}
+        <Text dimColor={Boolean(note)}>{s.title}</Text>
+      </Text>
       {/* La provenienza va IN CODA alla riga meta esistente, non su una riga
           propria: il budget d'altezza conta le righe fisse del pannello e una
           riga in più le sforerebbe senza passare da layoutBudget. */}

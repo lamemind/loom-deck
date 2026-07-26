@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  appendNote,
   appendPin,
   appendSessionRecord,
   appendTaskBinding,
@@ -129,4 +130,67 @@ test('campi indipendenti: un pin non cancella il binding, e viceversa', () => {
 
 test('pin: file assente → mappa pinned vuota, nessun throw', () => {
   assert.equal(loadSessionIndex(root()).pinned.size, 0);
+});
+
+// ── T53 · note store ────────────────────────────────────────────────────────
+
+test('nota: append e rilettura', () => {
+  const r = root();
+  appendNote(r, 'sid-1', 'regex + reader');
+  assert.equal(loadSessionIndex(r).notes.get('sid-1'), 'regex + reader');
+});
+
+test('nota last-wins: la seconda scrittura sostituisce la prima', () => {
+  const r = root();
+  appendNote(r, 'sid', 'prima');
+  appendNote(r, 'sid', 'seconda');
+  assert.equal(loadSessionIndex(r).notes.get('sid'), 'seconda');
+});
+
+test('nota vuota = cancellazione: la chiave sparisce dalla mappa', () => {
+  const r = root();
+  appendNote(r, 'sid', 'da togliere');
+  appendNote(r, 'sid', '');
+  assert.equal(
+    loadSessionIndex(r).notes.has('sid'),
+    false,
+    'stringa vuota → nessuna nota, non una nota vuota',
+  );
+});
+
+test('nota riscritta dopo la cancellazione: torna presente', () => {
+  const r = root();
+  appendNote(r, 'sid', 'v1');
+  appendNote(r, 'sid', '');
+  appendNote(r, 'sid', 'v2');
+  assert.equal(loadSessionIndex(r).notes.get('sid'), 'v2');
+});
+
+test('campi indipendenti: la nota non tocca binding e pin, e viceversa', () => {
+  const r = root();
+  appendTaskBinding(r, 'sid', 'T53');
+  appendPin(r, 'sid', true);
+  appendNote(r, 'sid', 'annotata');
+  const idx = loadSessionIndex(r);
+  assert.equal(idx.bindings.get('sid'), 'T53');
+  assert.equal(idx.pinned.has('sid'), true);
+  assert.equal(idx.notes.get('sid'), 'annotata');
+  // E l'inverso: un unpin successivo non deve portarsi via la nota.
+  appendPin(r, 'sid', false);
+  const dopo = loadSessionIndex(r);
+  assert.equal(dopo.pinned.has('sid'), false);
+  assert.equal(dopo.notes.get('sid'), 'annotata', 'la nota sopravvive allo spin');
+});
+
+test('retrocompat: i record pre-T53 (senza note) non azzerano una nota scritta', () => {
+  const r = root();
+  appendNote(r, 'sid', 'viva');
+  // Record senza il campo `note`: il `typeof` deve ignorarlo, non trattarlo
+  // come una cancellazione — altrimenti ogni pin successivo spegnerebbe la nota.
+  appendSessionRecord(r, { sessionId: 'sid', forkOf: 'altra' });
+  assert.equal(loadSessionIndex(r).notes.get('sid'), 'viva');
+});
+
+test('nota: file assente → mappa notes vuota, nessun throw', () => {
+  assert.equal(loadSessionIndex(root()).notes.size, 0);
 });

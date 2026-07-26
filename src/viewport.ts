@@ -52,6 +52,25 @@ export function normalizeEmoji(s: string): string {
   return out;
 }
 
+/**
+ * Collassa gli spazi (description multi-paragrafo → blocco unico) e tronca a
+ * `n` caratteri, con ellissi quando taglia.
+ *
+ * Vive qui e non nel modulo di render perché è misura di larghezza come il
+ * resto del file, e perché la cascata dell'etichetta di riga (`session-list.ts`)
+ * ne ha bisogno restando pura — importarla da `cli.tsx` tirerebbe dentro Ink e
+ * React in un modulo che si testa senza terminale.
+ */
+export function truncate(s: string, n: number): string {
+  // Budget non positivo → stringa vuota, e va detto ESPLICITAMENTE: senza questa
+  // guardia `n = 0` produce `slice(0, -1)`, e un indice negativo in JS conta
+  // dalla FINE — restituirebbe quasi tutta la stringa invece di niente, cioè
+  // l'opposto del troncamento, in silenzio e proprio quando lo spazio manca.
+  if (n <= 0) return '';
+  const flat = s.replace(/\s+/g, ' ').trim();
+  return flat.length > n ? flat.slice(0, n - 1).trimEnd() + '…' : flat;
+}
+
 /** Righe lasciate libere sotto il frame. La condizione di Ink è `>=`, quindi
  *  basterebbe 1; ne teniamo 1 come margine per l'a-capo del cursore. */
 export const SLACK = 1;
@@ -82,6 +101,7 @@ const MIN_SESSION_ROWS = 3;
 export const MODAL_HEIGHT = {
   normal: 0,
   create: 4, // marginTop + 2 bordi + 1 riga input
+  note: 4, // T53 — gemello di create: marginTop + 2 bordi + 1 riga input
   sort: 5, // marginTop + 2 bordi + titolo + 1 riga catena
   filter: 6, // marginTop + 2 bordi + titolo + 2 righe (pri, stato)
   edit: 8, // marginTop + 2 bordi + titolo + 3 campi + riga anteprima

@@ -16,6 +16,85 @@
 //    identificherebbe la riga sbagliata dopo un pin/cambio-contesto.
 
 import type { Session } from './sessions.js';
+import { truncate } from './viewport.js';
+
+// ── T53 · etichetta di riga ────────────────────────────────────────────────
+
+/**
+ * Toglie dal titolo il core `<owner> <name>` del progetto e la punteggiatura di
+ * giunzione che resta appesa davanti.
+ *
+ * Il titolo di una sessione È la label della tab Ptyxis (`🧵 LOCAL loom-works ·
+ * T52`): dentro un deck che mostra un progetto solo, il core è una COLONNA
+ * COSTANTE ripetuta su ogni riga. Toglierlo libera le colonne per ciò che
+ * distingue davvero una conversazione dall'altra.
+ *
+ * `core` null (file config assente o senza identità) → titolo intatto: senza
+ * sapere cosa togliere non si indovina, si lascia stare.
+ */
+export function stripProjectCore(title: string, core: string | null): string {
+  let t = title;
+  if (core) {
+    const at = t.indexOf(core);
+    if (at >= 0) t = t.slice(at + core.length);
+  }
+  return t.replace(/^[\s·]+/, '').trim();
+}
+
+/** T53 — le due parti dell'etichetta di riga, già troncate a budget. */
+export interface RowLabel {
+  /** Nota umana, senza caporali (li mette il render). '' = nessuna nota. */
+  note: string;
+  /** Ciò che segue la nota: titolo intatto senza nota, residuo dello strip con
+   *  nota. '' = niente da mostrare dopo la nota (caso legittimo). */
+  rest: string;
+}
+
+/** Colonne minime perché un residuo dopo la nota valga la riga: sotto questa
+ *  soglia si vedrebbero due lettere e un'ellissi, cioè rumore. */
+const MIN_REST = 6;
+/** Colonne garantite alla nota quando c'è anche un residuo da mostrare: la nota
+ *  è la parte scelta da un umano, non è lei a cedere il posto per prima. */
+const MIN_NOTE = 14;
+
+/**
+ * Cosa scrivere sulla riga di una conversazione, dentro `budget` colonne.
+ *
+ * Due regimi, ed è una decisione deliberata che NON siano lo stesso:
+ *
+ *  - **senza nota** → il titolo resta INTATTO, prefisso di progetto incluso.
+ *    Togliere il core qui lascerebbe `T52` o il nulla (i titoli di tab non
+ *    contengono altro), cioè meno informazione di prima, non più spazio.
+ *  - **con nota** → il core se ne va: la nota dice già quale conversazione è,
+ *    quindi le colonne del prefisso passano a lei. Il residuo (tipicamente la
+ *    task, `T52`) segue dimmato se ci sta; se non resta nulla va benissimo.
+ *
+ * Il budget si divide dando la precedenza alla nota, ma senza affamare il
+ * residuo: con entrambi presenti la nota cede fino a `MIN_NOTE` per lasciare
+ * spazio al residuo, e il residuo sparisce del tutto sotto `MIN_REST` invece di
+ * ridursi a un moncone.
+ */
+export function rowLabel(
+  title: string,
+  note: string | undefined,
+  core: string | null,
+  budget: number,
+): RowLabel {
+  if (!note) return { note: '', rest: truncate(title, Math.max(0, budget)) };
+
+  // 2 colonne per i caporali « », 1 per lo spazio prima del residuo.
+  const rest = stripProjectCore(title, core);
+  const noteBudget = Math.max(0, budget - 2);
+  if (!rest) return { note: truncate(note, noteBudget), rest: '' };
+
+  // Il `min` col budget totale non è ridondante: su un pane strettissimo
+  // `MIN_NOTE` supererebbe le colonne disponibili e la riga andrebbe a capo —
+  // che è precisamente il difetto che ogni larghezza qui dentro esiste per
+  // evitare (una riga wrappata sfonda il budget d'ALTEZZA, non solo l'estetica).
+  const shownNote = truncate(note, Math.min(noteBudget, Math.max(MIN_NOTE, noteBudget - MIN_REST - 1)));
+  const restBudget = noteBudget - shownNote.length - 1;
+  return { note: shownNote, rest: restBudget >= MIN_REST ? truncate(rest, restBudget) : '' };
+}
 
 export type SessionRow =
   | { kind: 'pinned'; sessionId: string; session: Session | null; stale: boolean }

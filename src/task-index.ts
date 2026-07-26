@@ -32,6 +32,14 @@ import { dirname, join } from 'node:path';
 // spawn): l'append-only + last-wins già previsto ("copre eventuali re-pin") lo
 // regge — l'unpin è un append `{sessionId, pinned:false}` che vince sull'ultimo
 // `pinned:true`. Ogni toggle aggiunge una riga (churn trascurabile, azione umana).
+//
+// T53 — la NOTA (`note`) è il secondo campo mutabile, gemello di `pinned`: testo
+// libero scritto dall'umano per dire cosa è quella conversazione, quando il
+// titolo derivato non basta. Vive qui e non nel transcript per la stessa ragione
+// del binding task: lo store di CC è di CC, non abbiamo un posto dove scrivere
+// dentro un suo file. La cancellazione è un append di stringa VUOTA (`note:''`),
+// non un record di tipo diverso — last-wins la fa vincere sull'ultima nota, come
+// `pinned:false` vince sull'ultimo `pinned:true`.
 
 export interface SessionRecord {
   sessionId: string;
@@ -41,6 +49,8 @@ export interface SessionRecord {
   forkOf?: string;
   /** T50 — pin/unpin della conversazione. true = pinnata, false = spinnata. */
   pinned?: boolean;
+  /** T53 — nota umana sulla conversazione. Stringa vuota = nota cancellata. */
+  note?: string;
 }
 
 export function taskIndexPath(projectRoot: string): string {
@@ -62,6 +72,11 @@ export function appendPin(projectRoot: string, sessionId: string, pinned: boolea
   appendSessionRecord(projectRoot, { sessionId, pinned });
 }
 
+/** T53 — scrive (o cancella, con `note` vuota) la nota di una conversazione. */
+export function appendNote(projectRoot: string, sessionId: string, note: string): void {
+  appendSessionRecord(projectRoot, { sessionId, note });
+}
+
 export interface SessionIndex {
   /** sessionId → taskId (solo le scoped). */
   bindings: Map<string, string>;
@@ -72,6 +87,10 @@ export interface SessionIndex {
    *  la chiave). Rango crescente = pinnata più di recente → ordinamento del
    *  blocco pinnate `desc` (ultima in cima, D2 preflight). */
   pinned: Map<string, number>;
+  /** T53 — sessionId → nota corrente. Solo le note NON vuote: una `note:''`
+   *  finale toglie la chiave, così chi legge non deve distinguere «assente» da
+   *  «cancellata» (sono la stessa cosa a schermo). */
+  notes: Map<string, string>;
 }
 
 // Una sola lettura del JSONL per entrambe le mappe: il deck poll-a l'indice a
@@ -83,11 +102,12 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
   const bindings = new Map<string, string>();
   const forkOf = new Map<string, string>();
   const pinned = new Map<string, number>();
+  const notes = new Map<string, string>();
   let content: string;
   try {
     content = readFileSync(taskIndexPath(projectRoot), 'utf8');
   } catch {
-    return { bindings, forkOf, pinned };
+    return { bindings, forkOf, pinned, notes };
   }
   let order = 0; // posizione crescente dei record pinned → rango di pin (D2)
   for (const line of content.split('\n')) {
@@ -98,6 +118,7 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
         taskId?: unknown;
         forkOf?: unknown;
         pinned?: unknown;
+        note?: unknown;
       };
       if (typeof d.sessionId !== 'string') continue;
       if (typeof d.taskId === 'string') bindings.set(d.sessionId, d.taskId);
@@ -108,9 +129,16 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
         if (d.pinned) pinned.set(d.sessionId, order++);
         else pinned.delete(d.sessionId);
       }
+      // T53 — stesso last-wins: la stringa vuota è la CANCELLAZIONE, non una
+      // nota vuota da mostrare. Il `typeof` esclude i record senza il campo, che
+      // non devono toccare una nota scritta da un record precedente.
+      if (typeof d.note === 'string') {
+        if (d.note) notes.set(d.sessionId, d.note);
+        else notes.delete(d.sessionId);
+      }
     } catch {
       // riga corrotta → skip
     }
   }
-  return { bindings, forkOf, pinned };
+  return { bindings, forkOf, pinned, notes };
 }
