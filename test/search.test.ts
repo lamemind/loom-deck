@@ -243,6 +243,27 @@ test('estratto: le newline sono collassate, la riga resta una', () => {
   assert.ok(e.includes('CHIAVE'));
 });
 
+test('la larghezza dell\'estratto è un PARAMETRO, non una costante inchiodata', () => {
+  // Su un terminale largo un estratto fisso butta decine di colonne per riga,
+  // ed è proprio il contesto attorno al match la ragione per cui si legge la
+  // riga invece di aprire il reader.
+  const text = 'x'.repeat(300) + 'CHIAVE' + 'y'.repeat(300);
+  const s = [sess('a', [['ai', text]])];
+  const stretto = searchSessions(s, '', 'CHIAVE', opts(), 50).groups[0].hits[0].excerpt;
+  const largo = searchSessions(s, '', 'CHIAVE', opts(), 170).groups[0].hits[0].excerpt;
+  assert.ok(largo.length > stretto.length + 100, `largo=${largo.length} stretto=${stretto.length}`);
+  assert.ok(stretto.length <= 52 && largo.length <= 172);
+  for (const e of [stretto, largo]) assert.ok(e.includes('CHIAVE'));
+});
+
+test('senza larghezza esplicita si ripiega sul default (uso non-TUI e test)', () => {
+  const text = 'x'.repeat(300) + 'CHIAVE' + 'y'.repeat(300);
+  const s = [sess('a', [['ai', text]])];
+  const implicito = searchSessions(s, '', 'CHIAVE', opts()).groups[0].hits[0].excerpt;
+  const esplicito = searchSessions(s, '', 'CHIAVE', opts(), 50).groups[0].hits[0].excerpt;
+  assert.equal(implicito, esplicito);
+});
+
 test('estratto: gli offset del match restano quelli del testo RAW', () => {
   const text = 'aaa\n\n\nbbb CHIAVE ccc';
   const s = [sess('a', [['ai', text]])];
@@ -336,11 +357,32 @@ test('due occorrenze nello stesso record hanno chiavi diverse', () => {
   assert.notEqual(rows[0].key, rows[1].key);
 });
 
+test('la selezione iniziale atterra sulla prima OCCORRENZA, non sulla riga-sessione', () => {
+  // La riga-sessione è un segnaposto di navigazione: atterrarci lascerebbe
+  // l'anteprima vuota all'apertura e `⏎` prometterebbe un resume a chi ha
+  // appena cercato delle occorrenze.
+  const all = [sess('aaa', [['ai', 'chiave']]), sess('bbb', [['ai', 'chiave']])];
+  const rows = buildRows(searchSessions(all, '', 'chiave', opts()), false);
+  assert.equal(rows[0].kind, 'session');
+  assert.equal(firstRowKey(rows), rows[1].key);
+  assert.equal(selectedRow(rows, firstRowKey(rows))?.kind, 'hit');
+});
+
+test('lista piatta: la prima riga è già un\'occorrenza', () => {
+  const rows = buildRows(searchSessions([sess('aaa', [['ai', 'chiave']])], 'aaa', 'chiave', opts()), true);
+  assert.equal(firstRowKey(rows), rows[0].key);
+});
+
+test('senza occorrenze si ripiega sulla prima riga qualunque essa sia', () => {
+  assert.equal(firstRowKey([]), null);
+});
+
 test('navigazione: attraversa righe sessione e righe occorrenza', () => {
   const all = [sess('aaa', [['ai', 'chiave']]), sess('bbb', [['ai', 'chiave']])];
   const rows = buildRows(searchSessions(all, '', 'chiave', opts()), false);
-  let k = firstRowKey(rows);
-  assert.equal(rows[0].key, k);
+  // Le righe-sessione restano RAGGIUNGIBILI con le frecce: si parte dalla prima
+  // riga in assoluto e si verifica di toccarle tutte.
+  let k: string | null = rows[0].key;
   for (let i = 1; i < rows.length; i++) {
     k = moveRowSelection(rows, k, 1);
     assert.equal(k, rows[i].key, `passo ${i}`);
@@ -359,7 +401,6 @@ test('chiave persa dopo che la lista si è riordinata → prima riga, mai una a 
 });
 
 test('lista vuota: nessuna selezione, nessun crash', () => {
-  assert.equal(firstRowKey([]), null);
   assert.equal(moveRowSelection([], null, 1), null);
   assert.equal(rowIndexOfKey([], null), -1);
   assert.equal(selectedRow([], null), null);

@@ -148,7 +148,19 @@ che non può mai produrre un risultato.
 
 Con l'hash vuoto la lista è **raggruppata per conversazione**; `⏎` è contestuale
 alla riga selezionata — su una riga-conversazione **riprende** la sessione
-(come dal pane Sessions), su una riga-occorrenza apre il **reader**.
+(come dal pane Sessions), su una riga-occorrenza apre il **reader**. La selezione
+parte dalla prima *occorrenza*, non dalla riga di gruppo: quella è un segnaposto
+di navigazione, raggiungibile con le frecce ma non una destinazione.
+
+L'estratto attorno al match **si allarga col terminale**: a 190 colonne sono
+~170 caratteri di contesto, non i 50 di un valore fisso — ed è il contesto la
+ragione per cui si legge la riga invece di aprire il reader.
+
+Sotto la lista, un **pannello di anteprima** mostra il contesto attorno
+all'occorrenza selezionata e si aggiorna navigando con le frecce. Prende solo le
+righe che la lista non usa: con pochi risultati riempie il terminale, con molti
+sparisce e la lista se le riprende — quando c'è tanto da scorrere la priorità è
+vedere più occorrenze, il contesto è il premio per una ricerca già stretta.
 
 Il reader mostra il messaggio intero, aperto già **posizionato sull'occorrenza**
 col match evidenziato: `↑↓` riga, `PgUp`/`PgDn` pagina, `g`/`G` estremi, `esc`

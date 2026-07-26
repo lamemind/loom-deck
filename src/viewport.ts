@@ -267,6 +267,26 @@ export function readerCapacity(rows: number): number {
   return Math.max(0, (rows || 24) - SLACK - READER_CHROME);
 }
 
+// T52 — cornice del pannello di anteprima sotto la lista occorrenze:
+// marginTop + 2 bordi + riga meta.
+const SEARCH_PREVIEW_CHROME = 4;
+
+/**
+ * Righe di contesto concesse all'anteprima dell'occorrenza selezionata.
+ *
+ * Prende SOLO ciò che avanza: la lista si dimensiona sul contenuto e, quando i
+ * risultati sono pochi, il resto del terminale resterebbe vuoto. Con molti
+ * risultati lo spazio torna alla lista e il pannello sparisce da sé — la
+ * priorità è vedere quante più occorrenze possibile, il contesto è il premio
+ * per una ricerca già stretta.
+ *
+ * Restituisce 0 quando non c'è spazio nemmeno per una riga utile: un pannello
+ * di sola cornice ruberebbe 4 righe per non mostrare nulla.
+ */
+export function searchPreviewCapacity(capacity: number, listRows: number): number {
+  return Math.max(0, capacity - listRows - SEARCH_PREVIEW_CHROME);
+}
+
 /**
  * Il terminale non ospita nemmeno la cornice della schermata: va sostituita da
  * una riga singola, come fa `Budget.compact` per il deck.

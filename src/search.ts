@@ -23,7 +23,10 @@ import type { BodyKind, MessageBody, Session } from './sessions.js';
  *  sarebbe rumore. Stato lecito, non un errore. */
 export const MIN_QUERY = 3;
 
-/** Larghezza nominale dell'estratto attorno al match. */
+/** Larghezza di ripiego dell'estratto, usata solo quando il chiamante non
+ *  conosce le colonne del terminale (test, uso non-TUI). In UI la larghezza
+ *  arriva SEMPRE da `columns`: inchiodarla qui sprecherebbe tutto lo spazio di
+ *  un terminale largo — su 190 colonne significa ~140 buttate per riga. */
 export const EXCERPT_WIDTH = 50;
 
 /** Cap per singola conversazione. Serve a tenere leggibile un gruppo, non a
@@ -193,6 +196,7 @@ function scanBody(
   body: MessageBody,
   re: RegExp,
   need: number,
+  excerptWidth: number,
 ): { hits: Hit[]; count: number } {
   const hits: Hit[] = [];
   let count = 0;
@@ -207,7 +211,7 @@ function scanBody(
         sessionId,
         idx: body.idx,
         kind: body.kind,
-        excerpt: excerptAround(body.text, start, end),
+        excerpt: excerptAround(body.text, start, end, excerptWidth),
         matchStart: start,
         matchEnd: end,
         text: body.text,
@@ -232,6 +236,7 @@ export function searchSessions(
   hashPrefix: string,
   query: string,
   opts: SearchOptions,
+  excerptWidth: number = EXCERPT_WIDTH,
 ): SearchResult {
   const prefix = hashPrefix.trim().toLowerCase();
   const scoped = prefix
@@ -258,7 +263,7 @@ export function searchSessions(
         0,
         Math.min(MAX_HITS_PER_SESSION - hits.length, MAX_TOTAL_HITS - shown - hits.length),
       );
-      const r = scanBody(session.sessionId, body, re, need);
+      const r = scanBody(session.sessionId, body, re, need, excerptWidth);
       found += r.count;
       hits.push(...r.hits);
     }
@@ -314,10 +319,19 @@ export function buildRows(result: SearchResult, flat: boolean): SearchRow[] {
   return rows;
 }
 
-/** Prima riga selezionabile; null = lista vuota. Ogni riga è selezionabile —
- *  non esiste un separatore, a differenza di `session-list.ts`. */
+/**
+ * Riga su cui atterrare quando la selezione va ricostruita.
+ *
+ * Preferisce la prima **occorrenza**, non la prima riga in assoluto. In modalità
+ * raggruppata la lista si apre sempre con una riga-sessione, che è un
+ * segnaposto di navigazione e non una destinazione: atterrarci lascerebbe
+ * l'anteprima vuota all'apertura di ogni ricerca, e `⏎` prometterebbe un resume
+ * quando l'utente ha appena cercato delle occorrenze.
+ *
+ * Le righe-sessione restano raggiungibili con le frecce. null = lista vuota.
+ */
 export function firstRowKey(rows: SearchRow[]): string | null {
-  return rows[0]?.key ?? null;
+  return (rows.find((r) => r.kind === 'hit') ?? rows[0])?.key ?? null;
 }
 
 /** Indice della riga con quella chiave; -1 se assente. */

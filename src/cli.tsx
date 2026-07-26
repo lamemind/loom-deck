@@ -51,6 +51,7 @@ import {
   normalizeEmoji,
   readerCapacity,
   searchListCapacity,
+  searchPreviewCapacity,
   windowRange,
   wrapLines,
   wrapWithOffsets,
@@ -657,8 +658,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // rifarla sui re-render che non toccano né query né opzioni (il poll delle
   // sessioni ogni 1,5s è già filtrato dalla signature in `useSessions`).
   const searchResult: SearchResult = useMemo(
-    () => searchSessions(sessions, searchHash, searchQuery, searchOpts),
-    [sessions, searchHash, searchQuery, searchOpts],
+    () => searchSessions(sessions, searchHash, searchQuery, searchOpts, searchExcerptWidth(columns)),
+    [sessions, searchHash, searchQuery, searchOpts, columns],
   );
   // Con l'hash valorizzato la conversazione è una sola e già nominata nel campo:
   // la riga-sessione ripeterebbe un dato costante rubando una riga per gruppo.
@@ -666,6 +667,22 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const searchRows = useMemo(
     () => buildRows(searchResult, searchFlat),
     [searchResult, searchFlat],
+  );
+
+  // T52 — riga selezionata e, se è un'occorrenza, il suo corpo wrappato per
+  // l'anteprima sotto la lista. Memoizzato per (testo, larghezza): navigando
+  // con le frecce si ri-wrappa solo quando cambia davvero l'occorrenza.
+  const searchSelRow = useMemo(
+    () => selectedRow(searchRows, searchSelKey),
+    [searchRows, searchSelKey],
+  );
+  const searchPreviewWidth = Math.max(20, (columns || 80) - 8);
+  const searchPreviewBody = useMemo(
+    () =>
+      searchSelRow?.kind === 'hit'
+        ? wrapWithOffsets(searchSelRow.hit.text, searchPreviewWidth)
+        : [],
+    [searchSelRow, searchPreviewWidth],
   );
 
   // T52 — corpo del messaggio aperto nel reader, wrappato UNA volta per (testo,
@@ -857,20 +874,50 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   }
 
   function editSearchField(fn: (s: string) => string) {
+    // La nota racconta l'esito di un'AZIONE su una lista che, con l'eager, si
+    // ricostruisce a ogni carattere: appena la query cambia è già scaduta.
+    // Lasciarla lì la fa leggere come se descrivesse lo stato corrente — nello
+    // specifico «nessuna occorrenza selezionata» sopra una lista con una riga
+    // visibilmente selezionata, cioè una contraddizione a schermo.
+    setNote('');
     if (searchField === 'hash') setSearchHash(fn);
     else setSearchQuery(fn);
   }
 
   // `useInput` consegna il CHUNK letto da stdin, non un tasto: un incollaggio —
-  // o una raffica di tasti più veloce di una read — arriva come stringa unica,
-  // byte di controllo compresi. Senza filtro finiscono DENTRO la query: non si
-  // vedono, ma Ink li conta nella larghezza della riga e nessun match li
-  // soddisfa, quindi la ricerca smette di trovare senza dire perché.
-  // Le newline diventano spazio invece di sparire: incollare due righe deve
-  // separare le parole, non fonderle.
+  // o una raffica di tasti piu' veloce di una read — arriva come stringa unica,
+  // byte di controllo compresi. Due conseguenze, entrambe verificate su pty:
+  //
+  //  1. I byte di controllo finiscono DENTRO il campo se non li si filtra. Non
+  //     si vedono, ma Ink li conta nella larghezza della riga e nessun match li
+  //     soddisfa -> la ricerca smette di trovare senza dire perche'. Le newline
+  //     diventano spazio invece di sparire: incollare due righe deve separare
+  //     le parole, non fonderle.
+  //
+  //  2. Un TAB digitato subito dopo una lettera (~60 ms, cioe' battitura veloce
+  //     normale) arriva incollato ad essa: `key.tab` resta falso e il ramo del
+  //     cambio campo non scatta mai. Trattarlo come testo lo renderebbe uno
+  //     spazio, per giunta nel campo sbagliato — e' cosi' che `70897aff` + Tab
+  //     + `congelat` finiva tutto quanto nel campo hash.
+  //
+  // Si spezza quindi il chunk SUL TAB applicando il cambio campo in mezzo: il
+  // risultato e' identico alla battitura lenta. Stessa lezione del modale sort
+  // (T39), che cicla sui caratteri del chunk invece di leggerlo intero.
   function typeIntoField(chunk: string) {
-    const clean = chunk.replace(/[\r\n\t]/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '');
-    if (clean) editSearchField((s) => s + clean);
+    setNote('');
+    const clean = (s: string) =>
+      s.replace(/[\r\n]/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '');
+
+    const parts = chunk.split('\t');
+    let field = searchField;
+    const add: Record<SearchField, string> = { hash: '', query: '' };
+    for (let k = 0; k < parts.length; k++) {
+      if (k > 0) field = field === 'hash' ? 'query' : 'hash';
+      add[field] += clean(parts[k]);
+    }
+    if (add.hash) setSearchHash((v) => v + add.hash);
+    if (add.query) setSearchQuery((v) => v + add.query);
+    setSearchField(field);
   }
 
   const searchCap = searchListCapacity(rows, Boolean(note));
@@ -1255,8 +1302,28 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     }
     const selIdx = rowIndexOfKey(searchRows, searchSelKey);
     const win = windowRange(searchRows.length, selIdx, searchCap);
+    // Anteprima dell'occorrenza selezionata: prende le righe che la lista non
+    // usa. Con molti risultati `spare` è 0 e il pannello non esiste — la lista
+    // se le riprende tutte, che è la priorità giusta quando c'è molto da
+    // scorrere. La finestra si CENTRA sul match (`windowRange`), così il
+    // contesto arriva da entrambi i lati.
+    const spare = searchPreviewCapacity(searchCap, win.end - win.start);
+    let preview = null;
+    if (spare >= 1 && searchSelRow?.kind === 'hit') {
+      const h = searchSelRow.hit;
+      const mline = Math.max(0, searchPreviewBody.findIndex((l) => l.end > h.matchStart));
+      const pw = windowRange(searchPreviewBody.length, mline, spare);
+      preview = {
+        hit: h,
+        lines: searchPreviewBody.slice(pw.start, pw.end),
+        from: pw.start,
+        total: searchPreviewBody.length,
+        ts: sessions.find((s) => s.sessionId === h.sessionId)?.ts ?? 0,
+      };
+    }
     return (
       <SearchScreen
+        preview={preview}
         hash={searchHash}
         query={searchQuery}
         field={searchField}
@@ -1271,6 +1338,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         bindings={bindings}
         pinned={pinned}
         projectCore={identity ? `${identity.owner} ${identity.name}` : null}
+        columns={columns}
         note={note}
       />
     );
@@ -1525,6 +1593,33 @@ const KIND_TAG: Record<BodyKind, string> = { ai: 'ai', tool: 'tl', human: 'hu' }
 const KIND_COLOR: Record<BodyKind, string> = { ai: 'cyan', tool: 'gray', human: 'green' };
 
 /**
+ * Larghezza dell'estratto, DERIVATA dalle colonne del terminale.
+ *
+ * Una costante qui è spazio buttato a ogni riga: su un terminale a 190 colonne
+ * un estratto fisso a 50 lascia il match con ~20 caratteri di contesto per lato
+ * quando potrebbe averne 80 — e il contesto attorno al match è l'unica ragione
+ * per cui si legge la riga invece di aprire il reader.
+ *
+ * Scomposizione delle colonne consumate dalla cornice e dal prefisso di riga:
+ *   4  box esterno (2 bordi + 2 padding)
+ *   4  box lista   (2 bordi + 2 padding)
+ *   2  caret
+ *   4  indice del record
+ *   3  spazio + tag del kind + spazio
+ * Prudente per costruzione: sottostimare tronca un carattere in più,
+ * sovrastimare manderebbe la riga a capo e sfonderebbe il budget d'altezza.
+ */
+function searchExcerptWidth(columns: number): number {
+  return Math.max(30, (columns || 80) - 17);
+}
+
+/** Titolo della conversazione sulla riga-gruppo: prende ciò che avanza dopo le
+ *  colonne a larghezza fissa (caret, pin, hash, task, conteggio, data). */
+function searchTitleWidth(columns: number): number {
+  return Math.max(24, (columns || 80) - 56);
+}
+
+/**
  * Cosa scrivere sulla riga-gruppo per distinguere una conversazione dall'altra.
  *
  * Non basta `session.title`: quel titolo è la label della tab Ptyxis, cioè
@@ -1634,7 +1729,19 @@ function SearchListHeader({
  * spazio per ciò che distingue davvero una conversazione — hash, task legata,
  * titolo, data.
  */
+/** Anteprima dell'occorrenza selezionata, già finestrata dal chiamante. */
+interface SearchPreview {
+  hit: Hit;
+  lines: WrappedLine[];
+  /** Indice della prima riga mostrata, nel corpo intero. */
+  from: number;
+  total: number;
+  /** Ultima attività della conversazione (ms epoch); 0 = non risolta. */
+  ts: number;
+}
+
 function SearchScreen({
+  preview,
   hash,
   query,
   field,
@@ -1649,8 +1756,11 @@ function SearchScreen({
   bindings,
   pinned,
   projectCore,
+  columns,
   note,
 }: {
+  /** null = nessuna occorrenza selezionata, o nessuna riga avanzata. */
+  preview: SearchPreview | null;
   hash: string;
   query: string;
   field: SearchField;
@@ -1668,6 +1778,7 @@ function SearchScreen({
   pinned: Map<string, number>;
   /** `<owner> <name>` del progetto: prefisso da togliere ai titoli di tab. */
   projectCore: string | null;
+  columns: number;
   note: string;
 }) {
   const enter =
@@ -1708,7 +1819,7 @@ function SearchScreen({
                 <Text dimColor> · </Text>
                 {bound ?? <Text dimColor>spot</Text>}
                 <Text dimColor> · </Text>
-                {truncate(conversationLabel(s, projectCore, bound), 44)}
+                {truncate(conversationLabel(s, projectCore, bound), searchTitleWidth(columns))}
                 <Text dimColor>
                   {'  '}({row.hitCount}
                   {row.hidden > 0 ? `+${row.hidden}` : ''}) {fmtDateTime(s.ts)}
@@ -1726,7 +1837,36 @@ function SearchScreen({
           );
         })}
       </Box>
+      {preview ? <SearchPreviewPane p={preview} /> : null}
       {note ? <Text color="green" wrap="truncate-end">{normalizeEmoji(note)}</Text> : null}
+    </Box>
+  );
+}
+
+/**
+ * Anteprima dell'occorrenza selezionata, sotto la lista.
+ *
+ * Riempie le righe che la lista non usa: con pochi risultati il terminale
+ * resterebbe vuoto per tre quarti, e il contesto attorno al match è proprio
+ * ciò che serve per decidere se è l'occorrenza giusta. Nel caso comune evita
+ * del tutto di aprire il reader.
+ *
+ * Si aggiorna navigando con le frecce, e la finestra è centrata sul match:
+ * stessa `windowRange` della lista, stessa evidenziazione del reader
+ * (`ReaderLine`) — nessuna primitiva nuova.
+ */
+function SearchPreviewPane({ p }: { p: SearchPreview }) {
+  const last = Math.min(p.total, p.from + p.lines.length);
+  return (
+    <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
+      <Text dimColor wrap="truncate-end">
+        record {p.hit.idx} · {KIND_LABEL[p.hit.kind]}
+        {p.ts ? ` · ${fmtDateTime(p.ts)}` : ''} · righe {p.from + 1}-{last} di {p.total} ·{' '}
+        <Text color="yellow">⏎</Text> apre il reader
+      </Text>
+      {p.lines.map((l, i) => (
+        <ReaderLine key={p.from + i} line={l} from={p.hit.matchStart} to={p.hit.matchEnd} />
+      ))}
     </Box>
   );
 }

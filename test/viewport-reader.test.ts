@@ -7,6 +7,7 @@ import {
   isCompact,
   readerCapacity,
   searchListCapacity,
+  searchPreviewCapacity,
   wrapWithOffsets,
   SLACK,
 } from '../src/viewport.js';
@@ -156,5 +157,40 @@ test('il frame di ricerca non supera mai le righe del terminale', () => {
 test('il frame del reader non supera mai le righe del terminale', () => {
   for (const rows of [20, 24, 30, 40, 60]) {
     assert.ok(readerCapacity(rows) + 8 + SLACK <= rows, `sforo a ${rows} righe`);
+  }
+});
+
+// ── anteprima dell'occorrenza ───────────────────────────────────────────────
+
+test("l'anteprima prende SOLO le righe che la lista non usa", () => {
+  const cap = searchListCapacity(44, false);
+  // Pochi risultati → tanto spazio all'anteprima.
+  assert.ok(searchPreviewCapacity(cap, 4) > 10);
+  // Lista piena → anteprima assente, lo spazio resta alla lista.
+  assert.equal(searchPreviewCapacity(cap, cap), 0);
+  // Quasi piena: non basta nemmeno per la cornice → 0, non un box vuoto.
+  assert.equal(searchPreviewCapacity(cap, cap - 3), 0);
+});
+
+test("l'anteprima cresce col terminale e sparisce sui terminali bassi", () => {
+  const p = (rows: number) => searchPreviewCapacity(searchListCapacity(rows, false), 4);
+  assert.ok(p(60) > p(40));
+  assert.ok(p(40) > p(30));
+  assert.equal(p(20), 0, 'a 20 righe la lista si prende tutto');
+});
+
+test('lista + anteprima insieme non superano mai le righe del terminale', () => {
+  // Invariante portante: la somma è ESATTAMENTE la capienza, quindi il frame
+  // resta identico a quello senza anteprima — nessun rischio di clearTerminal.
+  for (const rows of [20, 24, 30, 44, 60]) {
+    for (const note of [false, true]) {
+      const cap = searchListCapacity(rows, note);
+      for (const listRows of [0, 1, 4, Math.max(0, cap - 5), cap]) {
+        const prev = searchPreviewCapacity(cap, listRows);
+        const chrome = prev > 0 ? 4 : 0;
+        const frame = 14 + listRows + chrome + prev + (note ? 1 : 0);
+        assert.ok(frame + SLACK <= rows, `sforo: rows=${rows} lista=${listRows} prev=${prev}`);
+      }
+    }
   }
 });
