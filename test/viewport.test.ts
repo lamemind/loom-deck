@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {
   layoutBudget,
   windowRange,
-  wrapLines,
   MODAL_HEIGHT,
   SLACK,
   type BudgetInput,
   type Mode,
 } from '../src/viewport.js';
+import { wrapLines } from '../src/width.js';
 
 const input = (over: Partial<BudgetInput> = {}): BudgetInput => ({
   rows: 40,

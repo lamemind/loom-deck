@@ -6,7 +6,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { normalizeEmoji } from './viewport.js';
+import { sanitize } from './width.js';
 
 export interface LaunchEntry {
   emoji: string;
@@ -30,10 +30,10 @@ export function parseLaunch(raw: unknown): LaunchEntry[] {
     out.push({
       // L'emoji arriva dal file config: testo arbitrario, quindi va normalizzato
       // come ogni altro dato esterno — `☕` senza VS16 allargherebbe di una cella
-      // la riga della legenda, mandandola a capo (vedi normalizeEmoji).
-      emoji: normalizeEmoji(typeof emoji === 'string' ? emoji : '▸'),
+      // la riga della legenda, mandandola a capo (vedi width.ts).
+      emoji: sanitize(typeof emoji === 'string' ? emoji : '▸'),
       // `label` è opzionale per contratto → fallback sul comando stesso.
-      label: normalizeEmoji(typeof label === 'string' && label ? label : command),
+      label: sanitize(typeof label === 'string' && label ? label : command),
       command,
     });
   }

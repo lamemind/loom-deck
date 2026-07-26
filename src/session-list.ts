@@ -16,7 +16,7 @@
 //    identificherebbe la riga sbagliata dopo un pin/cambio-contesto.
 
 import type { Session } from './sessions.js';
-import { truncate } from './viewport.js';
+import { cut, termWidth } from './width.js';
 
 // ── T53 · etichetta di riga ────────────────────────────────────────────────
 
@@ -80,20 +80,23 @@ export function rowLabel(
   core: string | null,
   budget: number,
 ): RowLabel {
-  if (!note) return { note: '', rest: truncate(title, Math.max(0, budget)) };
+  if (!note) return { note: '', rest: cut(title, Math.max(0, budget)) };
 
   // 2 colonne per i caporali « », 1 per lo spazio prima del residuo.
   const rest = stripProjectCore(title, core);
   const noteBudget = Math.max(0, budget - 2);
-  if (!rest) return { note: truncate(note, noteBudget), rest: '' };
+  if (!rest) return { note: cut(note, noteBudget), rest: '' };
 
   // Il `min` col budget totale non è ridondante: su un pane strettissimo
   // `MIN_NOTE` supererebbe le colonne disponibili e la riga andrebbe a capo —
   // che è precisamente il difetto che ogni larghezza qui dentro esiste per
   // evitare (una riga wrappata sfonda il budget d'ALTEZZA, non solo l'estetica).
-  const shownNote = truncate(note, Math.min(noteBudget, Math.max(MIN_NOTE, noteBudget - MIN_REST - 1)));
-  const restBudget = noteBudget - shownNote.length - 1;
-  return { note: shownNote, rest: restBudget >= MIN_REST ? truncate(rest, restBudget) : '' };
+  const shownNote = cut(note, Math.min(noteBudget, Math.max(MIN_NOTE, noteBudget - MIN_REST - 1)));
+  // `termWidth`, non `.length`: quanto RESTA si misura in colonne come tutto il
+  // resto: una nota con un emoji conta 2 sullo schermo e 1 (o 2) code unit, e
+  // sottrarre le une dalle altre rimetterebbe la riga fuori dal pane.
+  const restBudget = noteBudget - termWidth(shownNote) - 1;
+  return { note: shownNote, rest: restBudget >= MIN_REST ? cut(rest, restBudget) : '' };
 }
 
 export type SessionRow =

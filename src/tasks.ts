@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { normalizeEmoji } from './viewport.js';
+import { sanitize } from './width.js';
 
 /**
  * Forma di un ID task: `T` (code) o `D` (doc) + numero. FONTE UNICA del gate —
@@ -61,16 +61,17 @@ export function parseTasks(content: string): Task[] {
     const prog = cells[4] ?? '';
     // desc = colonna finale; join per resistere a eventuali `|` nella descrizione.
     const desc = cells.slice(5, -1).join('|').trim();
-    // Normalizzazione larghezza glifi AL CONFINE: tutto ciò che entra da
-    // tasks.md è testo arbitrario e può contenere emoji BMP che Ink misura una
-    // cella in meno del terminale (vedi normalizeEmoji). Farlo qui invece che a
-    // ogni sito di render è ciò che impedisce di dimenticarne uno.
-    tasks.push({
-      id,
-      pri: normalizeEmoji(pri),
-      prog: normalizeEmoji(prog),
-      desc: normalizeEmoji(desc),
-    });
+    // Sanificazione AL CONFINE: tutto ciò che entra da tasks.md è testo
+    // arbitrario e può contenere glifi che Ink e il terminale misurano in modo
+    // diverso (vedi `width.ts`). Farlo qui invece che a ogni sito di render è
+    // ciò che impedisce di dimenticarne uno.
+    //
+    // `pri` e `prog` sono l'eccezione: NON si sanificano qui perché sono chiavi
+    // SEMANTICHE, non testo — `isDone()` e le lookup di `view.ts` confrontano
+    // il glifo, e `task-edit` lo riscrive in tasks.md. Sanificarli qui
+    // renderebbe `✔` un `✅` anche su disco, cambiando il formato di famiglia.
+    // La sanificazione di quei due avviene al display (`displayProg`).
+    tasks.push({ id, pri, prog, desc: sanitize(desc) });
   }
   return tasks;
 }
@@ -133,12 +134,12 @@ export function parseTaskDetail(id: string, content: string): TaskDetail {
   // descrizione finisce nel pannello dettaglio dove un glifo mal misurato
   // allarga la riga oltre il bordo del pane.
   const normFields: Record<string, string> = {};
-  for (const [k, v] of Object.entries(fields)) normFields[k] = normalizeEmoji(v);
+  for (const [k, v] of Object.entries(fields)) normFields[k] = sanitize(v);
   return {
     id,
-    title: normalizeEmoji(title),
+    title: sanitize(title),
     fields: normFields,
-    description: normalizeEmoji(descLines.join('\n').trim()),
+    description: sanitize(descLines.join('\n').trim()),
   };
 }
 

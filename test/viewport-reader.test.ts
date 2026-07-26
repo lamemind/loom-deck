@@ -8,9 +8,9 @@ import {
   readerCapacity,
   searchListCapacity,
   searchPreviewCapacity,
-  wrapWithOffsets,
   SLACK,
 } from '../src/viewport.js';
+import { wrapWithOffsets } from '../src/width.js';
 
 /** Invariante portante: ogni riga prodotta è una FETTA CONTIGUA del sorgente.
  *  È ciò che rende corretta l'evidenziazione del match. */

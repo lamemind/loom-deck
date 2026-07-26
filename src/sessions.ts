@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
-import { normalizeEmoji } from './viewport.js';
+import { sanitize } from './width.js';
 
 // ADAPTER ISOLATO sullo store interno di Claude Code (T27).
 //
@@ -195,7 +195,12 @@ function collectBodies(
   }
 
   for (const kind of ['ai', 'tool', 'human'] as const) {
-    const text = parts[kind].join('\n');
+    // Sanificato QUI, prima che la ricerca ci giri sopra: gli offset del match
+    // (`matchStart`/`matchEnd`) indicizzano questo testo, e sanificare a valle —
+    // al render — li sposterebbe, evidenziando la parte sbagliata della riga.
+    // Un corpo di transcript è la sorgente più ostile che il deck legge: emoji
+    // qualsiasi, output di tool con byte di controllo, CJK.
+    const text = sanitize(parts[kind].join('\n'));
     if (!text) continue;
     if (kind === 'human' && isInterrupt(text)) continue;
     out.push({ idx, kind, text });
@@ -291,7 +296,7 @@ export function parseTranscript(
     cwd,
     gitBranch,
     parentUuid,
-    title: normalizeEmoji(customTitle || firstUserText || '(senza titolo)'),
+    title: sanitize(customTitle || firstUserText || '(senza titolo)'),
     ts: mtime,
     path,
     sizeBytes,

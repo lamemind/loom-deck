@@ -14,63 +14,6 @@
 //
 // Logica pura, zero React/Ink: testabile senza pseudo-terminale.
 
-import stringWidth from 'string-width';
-
-/** Variation Selector-16: forza la presentazione emoji del carattere che precede. */
-const VS16 = '️';
-
-/**
- * Riallinea la larghezza dei glifi fra Ink e il terminale.
- *
- * Secondo meccanismo di sporcamento dello scrollback, indipendente dal budget
- * d'altezza. Ink assembla ogni riga su una griglia di CARATTERI: per un emoji
- * BMP senza VS16 (`☕` U+2615, `✔` U+2714, `⚡` U+26A1, `✅` U+2705, `▶` U+25B6)
- * riserva una sola posizione, mentre il terminale ne disegna due. La riga esce
- * larga `columns + 1`, il terminale la manda a capo, e l'altezza reale supera
- * quella che Ink crede — senza mai passare dal ramo `clearTerminal`. Con più
- * glifi sulla stessa riga l'eccesso si somma.
- *
- * Il VS16 esplicito fa contare 2 anche a Ink, riallineando le due contabilità.
- *
- * Il predicato è la LARGHEZZA MISURATA, non l'intervallo di codepoint: nello
- * stesso blocco U+2190–U+2BFF vivono anche `↓` `↑` `−`, larghi 1, e timbrarli
- * col VS16 li porterebbe a 2 accorciando la riga — l'errore opposto, con lo
- * stesso effetto di layout rotto. Gli astrali (U+1F000+) Ink li conta già bene.
- *
- * Idempotente: un glifo che ha già il VS16 non viene ri-timbrato.
- */
-export function normalizeEmoji(s: string): string {
-  if (!s) return s;
-  const cps = [...s];
-  let out = '';
-  for (let i = 0; i < cps.length; i++) {
-    const ch = cps[i]!;
-    out += ch;
-    const cp = ch.codePointAt(0)!;
-    if (cp < 0x10000 && stringWidth(ch) === 2 && cps[i + 1] !== VS16) out += VS16;
-  }
-  return out;
-}
-
-/**
- * Collassa gli spazi (description multi-paragrafo → blocco unico) e tronca a
- * `n` caratteri, con ellissi quando taglia.
- *
- * Vive qui e non nel modulo di render perché è misura di larghezza come il
- * resto del file, e perché la cascata dell'etichetta di riga (`session-list.ts`)
- * ne ha bisogno restando pura — importarla da `cli.tsx` tirerebbe dentro Ink e
- * React in un modulo che si testa senza terminale.
- */
-export function truncate(s: string, n: number): string {
-  // Budget non positivo → stringa vuota, e va detto ESPLICITAMENTE: senza questa
-  // guardia `n = 0` produce `slice(0, -1)`, e un indice negativo in JS conta
-  // dalla FINE — restituirebbe quasi tutta la stringa invece di niente, cioè
-  // l'opposto del troncamento, in silenzio e proprio quando lo spazio manca.
-  if (n <= 0) return '';
-  const flat = s.replace(/\s+/g, ' ').trim();
-  return flat.length > n ? flat.slice(0, n - 1).trimEnd() + '…' : flat;
-}
-
 /** Righe lasciate libere sotto il frame. La condizione di Ink è `>=`, quindi
  *  basterebbe 1; ne teniamo 1 come margine per l'a-capo del cursore. */
 export const SLACK = 1;
@@ -320,60 +263,6 @@ export function isCompact(capacity: number): boolean {
   return capacity < 1;
 }
 
-/** Riga wrappata che sa da dove viene: `start`/`end` sono offset nel testo
- *  SORGENTE, e servono a evidenziare il match a cavallo dell'a-capo. */
-export interface WrappedLine {
-  text: string;
-  start: number;
-  end: number;
-}
-
-/**
- * A-capo che PRESERVA la struttura del testo e traccia gli offset.
- *
- * Distinto da `wrapLines`, che collassa tutto in un flusso unico: lì serviva una
- * preview compatta di 2-4 righe, qui si legge un messaggio intero — appiattire
- * le newline renderebbe illeggibile qualunque blocco di codice o elenco.
- *
- * Ogni riga prodotta è una FETTA CONTIGUA del sorgente: è ciò che permette di
- * intersecarla con l'intervallo del match e colorare solo la parte giusta,
- * anche quando il match cade a cavallo di due righe.
- *
- * Taglia sull'ultimo spazio disponibile; una parola più larga della riga viene
- * spezzata a forza, altrimenti l'a-capo lo farebbe il terminale — fuori dal
- * conteggio delle righe, cioè di nuovo un frame più alto di `rows`.
- */
-export function wrapWithOffsets(text: string, width: number): WrappedLine[] {
-  const out: WrappedLine[] = [];
-  if (width <= 0) return out;
-
-  let base = 0;
-  for (const raw of text.split('\n')) {
-    // Tab e CR diventano UN singolo spazio, non quattro: la sostituzione deve
-    // conservare la lunghezza, o gli offset delle righe smettono di indicizzare
-    // il sorgente e il match verrebbe evidenziato spostato. Un tab lasciato
-    // passare sarebbe l'errore opposto — lo conteremmo 1 e il terminale 8.
-    const line = raw.replace(/[\t\r]/g, ' ');
-    if (line.length === 0) {
-      out.push({ text: '', start: base, end: base });
-    }
-    let pos = 0;
-    while (pos < line.length) {
-      if (line.length - pos <= width) {
-        out.push({ text: line.slice(pos), start: base + pos, end: base + line.length });
-        break;
-      }
-      let brk = line.lastIndexOf(' ', pos + width);
-      if (brk <= pos) brk = pos + width; // parola più lunga della riga
-      out.push({ text: line.slice(pos, brk), start: base + pos, end: base + brk });
-      pos = brk;
-      while (line[pos] === ' ') pos++; // lo spazio del taglio non apre la riga dopo
-    }
-    base += raw.length + 1; // +1 = il '\n' consumato dallo split
-  }
-  return out;
-}
-
 /**
  * Finestra scorrevole su una lista più lunga della capienza.
  *
@@ -396,52 +285,3 @@ export function windowRange(
   return { start, end: start + capacity };
 }
 
-/**
- * Hard-wrap a larghezza fissa, con tetto di righe.
- *
- * Serve un conteggio righe DETERMINISTICO: `<Text wrap="wrap">` di Ink wrappa a
- * runtime su una larghezza che il budget non conosce, quindi il pannello
- * dettaglio potrebbe sforare il tetto e riaprire il bug. Qui il testo viene
- * spezzato prima, e ogni riga è renderizzata con `wrap="truncate-end"`.
- *
- * Sottostimare `width` è sicuro (tronca prima), sovrastimarlo no (la riga
- * andrebbe a capo aggiungendo altezza non contabilizzata).
- */
-export function wrapLines(text: string, width: number, maxLines: number): string[] {
-  if (maxLines <= 0 || width <= 0) return [];
-  const flat = text.replace(/\s+/g, ' ').trim();
-  if (!flat) return [];
-
-  const lines: string[] = [];
-  let line = '';
-  for (const word of flat.split(' ')) {
-    if (!line) {
-      line = word;
-    } else if (line.length + 1 + word.length <= width) {
-      line += ' ' + word;
-    } else {
-      lines.push(line);
-      line = word;
-      if (lines.length === maxLines) break;
-    }
-    // Parola più lunga della riga: spezzala a forza, altrimenti l'a-capo lo
-    // farebbe il terminale — fuori dal nostro conteggio.
-    while (line.length > width) {
-      lines.push(line.slice(0, width));
-      line = line.slice(width);
-      if (lines.length === maxLines) break;
-    }
-    if (lines.length === maxLines) break;
-  }
-  if (line && lines.length < maxLines) lines.push(line);
-
-  const kept = lines.slice(0, maxLines);
-  // Troncamento MAI silenzioso, come le liste: l'ellissi segnala che il testo
-  // continua oltre il pannello.
-  const consumed = kept.join(' ').length;
-  if (consumed < flat.length && kept.length > 0) {
-    const last = kept[kept.length - 1]!;
-    kept[kept.length - 1] = last.length >= width ? last.slice(0, Math.max(0, width - 1)) + '…' : last + '…';
-  }
-  return kept;
-}

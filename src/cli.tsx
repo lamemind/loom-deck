@@ -51,18 +51,21 @@ import { launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './conf
 import {
   isCompact,
   layoutBudget,
-  normalizeEmoji,
   readerCapacity,
   searchListCapacity,
   searchPreviewCapacity,
-  truncate,
   windowRange,
-  wrapLines,
-  wrapWithOffsets,
   type Budget,
   type Mode as ViewportMode,
-  type WrappedLine,
 } from './viewport.js';
+import {
+  cut,
+  sanitize,
+  termWidth,
+  wrapLines,
+  wrapWithOffsets,
+  type WrappedLine,
+} from './width.js';
 import {
   applyView,
   cycleSort,
@@ -485,44 +488,24 @@ function useTaskDetail(tasksDir: string, id: string | undefined) {
   return detail;
 }
 
-// Normalizzazione larghezza glifi → `normalizeEmoji` in viewport.ts.
-//
-// Sostituisce il precedente `forceEmojiWidth`, che aveva l'intuizione giusta
-// (timbrare il VS16) ma due limiti che lasciavano passare il difetto:
-//  - agiva solo su stringhe di UN codepoint, quindi non toccava mai un testo
-//    composto — la riga della legenda launch, una descrizione task con emoji
-//    dentro, il titolo di una sessione;
-//  - decideva per intervallo di codepoint invece che per larghezza misurata,
-//    quindi avrebbe timbrato anche `↓` `↑` `−` (larghi 1) se gli fossero
-//    arrivati da soli, accorciando la riga invece di allargarla.
-const forceEmojiWidth = normalizeEmoji;
-
-// Glifi LETTERALI del JSX che ricadono nella classe mal misurata (BMP largo 2
-// senza VS16). I dati passano dai loader, questi no: normalizzati una volta
-// qui, così nessun sito di render li scrive nudi. `↳ ○ ▸ ⏎ · − ↑ ↓` sono
-// larghi 1 e restano intatti.
-const CARET = normalizeEmoji('▶ ');
+// Glifi LETTERALI del JSX. I dati passano dai loader, che sanificano al
+// confine; questi no — quindi passano da `sanitize` una volta qui, così nessun
+// sito di render scrive un glifo nudo. `↳ ○ ▸ ⏎ · − ↑ ↓` sono già concordi e
+// restano intatti; `▶` e `⚠` sono discordi e vengono sostituiti (`width.ts`).
+const CARET = sanitize('▶ ');
 const CARET_OFF = '  ';
-
-// T50 — glifo warning della riga pin-stale: BMP largo 2 senza VS16 → va timbrato
-// (come CARET), altrimenti la riga slitta di una colonna.
-const WARN = normalizeEmoji('⚠');
+const WARN = sanitize('⚠');
 // T50 — separatore leggero fra blocco pinnate e contestuali. `─` (box-drawing) è
-// largo 1 sia per string-width sia per il terminale → nessun timbro. Corto +
+// largo 1 sia per string-width sia per il terminale. Corto +
 // wrap="truncate-end" così non va mai a capo nel pane al 50%.
 const SESSION_SEP = '─'.repeat(16);
 
-// Normalizza il marker Done per il display. `✔` (U+2714) è text-presentation-
-// default: string-width — quindi Ink, sia per il layout sia per il troncamento —
-// lo misura 2 (rispetta il VS16 di `✔️`), ma VTE/Ptyxis lo disegna largo 1
-// (ignora il VS16). Risultato: le righe Done finivano 1 colonna più strette del
-// riservato → la coda della riga (bordo destro del pane incluso) slittava a
-// sinistra, sfasando il layout solo su quelle righe. `✅` (U+2705) è invece
-// emoji-presentation-default → largo 2 sia per string-width sia per il terminale,
-// come 🔵/🟡: colonna Prog allineata. Cambia SOLO il display: `task.prog` resta
-// `✔️` così `isDone()` continua a matchare.
+// Marker Done per il DISPLAY. `task.prog` resta il `✔️` letto da tasks.md —
+// `isDone()` e le lookup di `view.ts` ci confrontano sopra, e `task-edit` lo
+// riscrive sul file: è una chiave semantica, non testo. Qui `sanitize` lo
+// traduce nel suo gemello concorde (`✅`) solo per finire nel frame.
 function displayProg(prog: string): string {
-  return forceEmojiWidth(prog.replace(/✔️?/g, '✅'));
+  return sanitize(prog);
 }
 
 // T49 — size umana compatta per il detail pane sessione.
@@ -773,7 +756,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     }
     const sid = randomUUID();
     const beforeIds = new Set(tasks.map((t) => t.id));
-    setNote(`⏳ creando task… "${truncate(text, 40)}" (sid ${sid.slice(0, 8)})`);
+    setNote(`⏳ creando task… "${cut(text, 40)}" (sid ${sid.slice(0, 8)})`);
     const child = spawnCreateTask(text, cwd, sid, (ok) => {
       if (!ok) {
         setNote(`⚠ create-task fallito (${CLAUDE_CMD} -p)`);
@@ -824,7 +807,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     reloadSessions();
     setNote(
       text
-        ? `✎ nota su ${sid.slice(0, 8)}: "${truncate(text, 40)}"`
+        ? `✎ nota su ${sid.slice(0, 8)}: "${cut(text, 40)}"`
         : `✎ nota rimossa da ${sid.slice(0, 8)}`,
     );
   }
@@ -1622,7 +1605,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           projectCore={projectCore}
         />
       </Box>
-      {note ? <Text color="green" wrap="truncate-end">{normalizeEmoji(note)}</Text> : null}
+      {note ? <Text color="green" wrap="truncate-end">{sanitize(note)}</Text> : null}
     </Box>
   );
 }
@@ -1666,7 +1649,7 @@ function FilterModal({ view, cursor }: { view: ViewState; cursor: FilterCursor }
             return (
               <Text key={e.name} inverse={here} color={on ? 'green' : 'gray'} dimColor={!on}>
                 {'  '}
-                [{on ? 'x' : ' '}] {forceEmojiWidth(e.glyph)}
+                [{on ? 'x' : ' '}] {sanitize(e.glyph)}
               </Text>
             );
           })}
@@ -1691,7 +1674,7 @@ function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: Edit
         {EDIT_PRI.map((p) => (
           <Text key={p} inverse={draft.pri === p} color={draft.pri === p ? 'green' : 'gray'}>
             {'  '}
-            {forceEmojiWidth(PRI_GLYPH[p])} {PRI_LABEL[p]}
+            {sanitize(PRI_GLYPH[p])} {PRI_LABEL[p]}
           </Text>
         ))}
       </Text>
@@ -1701,7 +1684,7 @@ function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: Edit
         {EDIT_PROG.map((p) => (
           <Text key={p} inverse={draft.prog === p} color={draft.prog === p ? 'green' : 'gray'}>
             {'  '}
-            {forceEmojiWidth(PROG_GLYPH[p])} {p}
+            {sanitize(PROG_GLYPH[p])} {p}
           </Text>
         ))}
       </Text>
@@ -1712,10 +1695,10 @@ function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: Edit
         {row === 2 ? <Text inverse> </Text> : null}
         {!draft.detail && row !== 2 ? <Text dimColor>(default)</Text> : null}
       </Text>
-      {/* normalizeEmoji SOLO qui, non dentro progressText: quel testo finisce
+      {/* sanitize SOLO qui, non dentro progressText: quel testo finisce
           nel campo `Progress` del task file, dove il glifo va scritto nudo. */}
       <Text dimColor wrap="truncate-end">
-        ↳ {normalizeEmoji(progressText(draft.prog, draft.detail))}
+        ↳ {sanitize(progressText(draft.prog, draft.detail))}
       </Text>
     </Box>
   );
@@ -1724,7 +1707,7 @@ function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: Edit
 // T52 — marcatore compatto del tipo di corpo sulla riga-occorrenza. Due
 // caratteri ASCII e non un'emoji: con più toggle accesi la colonna deve
 // allinearsi, e i glifi BMP larghi 2 sono proprio la classe che Ink e il
-// terminale misurano diversamente (vedi normalizeEmoji).
+// terminale misurano diversamente (vedi width.ts).
 const KIND_TAG: Record<BodyKind, string> = { ai: 'ai', tool: 'tl', human: 'hu' };
 const KIND_COLOR: Record<BodyKind, string> = { ai: 'cyan', tool: 'gray', human: 'green' };
 
@@ -1741,12 +1724,12 @@ const KIND_COLOR: Record<BodyKind, string> = { ai: 'cyan', tool: 'gray', human: 
  *   4  box lista   (2 bordi + 2 padding)
  *   2  caret
  *   4  indice del record
- *   3  spazio + tag del kind + spazio
+ *   4  spazio + tag del kind (2 caratteri) + spazio
  * Prudente per costruzione: sottostimare tronca un carattere in più,
  * sovrastimare manderebbe la riga a capo e sfonderebbe il budget d'altezza.
  */
 function searchExcerptWidth(columns: number): number {
-  return Math.max(30, (columns || 80) - 17);
+  return Math.max(30, (columns || 80) - 18);
 }
 
 /** Titolo della conversazione sulla riga-gruppo: prende ciò che avanza dopo le
@@ -1946,14 +1929,15 @@ function SearchScreen({
             const s = row.session;
             const bound = bindings.get(s.sessionId);
             const rowNote = sessionNotes.get(s.sessionId);
-            const noteShown = rowNote ? truncate(rowNote, 24) : '';
+            const noteShown = rowNote ? cut(rowNote, 24) : '';
             // `+3` = i due caporali e lo spazio che li separa dall'etichetta.
             // Il pavimento non è cosmetico: senza, un terminale stretto manda
-            // l'argomento di `truncate` sotto zero e `slice` conta dalla FINE
-            // della stringa — mostrerebbe la coda del titolo, in silenzio.
+            // l'argomento di `cut` sotto zero, cioè un budget negativo.
+            // La nota si misura con `termWidth`, non con `.length`: contiene
+            // testo umano, emoji compresi.
             const restWidth = Math.max(
               8,
-              searchTitleWidth(columns) - (noteShown ? noteShown.length + 3 : 0),
+              searchTitleWidth(columns) - (noteShown ? termWidth(noteShown) + 3 : 0),
             );
             return (
               <Text key={row.key} inverse={sel} wrap="truncate-end">
@@ -1969,7 +1953,7 @@ function SearchScreen({
                     difetto peggiore proprio dentro la ricerca. */}
                 {noteShown ? <Text color="yellow" bold>«{noteShown}» </Text> : null}
                 <Text dimColor={Boolean(noteShown)}>
-                  {truncate(conversationLabel(s, projectCore, bound), restWidth)}
+                  {cut(conversationLabel(s, projectCore, bound), restWidth)}
                 </Text>
                 <Text dimColor>
                   {'  '}({row.hitCount}
@@ -1983,13 +1967,18 @@ function SearchScreen({
             <Text key={row.key} inverse={sel} wrap="truncate-end">
               {sel ? CARET : CARET_OFF}
               <Text dimColor>{String(h.idx).padStart(4)}</Text>{' '}
-              <Text color={KIND_COLOR[h.kind]}>{KIND_TAG[h.kind]}</Text> {h.excerpt}
+              <Text color={KIND_COLOR[h.kind]}>{KIND_TAG[h.kind]}</Text>{' '}
+              {/* Invariante ③: `excerptAround` ritaglia il contesto per indice
+                  di carattere (deve, per non spostare gli offset del match), e
+                  un estratto pieno di emoji vale più colonne di quante ne ha
+                  chieste. Il taglio a colonne si fa qui, all'ultimo momento. */}
+              {cut(h.excerpt, searchExcerptWidth(columns))}
             </Text>
           );
         })}
       </Box>
       {preview ? <SearchPreviewPane p={preview} /> : null}
-      {note ? <Text color="green" wrap="truncate-end">{normalizeEmoji(note)}</Text> : null}
+      {note ? <Text color="green" wrap="truncate-end">{sanitize(note)}</Text> : null}
     </Box>
   );
 }
@@ -2163,7 +2152,7 @@ function TasksPane({
               ...PRI_ENTRIES.filter((e) => view.hiddenPri.includes(e.name)),
               ...PROG_ENTRIES.filter((e) => view.hiddenProg.includes(e.name)),
             ]
-              .map((e) => `−${normalizeEmoji(e.glyph)}`)
+              .map((e) => `−${sanitize(e.glyph)}`)
               .join(' ')}
           </Text>
         ) : null}
@@ -2181,6 +2170,18 @@ function TasksPane({
           // completa, su cui è keyata la selezione. +1: lo 0 è spot.
           const sel = windowStart + i + 1 === selected;
           const n = childCount.get(task.id) ?? 0;
+          // Invariante ③: la descrizione è l'unico pezzo a lunghezza libera, e
+          // si taglia QUI sul budget che resta dopo le colonne fisse. Lasciarlo
+          // fare a `truncate-end` significa passare da `cli-truncate`, che
+          // restituisce una riga più larga del pane (una colonna per emoji) e
+          // quindi scrive sopra il bordo. Le parti fisse si misurano con
+          // `termWidth`: `task.id` è `T9` o `T52`, i due glifi valgono 2 ciascuno.
+          const head = `${CARET_OFF}${task.id}  ${sanitize(task.pri)}  ${displayProg(task.prog)}  `;
+          const tail = n > 0 ? ` (${n})` : '';
+          const desc = cut(
+            task.desc,
+            Math.max(4, paneTextWidth(columns) - termWidth(head) - termWidth(tail)),
+          );
           return (
             <Text
               key={task.id}
@@ -2190,8 +2191,8 @@ function TasksPane({
               wrap="truncate-end"
             >
               {sel ? CARET : CARET_OFF}
-              {task.id}  {forceEmojiWidth(task.pri)}  {displayProg(task.prog)}  {task.desc}
-              {n > 0 ? ` (${n})` : ''}
+              {task.id}  {sanitize(task.pri)}  {displayProg(task.prog)}  {desc}
+              {tail}
             </Text>
           );
         })
@@ -2301,7 +2302,7 @@ function SessionsPane({
                     dica cosa fosse quella conversazione: il transcript non c'è
                     più, quindi non esiste titolo né primo prompt da mostrare. */}
                 {sessionNotes.get(row.sessionId) ? (
-                  <Text color="yellow"> «{truncate(sessionNotes.get(row.sessionId)!, 30)}»</Text>
+                  <Text color="yellow"> «{cut(sessionNotes.get(row.sessionId)!, 30)}»</Text>
                 ) : null}
               </Text>
             );
@@ -2314,11 +2315,24 @@ function SessionsPane({
           const forked = forkOf.has(s.sessionId);
           // T53 — con una nota il prefisso di progetto sparisce e le sue colonne
           // passano alla nota; senza, il titolo resta com'è (vedi `rowLabel`).
+          //
+          // Invariante ③: il budget è DERIVATO da `columns`, non inchiodato.
+          // Con un valore fisso (erano 44) su un terminale stretto la riga
+          // superava il pane, e a troncarla finiva `cli-truncate` — che sfora
+          // di una colonna per emoji e si mangia il bordo destro.
+          const meta = ` · ${s.gitBranch || '-'} · ${relTime(s.ts)}`;
+          const labelBudget = Math.max(
+            12,
+            paneTextWidth(columns) -
+              (2 /* caret */ + 2 /* icona */ + 1 /* spazio */ + (forked ? 2 : 0)) -
+              termWidth(meta) -
+              1 /* spazio prima del meta */,
+          );
           const label = rowLabel(
             s.title,
             sessionNotes.get(s.sessionId),
             projectCore,
-            forked ? 42 : 44,
+            labelBudget,
           );
           return (
             <Text key={s.sessionId} inverse={sel && focused} bold={sel && !focused} wrap="truncate-end">
@@ -2440,6 +2454,21 @@ function detailMetaOf(detail: TaskDetail) {
  */
 function detailTextWidth(columns: number) {
   return Math.max(10, Math.floor(((columns || 80) - 4) / 2) - 9);
+}
+
+/**
+ * Larghezza del TESTO dentro un pane al 50%: box esterno (2 bordi + 2 padding)
+ * → metà → bordo + padding del pane.
+ *
+ * Invariante ③ (`width.ts`): chi renderizza una riga a lunghezza libera la
+ * taglia PRIMA con questa larghezza. Delegarlo a `wrap="truncate-end"`
+ * significa passare da `cli-truncate`, che indicizza per code point e restituisce
+ * una riga più larga di quella chiesta — una colonna per ogni emoji astrale a
+ * sinistra del taglio. Quelle colonne finiscono sopra il bordo del pane, che
+ * sparisce dalla riga: è la sminchiatura visibile a schermo.
+ */
+function paneTextWidth(columns: number) {
+  return Math.max(20, Math.floor(((columns || 80) - 4) / 2) - 4);
 }
 
 function DetailPane({
