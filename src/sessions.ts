@@ -302,8 +302,15 @@ export function parseTranscript(
     sizeBytes,
     turns,
     customTitle,
-    firstPrompt: firstUserText,
-    lastReply: lastAssistantText,
+    // Sanificati come il titolo, e per lo stesso motivo: le due preview del
+    // detail pane sono testo di transcript messo NEL FRAME. Erano l'ultimo
+    // varco rimasto — un `✅` (BMP largo 2) nell'estratto prende una cella
+    // sola nella griglia di Ink e due colonne sul terminale, quindi la riga
+    // scivola a destra e si mangia il bordo del pane. Qui il confine è lo
+    // stesso di `title`, non il render: `wrapLines` conta le colonne su questo
+    // testo, sanificare a valle sposterebbe l'a-capo già calcolato.
+    firstPrompt: sanitize(firstUserText),
+    lastReply: sanitize(lastAssistantText),
     bodies,
   };
 }

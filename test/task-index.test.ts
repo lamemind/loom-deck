@@ -194,3 +194,11 @@ test('retrocompat: i record pre-T53 (senza note) non azzerano una nota scritta',
 test('nota: file assente → mappa notes vuota, nessun throw', () => {
   assert.equal(loadSessionIndex(root()).notes.size, 0);
 });
+
+test('nota: sanificata in lettura, non solo alla digitazione', () => {
+  const r = root();
+  // Scritta a mano nel sidecar (o incollata prima del fix): il glifo largo del
+  // BMP senza VS16 fa slittare la riga che ospita la nota.
+  appendNote(r, 'sid', 'done ✅');
+  assert.match(loadSessionIndex(r).notes.get('sid')!, /✅️/);
+});

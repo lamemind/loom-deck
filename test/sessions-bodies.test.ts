@@ -176,3 +176,31 @@ test('un record assistant misto produce DUE corpi, uno per kind', () => {
   const last = s.bodies.filter((b) => b.idx === 1);
   assert.deepEqual(last.map((b) => b.kind), ['ai', 'tool']);
 });
+
+// ── larghezza · le preview del detail pane sono testo NEL FRAME ──────────────
+
+test('le preview escono sanificate: il glifo largo del BMP porta il VS16', () => {
+  // Senza HEAD: `firstPrompt` è il PRIMO prompt umano, e il record di testa
+  // dell'helper lo occuperebbe.
+  const s = parseTranscript(
+    transcript([
+      { type: 'user', cwd: '/proj', message: { content: 'fatto ✅ ok' } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'chiuso ✅' }] } },
+    ]),
+    PATH,
+    1000,
+    42,
+  )!;
+  // U+2705 è largo 2 per il terminale ma UNA sola cella nella griglia di Ink
+  // (`isFullwidthCodePoint` non copre gli emoji): senza VS16 la riga slitta a
+  // destra e si mangia il bordo del pane.
+  assert.match(s.firstPrompt, /✅️/, 'primo prompt non sanificato');
+  assert.match(s.lastReply, /✅️/, 'ultima risposta non sanificata');
+});
+
+test('le preview: il discorde a presentazione-testo diventa il gemello concorde', () => {
+  const s = parse([{ type: 'assistant', message: { content: [{ type: 'text', text: 'ok ✔' }] } }]);
+  // `✔` (U+2714): string-width 2, terminale 1 → non riparabile, sostituito.
+  assert.equal(s.lastReply.includes('✔'), false);
+  assert.match(s.lastReply, /✅️/);
+});

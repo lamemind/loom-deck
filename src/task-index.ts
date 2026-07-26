@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { sanitize } from './width.js';
 
 // SIDECAR sessionId ↔ taskId (T27) + sessionId ↔ origine del fork (T28).
 //
@@ -133,7 +134,13 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
       // nota vuota da mostrare. Il `typeof` esclude i record senza il campo, che
       // non devono toccare una nota scritta da un record precedente.
       if (typeof d.note === 'string') {
-        if (d.note) notes.set(d.sessionId, d.note);
+        // Sanificata in lettura, non solo alla digitazione: `sanitizeTyped`
+        // toglie i byte di controllo ma non ripara la larghezza, e il file è
+        // editabile a mano — una nota con un `✅` finirebbe nel frame larga il
+        // doppio di quanto Ink ha contato. Il round-trip (edit di una nota già
+        // sanificata → riscrittura del sostituto) è il prezzo accettato: a
+        // schermo il glifo originale non era comunque disegnabile.
+        if (d.note) notes.set(d.sessionId, sanitize(d.note));
         else notes.delete(d.sessionId);
       }
     } catch {
