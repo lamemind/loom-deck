@@ -14,7 +14,21 @@ import {
   type Task,
   type TaskDetail,
 } from './tasks.js';
-import { discoverProjectSessions, type Session } from './sessions.js';
+import { discoverProjectSessions, type BodyKind, type Session } from './sessions.js';
+import {
+  buildRows,
+  firstRowKey,
+  moveRowSelection,
+  rowIndexOfKey,
+  searchSessions,
+  selectedRow,
+  DEFAULT_OPTIONS,
+  MIN_QUERY,
+  type Hit,
+  type SearchOptions,
+  type SearchResult,
+  type SearchRow,
+} from './search.js';
 import {
   appendPin,
   appendSessionRecord,
@@ -32,12 +46,17 @@ import {
 } from './session-list.js';
 import { launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
 import {
+  isCompact,
   layoutBudget,
   normalizeEmoji,
+  readerCapacity,
+  searchListCapacity,
   windowRange,
   wrapLines,
+  wrapWithOffsets,
   type Budget,
   type Mode as ViewportMode,
+  type WrappedLine,
 } from './viewport.js';
 import {
   applyView,
@@ -111,6 +130,31 @@ type EditRow = 0 | 1 | 2;
 // Modale sort a grammatica libera: un tasto per chiave, pressioni successive
 // ciclano asc → desc → fuori dalla chain.
 const SORT_TASTI: Record<string, SortKey> = { p: 'pri', s: 'prog', i: 'id' };
+
+// T52 — campi del modale ricerca, ciclati da Tab.
+type SearchField = 'hash' | 'query';
+
+// T52 — toggle del modale ricerca, tutti su CTRL (D2).
+//
+// I due campi di testo mangiano ogni lettera nuda, quindi un toggle non può
+// essere una lettera semplice: resterebbero i caratteri della query. CTRL è
+// l'unico livello che convive con la digitazione senza modi né navigazione.
+//
+// Le mnemoniche ovvie sono precluse dall'ASCII, non da una scelta di design:
+// `^I` È il Tab (0x09) e `^H` È il Backspace (0x08) — stesso byte, nessuna
+// distinzione possibile a valle. Quindi niente I=IA e niente H=human. Bruciati
+// per lo stesso motivo `^M` (Enter), `^J` (LF), `^[` (Esc). Tutto il resto passa
+// pulito, `^S`/`^Q` inclusi: il raw mode di Ink disattiva il flow-control XON/XOFF
+// che altrimenti se li mangerebbe il terminale.
+const SEARCH_TOGGLE_KEYS = {
+  r: 'regex',
+  a: 'caseSensitive',
+  w: 'wholeWord',
+} as const;
+
+const SEARCH_KIND_KEYS: Record<string, BodyKind> = { b: 'ai', t: 'tool', u: 'human' };
+
+const KIND_LABEL: Record<BodyKind, string> = { ai: 'IA', tool: 'tools', human: 'human' };
 
 // T41 — ordine dei valori nel modale edit. Deliberatamente DIVERSO da
 // PRI_ENTRIES/PROG_ENTRIES (che seguono il rango di sort): qui si sceglie un
@@ -535,6 +579,23 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const [edit, setEdit] = useState<EditDraft | null>(null);
   const [editRow, setEditRow] = useState<EditRow>(0);
 
+  // T52 — stato del modale ricerca. VOLATILE per decisione (D4): vive in
+  // memoria, quindi riaprendo il modale ritrovi query e toggle come li avevi
+  // lasciati, ma un riavvio del deck riporta ai default. Niente schema nuovo su
+  // `deck-view.json` e nessuna scrittura implicita su disco — che
+  // contraddirebbe la regola T39 «il disco si tocca solo su `w`», qui non
+  // trasportabile perché dentro il modale `w` è un carattere digitabile.
+  const [searchHash, setSearchHash] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchField, setSearchField] = useState<SearchField>('query');
+  const [searchOpts, setSearchOpts] = useState<SearchOptions>(DEFAULT_OPTIONS);
+  const [searchSelKey, setSearchSelKey] = useState<string | null>(null);
+  // Occorrenza aperta nel reader; null = reader chiuso. Tenerla separata dalla
+  // selezione della lista è ciò che permette a `esc` di tornare indietro
+  // trovando la lista esattamente com'era.
+  const [readerRow, setReaderRow] = useState<SearchRow | null>(null);
+  const [readerTop, setReaderTop] = useState(0);
+
   // Dimensioni vive del terminale: sono l'input del budget d'altezza sotto.
   const { rows, columns } = useTerminalSize();
 
@@ -589,6 +650,35 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const sessionRows = assembled.rows;
   const selSessionObj = selectedSession(sessionRows, selSessionId);
 
+  // T52 — ricerca EAGER: rigira a ogni carattere digitato, non su ⏎. È
+  // sostenibile perché i corpi sono già in RAM dentro la cache mtime-keyed
+  // dell'adapter (D5): misurato su questo progetto, 0,8 ms sui soli corpi IA e
+  // ≤9 ms su tutti i tipi — sotto il tempo fra due battute. Il memo evita di
+  // rifarla sui re-render che non toccano né query né opzioni (il poll delle
+  // sessioni ogni 1,5s è già filtrato dalla signature in `useSessions`).
+  const searchResult: SearchResult = useMemo(
+    () => searchSessions(sessions, searchHash, searchQuery, searchOpts),
+    [sessions, searchHash, searchQuery, searchOpts],
+  );
+  // Con l'hash valorizzato la conversazione è una sola e già nominata nel campo:
+  // la riga-sessione ripeterebbe un dato costante rubando una riga per gruppo.
+  const searchFlat = searchHash.trim().length > 0;
+  const searchRows = useMemo(
+    () => buildRows(searchResult, searchFlat),
+    [searchResult, searchFlat],
+  );
+
+  // T52 — corpo del messaggio aperto nel reader, wrappato UNA volta per (testo,
+  // larghezza). Senza memo ogni pressione di freccia rifarebbe l'a-capo di un
+  // messaggio che nella coda lunga arriva a 150k char.
+  const readerWidth = Math.max(20, (columns || 80) - 6);
+  const readerLines = useMemo(
+    () => (readerRow?.kind === 'hit' ? wrapWithOffsets(readerRow.hit.text, readerWidth) : []),
+    [readerRow, readerWidth],
+  );
+  const readerCap = readerCapacity(rows);
+  const readerMaxTop = Math.max(0, readerLines.length - readerCap);
+
   // T39 — selezione stabile sotto trasformazione. Se la task selezionata esce
   // dalla vista (filtro appena attivato, oppure sparita da tasks.md), si cade
   // sulla prima visibile — fallback deterministico, mai una posizione a caso.
@@ -606,6 +696,15 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       setSelSessionId(firstSelectableId(sessionRows));
     }
   }, [sessionRows, selSessionId]);
+  // T52 — stessa invariante sulla lista occorrenze, dove è ancora più stretta:
+  // la lista si RICOSTRUISCE a ogni carattere digitato, quindi la chiave
+  // selezionata sparisce continuamente. Persa → prima riga, mai una posizione
+  // ereditata (che qui punterebbe a un'altra conversazione, non a un'altra riga).
+  useEffect(() => {
+    if (rowIndexOfKey(searchRows, searchSelKey) < 0) {
+      setSearchSelKey(firstRowKey(searchRows));
+    }
+  }, [searchRows, searchSelKey]);
 
   // T30: submit dell'input box. Il taskId nasce DOPO create-task (lo assegna la
   // skill scrivendo tasks.md) → non è noto allo spawn. Il sessionId invece è
@@ -712,7 +811,140 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     setSelId(next === 0 ? null : viewTasks[next - 1]?.id ?? null);
   }
 
+  // T52 — `⏎` contestuale al TIPO di riga: la lista ne mescola due e l'azione
+  // giusta dipende da quale è selezionata. Riga sessione → resume, identico al
+  // `⏎` della lista sessioni (stessa funzione, T49). Riga occorrenza → reader.
+  function submitSearchRow() {
+    const row = selectedRow(searchRows, searchSelKey);
+    if (!row) {
+      setNote(searchResult.error ? '⚠ regex non valida' : 'nessuna occorrenza selezionata');
+      return;
+    }
+    if (row.kind === 'session') {
+      const bound = bindings.get(row.session.sessionId) ?? null;
+      const child = spawnDeckResume(bound, cwd, row.session.sessionId);
+      child.on('error', () => setNote(`⚠ resume fallito (${DECK_RUN})`));
+      setNote(
+        `⏎ resume ${row.session.sessionId.slice(0, 8)} → tab CC${bound ? ` (${bound})` : ' (spot)'}`,
+      );
+      return;
+    }
+    // D8 — il reader si apre POSIZIONATO sull'occorrenza, non in cima. Il 94%
+    // dei messaggi entra in una schermata e la differenza non si vede; è sul 6%
+    // lungo (p99 ≈ 88 righe, max ≈ 1547) che aprire in cima costringerebbe a
+    // rifare a mano la ricerca appena fatta — cioè proprio il lavoro che questa
+    // feature esiste per evitare.
+    const lines = wrapWithOffsets(row.hit.text, readerWidth);
+    const cap = readerCapacity(rows);
+    const matchLine = lines.findIndex((l) => l.end > row.hit.matchStart);
+    const maxTop = Math.max(0, lines.length - cap);
+    setReaderRow(row);
+    setReaderTop(
+      Math.max(0, Math.min(maxTop, Math.max(0, matchLine) - Math.floor(cap / 2))),
+    );
+    setNote('');
+    setMode('reader');
+  }
+
+  function scrollReader(delta: number) {
+    setReaderTop((t) => Math.max(0, Math.min(readerMaxTop, t + delta)));
+  }
+
+  // T52 — toggle di tipo messaggio. Spegnerli tutti è uno stato lecito (lista
+  // vuota, nessun errore): è l'utente che ha chiuso ogni canale, non un guasto.
+  function toggleKind(kind: BodyKind) {
+    setSearchOpts((o) => ({ ...o, kinds: { ...o.kinds, [kind]: !o.kinds[kind] } }));
+  }
+
+  function editSearchField(fn: (s: string) => string) {
+    if (searchField === 'hash') setSearchHash(fn);
+    else setSearchQuery(fn);
+  }
+
+  // `useInput` consegna il CHUNK letto da stdin, non un tasto: un incollaggio —
+  // o una raffica di tasti più veloce di una read — arriva come stringa unica,
+  // byte di controllo compresi. Senza filtro finiscono DENTRO la query: non si
+  // vedono, ma Ink li conta nella larghezza della riga e nessun match li
+  // soddisfa, quindi la ricerca smette di trovare senza dire perché.
+  // Le newline diventano spazio invece di sparire: incollare due righe deve
+  // separare le parole, non fonderle.
+  function typeIntoField(chunk: string) {
+    const clean = chunk.replace(/[\r\n\t]/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '');
+    if (clean) editSearchField((s) => s + clean);
+  }
+
+  const searchCap = searchListCapacity(rows, Boolean(note));
+
   useInput((input, key) => {
+    // T52 — MODALE DENTRO IL MODALE. `useInput` in Ink è globale e non ha
+    // focus-trap: non esiste un meccanismo che confini l'input a un componente.
+    // La cattura È l'ordine dei rami — quindi il reader va PRIMA della ricerca,
+    // e mentre è aperto il modale ricerca resta montato sotto con la sua
+    // selezione intatta, pronto a riprendere il controllo su `esc`.
+    if (mode === 'reader') {
+      if (key.escape) {
+        setMode('search');
+        setReaderRow(null);
+      } else if (key.upArrow) {
+        scrollReader(-1);
+      } else if (key.downArrow) {
+        scrollReader(1);
+      } else if (key.pageUp) {
+        scrollReader(-readerCap);
+      } else if (key.pageDown) {
+        scrollReader(readerCap);
+      } else if (input === 'g') {
+        // Estremi su lettera e non su Home/End: Ink RICONOSCE quelle due (le
+        // mappa a 'home'/'end' nel parser) ma NON le espone — `nonAlphanumericKeys`
+        // azzera l'input e nessun flag le rappresenta, quindi arrivano
+        // indistinguibili da qualunque tasto ignoto. Verificato su pty reale.
+        // Nel reader non c'è input di testo, quindi le lettere sono libere.
+        setReaderTop(0);
+      } else if (input === 'G') {
+        setReaderTop(readerMaxTop);
+      }
+      return;
+    }
+
+    // T52 — modale ricerca. I due campi di testo mangiano ogni lettera nuda:
+    // ogni comando che deve restare vivo MENTRE si digita passa da CTRL, dai
+    // tasti freccia o da Tab. `esc` chiude il modale, non il deck.
+    if (mode === 'search') {
+      if (key.escape) {
+        setMode('normal');
+        setNote('');
+        return;
+      }
+      if (key.ctrl) {
+        const flag = SEARCH_TOGGLE_KEYS[input as keyof typeof SEARCH_TOGGLE_KEYS];
+        if (flag) {
+          setSearchOpts((o) => ({ ...o, [flag]: !o[flag] }));
+          return;
+        }
+        const kind = SEARCH_KIND_KEYS[input];
+        if (kind) toggleKind(kind);
+        return; // ogni altra combo ctrl (^F incluso: siamo già dentro) = no-op
+      }
+      if (key.tab) {
+        setSearchField((f) => (f === 'hash' ? 'query' : 'hash'));
+      } else if (key.upArrow) {
+        setSearchSelKey((k) => moveRowSelection(searchRows, k, -1));
+      } else if (key.downArrow) {
+        setSearchSelKey((k) => moveRowSelection(searchRows, k, 1));
+      } else if (key.pageUp) {
+        setSearchSelKey((k) => moveRowSelection(searchRows, k, -Math.max(1, searchCap)));
+      } else if (key.pageDown) {
+        setSearchSelKey((k) => moveRowSelection(searchRows, k, Math.max(1, searchCap)));
+      } else if (key.return) {
+        submitSearchRow();
+      } else if (key.backspace || key.delete) {
+        editSearchField((s) => s.slice(0, -1));
+      } else if (input && !key.meta) {
+        typeIntoField(input);
+      }
+      return;
+    }
+
     // T30: in modalità create l'handler cattura il testo e corto-circuita la
     // navigazione normale (incl. q/esc → quit: qui esc annulla, non esce).
     if (mode === 'create') {
@@ -818,6 +1050,22 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         } else if (input && !key.ctrl && !key.meta) {
           setEdit((e) => (e ? { ...e, detail: e.detail + input } : e));
         }
+      }
+      return;
+    }
+
+    // T52/D1 — il ramo CTRL sta PRIMA di quelli su lettera nuda e li chiude
+    // tutti. `CTRL+F` e `f` nudo arrivano con lo STESSO `input` ('f'),
+    // distinguibili solo da `key.ctrl`: senza questa precedenza `CTRL+F`
+    // cadrebbe nel ramo fork e spawnerebbe una sessione invece di aprire la
+    // ricerca. Non è un caso isolato della `f` — `^Q` finirebbe nel quit, `^T`
+    // aprirebbe un terminale, `^C` … ogni lettera legata a un'azione ha la sua
+    // combo omonima. Chiudere qui l'intera classe è più solido che ricordarsi
+    // un `!key.ctrl` su ognuno dei rami, oggi e a ogni tasto aggiunto domani.
+    if (key.ctrl) {
+      if (input === 'f') {
+        setNote('');
+        setMode('search');
       }
       return;
     }
@@ -967,6 +1215,67 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // ricalcola con lo stesso re-render che ridimensiona i pane.
   const legend = launchLegend(launch, columns);
 
+  // ── T52 · schermate sostitutive ─────────────────────────────────────────
+  // Ricerca e reader sono gli unici modali che NON stanno in flusso sopra i
+  // pane: una lista di occorrenze non entra in un box da 4 righe. Prendono
+  // l'intero frame, quindi escono di qui — il budget dei due pane sotto non
+  // serve nemmeno calcolarlo, e la loro altezza la distribuiscono
+  // `searchListCapacity` / `readerCapacity`.
+  if (mode === 'search' || mode === 'reader') {
+    const hit = mode === 'reader' && readerRow?.kind === 'hit' ? readerRow.hit : null;
+    // Terminale sotto la cornice: riga singola invece del box, per lo stesso
+    // motivo del `budget.compact` del deck — un frame più alto di `rows` fa
+    // pulire lo schermo a Ink a ogni redraw, e il poll lo versa nello scrollback.
+    if (isCompact(hit ? readerCap : searchCap)) {
+      return (
+        <Text wrap="truncate-end">
+          <Text bold color="cyan">loom-deck</Text>
+          <Text dimColor>
+            {' '}· {hit ? 'reader' : 'ricerca'} · terminale {rows}×{columns}: troppo basso, allarga ·{' '}
+            esc {hit ? 'torna' : 'chiude'}
+          </Text>
+        </Text>
+      );
+    }
+    if (hit) {
+      // Niente `windowRange`: quella centra la finestra su una SELEZIONE, qui
+      // la posizione è lo scroll che l'utente muove a mano. Il clamp serve
+      // comunque — un resize può accorciare il testo sotto uno scroll già dato.
+      const start = Math.min(readerTop, readerMaxTop);
+      return (
+        <ReaderScreen
+          hit={hit}
+          lines={readerLines.slice(start, start + readerCap)}
+          top={start}
+          total={readerLines.length}
+          capacity={readerCap}
+          bound={bindings.get(hit.sessionId) ?? null}
+        />
+      );
+    }
+    const selIdx = rowIndexOfKey(searchRows, searchSelKey);
+    const win = windowRange(searchRows.length, selIdx, searchCap);
+    return (
+      <SearchScreen
+        hash={searchHash}
+        query={searchQuery}
+        field={searchField}
+        opts={searchOpts}
+        result={searchResult}
+        rows={searchRows.slice(win.start, win.end)}
+        selectedKey={searchSelKey}
+        selectedKind={selectedRow(searchRows, searchSelKey)?.kind ?? null}
+        above={win.start}
+        below={searchRows.length - win.end}
+        capacity={searchCap}
+        bindings={bindings}
+        pinned={pinned}
+        projectCore={identity ? `${identity.owner} ${identity.name}` : null}
+        note={note}
+      />
+    );
+  }
+
   // ── Budget d'altezza ────────────────────────────────────────────────────
   // Il frame deve restare sotto `rows`, sempre: oltre quella soglia Ink smette
   // di aggiornare per differenza e pulisce lo schermo a ogni redraw, che su
@@ -1042,8 +1351,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       ) : (
         <Text dimColor wrap="truncate-end">
           ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : canResume ? 'resume' : '—'}
-          {canResume ? ' · f fork' : ''}{canPin ? ' · p pin' : ''} · C nuova · E edit · S sort · F filtri ·
-          w salva · t term · c claude · q esci · focus:{' '}
+          {canResume ? ' · f fork' : ''}{canPin ? ' · p pin' : ''} · ^F cerca · C nuova · E edit · S sort ·
+          F filtri · w salva · t term · c claude · q esci · focus:{' '}
           <Text color="cyan">{focus}</Text>
         </Text>
       )}
@@ -1205,6 +1514,287 @@ function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: Edit
         ↳ {normalizeEmoji(progressText(draft.prog, draft.detail))}
       </Text>
     </Box>
+  );
+}
+
+// T52 — marcatore compatto del tipo di corpo sulla riga-occorrenza. Due
+// caratteri ASCII e non un'emoji: con più toggle accesi la colonna deve
+// allinearsi, e i glifi BMP larghi 2 sono proprio la classe che Ink e il
+// terminale misurano diversamente (vedi normalizeEmoji).
+const KIND_TAG: Record<BodyKind, string> = { ai: 'ai', tool: 'tl', human: 'hu' };
+const KIND_COLOR: Record<BodyKind, string> = { ai: 'cyan', tool: 'gray', human: 'green' };
+
+/**
+ * Cosa scrivere sulla riga-gruppo per distinguere una conversazione dall'altra.
+ *
+ * Non basta `session.title`: quel titolo è la label della tab Ptyxis, cioè
+ * `<emoji> <owner> <name>` più un eventuale suffisso. Su una lista tutta dello
+ * stesso progetto (D3) è una COLONNA COSTANTE — tre righe su quattro
+ * identiche, che è esattamente il difetto che la riga-gruppo doveva evitare.
+ *
+ * Si toglie quindi il core `<owner> <name>` (noto dal file config), e se ciò
+ * che resta è vuoto o duplica la task già mostrata nella sua colonna, si
+ * ripiega sul primo prompt — l'unica cosa che davvero identifica quella
+ * conversazione e non un'altra.
+ */
+function conversationLabel(s: Session, core: string | null, bound: string | undefined): string {
+  let t = s.title;
+  if (core) {
+    const at = t.indexOf(core);
+    if (at >= 0) t = t.slice(at + core.length);
+  }
+  t = t.replace(/^[\s·]+/, '').trim();
+  if (bound && t === bound) t = '';
+  return t || s.firstPrompt || '(senza titolo)';
+}
+
+/**
+ * Riga di toggle del modale ricerca.
+ *
+ * La mappa tasto→significato è SEMPRE a schermo: `^R` da solo è opaco quanto lo
+ * era il range `1-9` delle launch prima di T43.
+ *
+ * Lo stato acceso/spento passa da `[x]`/`[ ]`, non dal solo colore — stessa
+ * convenzione del modale filtri. Il colore è ridondanza, non l'informazione: su
+ * un terminale monocromo, o in una cattura di testo, sei toggle tutti uguali
+ * non direbbero più quali sono attivi.
+ */
+function ToggleHint({ opts }: { opts: SearchOptions }) {
+  const flag = (on: boolean, key: string, label: string) => (
+    <Text key={key} color={on ? 'green' : 'gray'} dimColor={!on} bold={on}>
+      {'  '}
+      {key}[{on ? 'x' : ' '}] {label}
+    </Text>
+  );
+  return (
+    <Text wrap="truncate-end">
+      {flag(opts.regex, '^R', 'regex')}
+      {flag(opts.caseSensitive, '^A', 'Aa')}
+      {flag(opts.wholeWord, '^W', 'word')}
+      <Text dimColor>{'  │'}</Text>
+      {flag(opts.kinds.ai, '^B', 'IA')}
+      {flag(opts.kinds.tool, '^T', 'tools')}
+      {flag(opts.kinds.human, '^U', 'human')}
+    </Text>
+  );
+}
+
+/** Intestazione della lista: dice sempre quanto NON si sta vedendo (regex rotta,
+ *  query troppo corta, occorrenze tagliate dal cap, righe fuori finestra). */
+function SearchListHeader({
+  result,
+  query,
+  above,
+  below,
+}: {
+  result: SearchResult;
+  query: string;
+  above: number;
+  below: number;
+}) {
+  if (result.error) {
+    return (
+      <Text color="red" wrap="truncate-end">
+        {WARN} regex non valida · {result.error}
+      </Text>
+    );
+  }
+  if (result.idle) {
+    return (
+      <Text dimColor wrap="truncate-end">
+        {query.length === 0
+          ? 'digita la chiave da cercare'
+          : `almeno ${MIN_QUERY} caratteri (${query.length})`}
+      </Text>
+    );
+  }
+  if (result.shown === 0) {
+    return (
+      <Text color="yellow" wrap="truncate-end">
+        nessuna occorrenza
+      </Text>
+    );
+  }
+  return (
+    <Text bold wrap="truncate-end">
+      {result.shown} occorrenze in {result.sessionCount} conversazioni
+      {result.hidden > 0 ? <Text color="yellow"> · +{result.hidden} oltre il cap</Text> : null}
+      {above > 0 ? <Text dimColor> · ↑{above}</Text> : null}
+      {below > 0 ? <Text dimColor> · ↓{below}</Text> : null}
+    </Text>
+  );
+}
+
+/**
+ * Schermata di ricerca full-text (T52).
+ *
+ * Due campi + toggle + lista di occorrenze. Con l'hash vuoto la lista è
+ * raggruppata per conversazione: la riga-gruppo NON ripete il nome del progetto
+ * (D3: sono tutte dello stesso progetto, sarebbe una colonna costante) e usa lo
+ * spazio per ciò che distingue davvero una conversazione — hash, task legata,
+ * titolo, data.
+ */
+function SearchScreen({
+  hash,
+  query,
+  field,
+  opts,
+  result,
+  rows,
+  selectedKey,
+  selectedKind,
+  above,
+  below,
+  capacity,
+  bindings,
+  pinned,
+  projectCore,
+  note,
+}: {
+  hash: string;
+  query: string;
+  field: SearchField;
+  opts: SearchOptions;
+  result: SearchResult;
+  /** Solo la finestra visibile della lista. */
+  rows: SearchRow[];
+  selectedKey: string | null;
+  /** Tipo della riga selezionata: decide cosa promette `⏎` nell'hint. */
+  selectedKind: SearchRow['kind'] | null;
+  above: number;
+  below: number;
+  capacity: number;
+  bindings: Map<string, string>;
+  pinned: Map<string, number>;
+  /** `<owner> <name>` del progetto: prefisso da togliere ai titoli di tab. */
+  projectCore: string | null;
+  note: string;
+}) {
+  const enter =
+    selectedKind === 'session' ? 'resume' : selectedKind === 'hit' ? 'leggi' : '—';
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+      <Text bold color="cyan">loom-deck</Text>
+      <Text dimColor wrap="truncate-end">
+        ricerca · <Text color="yellow">tab</Text> campo · <Text color="yellow">↑↓</Text> naviga ·{' '}
+        <Text color="yellow">⏎</Text> {enter} · <Text color="yellow">esc</Text> chiudi
+      </Text>
+      <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
+        <Text wrap="truncate-end">
+          <Text dimColor>hash   </Text>
+          <Text color={field === 'hash' ? 'yellow' : undefined}>{hash}</Text>
+          {field === 'hash' ? <Text inverse> </Text> : null}
+          {!hash ? <Text dimColor>  (vuoto = tutte le conversazioni)</Text> : null}
+        </Text>
+        <Text wrap="truncate-end">
+          <Text dimColor>chiave </Text>
+          <Text color={field === 'query' ? 'yellow' : undefined}>{query}</Text>
+          {field === 'query' ? <Text inverse> </Text> : null}
+        </Text>
+        <ToggleHint opts={opts} />
+      </Box>
+      <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
+        <SearchListHeader result={result} query={query} above={above} below={below} />
+        {rows.slice(0, Math.max(0, capacity)).map((row) => {
+          const sel = row.key === selectedKey;
+          if (row.kind === 'session') {
+            const s = row.session;
+            const bound = bindings.get(s.sessionId);
+            return (
+              <Text key={row.key} inverse={sel} wrap="truncate-end">
+                {sel ? CARET : CARET_OFF}
+                {pinned.has(s.sessionId) ? <Text color="yellow">📌</Text> : <Text dimColor>○</Text>}{' '}
+                <Text color="cyan">{s.sessionId.slice(0, 8)}</Text>
+                <Text dimColor> · </Text>
+                {bound ?? <Text dimColor>spot</Text>}
+                <Text dimColor> · </Text>
+                {truncate(conversationLabel(s, projectCore, bound), 44)}
+                <Text dimColor>
+                  {'  '}({row.hitCount}
+                  {row.hidden > 0 ? `+${row.hidden}` : ''}) {fmtDateTime(s.ts)}
+                </Text>
+              </Text>
+            );
+          }
+          const h = row.hit;
+          return (
+            <Text key={row.key} inverse={sel} wrap="truncate-end">
+              {sel ? CARET : CARET_OFF}
+              <Text dimColor>{String(h.idx).padStart(4)}</Text>{' '}
+              <Text color={KIND_COLOR[h.kind]}>{KIND_TAG[h.kind]}</Text> {h.excerpt}
+            </Text>
+          );
+        })}
+      </Box>
+      {note ? <Text color="green" wrap="truncate-end">{normalizeEmoji(note)}</Text> : null}
+    </Box>
+  );
+}
+
+/**
+ * Reader fullscreen (T52 · D8).
+ *
+ * Mostra il messaggio INTERO che contiene l'occorrenza, aperto già posizionato
+ * sul match e con il match evidenziato. È un `mode` a sé, catturato prima del
+ * ramo `search`: il modale ricerca resta montato sotto e su `esc` si ritrova
+ * con query, toggle e selezione intatti.
+ */
+function ReaderScreen({
+  hit,
+  lines,
+  top,
+  total,
+  capacity,
+  bound,
+}: {
+  hit: Hit;
+  /** Solo la finestra visibile del testo wrappato. */
+  lines: WrappedLine[];
+  top: number;
+  total: number;
+  capacity: number;
+  bound: string | null;
+}) {
+  const last = Math.min(total, top + capacity);
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+      <Text bold color="cyan">loom-deck</Text>
+      <Text dimColor wrap="truncate-end">
+        reader · <Text color="cyan">{hit.sessionId.slice(0, 8)}</Text> · record {hit.idx} ·{' '}
+        {KIND_LABEL[hit.kind]}
+        {bound ? ` · ${bound}` : ''} · righe {total === 0 ? 0 : top + 1}-{last} di {total}
+      </Text>
+      <Text dimColor wrap="truncate-end">
+        <Text color="yellow">↑↓</Text> riga · <Text color="yellow">PgUp/PgDn</Text> pagina ·{' '}
+        <Text color="yellow">g</Text> inizio · <Text color="yellow">G</Text> fine ·{' '}
+        <Text color="yellow">esc</Text> torna alla lista
+      </Text>
+      <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
+        {lines.map((l, i) => (
+          <ReaderLine key={top + i} line={l} from={hit.matchStart} to={hit.matchEnd} />
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+/** Una riga del reader, con la sola porzione di match evidenziata. Gli offset
+ *  sono quelli del testo sorgente, quindi un match a cavallo dell'a-capo si
+ *  colora su entrambe le righe senza casi speciali. */
+function ReaderLine({ line, from, to }: { line: WrappedLine; from: number; to: number }) {
+  const a = Math.max(0, Math.min(line.text.length, from - line.start));
+  const b = Math.max(0, Math.min(line.text.length, to - line.start));
+  if (b <= a) {
+    return <Text wrap="truncate-end">{line.text || ' '}</Text>;
+  }
+  return (
+    <Text wrap="truncate-end">
+      {line.text.slice(0, a)}
+      <Text backgroundColor="yellow" color="black">
+        {line.text.slice(a, b)}
+      </Text>
+      {line.text.slice(b)}
+    </Text>
   );
 }
 

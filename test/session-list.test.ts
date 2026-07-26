@@ -22,6 +22,7 @@ const sess = (sessionId: string, ts = 0): Session => ({
   customTitle: '',
   firstPrompt: '',
   lastReply: '',
+  bodies: [],
 });
 
 const kinds = (rows: { kind: string }[]) => rows.map((r) => r.kind);

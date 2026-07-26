@@ -85,6 +85,13 @@ export const MODAL_HEIGHT = {
   sort: 5, // marginTop + 2 bordi + titolo + 1 riga catena
   filter: 6, // marginTop + 2 bordi + titolo + 2 righe (pri, stato)
   edit: 8, // marginTop + 2 bordi + titolo + 3 campi + riga anteprima
+  // T52 — search e reader sono gli unici modali NON in flusso: sostituiscono i
+  // due pane invece di spingerli giù (una lista di occorrenze non entra in un
+  // box sopra il deck). Costo 0 nel budget dei pane perché quel budget non
+  // viene nemmeno calcolato: il render esce prima. La loro altezza la
+  // distribuiscono `searchListCapacity`/`readerCapacity`.
+  search: 0,
+  reader: 0,
 } as const;
 
 export type Mode = keyof typeof MODAL_HEIGHT;
@@ -223,6 +230,108 @@ export function layoutBudget(input: BudgetInput): Budget {
     sessionLastLines,
     compact: false,
   };
+}
+
+// T52 — cornice fissa della schermata di ricerca. Stesso vincolo del deck
+// normale (il frame non deve superare `rows`), contabilità separata perché la
+// schermata è sostitutiva, non additiva.
+//
+//   2  bordi del box esterno
+//   1  titolo "loom-deck"
+//   1  riga hint/legenda tasti
+//   1  marginTop del box query
+//   2  bordi del box query
+//   3  righe del box query: hash · chiave · toggle
+//   1  marginTop del box lista
+//   2  bordi del box lista
+//   1  header della lista (conteggi)
+const SEARCH_CHROME = 14;
+
+/** Righe di lista occorrenze che entrano nel terminale. Zero = la cornice non
+ *  ci sta nemmeno vuota → la schermata va sostituita (vedi `isCompact`). */
+export function searchListCapacity(rows: number, noteLine: boolean): number {
+  return Math.max(0, (rows || 24) - SLACK - SEARCH_CHROME - (noteLine ? 1 : 0));
+}
+
+// T52 — cornice del reader fullscreen.
+//   2  bordi del box esterno
+//   1  titolo "loom-deck"
+//   1  riga meta (sessione · record · tipo · posizione)
+//   1  riga hint
+//   1  marginTop del box corpo
+//   2  bordi del box corpo
+const READER_CHROME = 8;
+
+/** Righe di testo del messaggio che entrano nel terminale. */
+export function readerCapacity(rows: number): number {
+  return Math.max(0, (rows || 24) - SLACK - READER_CHROME);
+}
+
+/**
+ * Il terminale non ospita nemmeno la cornice della schermata: va sostituita da
+ * una riga singola, come fa `Budget.compact` per il deck.
+ *
+ * Non è una comodità estetica ed è lo stesso ragionamento del layout a box: un
+ * frame più alto di `rows` fa cadere Ink nel ramo `clearTerminal`, che su
+ * VTE/Ptyxis riversa ogni redraw nello scrollback. Un terminale basso è proprio
+ * la condizione che innesca quel ramo, quindi qui il fallback È il fix.
+ */
+export function isCompact(capacity: number): boolean {
+  return capacity < 1;
+}
+
+/** Riga wrappata che sa da dove viene: `start`/`end` sono offset nel testo
+ *  SORGENTE, e servono a evidenziare il match a cavallo dell'a-capo. */
+export interface WrappedLine {
+  text: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * A-capo che PRESERVA la struttura del testo e traccia gli offset.
+ *
+ * Distinto da `wrapLines`, che collassa tutto in un flusso unico: lì serviva una
+ * preview compatta di 2-4 righe, qui si legge un messaggio intero — appiattire
+ * le newline renderebbe illeggibile qualunque blocco di codice o elenco.
+ *
+ * Ogni riga prodotta è una FETTA CONTIGUA del sorgente: è ciò che permette di
+ * intersecarla con l'intervallo del match e colorare solo la parte giusta,
+ * anche quando il match cade a cavallo di due righe.
+ *
+ * Taglia sull'ultimo spazio disponibile; una parola più larga della riga viene
+ * spezzata a forza, altrimenti l'a-capo lo farebbe il terminale — fuori dal
+ * conteggio delle righe, cioè di nuovo un frame più alto di `rows`.
+ */
+export function wrapWithOffsets(text: string, width: number): WrappedLine[] {
+  const out: WrappedLine[] = [];
+  if (width <= 0) return out;
+
+  let base = 0;
+  for (const raw of text.split('\n')) {
+    // Tab e CR diventano UN singolo spazio, non quattro: la sostituzione deve
+    // conservare la lunghezza, o gli offset delle righe smettono di indicizzare
+    // il sorgente e il match verrebbe evidenziato spostato. Un tab lasciato
+    // passare sarebbe l'errore opposto — lo conteremmo 1 e il terminale 8.
+    const line = raw.replace(/[\t\r]/g, ' ');
+    if (line.length === 0) {
+      out.push({ text: '', start: base, end: base });
+    }
+    let pos = 0;
+    while (pos < line.length) {
+      if (line.length - pos <= width) {
+        out.push({ text: line.slice(pos), start: base + pos, end: base + line.length });
+        break;
+      }
+      let brk = line.lastIndexOf(' ', pos + width);
+      if (brk <= pos) brk = pos + width; // parola più lunga della riga
+      out.push({ text: line.slice(pos, brk), start: base + pos, end: base + brk });
+      pos = brk;
+      while (line[pos] === ' ') pos++; // lo spazio del taglio non apre la riga dopo
+    }
+    base += raw.length + 1; // +1 = il '\n' consumato dallo split
+  }
+  return out;
 }
 
 /**

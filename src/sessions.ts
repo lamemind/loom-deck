@@ -16,6 +16,23 @@ import { normalizeEmoji } from './viewport.js';
 // customTitle vive su record dedicati `type:custom-title`, ripetuti, e può
 // comparire a fine file quando il titolo è settato mid-sessione → last-wins.
 
+/** T52 — natura del corpo di un messaggio, dominio dei filtri di ricerca.
+ *  Tre valori e non quattro: il `thinking` NON è persistito (vedi §Blocchi). */
+export type BodyKind = 'ai' | 'tool' | 'human';
+
+/** T52 — corpo cercabile di un messaggio, unità dell'indice full-text. */
+export interface MessageBody {
+  /** Posizione del record nel transcript (0-based, sui soli record JSON validi).
+   *  Prefissa la riga-occorrenza: orienta dentro conversazioni da centinaia di
+   *  record senza rubare colonne all'estratto. */
+  idx: number;
+  kind: BodyKind;
+  /** Testo RAW, newline incluse. Non passa da `cleanPreview`: il reader deve
+   *  poter mostrare il messaggio com'è, e collassare qui gli spazi sposterebbe
+   *  gli offset dei match rispetto al testo mostrato. */
+  text: string;
+}
+
 export interface Session {
   sessionId: string;
   cwd: string;
@@ -37,6 +54,17 @@ export interface Session {
   /** Ultima risposta del modello, già ripulita, last-wins (preview nel detail
    *  pane accanto al primo prompt: "da dove parte, dove è arrivata"). */
   lastReply: string;
+  /** T52 — corpi cercabili, TRATTENUTI dal parse invece di essere buttati.
+   *
+   *  Vivono dentro la Session, quindi dentro la cache mtime-keyed già esistente:
+   *  una sola struttura, una sola invalidazione. Una seconda cache parallela
+   *  divergerebbe dalla prima al primo file riscritto.
+   *
+   *  Il costo è memoria, non I/O: il parse di ogni riga avviene comunque per
+   *  turni/primo-prompt/ultima-risposta — finora i corpi venivano estratti e
+   *  scartati. Misurato su questo progetto: 57 MB di JSONL su disco → 10,4 MB
+   *  di testo effettivo (il resto è overhead JSON: uuid, timestamp, wrapper). */
+  bodies: MessageBody[];
 }
 
 export interface SessionGroup {
@@ -90,6 +118,90 @@ function extractText(message: unknown): string {
   return '';
 }
 
+// Un record `type:user` che porta SOLO questo testo è un evento di UI (l'utente
+// ha premuto esc), non un messaggio scritto. Stesso `type` di un prompt vero:
+// senza escluderlo comparirebbe come «primo prompt» della conversazione e
+// gonfierebbe la ricerca sui messaggi umani. Prefisso e non uguaglianza —
+// esistono varianti («…by user for tool use»).
+const INTERRUPT_MARKER = '[Request interrupted by user';
+
+function isInterrupt(text: string): boolean {
+  return text.trimStart().startsWith(INTERRUPT_MARKER);
+}
+
+// T52 — estrae i corpi cercabili di UN record, uno per `kind` presente.
+//
+// Blocchi dello stesso kind nello stesso record vengono CONCATENATI, non emessi
+// separatamente: il reader promette «il messaggio intero», e la coppia
+// (idx, kind) resta così una chiave univoca per la riga-occorrenza.
+//
+// Mappatura dei blocchi, verificata sullo store:
+//  - assistant `text`            → ai
+//  - assistant `tool_use`        → tool  (nome + input serializzato: il comando
+//                                  eseguito è ciò che si cerca, non il wrapper)
+//  - assistant `thinking`        → SCARTATO: il campo `thinking` è SEMPRE ''
+//                                  (persistita solo la `signature`, la firma
+//                                  crittografica). Indicizzarlo produrrebbe una
+//                                  categoria che non può mai dare un risultato.
+//  - user stringa nuda / `text`  → human
+//  - user `tool_result`          → tool  (viaggia come type:user, ma non è
+//                                  scritto da un umano)
+//
+// `isAssistant` arriva dal `type` del RECORD, non da `message.role`: è il campo
+// su cui il resto del parser già dispatcha (i due combaciano sullo store attuale
+// — verificato — ma dipendere da uno solo evita che divergano in silenzio).
+function collectBodies(
+  message: unknown,
+  idx: number,
+  isAssistant: boolean,
+  out: MessageBody[],
+): void {
+  if (!message || typeof message !== 'object') return;
+  const content = (message as { content?: unknown }).content;
+
+  const parts: Record<BodyKind, string[]> = { ai: [], tool: [], human: [] };
+
+  if (typeof content === 'string') {
+    if (content) parts[isAssistant ? 'ai' : 'human'].push(content);
+  } else if (Array.isArray(content)) {
+    for (const block of content) {
+      if (!block || typeof block !== 'object') continue;
+      const b = block as Record<string, unknown>;
+      if (b.type === 'text' && typeof b.text === 'string' && b.text) {
+        parts[isAssistant ? 'ai' : 'human'].push(b.text);
+      } else if (b.type === 'tool_use') {
+        const name = typeof b.name === 'string' ? b.name : 'tool';
+        let input = '';
+        try {
+          input = JSON.stringify(b.input ?? {});
+        } catch {
+          input = ''; // input ciclico/non serializzabile → resta il solo nome
+        }
+        parts.tool.push(`${name} ${input}`);
+      } else if (b.type === 'tool_result') {
+        const r = b.content;
+        if (typeof r === 'string') {
+          if (r) parts.tool.push(r);
+        } else if (Array.isArray(r)) {
+          for (const rb of r) {
+            if (rb && typeof rb === 'object' && (rb as { type?: unknown }).type === 'text') {
+              const t = (rb as { text?: unknown }).text;
+              if (typeof t === 'string' && t) parts.tool.push(t);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for (const kind of ['ai', 'tool', 'human'] as const) {
+    const text = parts[kind].join('\n');
+    if (!text) continue;
+    if (kind === 'human' && isInterrupt(text)) continue;
+    out.push({ idx, kind, text });
+  }
+}
+
 // Cache mtime-keyed: re-parse solo i file cambiati. Steady-state di una TUI che
 // poll-a resta economico anche con decine di sessioni multi-MB. Lo stato vive
 // dentro l'adapter così l'invariante "unico modulo che tocca lo store" regge.
@@ -102,7 +214,24 @@ function parseSessionFile(path: string, mtime: number, sizeBytes: number): Sessi
   } catch {
     return null;
   }
+  return parseTranscript(content, path, mtime, sizeBytes);
+}
 
+/**
+ * Semantica del transcript, separata dalla lettura del file.
+ *
+ * L'I/O resta in `parseSessionFile` (l'invariante «unico modulo che tocca lo
+ * store» vale per QUESTO file, non per la funzione): qui c'è solo la parte non
+ * ovvia — cosa conta come turno, cosa è un corpo cercabile, quali record sono
+ * eventi di UI travestiti da messaggi. È anche l'unica parte che vale la pena
+ * testare, e su una stringa si testa senza inventare un finto `~/.claude`.
+ */
+export function parseTranscript(
+  content: string,
+  path: string,
+  mtime: number,
+  sizeBytes: number,
+): Session | null {
   let sessionId = basename(path).replace(/\.jsonl$/, '');
   let cwd = '';
   let gitBranch = '';
@@ -111,6 +240,8 @@ function parseSessionFile(path: string, mtime: number, sizeBytes: number): Sessi
   let firstUserText = '';
   let lastAssistantText = '';
   let turns = 0;
+  const bodies: MessageBody[] = [];
+  let recordIdx = -1;
 
   for (const line of content.split('\n')) {
     if (!line.trim()) continue;
@@ -119,6 +250,12 @@ function parseSessionFile(path: string, mtime: number, sizeBytes: number): Sessi
       d = JSON.parse(line);
     } catch {
       continue;
+    }
+    // Indice progressivo sui soli record VALIDI: è ciò che prefissa la
+    // riga-occorrenza, quindi deve contare come li conta chi legge il file.
+    recordIdx++;
+    if (d.type === 'user' || d.type === 'assistant') {
+      collectBodies(d.message, recordIdx, d.type === 'assistant', bodies);
     }
     if (typeof d.sessionId === 'string' && d.sessionId) sessionId = d.sessionId;
     if (!cwd && typeof d.cwd === 'string' && d.cwd) cwd = d.cwd;
@@ -130,8 +267,11 @@ function parseSessionFile(path: string, mtime: number, sizeBytes: number): Sessi
     if (d.type === 'user') {
       // T49: turno = prompt umano. I tool_result viaggiano anch'essi come
       // type:user ma senza blocchi text → extractText '' li esclude.
+      // T52: e nemmeno l'interruzione da esc è un prompt — stesso `type`, ma è
+      // un evento di UI. Senza il filtro gonfia i turni e può diventare il
+      // «primo prompt» mostrato nel detail pane.
       const t = extractText(d.message);
-      if (t) {
+      if (t && !isInterrupt(t)) {
         turns++;
         if (!firstUserText) firstUserText = t;
       }
@@ -159,6 +299,7 @@ function parseSessionFile(path: string, mtime: number, sizeBytes: number): Sessi
     customTitle,
     firstPrompt: firstUserText,
     lastReply: lastAssistantText,
+    bodies,
   };
 }
 

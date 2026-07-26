@@ -51,8 +51,16 @@ senza collisioni:
 | `⏎` | azione primaria del pane | Tasks → spawna la task selezionata · Sessions → riprende (`claude --resume`) la sessione selezionata |
 | **MAIUSCOLA** | **apre un modale** | cattura tutti i tasti; `esc` annulla, non esce |
 | minuscola | azione immediata, one-shot | |
+| `CTRL`+lettera | idiomi universali e toggle dentro i modali di testo | `^F` = find, come ovunque |
 | `1`…`9` | voce `launch` n-esima del progetto | da `.claude/loom-works.json` |
 | `q` `esc` | esce dal deck | in un modale `esc` annulla soltanto |
+
+`CTRL` è il terzo livello, aggiunto quando è arrivata la ricerca. Serve perché
+un modale con **campi di testo** mangia ogni lettera nuda: là dentro nessun
+comando può essere una lettera semplice. `CTRL+X` e `x` nudo condividono lo
+stesso `input` e si distinguono solo per `key.ctrl`, quindi in modalità normale
+il ramo `CTRL` è valutato **per primo** e chiude l'intera classe — senza,
+`CTRL+F` cadrebbe nel ramo `f` e forkerebbe una sessione invece di cercare.
 
 Assegnazioni correnti:
 
@@ -62,6 +70,7 @@ Assegnazioni correnti:
 | modale | `E` | edit priorità/stato della task selezionata (salva + commit) |
 | modale | `S` | sort chain |
 | modale | `F` | filtri |
+| modale | `^F` | **ricerca full-text** nelle conversazioni del progetto |
 | immediata | `f` | **forka** la sessione selezionata (solo col focus sul pane Sessions) |
 | immediata | `t` | terminale @project-root (surface standard launch) |
 | immediata | `c` | sessione Claude **nuda**: nessuna task, nessun prompt iniziale |
@@ -106,6 +115,57 @@ pannello di dettaglio; la sua tab Ptyxis titola `<label> · <task> · fork`.
 > **Nota di migrazione (0.6.0)**: `c` → **`C`** per creare una task, e le voci
 > `codium`/`idea` non hanno più una lettera dedicata (erano `C`/`I` hardcoded):
 > ora sono voci `launch` del file config, raggiunte per indice `1`…`9`.
+
+### `^F` — cercare dentro le conversazioni
+
+Il navigator trova una conversazione per **metadati** (titolo, data, turni). `^F`
+la trova per **contenuto**: «l'IA me l'ha detto 150k di testo fa, ricordo mezza
+parola». Claude Code non ha un find-in-conversation, ma i transcript sono tutti
+su disco e il deck li legge già.
+
+Due campi, `tab` per passare dall'uno all'altro:
+
+- **hash** — prefisso del `sessionId` (gli 8 char della statusline bastano),
+  restringe a una conversazione. Vuoto = **tutte** quelle del progetto.
+- **chiave** — il termine cercato. La ricerca è **eager**: si aggiorna a ogni
+  carattere, da 3 in su.
+
+Sei toggle, tutti su `CTRL` perché i campi di testo occupano le lettere nude.
+Lo stato si legge da `[x]`/`[ ]`, non dal solo colore:
+
+| Tasto | Toggle | Default |
+|---|---|---|
+| `^R` | la chiave è una **regex** invece che testo letterale | off |
+| `^A` | **case-sensitive** | off |
+| `^W` | solo **parole intere** | off |
+| `^B` | cerca nel testo **dell'IA** | **on** |
+| `^T` | cerca nei **tool** (`tool_use` / `tool_result`) | off |
+| `^U` | cerca nei prompt **umani** | off |
+
+Non esiste un toggle *thinking*: quei blocchi sono persistiti **senza testo**
+(il transcript porta la sola firma crittografica), quindi sarebbe una casella
+che non può mai produrre un risultato.
+
+Con l'hash vuoto la lista è **raggruppata per conversazione**; `⏎` è contestuale
+alla riga selezionata — su una riga-conversazione **riprende** la sessione
+(come dal pane Sessions), su una riga-occorrenza apre il **reader**.
+
+Il reader mostra il messaggio intero, aperto già **posizionato sull'occorrenza**
+col match evidenziato: `↑↓` riga, `PgUp`/`PgDn` pagina, `g`/`G` estremi, `esc`
+torna alla lista senza perdere query, toggle e selezione. (Gli estremi stanno su
+lettera e non su `Home`/`End` perché Ink non espone quei due tasti: arrivano
+indistinguibili da qualunque tasto ignoto.)
+
+I toggle e la query sono **volatili**: sopravvivono alla chiusura del modale,
+non al riavvio del deck — comporre una ricerca non tocca il disco.
+
+**Come fa a essere istantanea.** I corpi dei messaggi restano in RAM dentro la
+cache mtime-keyed che il deck usa già per la lista sessioni: quei file venivano
+comunque deserializzati per turni e titoli, e i corpi buttati. Trattenerli non
+aggiunge I/O, aggiunge memoria — e ne aggiunge poca, perché un JSONL è per l'85%
+overhead (misurato su un progetto reale: 57 MB su disco = 9,8 MB di testo
+cercabile). Cercarci dentro costa 1-9 ms; un prefiltro `grep` sugli stessi file
+ne costerebbe 26, perché rileggerebbe il volume pieno a ogni battuta.
 
 ## Vista: filtri e ordinamenti
 
