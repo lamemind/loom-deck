@@ -15,6 +15,7 @@ const TASKS_MD = `# Tasks
 | --- | --- | -- | ---- | -------------------------------- |
 | T40 | 🔥 | ⚙️ | 🔵 | Budget iniezione SessionStart    |
 | T39 | ⚡ | ⚙️ | ✔️ | Deck: filtri + sort              |
+| D01 | ⚡ | 📝 | 🔵 | Importare la doc compass         |
 `;
 
 test('updateTasksMdRow riscrive solo pri e prog della riga giusta', () => {
@@ -29,6 +30,12 @@ test('updateTasksMdRow su id assente non tocca nulla', () => {
   const { content, ok } = updateTasksMdRow(TASKS_MD, 'T99', '🔥', '🟡');
   assert.equal(ok, false);
   assert.equal(content, TASKS_MD);
+});
+
+test('updateTasksMdRow edita anche una riga D (doc task)', () => {
+  const { content, ok } = updateTasksMdRow(TASKS_MD, 'D01', '🔥', '🟡');
+  assert.equal(ok, true);
+  assert.match(content, /\| D01 \| 🔥 \| 📝 \| 🟡 \| Importare la doc compass\s+\|/);
 });
 
 test('updateTasksMdRow ignora header e separatori', () => {

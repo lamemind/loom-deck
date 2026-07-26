@@ -2,6 +2,14 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { normalizeEmoji } from './viewport.js';
 
+/**
+ * Forma di un ID task: `T` (code) o `D` (doc) + numero. FONTE UNICA del gate —
+ * `parseTasks` lo usa per scartare header/separatore della tabella, `task-edit`
+ * per non riscrivere per sbaglio quelle stesse righe. Tenerlo in un posto solo
+ * evita che i due gate divergano (uno accetterebbe righe che l'altro rifiuta).
+ */
+export const TASK_ID_RE = /^[TD]\d+$/;
+
 export interface Task {
   id: string;
   pri: string;
@@ -33,9 +41,11 @@ export function resolveTasksDir(cwd: string = process.cwd()): string {
 }
 
 // Estrae le righe `| Tnn | Pri | K | Prog | Task |` della Tasks Overview.
-// Il prefisso task è `T` (contratto plugin); le doc-task `D{N}` e le righe
-// header/separatore non matchano `^T\d+$` → scartate. deck-run agisce solo
-// su task T (run-task), quindi le D non hanno azione qui.
+// Due prefissi ammessi (contratto plugin, counter separati): `T` = code task,
+// `D` = doc task. Le D entrano in lista come le T perché `deck-run` NON inietta
+// `run-task`: il prompt iniziale è un recap diretto ("recap stato task <id>"),
+// valido identico su una doc task. Righe header/separatore non matchano `^[TD]\d+$`
+// → scartate.
 export function parseTasks(content: string): Task[] {
   const tasks: Task[] = [];
   for (const line of content.split('\n')) {
@@ -44,7 +54,7 @@ export function parseTasks(content: string): Task[] {
     const cells = t.split('|').map((c) => c.trim());
     // cells[0] = '' (prima del primo |), cells[last] = '' (dopo l'ultimo |)
     const id = cells[1];
-    if (!/^T\d+$/.test(id)) continue;
+    if (!TASK_ID_RE.test(id)) continue;
     // Colonne overview: | ID | Pri | K | Prog | Task | → cells[2]=Pri (icona
     // priorità), cells[4]=Prog. K (Kind, cells[3]) non serve al deck.
     const pri = cells[2] ?? '';
@@ -98,7 +108,10 @@ export function parseTaskDetail(id: string, content: string): TaskDetail {
 
   for (const line of content.split('\n')) {
     if (!title && line.startsWith('# ')) {
-      title = line.replace(/^#\s+/, '').replace(/^Task:\s*/, '').trim();
+      // I due template scrivono H1 diversi — `# Task: …` (code) e
+      // `# Doc Task: …` (doc): entrambi i cappelli vanno via, il titolo mostrato
+      // è la descrizione, non la sua categoria (già data dall'id).
+      title = line.replace(/^#\s+/, '').replace(/^(?:Doc\s+)?Task:\s*/, '').trim();
       continue;
     }
     if (line.startsWith('## ')) {

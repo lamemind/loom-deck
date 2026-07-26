@@ -4,11 +4,15 @@ Deck TUI (Ink) **per-progetto** della famiglia [loom](https://github.com/lamemin
 
 Legge il `tasks.md` del progetto e, con un tasto (poi un click), **spawna** una tab
 [Ptyxis](https://gitlab.gnome.org/chergert/ptyxis) che avvia una sessione Claude Code
-già bound alla task via `LOOM_TASK`, dritta su `/loom-works:run-task <Txx>`.
+già bound alla task via `LOOM_TASK`, con un prompt di recap sullo stato della task.
 
 ```
-↑↓ scegli la task  →  ⏎  →  tab CC di fianco  →  parte già su /loom-works:run-task <Txx>
+↑↓ scegli la task  →  ⏎  →  tab CC di fianco  →  LOOM_TASK bound + recap stato task
 ```
+
+Entrambi i prefissi del contratto loom entrano in lista: **`T`** (code task) e
+**`D`** (doc task). Nessuna differenza di trattamento — il prompt iniziale è un
+recap, non l'invocazione di una skill, quindi vale identico sulle due famiglie.
 
 ## Ruolo nella famiglia loom
 
@@ -193,6 +197,11 @@ p  priorità     s  stato     i  id
 
 Partendo da catena vuota, digitare `ppi` produce `[pri ↓, id ↑]`. Il ciclo parte
 sempre **dallo stato corrente**, che il modale mostra dal vivo mentre digiti.
+
+Sull'**id** il confronto è numerico (`T9` prima di `T10`, non lessicografico) e i
+due prefissi sono blocchi distinti — le `D` in coda alle `T`: i counter `T` e `D`
+sono separati nel contratto loom, quindi `T01` e `D01` non sono confrontabili
+come numeri soli.
 A parità su tutte le chiavi decide sempre l'`id` (confronto **numerico**: `T9`
 prima di `T10`) → l'ordine è deterministico, mai instabile fra un refresh e l'altro.
 
@@ -234,7 +243,8 @@ npx @lamemind/loom-deck
 scripts/deck-run T18
 ```
 
-Apre una tab Ptyxis nella window attiva con `LOOM_TASK=T18 claude '/loom-works:run-task T18'`.
+Apre una tab Ptyxis nella window attiva con `LOOM_TASK=T18 claude 'recap stato task T18'`
+(prompt override-abile via `LOOM_DECK_ENTER_PROMPT`, placeholder `{TASK}`).
 
 ## Sviluppo (TUI Ink)
 

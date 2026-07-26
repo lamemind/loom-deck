@@ -4,7 +4,7 @@
 // senza toccare il filesystem.
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { findTaskFile } from './tasks.js';
+import { TASK_ID_RE, findTaskFile } from './tasks.js';
 import type { PriName, ProgName } from './view.js';
 
 // Il task file scrive la priorità per NOME (`- **Priority**: Med`), tasks.md la
@@ -88,12 +88,11 @@ export function initialDetail(current: string, prog: ProgName, date: string = to
  * restano i token grezzi originali: nessun re-flow della tabella, il diff resta
  * di una riga. `ok:false` = id assente → il chiamante non scrive nulla.
  *
- * L'id deve rispettare `^T\d+$`, stesso gate di `parseTasks`: senza, un id
- * arbitrario matcherebbe la riga di HEADER (`| ID | Pri | K | Prog |`) o quella
- * di separatore, riscrivendone le celle e sfondando la tabella.
+ * L'id deve rispettare `TASK_ID_RE` (importato da tasks.ts — stesso gate di
+ * `parseTasks`, non una copia): senza, un id arbitrario matcherebbe la riga di
+ * HEADER (`| ID | Pri | K | Prog |`) o quella di separatore, riscrivendone le
+ * celle e sfondando la tabella.
  */
-const TASK_ID_RE = /^T\d+$/;
-
 export function updateTasksMdRow(
   content: string,
   id: string,

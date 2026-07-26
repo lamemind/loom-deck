@@ -49,6 +49,19 @@ test('id numerico: T9 precede T10 (non lessicografico)', () => {
   );
 });
 
+// I counter di T e D sono separati: senza il prefisso nel rango, D01 e T01
+// avrebbero lo stesso valore e l'ordine fra loro sarebbe instabile.
+test('id: le D sono un blocco in coda alle T, numerico dentro ogni blocco', () => {
+  assert.ok(idNum('T999') < idNum('D01'));
+  assert.ok(idNum('D9') < idNum('D10'));
+  assert.deepEqual(
+    sortOf([t('D02', '⚡', '🔵'), t('T9', '⚡', '🔵'), t('D01', '⚡', '🔵'), t('T10', '⚡', '🔵')], [
+      { key: 'id', dir: 'asc' },
+    ]),
+    ['T9', 'T10', 'D01', 'D02'],
+  );
+});
+
 test('parità piena su tutte le chiavi → decide id ascendente', () => {
   const tasks = [t('T7', '⚡', '🔵'), t('T3', '⚡', '🔵'), t('T5', '⚡', '🔵')];
   assert.deepEqual(sortOf(tasks, [{ key: 'pri', dir: 'desc' }]), ['T3', 'T5', 'T7']);
