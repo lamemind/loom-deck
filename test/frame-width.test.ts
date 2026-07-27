@@ -60,7 +60,11 @@ function capture(cols: number, rows: number, keys: string): string {
     {
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
-      env: { ...process.env, LOOM_DECK_DOCS_ROOT: 'runtime' },
+      // NO_SPAWN: il gate manda tasti a un deck VERO, e qui un tasto è
+      // un'azione — `⏎` apre una tab Ptyxis, `t` un terminale, `⏎` nel modale
+      // edit committa. Senza freno ogni run dei test apriva finestre reali
+      // (vedi `spawnOut` in cli.tsx).
+      env: { ...process.env, LOOM_DECK_DOCS_ROOT: 'runtime', LOOM_DECK_NO_SPAWN: '1' },
     },
   );
 }
@@ -115,33 +119,68 @@ function assertFrameFits(raw: string, cols: number, label: string) {
     );
   });
 
-  // ② Nessun bordo MANGIATO. Una riga più larga del suo pane non allunga la
-  //    riga composta — Ink la scrive su una griglia a celle fisse — ma copre le
-  //    celle del vicino, e la prima a sparire è la colonna del bordo. Il
-  //    controllo di larghezza da solo non lo vede: serve confrontare le colonne
-  //    dei bordi con quelle della struttura più ricorrente del frame.
-  // Si guardano SOLO le righe interne ai due pane — quelle con bordi oltre i
-  // due del box esterno. Header, riga di navigazione e cornici orizzontali
-  // hanno una forma propria e non dicono nulla sull'allineamento.
-  const inPanes = lines.map(borderColumns).filter((cols_) => cols_.length > 2);
-  if (inPanes.length === 0) return;
+  // ② Nessun bordo MANGIATO — controllato SEPARATAMENTE per regione (vedi
+  //    `splitRegions`): confrontare le righe di un modale con la forma dei pane
+  //    darebbe un falso positivo, perché il modale quella struttura la sostituisce.
+  for (const region of splitRegions(lines)) assertBordersHold(region, label);
+}
+
+/** Un modale in flusso apre un box a PIENA LARGHEZZA dentro la cornice del deck
+ *  (`│ ╭…╮ │` … `│ ╰…╯ │`): per quelle righe la struttura a due pane non esiste,
+ *  le colonne di bordo sono le sue. Si separano quindi le regioni e ognuna viene
+ *  confrontata con la propria forma ricorrente — dentro il modale il controllo
+ *  resta pieno (una riga che ne mangia il bordo destro esce dalla forma comune),
+ *  ma non lo si misura col metro dei pane.
+ *
+ *  L'angolo ROUND a profondità 1 è il discriminante: il pannello di dettaglio è
+ *  anch'esso un box annidato, ma sta DENTRO un pane (`│ │ ┌`), conserva le
+ *  colonne dei pane e va confrontato con loro. */
+const MODAL_OPEN = /^│ ╭/;
+const MODAL_CLOSE = /^│ ╰/;
+
+function splitRegions(lines: string[]): Array<Array<{ line: string; i: number }>> {
+  const main: Array<{ line: string; i: number }> = [];
+  const modal: Array<{ line: string; i: number }> = [];
+  let inModal = false;
+  lines.forEach((line, i) => {
+    if (MODAL_OPEN.test(line)) inModal = true;
+    (inModal ? modal : main).push({ line, i });
+    if (inModal && MODAL_CLOSE.test(line)) inModal = false;
+  });
+  return [main, modal].filter((r) => r.length > 0);
+}
+
+/**
+ * Una riga più larga del suo box non allunga la riga composta — Ink la scrive su
+ * una griglia a celle fisse — ma copre le celle del vicino, e la prima a sparire
+ * è la colonna del bordo. Il controllo di larghezza da solo non lo vede: serve
+ * confrontare le colonne dei bordi con quelle della struttura più ricorrente
+ * della regione.
+ *
+ * Si guardano SOLO le righe interne ai box — quelle con bordi oltre i due della
+ * cornice esterna. Header, riga di navigazione e cornici orizzontali hanno una
+ * forma propria e non dicono nulla sull'allineamento.
+ */
+function assertBordersHold(region: Array<{ line: string; i: number }>, label: string) {
+  const inner = region.map((r) => borderColumns(r.line)).filter((cols_) => cols_.length > 2);
+  if (inner.length === 0) return;
   const byShape = new Map<string, number>();
-  for (const cols_ of inPanes) byShape.set(cols_.join(','), (byShape.get(cols_.join(',')) ?? 0) + 1);
+  for (const cols_ of inner) byShape.set(cols_.join(','), (byShape.get(cols_.join(',')) ?? 0) + 1);
   const [common] = [...byShape.entries()].sort((a, b) => b[1] - a[1])[0]!;
   const expected = common.split(',').map(Number);
-  lines.forEach((line, i) => {
+  for (const { line, i } of region) {
     const got = borderColumns(line);
-    if (got.length <= 2) return;
+    if (got.length <= 2) continue;
     // Un box annidato (il pannello di dettaglio) aggiunge colonne: va bene
     // finché non ne PERDE. Perderne una significa che il testo ci è passato
-    // sopra — cioè la riga era più larga del suo pane.
+    // sopra — cioè la riga era più larga del suo box.
     const missing = expected.filter((c) => !got.includes(c));
     assert.deepEqual(
       missing,
       [],
       `${label} riga ${i}: bordo mangiato alle colonne ${missing.join(',')}\n${line}`,
     );
-  });
+  }
 }
 
 const CTRL_F = String.fromCharCode(6);
@@ -154,6 +193,10 @@ const SCENARIOS: Array<[string, string, number[]]> = [
   ['task done in vista (filtri)', 'DDDDDDDD', [100, 176]],
   ['ricerca full-text', `${CTRL_F}deck`, [176]],
   ['reader fullscreen', `${CTRL_F}deckD\r`, [176]],
+  // T54 — modale edit sulla riga titolo (3 `D` dopo `E`), con la coda già
+  // riempita oltre il budget: è il campo che porta dentro il box un testo di
+  // lunghezza arbitraria, cioè l'unico che può sfondarlo.
+  ['edit titolo lungo', `DEDDD${'x'.repeat(40)}`, [100, 176]],
 ];
 
 for (const [label, keys, widths] of SCENARIOS) {

@@ -20,7 +20,13 @@ import { loadView, saveView, parseView } from '../src/view-store.js';
 import { cellWidth, launchLegend, parseIdentity, parseLaunch } from '../src/config.js';
 import type { Task } from '../src/tasks.js';
 
-const t = (id: string, pri: string, prog: string): Task => ({ id, pri, prog, desc: id });
+const t = (id: string, pri: string, prog: string): Task => ({
+  id,
+  pri,
+  prog,
+  desc: id,
+  rawDesc: id,
+});
 
 const sortOf = (tasks: Task[], sort: SortEntry[]) =>
   [...tasks].sort((a, b) => compareTasks(a, b, sort)).map((x) => x.id);

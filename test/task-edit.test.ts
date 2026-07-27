@@ -43,6 +43,35 @@ test('updateTasksMdRow ignora header e separatori', () => {
   assert.equal(ok, false);
 });
 
+test('updateTasksMdRow riscrive anche la descrizione quando la si passa', () => {
+  const { content, ok } = updateTasksMdRow(TASKS_MD, 'T39', '⚡', '🟡', 'Titolo nuovo di zecca');
+  assert.equal(ok, true);
+  assert.match(content, /\| T39 \| ⚡ \| ⚙️ \| 🟡 \| Titolo nuovo di zecca \|/);
+  // nessun residuo del titolo vecchio in coda alla riga
+  assert.doesNotMatch(content, /filtri \+ sort/);
+});
+
+test('updateTasksMdRow: desc undefined ≠ desc vuota', () => {
+  // undefined → cella intatta (chiamata di sola pri/prog)
+  assert.match(updateTasksMdRow(TASKS_MD, 'T39', '⚡', '🟡').content, /Deck: filtri \+ sort/);
+  // '' → cella davvero svuotata
+  assert.match(updateTasksMdRow(TASKS_MD, 'T39', '⚡', '🟡', '').content, /\| T39 \| ⚡ \| ⚙️ \| 🟡 \|  \|/);
+});
+
+test('updateTasksMdRow: un `|` nel titolo viene escapato, non spezza la cella', () => {
+  const { content } = updateTasksMdRow(TASKS_MD, 'T39', '⚡', '🟡', 'a | b');
+  const row = content.split('\n').find((l) => l.startsWith('| T39'))!;
+  // 5 colonne + le due stringhe vuote ai bordi = 7 token, come una riga sana
+  assert.equal(row.split('|').length, 7 + 1); // +1: lo `\|` escapato resta uno split
+  assert.match(row, /\| a \\\| b \|/);
+});
+
+test('updateTasksMdRow: descrizione con `|` già presente collassa in una cella sola', () => {
+  const md = '| T39 | ⚡ | ⚙️ | 🔵 | vecchio | con pipe |\n';
+  const { content } = updateTasksMdRow(md, 'T39', '⚡', '🟡', 'nuovo');
+  assert.equal(content, '| T39 | ⚡ | ⚙️ | 🟡 | nuovo |\n');
+});
+
 const TASK_FILE = `# Task: Qualcosa
 
 - **ID**: T39
@@ -62,6 +91,36 @@ test('updateTaskFileFields riscrive i primi bullet Priority/Progress', () => {
   // first-match-wins: il residuo nel body resta com'era
   assert.match(content, /residuo template che NON va toccato/);
   assert.equal(content.match(/\*\*Progress\*\*: 🟡 42%/g)?.length, 1);
+});
+
+test('updateTaskFileFields riscrive l’H1 conservando il cappello `Task:`', () => {
+  const { content, ok } = updateTaskFileFields(TASK_FILE, 'High', '🟡 42%', 'Altro titolo');
+  assert.equal(ok, true);
+  assert.match(content, /^# Task: Altro titolo$/m);
+});
+
+test('updateTaskFileFields: su una doc task resta `# Doc Task:`', () => {
+  const doc = '# Doc Task: Vecchio\n\n- **Priority**: Low\n';
+  const { content } = updateTaskFileFields(doc, 'Med', '🔵 Todo', 'Nuovo');
+  assert.match(content, /^# Doc Task: Nuovo$/m);
+});
+
+test('updateTaskFileFields: H1 senza cappello resta senza cappello', () => {
+  const plain = '# Vecchio\n\n- **Priority**: Low\n';
+  const { content } = updateTaskFileFields(plain, 'Med', '🔵 Todo', 'Nuovo');
+  assert.match(content, /^# Nuovo$/m);
+});
+
+test('updateTaskFileFields: title undefined lascia l’H1 intatto', () => {
+  const { content } = updateTaskFileFields(TASK_FILE, 'High', '🟡 42%');
+  assert.match(content, /^# Task: Qualcosa$/m);
+});
+
+test('updateTaskFileFields: solo l’H1 basta a rendere il file scritto', () => {
+  const noFields = '# Task: Vecchio\n\ntesto libero\n';
+  const { content, ok } = updateTaskFileFields(noFields, 'High', '🟡 42%', 'Nuovo');
+  assert.equal(ok, true);
+  assert.match(content, /^# Task: Nuovo$/m);
 });
 
 test('progressText: detail arbitrario vince sul default', () => {

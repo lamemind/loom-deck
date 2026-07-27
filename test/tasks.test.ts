@@ -42,6 +42,17 @@ test('parseTasks legge le colonne giuste anche su riga D', () => {
   assert.equal(d02?.desc, 'Task attiva → contesto modello');
 });
 
+test('parseTasks tiene la desc GREZZA accanto a quella sanificata', () => {
+  // `✔` è discorde (Ink lo misura 2, il terminale 1) → sanitize lo sostituisce
+  // con `✅`. Il modale edit semina il campo titolo da `rawDesc`: con `desc`
+  // salvare senza toccare il titolo riscriverebbe il glifo su tasks.md.
+  const md = '| T01 | 🔥 | ⚙️ | 🔵 | fatto ✔ davvero |\n';
+  const t01 = parseTasks(md)[0];
+  assert.equal(t01.rawDesc, 'fatto ✔ davvero');
+  assert.equal(t01.desc, sanitize('fatto ✔ davvero'));
+  assert.notEqual(t01.desc, t01.rawDesc);
+});
+
 // I due template scrivono cappelli H1 diversi: entrambi vanno via, resta la
 // descrizione. Senza lo strip la doc task mostrerebbe "Doc Task: …" nel pane.
 test('parseTaskDetail strippa il cappello H1 di entrambi i template', () => {

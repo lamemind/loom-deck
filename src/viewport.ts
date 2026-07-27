@@ -47,7 +47,7 @@ export const MODAL_HEIGHT = {
   note: 4, // T53 — gemello di create: marginTop + 2 bordi + 1 riga input
   sort: 5, // marginTop + 2 bordi + titolo + 1 riga catena
   filter: 6, // marginTop + 2 bordi + titolo + 2 righe (pri, stato)
-  edit: 8, // marginTop + 2 bordi + titolo + 3 campi + riga anteprima
+  edit: 9, // marginTop + 2 bordi + titolo + 4 campi (pri, stato, prog, titolo) + riga anteprima
   // T52 — search e reader sono gli unici modali NON in flusso: sostituiscono i
   // due pane invece di spingerli giù (una lista di occorrenze non entra in un
   // box sopra il deck). Costo 0 nel budget dei pane perché quel budget non

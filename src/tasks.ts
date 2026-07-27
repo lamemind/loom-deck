@@ -15,6 +15,11 @@ export interface Task {
   pri: string;
   prog: string;
   desc: string;
+  /** `desc` NON sanificata — la forma esatta che sta su tasks.md.
+   *  Serve al modale edit: pre-riempire il campo titolo con la versione
+   *  sanificata e poi riscriverla su disco sostituirebbe i glifi discordi
+   *  (`✔` → `✅`, `❤` → `·`) anche quando l'utente non ha toccato il campo. */
+  rawDesc: string;
 }
 
 // Dettaglio letto dal task file singolo (Q1+B T20): campi header + description.
@@ -71,7 +76,7 @@ export function parseTasks(content: string): Task[] {
     // il glifo, e `task-edit` lo riscrive in tasks.md. Sanificarli qui
     // renderebbe `✔` un `✅` anche su disco, cambiando il formato di famiglia.
     // La sanificazione di quei due avviene al display (`displayProg`).
-    tasks.push({ id, pri, prog, desc: sanitize(desc) });
+    tasks.push({ id, pri, prog, desc: sanitize(desc), rawDesc: desc });
   }
   return tasks;
 }

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { render, Box, Text, useApp, useInput, useStdout } from 'ink';
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -127,13 +128,25 @@ interface FilterCursor {
 
 // T41 — Bozza del modale edit: valori scelti, non ancora scritti su disco.
 // `detail` è il progresso arbitrario (`85%`, `In Progress`, …); vuoto = default
-// dello stato. Righe del modale: 0 priorità · 1 stato · 2 progresso libero.
+// dello stato. `title` è il titolo della task (descrizione in tasks.md + H1 del
+// task file: una cosa sola, scritta in due posti).
+// Righe del modale: 0 priorità · 1 stato · 2 progresso libero · 3 titolo.
+// Il titolo sta IN CODA e non in testa apposta: le righe 0-2 conservano la
+// posizione che avevano, quindi `E ←→` continua a cambiare la priorità come
+// prima invece di finire su un campo di testo.
 interface EditDraft {
   pri: PriName;
   prog: ProgName;
   detail: string;
+  title: string;
 }
-type EditRow = 0 | 1 | 2;
+type EditRow = 0 | 1 | 2 | 3;
+const EDIT_ROWS = 4;
+
+/** Le righe del modale edit che sono campi di TESTO (il resto è scelta ←→). */
+function isTextRow(r: EditRow): r is 2 | 3 {
+  return r === 2 || r === 3;
+}
 
 // Modale sort a grammatica libera: un tasto per chiave, pressioni successive
 // ciclano asc → desc → fuori dalla chain.
@@ -176,11 +189,37 @@ function isDone(prog: string): boolean {
   return prog.includes('✔');
 }
 
+/**
+ * Freno agli effetti VERSO L'ESTERNO (tab Ptyxis, sessioni Claude, git commit).
+ *
+ * Il gate di larghezza avvia il deck vero in uno pseudo-terminale e gli manda
+ * tasti — e in questa TUI un tasto è un'azione: `⏎` su una riga sessione apre
+ * una tab Ptyxis, `t` un terminale, `⏎` nel modale edit committa. Ogni run dei
+ * test apriva quindi finestre reali sulla macchina di chi li lanciava, in
+ * qualunque progetto avesse in focus.
+ *
+ * Il gate va tenuto sul deck VERO (è tutto il suo valore: misura il frame che
+ * VTE disegna davvero), quindi il freno sta qui: `LOOM_DECK_NO_SPAWN=1` fa
+ * restituire un figlio finto e inerte invece di lanciare il processo. Non è un
+ * mock del comportamento — l'azione semplicemente non avviene, e il frame che il
+ * test misura resta identico.
+ */
+const NO_SPAWN = process.env.LOOM_DECK_NO_SPAWN === '1';
+
+function spawnOut(cmd: string, args: string[], opts: SpawnOptions): ChildProcess {
+  if (!NO_SPAWN) return spawn(cmd, args, opts);
+  // Figlio inerte: emette nulla, quindi i `.on('error'|'close')` dei chiamanti
+  // restano appesi senza mai scattare — che è esattamente "non è successo niente".
+  const fake = new EventEmitter() as ChildProcess;
+  fake.unref = () => fake;
+  return fake;
+}
+
 // Spawn detached: il deck spawna ma NON contiene la sessione (la possiede
 // ptyxis-agent). unref + stdio ignore → ritorna subito, la TUI resta viva.
 // sessionId pinnato (T27) → il binding sidecar è deterministico allo spawn.
 function spawnDeck(id: string, cwd: string, sessionId: string) {
-  const child = spawn(DECK_RUN, [id, '--session-id', sessionId], {
+  const child = spawnOut(DECK_RUN, [id, '--session-id', sessionId], {
     cwd,
     detached: true,
     stdio: 'ignore',
@@ -197,7 +236,7 @@ function spawnDeck(id: string, cwd: string, sessionId: string) {
 // continuarla, non iniettarle un messaggio (lo salta deck-run).
 function spawnDeckResume(taskId: string | null, cwd: string, sessionId: string) {
   const args = taskId ? [taskId, '--resume', sessionId] : ['--no-task', '--resume', sessionId];
-  const child = spawn(DECK_RUN, args, { cwd, detached: true, stdio: 'ignore' });
+  const child = spawnOut(DECK_RUN, args, { cwd, detached: true, stdio: 'ignore' });
   child.unref();
   return child;
 }
@@ -219,7 +258,7 @@ function spawnDeckFork(taskId: string | null, cwd: string, originId: string, new
     '--session-id',
     newId,
   ];
-  const child = spawn(DECK_RUN, args, { cwd, detached: true, stdio: 'ignore' });
+  const child = spawnOut(DECK_RUN, args, { cwd, detached: true, stdio: 'ignore' });
   child.unref();
   return child;
 }
@@ -231,7 +270,7 @@ function spawnDeckFork(taskId: string | null, cwd: string, originId: string, new
 // sporcherebbe il percorso bound. Il titolo tab resta la label loom — lo mette
 // deck-run, perché il match compass è window-level e non sa nulla di task.
 function spawnClaudeEmpty(cwd: string) {
-  const child = spawn(DECK_RUN, ['--no-task'], {
+  const child = spawnOut(DECK_RUN, ['--no-task'], {
     cwd,
     detached: true,
     stdio: 'ignore',
@@ -249,7 +288,7 @@ function spawnClaudeEmpty(cwd: string) {
 // esplicito in project-config-architecture.md). La project root arriva via cwd,
 // non interpolata nella stringa.
 function runLaunch(entry: LaunchEntry, cwd: string) {
-  const child = spawn('bash', ['-lic', entry.command], {
+  const child = spawnOut('bash', ['-lic', entry.command], {
     cwd,
     detached: true,
     stdio: 'ignore',
@@ -270,7 +309,7 @@ function runLaunch(entry: LaunchEntry, cwd: string) {
 // dal radar finché quella tab è in primo piano).
 function spawnTerminal(cwd: string, title: string | null) {
   const args = title ? ['--tab', '-T', title, '-d', cwd] : ['--tab', '-d', cwd];
-  const child = spawn('ptyxis', args, { cwd, detached: true, stdio: 'ignore' });
+  const child = spawnOut('ptyxis', args, { cwd, detached: true, stdio: 'ignore' });
   child.unref();
   return child;
 }
@@ -294,7 +333,7 @@ function spawnCreateTask(
   sessionId: string,
   onResult: (ok: boolean) => void,
 ) {
-  const child = spawn(
+  const child = spawnOut(
     CLAUDE_CMD,
     [
       '-p',
@@ -346,7 +385,7 @@ function commitTaskEdit(
   message: string,
   onResult: (ok: boolean, err: string) => void,
 ) {
-  const child = spawn('git', ['commit', '-m', message, '--', ...paths], {
+  const child = spawnOut('git', ['commit', '-m', message, '--', ...paths], {
     cwd,
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -816,6 +855,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // da default. La priorità arriva dal glifo di tasks.md (già in `selTask`), lo
   // stato dal suo glifo Prog; il progresso arbitrario dal campo `Progress` del
   // task file — ma solo se è davvero custom (vedi `initialDetail`).
+  //
+  // Il titolo si semina dalla riga di tasks.md e non dall'H1 del task file per
+  // due ragioni: è la fonte che esiste SEMPRE (un task file può mancare), ed è
+  // il testo che l'utente sta guardando in lista quando preme `E`. Grezzo
+  // (`rawDesc`), non sanificato: rimandare a disco la forma sanificata
+  // riscriverebbe i glifi anche senza toccare il campo.
   function openEdit() {
     if (!selTask) return;
     const prog = progName(selTask.prog) ?? 'todo';
@@ -823,6 +868,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       pri: priName(selTask.pri) ?? 'med',
       prog,
       detail: initialDetail(detail?.fields['Progress'] ?? '', prog),
+      title: selTask.rawDesc,
     });
     setEditRow(0);
     setNote('');
@@ -841,9 +887,24 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     setEdit(null);
     if (!task || !draft) return;
 
+    // Il titolo si scrive solo se è CAMBIATO davvero: rimandarlo identico
+    // riscriverebbe comunque la cella (collassando spazi ed escape) e sporcherebbe
+    // il diff di una riga per un edit di sola priorità. Vuoto → scartato: una
+    // task senza descrizione in overview non è più riconoscibile.
+    const title = draft.title.trim();
+    const titleChanged = title.length > 0 && title !== task.rawDesc.trim();
+
     let res: ReturnType<typeof writeTaskEdit>;
     try {
-      res = writeTaskEdit({ tasksPath, tasksDir, id: task.id, ...draft });
+      res = writeTaskEdit({
+        tasksPath,
+        tasksDir,
+        id: task.id,
+        pri: draft.pri,
+        prog: draft.prog,
+        detail: draft.detail,
+        title: titleChanged ? title : undefined,
+      });
     } catch (e) {
       setNote(`⚠ ${task.id}: scrittura fallita (${(e as Error).message})`);
       return;
@@ -853,12 +914,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       return;
     }
 
-    const summary = `${PRI_GLYPH[draft.pri]} ${PRI_LABEL[draft.pri]} · ${res.progress}`;
+    const summary = `${PRI_GLYPH[draft.pri]} ${PRI_LABEL[draft.pri]} · ${res.progress}${
+      titleChanged ? ` · "${cut(sanitize(title), 32)}"` : ''
+    }`;
     setNote(`⏳ ${task.id} → ${summary} · commit…`);
     commitTaskEdit(
       cwd,
       res.paths,
-      `chore(${task.id}): pri ${PRI_LABEL[draft.pri]} · stato ${res.progress}`,
+      `chore(${task.id}): pri ${PRI_LABEL[draft.pri]} · stato ${res.progress}${
+        titleChanged ? ' · titolo' : ''
+      }`,
       (ok, err) => {
         setNote(ok ? `✔ ${task.id} → ${summary} · committato` : `⚠ ${task.id} salvato, commit fallito: ${err}`);
       },
@@ -1147,9 +1212,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       return;
     }
 
-    // T41 — modale edit: griglia a 3 righe. Righe 0/1 = scelta a valore singolo
-    // (←→ scorre), riga 2 = testo libero (ogni carattere stampabile entra nel
-    // progresso). Come gli altri modali cattura tutto: `esc` annulla senza
+    // T41 — modale edit: griglia a 4 righe. Righe 0/1 = scelta a valore singolo
+    // (←→ scorre), righe 2/3 = testo libero (ogni carattere stampabile entra nel
+    // campo). Come gli altri modali cattura tutto: `esc` annulla senza
     // scrivere né uscire dal deck.
     if (mode === 'edit') {
       if (key.escape) {
@@ -1159,10 +1224,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       } else if (key.return) {
         submitEdit();
       } else if (key.upArrow) {
-        setEditRow((r) => ((r + 2) % 3) as EditRow);
+        setEditRow((r) => ((r + EDIT_ROWS - 1) % EDIT_ROWS) as EditRow);
       } else if (key.downArrow) {
-        setEditRow((r) => ((r + 1) % 3) as EditRow);
-      } else if (key.leftArrow || key.rightArrow) {
+        setEditRow((r) => ((r + 1) % EDIT_ROWS) as EditRow);
+      } else if ((key.leftArrow || key.rightArrow) && !isTextRow(editRow)) {
         const d = key.leftArrow ? -1 : 1;
         // Scorrimento CICLICO (wrap) e non clampato: le liste sono di 3-4 voci,
         // arrivare in fondo e ripartire costa meno di invertire direzione.
@@ -1177,11 +1242,19 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
               : e,
           );
         }
-      } else if (editRow === 2) {
+      } else if (isTextRow(editRow)) {
+        // Un solo ramo per i due campi di testo, la riga sceglie la chiave:
+        // duplicarlo significherebbe tenere allineate a mano due copie della
+        // stessa grammatica di input a ogni tasto aggiunto.
+        const field = editRow === 2 ? 'detail' : 'title';
         if (key.backspace || key.delete) {
-          setEdit((e) => (e ? { ...e, detail: e.detail.slice(0, -1) } : e));
+          setEdit((e) => (e ? { ...e, [field]: e[field].slice(0, -1) } : e));
         } else if (input && !key.ctrl && !key.meta) {
-          setEdit((e) => (e ? { ...e, detail: e.detail + input } : e));
+          // `sanitizeTyped`: `useInput` consegna il CHUNK di stdin, quindi un
+          // incollaggio porta dentro newline e byte di controllo — invisibili
+          // nel campo ma contati da Ink nella larghezza della riga, e destinati
+          // a finire tali e quali dentro tasks.md.
+          setEdit((e) => (e ? { ...e, [field]: e[field] + sanitizeTyped(input) } : e));
         }
       }
       return;
@@ -1521,7 +1594,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       ) : mode === 'edit' ? (
         <Text dimColor wrap="truncate-end">
           edit · <Text color="yellow">↑↓</Text> campo · <Text color="yellow">←→</Text> valore ·{' '}
-          <Text color="yellow">⏎</Text> salva+commit · <Text color="yellow">esc</Text> annulla
+          <Text color="yellow">testo</Text> su prog/titolo · <Text color="yellow">⏎</Text> salva+commit ·{' '}
+          <Text color="yellow">esc</Text> annulla
         </Text>
       ) : (
         <Text dimColor wrap="truncate-end">
@@ -1564,7 +1638,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       {mode === 'sort' ? <SortModal sort={view.sort} /> : null}
       {mode === 'filter' ? <FilterModal view={view} cursor={filterCursor} /> : null}
       {mode === 'edit' && edit && selTask ? (
-        <EditModal id={selTask.id} draft={edit} row={editRow} />
+        <EditModal id={selTask.id} draft={edit} row={editRow} columns={columns} />
       ) : null}
       <Box flexDirection="row" marginTop={1}>
         <TasksPane
@@ -1659,18 +1733,60 @@ function FilterModal({ view, cursor }: { view: ViewState; cursor: FilterCursor }
   );
 }
 
+/**
+ * Taglio dalla TESTA: tiene la CODA della stringa dentro `cols`.
+ *
+ * `cut()` fa l'opposto (tiene l'inizio) ed è giusto per un testo che si LEGGE;
+ * qui il testo si SCRIVE, il cursore sta in fondo (append-only come gli altri
+ * campi del deck) e ciò che serve vedere è l'ultima parola digitata, non la
+ * prima — con `cut()` un titolo lungo sparirebbe sotto l'ellissi proprio mentre
+ * lo si sta scrivendo. Budget in COLONNE (`termWidth`), non in code unit: è
+ * quello che decide se la riga sfonda il bordo del box.
+ */
+function tailCut(s: string, cols: number): string {
+  if (cols <= 0) return '';
+  if (termWidth(s) <= cols) return s;
+  const chars = [...s];
+  let out = '';
+  let w = 1; // la colonna dell'ellissi di testa
+  for (let i = chars.length - 1; i >= 0; i--) {
+    const cw = termWidth(chars[i]);
+    if (w + cw > cols) break;
+    out = chars[i] + out;
+    w += cw;
+  }
+  return `…${out}`;
+}
+
 // T41 — modale edit, in flusso come gli altri (spinge giù i pane invece di
 // coprirli: la riga che stai modificando resta visibile sopra la lista).
 // La riga di anteprima mostra il testo ESATTO che finirà nel campo `Progress`
 // del task file — così il default (`✔️ Done at <oggi>`) non è una sorpresa.
-function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: EditRow }) {
+function EditModal({
+  id,
+  draft,
+  row,
+  columns,
+}: {
+  id: string;
+  draft: EditDraft;
+  row: EditRow;
+  columns: number;
+}) {
   const mark = (r: EditRow) => (row === r ? CARET : CARET_OFF);
+  // Budget del campo titolo, DERIVATO da `columns` (mai una costante): il box
+  // del modale è ANNIDATO nella cornice del deck, quindi le cornici da scalare
+  // sono due — root (bordo 2 + paddingX 2) e modale (bordo 2 + paddingX 2) — più
+  // caret 2, etichetta 6, gap 2 e cursore 1. Totale 19.
+  // Un titolo di tasks.md arriva a ~64 caratteri: senza taglio la riga va a capo
+  // dentro il box, che si alza di una riga e sfonda il budget verticale (invariante ③).
+  const titleBudget = Math.max(8, columns - 19);
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
-      <Text color="yellow">E › {id} · priorità e stato</Text>
+      <Text color="yellow">E › {id} · titolo, priorità e stato</Text>
       <Text>
         {mark(0)}
-        <Text dimColor>pri  </Text>
+        <Text dimColor>pri   </Text>
         {EDIT_PRI.map((p) => (
           <Text key={p} inverse={draft.pri === p} color={draft.pri === p ? 'green' : 'gray'}>
             {'  '}
@@ -1680,7 +1796,7 @@ function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: Edit
       </Text>
       <Text>
         {mark(1)}
-        <Text dimColor>stato</Text>
+        <Text dimColor>stato </Text>
         {EDIT_PROG.map((p) => (
           <Text key={p} inverse={draft.prog === p} color={draft.prog === p ? 'green' : 'gray'}>
             {'  '}
@@ -1690,10 +1806,19 @@ function EditModal({ id, draft, row }: { id: string; draft: EditDraft; row: Edit
       </Text>
       <Text>
         {mark(2)}
-        <Text dimColor>prog </Text>
-        <Text>{'  '}{draft.detail}</Text>
+        <Text dimColor>prog  </Text>
+        <Text>{'  '}{sanitize(draft.detail)}</Text>
         {row === 2 ? <Text inverse> </Text> : null}
         {!draft.detail && row !== 2 ? <Text dimColor>(default)</Text> : null}
+      </Text>
+      {/* Il titolo è UNO ma vive in due posti: la colonna Task di tasks.md e
+          l'H1 del task file. Il modale ne mostra uno solo perché sono la stessa
+          informazione — tenerli separati sarebbe l'invito a farli divergere. */}
+      <Text>
+        {mark(3)}
+        <Text dimColor>titolo</Text>
+        <Text>{'  '}{sanitize(tailCut(draft.title, titleBudget))}</Text>
+        {row === 3 ? <Text inverse> </Text> : null}
       </Text>
       {/* sanitize SOLO qui, non dentro progressText: quel testo finisce
           nel campo `Progress` del task file, dove il glifo va scritto nudo. */}
