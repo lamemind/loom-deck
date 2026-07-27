@@ -60,6 +60,7 @@ import {
   type Mode as ViewportMode,
 } from './viewport.js';
 import {
+  caretWindow,
   cut,
   sanitize,
   termWidth,
@@ -134,11 +135,17 @@ interface FilterCursor {
 // Il titolo sta IN CODA e non in testa apposta: le righe 0-2 conservano la
 // posizione che avevano, quindi `E ←→` continua a cambiare la priorità come
 // prima invece di finire su un campo di testo.
+// T54 — `caret` è la posizione del cursore DENTRO la riga di testo attiva,
+// contata per CODE POINT: uno solo per tutto il modale, perché una riga di testo
+// alla volta è editabile e portarne uno per campo vorrebbe dire tenerli
+// allineati a mano a ogni modifica. Cambiando riga si riposiziona in coda al
+// nuovo campo (vedi il ramo ↑↓).
 interface EditDraft {
   pri: PriName;
   prog: ProgName;
   detail: string;
   title: string;
+  caret: number;
 }
 type EditRow = 0 | 1 | 2 | 3;
 const EDIT_ROWS = 4;
@@ -146,6 +153,34 @@ const EDIT_ROWS = 4;
 /** Le righe del modale edit che sono campi di TESTO (il resto è scelta ←→). */
 function isTextRow(r: EditRow): r is 2 | 3 {
   return r === 2 || r === 3;
+}
+
+/** Chiave della bozza scritta dalla riga di testo `r`. */
+function editField(r: 2 | 3): 'detail' | 'title' {
+  return r === 2 ? 'detail' : 'title';
+}
+
+/**
+ * Lunghezza in CODE POINT. Il caret ci indicizza sopra: `.length` conterebbe le
+ * code unit UTF-16 e un'emoji nel titolo varrebbe 2 posizioni, cioè un cursore
+ * che si ferma a metà glifo e un `slice` che lo spezza in due surrogati.
+ */
+function cpLen(s: string): number {
+  return [...s].length;
+}
+
+/** Inserisce `ins` alla posizione `at` (code point). */
+function insertAt(s: string, at: number, ins: string): string {
+  const cp = [...s];
+  return cp.slice(0, at).join('') + ins + cp.slice(at).join('');
+}
+
+/** Toglie il code point in posizione `at`; fuori range = stringa invariata. */
+function removeAt(s: string, at: number): string {
+  const cp = [...s];
+  if (at < 0 || at >= cp.length) return s;
+  cp.splice(at, 1);
+  return cp.join('');
 }
 
 // Modale sort a grammatica libera: un tasto per chiave, pressioni successive
@@ -869,6 +904,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       prog,
       detail: initialDetail(detail?.fields['Progress'] ?? '', prog),
       title: selTask.rawDesc,
+      // Si apre sulla riga 0 (priorità), che non è un campo di testo: il caret
+      // prende la sua posizione entrando in una riga di testo con ↑↓.
+      caret: 0,
     });
     setEditRow(0);
     setNote('');
@@ -1223,10 +1261,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         setNote('E → edit annullato');
       } else if (key.return) {
         submitEdit();
-      } else if (key.upArrow) {
-        setEditRow((r) => ((r + EDIT_ROWS - 1) % EDIT_ROWS) as EditRow);
-      } else if (key.downArrow) {
-        setEditRow((r) => ((r + 1) % EDIT_ROWS) as EditRow);
+      } else if (key.upArrow || key.downArrow) {
+        const next = ((editRow + EDIT_ROWS + (key.upArrow ? -1 : 1)) % EDIT_ROWS) as EditRow;
+        setEditRow(next);
+        // Il caret segue la riga attiva e atterra in CODA al nuovo campo: è la
+        // posizione da cui si continua a scrivere, ed è anche l'unica che non
+        // dipende da dove stava il cursore nel campo precedente.
+        setEdit((e) => (e && isTextRow(next) ? { ...e, caret: cpLen(e[editField(next)]) } : e));
       } else if ((key.leftArrow || key.rightArrow) && !isTextRow(editRow)) {
         const d = key.leftArrow ? -1 : 1;
         // Scorrimento CICLICO (wrap) e non clampato: le liste sono di 3-4 voci,
@@ -1246,15 +1287,48 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         // Un solo ramo per i due campi di testo, la riga sceglie la chiave:
         // duplicarlo significherebbe tenere allineate a mano due copie della
         // stessa grammatica di input a ogni tasto aggiunto.
-        const field = editRow === 2 ? 'detail' : 'title';
-        if (key.backspace || key.delete) {
-          setEdit((e) => (e ? { ...e, [field]: e[field].slice(0, -1) } : e));
-        } else if (input && !key.ctrl && !key.meta) {
+        const field = editField(editRow);
+        if (key.ctrl) {
+          // T54 — ramo CTRL ANTEPOSTO a quelli su carattere, come in modalità
+          // normale: `^A` e `a` arrivano con lo stesso `input`, quindi senza
+          // questa precedenza il `^A` finirebbe dentro il testo.
+          //
+          // `^A`/`^E` (convenzione readline) perché `Home`/`End` NON sono
+          // esposte da `useInput`: arrivano come input vuoto, indistinguibili
+          // da qualunque altro tasto senza nome.
+          //
+          // `^D` è il delete-forward, e anche qui il motivo è un limite di Ink:
+          // il tasto Backspace fisico manda `\x7f` e il tasto Canc manda
+          // `\x1b[3~`, ma `parseKeypress` li battezza ENTRAMBI `delete` e
+          // svuota `input` — a valle sono lo stesso evento. `key.delete` va
+          // quindi al backspace (il tasto che si usa davvero) e la
+          // cancellazione in avanti prende il suo tasto readline.
+          if (input === 'a') setEdit((e) => (e ? { ...e, caret: 0 } : e));
+          else if (input === 'e') setEdit((e) => (e ? { ...e, caret: cpLen(e[field]) } : e));
+          else if (input === 'd') setEdit((e) => (e ? { ...e, [field]: removeAt(e[field], e.caret) } : e));
+        } else if (key.leftArrow || key.rightArrow) {
+          // CLAMP agli estremi, non wrap: a inizio campo `←` non deve saltare in
+          // fondo. Le liste di valori (righe 0/1) ciclano perché sono 3-4 voci;
+          // un testo no — il salto sarebbe indistinguibile da uno sfarfallio.
+          const d = key.leftArrow ? -1 : 1;
+          setEdit((e) =>
+            e ? { ...e, caret: Math.max(0, Math.min(cpLen(e[field]), e.caret + d)) } : e,
+          );
+        } else if (key.backspace || key.delete) {
+          setEdit((e) =>
+            e ? { ...e, [field]: removeAt(e[field], e.caret - 1), caret: Math.max(0, e.caret - 1) } : e,
+          );
+        } else if (input && !key.meta) {
           // `sanitizeTyped`: `useInput` consegna il CHUNK di stdin, quindi un
           // incollaggio porta dentro newline e byte di controllo — invisibili
           // nel campo ma contati da Ink nella larghezza della riga, e destinati
-          // a finire tali e quali dentro tasks.md.
-          setEdit((e) => (e ? { ...e, [field]: e[field] + sanitizeTyped(input) } : e));
+          // a finire tali e quali dentro tasks.md. Ed è per lo stesso motivo che
+          // il caret avanza della LUNGHEZZA del chunk, non di uno: un incollaggio
+          // entra tutto insieme.
+          const ins = sanitizeTyped(input);
+          setEdit((e) =>
+            e ? { ...e, [field]: insertAt(e[field], e.caret, ins), caret: e.caret + cpLen(ins) } : e,
+          );
         }
       }
       return;
@@ -1593,8 +1667,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         </Text>
       ) : mode === 'edit' ? (
         <Text dimColor wrap="truncate-end">
-          edit · <Text color="yellow">↑↓</Text> campo · <Text color="yellow">←→</Text> valore ·{' '}
-          <Text color="yellow">testo</Text> su prog/titolo · <Text color="yellow">⏎</Text> salva+commit ·{' '}
+          edit · <Text color="yellow">↑↓</Text> campo · <Text color="yellow">←→</Text> valore, o
+          cursore sul testo · <Text color="yellow">^A/^E</Text> inizio/fine ·{' '}
+          <Text color="yellow">^D</Text> canc · <Text color="yellow">⏎</Text> salva+commit ·{' '}
           <Text color="yellow">esc</Text> annulla
         </Text>
       ) : (
@@ -1734,28 +1809,41 @@ function FilterModal({ view, cursor }: { view: ViewState; cursor: FilterCursor }
 }
 
 /**
- * Taglio dalla TESTA: tiene la CODA della stringa dentro `cols`.
+ * Campo di testo del modale edit: finestra ancorata al caret + cursore inverso
+ * nella posizione REALE.
  *
- * `cut()` fa l'opposto (tiene l'inizio) ed è giusto per un testo che si LEGGE;
- * qui il testo si SCRIVE, il cursore sta in fondo (append-only come gli altri
- * campi del deck) e ciò che serve vedere è l'ultima parola digitata, non la
- * prima — con `cut()` un titolo lungo sparirebbe sotto l'ellissi proprio mentre
- * lo si sta scrivendo. Budget in COLONNE (`termWidth`), non in code unit: è
- * quello che decide se la riga sfonda il bordo del box.
+ * Il cursore non è più uno spazio inverso appiccicato in coda ma la cella `at`
+ * della finestra — cioè il carattere su cui il caret sta davvero. Fuori fuoco
+ * (`focused` falso) il caret non si disegna e la finestra si ancora in fondo,
+ * che è la vista utile per un campo che non si sta scrivendo.
  */
-function tailCut(s: string, cols: number): string {
-  if (cols <= 0) return '';
-  if (termWidth(s) <= cols) return s;
-  const chars = [...s];
-  let out = '';
-  let w = 1; // la colonna dell'ellissi di testa
-  for (let i = chars.length - 1; i >= 0; i--) {
-    const cw = termWidth(chars[i]);
-    if (w + cw > cols) break;
-    out = chars[i] + out;
-    w += cw;
-  }
-  return `…${out}`;
+function EditTextField({
+  label,
+  value,
+  caret,
+  focused,
+  cols,
+}: {
+  label: string;
+  value: string;
+  caret: number;
+  focused: boolean;
+  cols: number;
+}) {
+  const win = caretWindow(value, focused ? caret : cpLen(value), cols);
+  return (
+    <>
+      <Text dimColor>{label}</Text>
+      <Text>
+        {'  '}
+        {sanitize(win.head)}
+      </Text>
+      {/* Fuori fuoco `at` è solo la cella virtuale di fine campo: disegnarla
+          aggiungerebbe al testo uno spazio che non gli appartiene. */}
+      {focused ? <Text inverse>{sanitize(win.at)}</Text> : null}
+      <Text>{sanitize(win.tail)}</Text>
+    </>
+  );
 }
 
 // T41 — modale edit, in flusso come gli altri (spinge giù i pane invece di
@@ -1774,13 +1862,13 @@ function EditModal({
   columns: number;
 }) {
   const mark = (r: EditRow) => (row === r ? CARET : CARET_OFF);
-  // Budget del campo titolo, DERIVATO da `columns` (mai una costante): il box
+  // Budget dei campi di testo, DERIVATO da `columns` (mai una costante): il box
   // del modale è ANNIDATO nella cornice del deck, quindi le cornici da scalare
   // sono due — root (bordo 2 + paddingX 2) e modale (bordo 2 + paddingX 2) — più
   // caret 2, etichetta 6, gap 2 e cursore 1. Totale 19.
   // Un titolo di tasks.md arriva a ~64 caratteri: senza taglio la riga va a capo
   // dentro il box, che si alza di una riga e sfonda il budget verticale (invariante ③).
-  const titleBudget = Math.max(8, columns - 19);
+  const fieldBudget = Math.max(8, columns - 19);
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
       <Text color="yellow">E › {id} · titolo, priorità e stato</Text>
@@ -1806,9 +1894,13 @@ function EditModal({
       </Text>
       <Text>
         {mark(2)}
-        <Text dimColor>prog  </Text>
-        <Text>{'  '}{sanitize(draft.detail)}</Text>
-        {row === 2 ? <Text inverse> </Text> : null}
+        <EditTextField
+          label="prog  "
+          value={draft.detail}
+          caret={draft.caret}
+          focused={row === 2}
+          cols={fieldBudget}
+        />
         {!draft.detail && row !== 2 ? <Text dimColor>(default)</Text> : null}
       </Text>
       {/* Il titolo è UNO ma vive in due posti: la colonna Task di tasks.md e
@@ -1816,9 +1908,13 @@ function EditModal({
           informazione — tenerli separati sarebbe l'invito a farli divergere. */}
       <Text>
         {mark(3)}
-        <Text dimColor>titolo</Text>
-        <Text>{'  '}{sanitize(tailCut(draft.title, titleBudget))}</Text>
-        {row === 3 ? <Text inverse> </Text> : null}
+        <EditTextField
+          label="titolo"
+          value={draft.title}
+          caret={draft.caret}
+          focused={row === 3}
+          cols={fieldBudget}
+        />
       </Text>
       {/* sanitize SOLO qui, non dentro progressText: quel testo finisce
           nel campo `Progress` del task file, dove il glifo va scritto nudo. */}

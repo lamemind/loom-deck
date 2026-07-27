@@ -7,7 +7,8 @@ non basta. `script(1)` non è utilizzabile (mangia la geometria), da cui
 `pty.openpty` + `TIOCSWINSZ` a mano.
 
 Uso: pty-frame.py <cols> <rows> <cwd> <cmd...> [--keys <sequenza>]
-     dove <sequenza> usa D/U/R/L per le frecce, ogni altro carattere è digitato.
+     dove <sequenza> usa D/U/R/L per le frecce, X per un incollaggio, e ogni
+     altro carattere è digitato.
 Stampa su stdout i byte grezzi letti dal pty.
 """
 import os
@@ -21,7 +22,11 @@ import time
 import select
 import signal
 
-KEYS = {'D': b'\x1b[B', 'U': b'\x1b[A', 'R': b'\x1b[C', 'L': b'\x1b[D'}
+# 'X' = INCOLLAGGIO: 60 caratteri in una scrittura sola, cioè un chunk unico di
+# stdin. Riempie un campo di testo oltre il budget al costo di UN tasto (una
+# `x` per volta costerebbe 60 pump da 0.7s), ed è anche l'unico modo di provare
+# dal gate la strada che `useInput` percorre davvero su un paste.
+KEYS = {'D': b'\x1b[B', 'U': b'\x1b[A', 'R': b'\x1b[C', 'L': b'\x1b[D', 'X': b'x' * 60}
 
 argv = sys.argv[1:]
 keys = ''

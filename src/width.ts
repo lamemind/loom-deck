@@ -209,6 +209,113 @@ export function cut(s: string, cols: number): string {
   return out.trimEnd().replace(/…$/, '') + '…';
 }
 
+/**
+ * Larghezza in colonne di UN carattere **dopo** `sanitize`.
+ *
+ * Misurare il carattere grezzo significa misurare qualcosa che nel frame non
+ * entra mai: la sanificazione può cambiarne la larghezza (`✔`, largo 1, diventa
+ * `✅`, largo 2 — invariante ①). Chi taglia su un budget deve contare le colonne
+ * che verranno DISEGNATE, altrimenti sbaglia di una colonna per ogni glifo
+ * sostituito. La cache di `fixChar` rende la doppia chiamata gratuita.
+ */
+export function cellWidth(ch: string): number {
+  return termWidth(sanitize(ch));
+}
+
+/** Finestra di testo attorno a un caret, già spezzata per il render. */
+export interface CaretWindow {
+  /** Testo a sinistra del cursore, ellissi di testa inclusa. */
+  head: string;
+  /** Cella SOTTO il cursore: un carattere del testo, o uno spazio a fine campo. */
+  at: string;
+  /** Testo a destra del cursore, ellissi di coda inclusa. */
+  tail: string;
+  /** Colonna in cui cade il cursore dentro la finestra (= larghezza di `head`). */
+  cursorCol: number;
+}
+
+/**
+ * Porzione visibile di un campo di testo con un caret MOBILE, larga al più
+ * `cols` colonne.
+ *
+ * Perché non basta un taglio dalla coda: mostrare sempre le ultime `cols`
+ * colonne è corretto solo finché si scrive in fondo. Con un caret che si muove,
+ * appena rientra a sinistra del bordo visibile si finirebbe per digitare in un
+ * punto che non si vede — il testo deve scorrere DIETRO il cursore, non
+ * viceversa.
+ *
+ * Il caret è un indice per CODE POINT (`[...s]`), non per code unit: un'emoji
+ * nel titolo sono due code unit e muoversi per unità la spezzerebbe a metà.
+ *
+ * La finestra si espande ALTERNANDO i due lati, così il cursore resta al centro
+ * finché il testo lo consente: muoversi di un carattere fa scorrere il testo di
+ * uno, invece di far saltare la vista da un bordo all'altro. Le ellissi entrano
+ * nel budget e ne escono da sole — quando un lato tocca il bordo del testo la
+ * sua ellissi non serve più e la colonna liberata va all'altro lato.
+ *
+ * Restituisce i tre pezzi già pronti al render (non la sola stringa visibile):
+ * il cursore si disegna invertendo `at`, e ricavarlo tagliando `visible` a
+ * `cursorCol` vorrebbe dire rifare qui fuori lo stesso conteggio in colonne.
+ */
+export function caretWindow(text: string, caret: number, cols: number): CaretWindow {
+  const empty: CaretWindow = { head: '', at: '', tail: '', cursorCol: 0 };
+  if (cols <= 0) return empty;
+
+  const chars = [...text];
+  const c = Math.max(0, Math.min(caret, chars.length));
+  // Il caret a fine campo non ha un carattere sotto di sé: gliene si dà uno
+  // virtuale, così il cursore ha sempre una cella da invertire e la finestra ha
+  // sempre un centro. È lo spazio inverso che il modale disegnava in coda.
+  const cells = c === chars.length ? [...chars, ' '] : chars;
+  const len = cells.length;
+  const w = cells.map(cellWidth);
+
+  const cost = (s: number, e: number, tw: number) => tw + (s > 0 ? 1 : 0) + (e < len ? 1 : 0);
+
+  let start = c;
+  let end = c + 1;
+  let textW = w[c]!;
+  // Budget più stretto della sola cella del cursore: non c'è finestra da dare.
+  if (cost(start, end, textW) > cols) return empty;
+
+  let goRight = true;
+  let stuckL = false;
+  let stuckR = false;
+  while (!stuckL || !stuckR) {
+    const canR = end < len && !stuckR;
+    const canL = start > 0 && !stuckL;
+    if (!canR && !canL) break;
+    if (canR && (goRight || !canL)) {
+      const nw = textW + w[end]!;
+      if (cost(start, end + 1, nw) > cols) stuckR = true;
+      else {
+        textW = nw;
+        end++;
+        // Arrivare in fondo toglie l'ellissi di coda: la colonna che si libera
+        // può rimettere in gioco il lato che si era fermato per un pelo.
+        if (end === len) stuckL = false;
+      }
+    } else {
+      const nw = textW + w[start - 1]!;
+      if (cost(start - 1, end, nw) > cols) stuckL = true;
+      else {
+        textW = nw;
+        start--;
+        if (start === 0) stuckR = false;
+      }
+    }
+    goRight = !goRight;
+  }
+
+  const head = (start > 0 ? '…' : '') + cells.slice(start, c).join('');
+  return {
+    head,
+    at: cells[c]!,
+    tail: cells.slice(c + 1, end).join('') + (end < len ? '…' : ''),
+    cursorCol: termWidth(sanitize(head)),
+  };
+}
+
 /** Riga wrappata che sa da dove viene: `start`/`end` sono offset nel testo
  *  SORGENTE, e servono a evidenziare il match a cavallo dell'a-capo. */
 export interface WrappedLine {

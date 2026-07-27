@@ -184,6 +184,13 @@ function assertBordersHold(region: Array<{ line: string; i: number }>, label: st
 }
 
 const CTRL_F = String.fromCharCode(6);
+const CTRL_A = String.fromCharCode(1);
+
+/** Modale edit aperto sulla riga titolo (3 `D` dopo `E`), con due incollaggi da
+ *  60 caratteri in coda: è il campo che porta dentro il box un testo di lunghezza
+ *  arbitraria, cioè l'unico che può sfondarlo, e a 120 caratteri sfora il budget
+ *  a entrambe le larghezze provate. */
+const EDIT_TITOLO = 'DEDDDXX';
 
 /** `[label, tasti, larghezze]` — le due schermate sostitutive (T52) si provano a
  *  una larghezza sola: il costo è un deck vero avviato per ogni combinazione. */
@@ -193,10 +200,13 @@ const SCENARIOS: Array<[string, string, number[]]> = [
   ['task done in vista (filtri)', 'DDDDDDDD', [100, 176]],
   ['ricerca full-text', `${CTRL_F}deck`, [176]],
   ['reader fullscreen', `${CTRL_F}deckD\r`, [176]],
-  // T54 — modale edit sulla riga titolo (3 `D` dopo `E`), con la coda già
-  // riempita oltre il budget: è il campo che porta dentro il box un testo di
-  // lunghezza arbitraria, cioè l'unico che può sfondarlo.
-  ['edit titolo lungo', `DEDDD${'x'.repeat(40)}`, [100, 176]],
+  // T54 — le tre posizioni del caret in un titolo più lungo del budget. Non sono
+  // lo stesso frame: la finestra è ancorata al cursore, quindi in coda taglia in
+  // testa, a inizio campo taglia in coda, e in mezzo taglia da entrambi i lati —
+  // ed è lì che il cursore cade dentro la riga invece che al suo bordo.
+  ['edit titolo lungo', EDIT_TITOLO, [100, 176]],
+  ['edit caret a inizio (^A)', `${EDIT_TITOLO}${CTRL_A}`, [100, 176]],
+  ['edit caret in mezzo', `${EDIT_TITOLO}${'L'.repeat(30)}`, [100]],
 ];
 
 for (const [label, keys, widths] of SCENARIOS) {

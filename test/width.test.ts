@@ -8,7 +8,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import stringWidth from 'string-width';
 import cliTruncate from 'cli-truncate';
-import { agrees, cut, sanitize, termWidth, wrapLines, wrapWithOffsets } from '../src/width.js';
+import {
+  agrees,
+  caretWindow,
+  cut,
+  sanitize,
+  termWidth,
+  wrapLines,
+  wrapWithOffsets,
+} from '../src/width.js';
 
 const VS16 = '️';
 
@@ -138,4 +146,90 @@ test('wrapWithOffsets: righe entro la larghezza e fette contigue del sorgente', 
       );
     }
   }
+});
+
+// ── T54 · finestra ancorata al caret ────────────────────────────────────────
+//
+// È la meccanica dove stanno gli off-by-one del campo di testo, ed è pura:
+// testo + caret + budget → i tre pezzi da renderizzare. Si prova qui, senza
+// pty — il gate sul frame verifica poi che il budget passato sia quello giusto.
+
+/** Larghezza della finestra COME VERRÀ DISEGNATA (cioè dopo `sanitize`). */
+function winWidth(w: ReturnType<typeof caretWindow>): number {
+  return termWidth(sanitize(w.head) + sanitize(w.at) + sanitize(w.tail));
+}
+
+const LUNGO = 'Deck: caret mobile nel campo titolo del modale edit (frecce, ^A/^E)';
+
+test('caretWindow: la finestra non sfora mai il budget, ovunque stia il caret', () => {
+  for (const cols of [8, 12, 20, 33, 64, 200]) {
+    for (let c = 0; c <= [...LUNGO].length; c++) {
+      const w = caretWindow(LUNGO, c, cols);
+      assert.ok(winWidth(w) <= cols, `caret ${c} @ ${cols} → ${winWidth(w)} colonne`);
+      assert.equal(w.cursorCol, termWidth(sanitize(w.head)), `cursorCol incoerente (caret ${c})`);
+      assert.ok(w.cursorCol < cols, `cursore fuori finestra (caret ${c} @ ${cols})`);
+    }
+  }
+});
+
+test('caretWindow: il carattere sotto il cursore è quello al caret', () => {
+  const cp = [...LUNGO];
+  for (let c = 0; c < cp.length; c++) {
+    assert.equal(caretWindow(LUNGO, c, 20).at, cp[c]);
+  }
+  // A fine campo non c'è un carattere: la cella è lo spazio virtuale su cui
+  // parcheggiare il cursore.
+  assert.equal(caretWindow(LUNGO, cp.length, 20).at, ' ');
+});
+
+test('caretWindow: testo più corto del budget → nessuna ellissi, testo intero', () => {
+  const w = caretWindow('breve', 2, 40);
+  assert.equal(w.head, 'br');
+  assert.equal(w.at, 'e');
+  assert.equal(w.tail, 've');
+  assert.equal(w.cursorCol, 2);
+});
+
+test('caretWindow: ellissi SOLO dal lato tagliato', () => {
+  const inizio = caretWindow(LUNGO, 0, 20);
+  assert.ok(!inizio.head.startsWith('…'), 'ellissi di testa col caret a 0');
+  assert.ok(inizio.tail.endsWith('…'), 'manca l’ellissi di coda');
+
+  const fine = caretWindow(LUNGO, [...LUNGO].length, 20);
+  assert.ok(fine.head.startsWith('…'), 'manca l’ellissi di testa');
+  assert.ok(!fine.tail.endsWith('…'), 'ellissi di coda col caret in fondo');
+
+  const mezzo = caretWindow(LUNGO, 30, 20);
+  assert.ok(mezzo.head.startsWith('…') && mezzo.tail.endsWith('…'), 'tagliato da entrambi i lati');
+});
+
+test('caretWindow: la finestra SEGUE il caret (il cursore resta dentro il testo mostrato)', () => {
+  // Muovendosi a sinistra un carattere alla volta, ogni posizione deve restare
+  // visibile: è la regressione che il taglio dalla coda produceva (si scriveva
+  // in un punto fuori dalla finestra).
+  for (let c = [...LUNGO].length; c >= 0; c--) {
+    const w = caretWindow(LUNGO, c, 24);
+    const atteso = c < [...LUNGO].length ? [...LUNGO][c] : ' ';
+    assert.equal(w.at, atteso, `il cursore non è sul carattere ${c}`);
+  }
+});
+
+test('caretWindow: emoji nel testo — nessun glifo spezzato, budget in colonne', () => {
+  const conEmoji = '🔥 titolo 🟡 con 🔵 emoji dentro e coda lunga da tagliare';
+  for (const cols of [10, 17, 30]) {
+    for (let c = 0; c <= [...conEmoji].length; c++) {
+      const w = caretWindow(conEmoji, c, cols);
+      const visibile = w.head + w.at + w.tail;
+      assert.ok(winWidth(w) <= cols, `caret ${c} @ ${cols} → ${winWidth(w)} colonne`);
+      // Nessun surrogato orfano: la finestra taglia per code point.
+      assert.ok(!/[\uD800-\uDFFF]/.test(visibile.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '')));
+    }
+  }
+});
+
+test('caretWindow: budget degenere → niente da disegnare, mai una finestra sfondata', () => {
+  assert.deepEqual(caretWindow('abc', 1, 0), { head: '', at: '', tail: '', cursorCol: 0 });
+  // Cursore su un glifo largo 2 con una sola colonna: non ci sta, e mezzo glifo
+  // non è un'opzione.
+  assert.deepEqual(caretWindow('🔥x', 0, 1), { head: '', at: '', tail: '', cursorCol: 0 });
 });
