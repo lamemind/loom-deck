@@ -1546,6 +1546,34 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // ricalcola con lo stesso re-render che ridimensiona i pane.
   const legend = launchLegend(launch, columns);
 
+  // Legenda della modalità normale. Elenca SOLO i tasti che fanno qualcosa qui e
+  // ora: le voci contestuali compaiono quando il pane a fuoco le rende possibili
+  // e altrimenti spariscono, invece di annunciarsi inerti con un `—`.
+  // Fuori: navigazione (`↑↓` `←→`) e uscita (`q`), universali in qualunque TUI, e
+  // l'indicatore `focus:` — il pane a fuoco si vede già dall'evidenziazione, e
+  // ridirlo a parole costava colonne su una riga che tronca in silenzio.
+  const keyLegend = sanitize(
+    [
+      ...(canSpawn ? ['⏎/^K/^P/^R spawn'] : canResume ? ['⏎ resume'] : []),
+      ...(canResume ? ['f fork'] : []),
+      ...(canPin ? ['p pin', 'N nota'] : []),
+      '^F cerca',
+      'C nuova',
+      'E edit',
+      'S sort',
+      'F filtri',
+      'w salva',
+      // Emoji delle surface, le stesse del menu compass: 🤖 = nuova sessione
+      // claude. Per il terminale compass usa 🖥️, che nel frame Ink NON passa —
+      // `sanitize` lo sostituisce (VTE lo disegna largo 1, string-width dice 2:
+      // discordante, invariante ① di width.ts) e resterebbe un `·` muto. 💻 è il
+      // gemello concorde più vicino. Il `sanitize` attorno all'array è la rete
+      // che rende quel vincolo automatico, non una cosa da ricordarsi.
+      't 💻',
+      'c 🤖',
+    ].join(' · '),
+  );
+
   // ── T52 · schermate sostitutive ─────────────────────────────────────────
   // Ricerca e reader sono gli unici modali che NON stanno in flusso sopra i
   // pane: una lista di occorrenze non entra in un box da 4 righe. Prendono
@@ -1711,22 +1739,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         </Text>
       ) : (
         <Text dimColor wrap="truncate-end">
-          ↑↓ naviga · ←→ pane ·{' '}
-          {/* T56 — quattro tasti di spawn, forma COMPATTA: la riga ha già
-              `wrap="truncate-end"` e taglia in silenzio da destra, quindi
-              elencarli con la rispettiva label li spingerebbe fuori. L'ordine è
-              quello dei prompt: nessuno / recap / preflight / run. */}
-          {canSpawn ? '⏎/^K/^P/^R spawn' : canResume ? '⏎ resume' : '⏎ —'}
-          {canResume ? ' · f fork' : ''}{canPin ? ' · p pin · N nota' : ''} · ^F cerca · C nuova · E edit ·
-          S sort · F filtri · w salva · t term · c claude · q esci · focus:{' '}
-          <Text color="cyan">{focus}</Text>
+          {keyLegend}
         </Text>
       )}
       {/* T43 — riga dedicata alla mappa indice→launch. Nessuna voce configurata
           → riga assente e footer identico a prima (nessuna regressione). */}
       {mode === 'normal' && launch.length > 0 ? (
         <Text dimColor wrap="truncate-end">
-          launch {legend.shown}
+          {legend.shown}
           {legend.overflow > 0 ? (
             <Text color="yellow"> · +{legend.overflow} fuori riga</Text>
           ) : null}

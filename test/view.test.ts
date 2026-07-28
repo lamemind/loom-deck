@@ -267,8 +267,9 @@ test('legenda: terminale stretto → tronca a voci intere e conta le fuori riga'
   assert.ok(legend.overflow > 0);
   // Degradazione NON silenziosa: mostrate + fuori riga = tutte le raggiungibili.
   assert.equal(legend.shown.split(' · ').length + legend.overflow, 6);
-  // La riga non deve sfondare il box: budget = columns - 12, con 10 di riserva.
-  assert.ok(cellWidth(legend.shown) <= 40 - 12);
+  // La riga non deve sfondare il box: budget = columns - 6 (bordo, padding e
+  // margine; il prefisso "launch " non occupa più celle), con 10 di riserva.
+  assert.ok(cellWidth(legend.shown) <= 40 - 6);
 });
 
 test('legenda: oltre la nona voce → configurate ma non raggiungibili, contate a parte', () => {

@@ -83,18 +83,26 @@ Assegnazioni correnti:
 | immediata | `^P` | spawna la task selezionata sul **preflight** |
 | immediata | `^R` | spawna la task selezionata in **esecuzione** |
 | immediata | `f` | **forka** la sessione selezionata (solo col focus sul pane Sessions) |
-| immediata | `t` | terminale @project-root (surface standard launch) |
-| immediata | `c` | sessione Claude **nuda**: nessuna task, nessun prompt iniziale |
+| immediata | `t` 💻 | terminale @project-root (surface standard launch) |
+| immediata | `c` 🤖 | sessione Claude **nuda**: nessuna task, nessun prompt iniziale |
 | immediata | `w` | salva la vista corrente su disco |
 | launch | `1`…`9` | esegue il `command` della voce, con `cwd` = project root |
 
 Le voci `launch` sono elencate in una **riga di legenda** sotto il footer
-(`launch 1 📝 codium · 2 ☕ idea`): l'indice da solo è opaco, perché le voci sono
+(`1 📝 codium · 2 ☕ idea`): l'indice da solo è opaco, perché le voci sono
 custom per-progetto e non hanno una lettera fissa per app. Se non entrano in
 larghezza, la legenda si ferma a voci intere e mostra il contatore di quelle
 fuori riga — mai un troncamento silenzioso. Il cap a `9` è imposto dai tasti-cifra,
 non dallo schema: un progetto può dichiarare più di 9 voci, quelle oltre la nona
 sono configurate ma non raggiungibili (e la legenda lo dice).
+
+In legenda le due surface del cappello portano l'emoji del menu compass (`t 💻`,
+`c 🤖`) invece della parola. Per il terminale compass usa 🖥️, che nel frame Ink
+non sopravvive: `sanitize` lo sostituisce perché VTE lo disegna largo 1 mentre
+`string-width` ne conta 2 (invariante ① di `src/width.ts`) — 💻 è il gemello
+concorde. La legenda elenca solo i tasti attivi in quel momento: navigazione,
+uscita e indicatore di focus non ci sono, e le voci contestuali spariscono
+invece di mostrarsi inerti.
 
 `t` e `c` sono gemelle: entrambe aprono una surface del cappello nella stessa
 finestra Ptyxis, senza passare da un modale. `c` (minuscola, azione) e `C`

@@ -85,9 +85,11 @@ export interface LaunchLegend {
 export function launchLegend(entries: LaunchEntry[], columns: number): LaunchLegend {
   const reachable = entries.slice(0, LAUNCH_MAX);
   const unreachable = entries.length - reachable.length;
-  // bordo + padding del box + prefisso "launch " ≈ 12 celle; pavimento a 24 per
-  // non degenerare a legenda vuota su terminali strettissimi.
-  const budget = Math.max(24, columns - 12);
+  // bordo + padding del box ≈ 4 celle, più 2 di margine; pavimento a 24 per
+  // non degenerare a legenda vuota su terminali strettissimi. Il prefisso
+  // "launch " non c'è più (la riga si riconosce dalla forma `indice emoji
+  // label`), quindi le 7 celle che occupava tornano alle voci.
+  const budget = Math.max(24, columns - 6);
   // I fallback di parseLaunch (`▸` per emoji, command per label) sono già
   // applicati a monte: qui non si re-implementano né si assumono campi popolati.
   const parts = reachable.map((e, i) => `${i + 1} ${e.emoji} ${e.label}`);
