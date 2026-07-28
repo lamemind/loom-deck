@@ -250,11 +250,20 @@ function spawnOut(cmd: string, args: string[], opts: SpawnOptions): ChildProcess
   return fake;
 }
 
+// T56 — quale prompt iniziale riceve la sessione appena aperta. È un SIMBOLO,
+// non il testo: il catalogo vive in deck-run (primitive UI-agnostico), così il
+// quoting del prompt resta verificato in un posto solo e il deck non conosce le
+// stringhe. Nomi identici ai valori di `--prompt-kind`.
+type PromptKind = 'none' | 'recap' | 'preflight' | 'run';
+
 // Spawn detached: il deck spawna ma NON contiene la sessione (la possiede
 // ptyxis-agent). unref + stdio ignore → ritorna subito, la TUI resta viva.
 // sessionId pinnato (T27) → il binding sidecar è deterministico allo spawn.
-function spawnDeck(id: string, cwd: string, sessionId: string) {
-  const child = spawnOut(DECK_RUN, [id, '--session-id', sessionId], {
+// Il kind è OBBLIGATORIO e non ha default qui: il default vive in deck-run (per
+// le invocazioni a mano), mentre dal deck ogni tasto dichiara il proprio intento
+// — un default silenzioso renderebbe indistinguibili `⏎` e `^K`.
+function spawnDeck(id: string, cwd: string, sessionId: string, kind: PromptKind) {
+  const child = spawnOut(DECK_RUN, [id, '--session-id', sessionId, '--prompt-kind', kind], {
     cwd,
     detached: true,
     stdio: 'ignore',
@@ -852,6 +861,36 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     child.on('error', () => setNote(`⚠ create-task: '${CLAUDE_CMD}' non lanciabile`));
   }
 
+  // T56 — apre una sessione bound alla task selezionata. Punto UNICO dei quattro
+  // tasti (⏎/^K/^P/^R): fra loro cambia solo il prompt iniziale, tutto il resto
+  // è identico — uuid pinnato, binding scritto PRIMA dello spawn (la sessione
+  // risulta figlia della task appena il JSONL compare), handler d'errore, nota.
+  // Quattro copie sarebbero quattro posti dove dimenticare il `child.on('error')`,
+  // e uno spawn fallito è async: senza handler diventa uncaughtException e
+  // ucciderebbe il deck, che invece deve restare vivo.
+  // La guardia di focus sta qui e non nei chiamanti perché l'oggetto dell'azione
+  // è la task SELEZIONATA: senza il pane task a fuoco non ce n'è una. Per `⏎` il
+  // ramo è irraggiungibile (ci arriva già dentro `focus === 'tasks'`); per i tre
+  // CTRL, che il ramo `key.ctrl` intercetta globalmente, è l'unico posto.
+  function spawnTaskSession(kind: PromptKind, keyLabel: string) {
+    if (focus !== 'tasks') {
+      setNote(`${keyLabel} → spawn: seleziona una task (←→ per il pane)`);
+      return;
+    }
+    if (isSpot) {
+      setNote('spot: sessioni libere, nessuna task da spawnare');
+      return;
+    }
+    if (!selTask) return;
+    const task = selTask;
+    const sid = randomUUID();
+    appendTaskBinding(cwd, sid, task.id);
+    const child = spawnDeck(task.id, cwd, sid, kind);
+    child.on('error', () => setNote(`⚠ spawn ${task.id} fallito (${DECK_RUN})`));
+    const what = kind === 'none' ? '' : ` · ${kind}`;
+    setNote(`${keyLabel} spawn ${task.id}${what} → tab CC (sid ${sid.slice(0, 8)})`);
+  }
+
   // T53 — apertura del modale nota sulla conversazione selezionata. Come
   // `openEdit`, la bozza parte dal valore ATTUALE: annotare una seconda volta è
   // quasi sempre correggere, e ripartire da vuoto costringerebbe a ridigitare
@@ -1346,6 +1385,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       if (input === 'f') {
         setNote('');
         setMode('search');
+      } else if (input === 'k') {
+        spawnTaskSession('recap', '^K');
+      } else if (input === 'p') {
+        spawnTaskSession('preflight', '^P');
+      } else if (input === 'r') {
+        spawnTaskSession('run', '^R');
       }
       return;
     }
@@ -1360,20 +1405,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       else setSelSessionId((id) => moveSelection(sessionRows, id, 1));
     } else if (key.return) {
       if (focus === 'tasks') {
-        if (isSpot) {
-          setNote('spot: sessioni libere, nessuna task da spawnare');
-        } else if (selTask) {
-          // sessionId pinnato lato deck → binding sidecar scritto PRIMA dello
-          // spawn: la sessione risulta figlia della task appena il JSONL compare.
-          const sid = randomUUID();
-          appendTaskBinding(cwd, sid, selTask.id);
-          const child = spawnDeck(selTask.id, cwd, sid);
-          // Un errore di spawn è async: senza handler diventa uncaughtException
-          // e ucciderebbe il deck. Lo intercetto per preservare l'invariante
-          // "il deck resta vivo" e mostro la nota d'errore.
-          child.on('error', () => setNote(`⚠ spawn ${selTask.id} fallito (${DECK_RUN})`));
-          setNote(`⏎ spawn ${selTask.id} → tab CC (sid ${sid.slice(0, 8)})`);
-        }
+        // T56 — ⏎ apre la sessione a MANI NUDE: bound alla task (LOOM_TASK,
+        // sessionId pinnato, binding) ma senza messaggio iniettato — il contesto
+        // lo carica l'hook SessionStart, il primo messaggio lo scrive l'utente.
+        // Il recap che ⏎ faceva prima è passato a ^K: resta a un tasto, ma smette
+        // di essere l'unico ingresso possibile nella task.
+        spawnTaskSession('none', '⏎');
       } else {
         // T49 — ⏎ su una sessione = resume in nuova tab. Il binding si rilegge
         // dal sidecar (non dal padre selezionato): vale anche per le spot.
@@ -1674,7 +1711,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         </Text>
       ) : (
         <Text dimColor wrap="truncate-end">
-          ↑↓ naviga · ←→ pane · ⏎ {canSpawn ? 'spawn' : canResume ? 'resume' : '—'}
+          ↑↓ naviga · ←→ pane ·{' '}
+          {/* T56 — quattro tasti di spawn, forma COMPATTA: la riga ha già
+              `wrap="truncate-end"` e taglia in silenzio da destra, quindi
+              elencarli con la rispettiva label li spingerebbe fuori. L'ordine è
+              quello dei prompt: nessuno / recap / preflight / run. */}
+          {canSpawn ? '⏎/^K/^P/^R spawn' : canResume ? '⏎ resume' : '⏎ —'}
           {canResume ? ' · f fork' : ''}{canPin ? ' · p pin · N nota' : ''} · ^F cerca · C nuova · E edit ·
           S sort · F filtri · w salva · t term · c claude · q esci · focus:{' '}
           <Text color="cyan">{focus}</Text>

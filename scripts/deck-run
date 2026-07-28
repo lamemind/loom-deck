@@ -4,8 +4,20 @@
 #
 # Apre una tab Ptyxis nella window ATTIVA (quella col focus = il deck) e vi
 # avvia una sessione Claude Code già bound alla task via LOOM_TASK, dritta sul
-# prompt iniziale (default: prompt diretto "recap stato task <TaskID>" — no skill,
-# solo recap → più controllo). Riusabile identico da TUI (Ink) e da web.
+# prompt iniziale scelto con --prompt-kind (default: `recap`, prompt diretto
+# "recap stato task <TaskID>" — no skill, solo recap → più controllo).
+# Riusabile identico da TUI (Ink) e da web.
+#
+# Tre assi ORTOGONALI, da non confondere fra loro:
+#   binding task   <TaskID> ..... --no-task
+#   continuità     nuova ........ --resume [--fork]
+#   prompt         --prompt-kind none|recap|preflight|run
+# Il terzo asse (T56) prima non esisteva: il prompt era una CONSEGUENZA degli
+# altri due (bound ⇒ recap, --no-task ⇒ niente, --resume ⇒ niente), quindi
+# "task-bound SENZA prompt" era inesprimibile e l'unico modo di non avere un
+# prompt era perdere la task. Il catalogo dei prompt vive qui e non nel deck
+# perché questo è il primitive UI-agnostico: il chiamante passa un SIMBOLO, non
+# una stringa — il quoting resta verificato in un posto solo (vedi PROMPT sotto).
 #
 # Con --no-task la sessione è NUDA: niente LOOM_TASK, niente prompt iniziale,
 # niente --session-id. Serve al lavoro spot che non appartiene a nessuna task.
@@ -26,7 +38,7 @@
 #   LOOM_DECK_SPAWN_MODE   inline|profile          (default: inline)
 #   LOOM_DECK_PROFILE_UUID UUID profilo Ptyxis     (default: cc-host)
 #   LOOM_DECK_WORKDIR      dir di lavoro della tab (default: $PWD)
-#   LOOM_DECK_ENTER_PROMPT prompt iniziale sessione, {TASK}=TaskID (default: "recap stato task <TaskID>")
+#   LOOM_DECK_ENTER_PROMPT override del prompt iniziale, {TASK}=TaskID (vince sul kind, tranne `none`)
 #   LOOM_DECK_INTAB_CMD    override comando in-tab (default: la sessione CC; usato per i test)
 #   LOOM_DECK_PERMISSION_MODE  override del permissionMode del file config (default: campo file, poi 'manual')
 #
@@ -37,6 +49,10 @@ SESSION_ID=""
 RESUME_ID=""
 NO_TASK=0
 FORK=0
+# Vuoto = flag non passato (≠ un default già risolto): serve a distinguere
+# "kind implicito" da "kind chiesto", perché con --no-task il primo è legittimo
+# (nessun prompt, come sempre) e il secondo è un errore d'uso.
+PROMPT_KIND=""
 # Positional <TaskID> + flag opzionale --session-id <uuid> (T27): il deck genera
 # l'UUID e lo pinna così il binding sidecar sessionId↔taskId è deterministico.
 # --no-task (T42): modalità NUDA, senza TaskID — nessuna LOOM_TASK, nessun prompt
@@ -55,8 +71,17 @@ FORK=0
 # Sotto --fork il --session-id torna AMMESSO (anzi: è il punto) — la mutua
 # esclusione con --resume esiste perché una ripresa nuda riscrive il transcript
 # dell'id ripreso, mentre il fork ne apre uno NUOVO, che possiamo quindi pinnare.
+# --prompt-kind <none|recap|preflight|run> (T56): sceglie il prompt iniziale fra
+# quelli del catalogo qui sotto. Enum e non stringa libera: il prompt viaggia
+# dentro apici singoli in `bash -lc`, quindi il testo va tenuto in un posto solo
+# e verificato una volta, invece di spostare il rischio di quoting su ogni
+# chiamante. Assente → `recap`, così ogni invocazione preesistente è invariata.
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --prompt-kind)
+      PROMPT_KIND="${2:-}"; shift 2 ;;
+    --prompt-kind=*)
+      PROMPT_KIND="${1#*=}"; shift ;;
     --session-id)
       SESSION_ID="${2:-}"; shift 2 ;;
     --session-id=*)
@@ -75,12 +100,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-USAGE="uso: deck-run <TaskID> [--session-id <uuid>]   (es. deck-run T18)
+USAGE="uso: deck-run <TaskID> [--prompt-kind <kind>] [--session-id <uuid>]
+                                                   (es. deck-run T18)
      | deck-run --no-task                          (sessione nuda, senza task)
      | deck-run <TaskID> --resume <uuid>           (riprende sessione scoped)
      | deck-run --no-task --resume <uuid>          (riprende sessione spot)
      | deck-run <TaskID> --resume <uuid> --fork [--session-id <nuovo-uuid>]
-                                                   (forka: ramo con id NUOVO)"
+                                                   (forka: ramo con id NUOVO)
+
+  --prompt-kind  prompt iniziale della sessione bound (default: recap)
+       none        nessun prompt — sessione aperta sulla task, a mani nude
+       recap       recap stato task <TaskID>
+       preflight   /loom-works:preflight-task <TaskID>
+       run         /loom-works:run-task <TaskID>  (run-doc sulle task D)"
 
 if [[ $NO_TASK -eq 1 && -n "$TASK" ]]; then
   echo "--no-task e <TaskID> sono mutuamente esclusivi" >&2
@@ -99,6 +131,25 @@ fi
 if [[ -n "$RESUME_ID" && -n "$SESSION_ID" && $FORK -eq 0 ]]; then
   echo "--resume e --session-id sono mutuamente esclusivi (la sessione ripresa ha già il suo id)" >&2
   echo "usa --fork se vuoi un ramo con id nuovo" >&2
+  echo "$USAGE" >&2
+  exit 2
+fi
+# Un kind fuori catalogo è un errore d'uso del CHIAMANTE (simbolo interno, non
+# configurazione utente) → exit, non fallback silenzioso come permissionMode:
+# lì il valore arriva da un file editabile a mano, qui da un argomento nostro.
+if [[ -n "$PROMPT_KIND" ]]; then
+  case "$PROMPT_KIND" in
+    none|recap|preflight|run) ;;
+    *) echo "--prompt-kind ignoto: '${PROMPT_KIND}' (usa none|recap|preflight|run)" >&2
+       echo "$USAGE" >&2
+       exit 2 ;;
+  esac
+fi
+# Ogni prompt del catalogo nomina il TaskID: senza task non c'è nulla da
+# chiedere, e un `--no-task --prompt-kind run` è una richiesta contraddittoria,
+# non una da degradare in silenzio.
+if [[ $NO_TASK -eq 1 && -n "$PROMPT_KIND" ]]; then
+  echo "--prompt-kind richiede una task: una sessione --no-task non ha prompt iniziale" >&2
   echo "$USAGE" >&2
   exit 2
 fi
@@ -189,18 +240,42 @@ RES_FLAG=""
 FORK_FLAG=""
 [[ $FORK -eq 1 ]] && FORK_FLAG="--fork-session "
 
-# Prompt iniziale della sessione. Default: prompt DIRETTO (no skill) che chiede
-# a Claude un recap dello stato della task — l'utente rivede/steera prima di
-# lanciare (= più controllo), nessuna esecuzione automatica. Override completo via
-# LOOM_DECK_ENTER_PROMPT, con placeholder {TASK} rimpiazzato dal TaskID. Vincolo: il
-# template NON deve contenere apici singoli (viaggia dentro '...' nel comando in-tab).
-# NB: il default NON può stare nel `${VAR:-...}` perché conterrebbe `{TASK}` e la sua
-# `}` chiuderebbe in anticipo l'espansione → if/else esplicito (default interpola
-# ${TASK} diretto; il placeholder {TASK} vale solo per il valore dell'override).
-if [[ -n "${LOOM_DECK_ENTER_PROMPT:-}" ]]; then
+# ── Catalogo dei prompt iniziali (T56) ───────────────────────────────────────
+# Il prompt iniziale è la scelta di CHI APRE la sessione, non una proprietà della
+# task: lo stesso task file si apre per leggerne lo stato, per un preflight, per
+# eseguirlo o a mani nude. Il kind è quell'intento.
+#   none      → nessun prompt (≠ stringa vuota: PROMPT_ARG sparisce del tutto,
+#               come sul ramo --resume, altrimenti CC riceve un posizionale vuoto)
+#   recap     → prompt DIRETTO, no skill: l'utente rivede/steera prima di lanciare
+#   preflight → skill di preflight sulla task
+#   run       → skill di esecuzione sulla task
+# Vincolo di quoting: nessun template deve contenere apici singoli (viaggia
+# dentro '...' nel comando in-tab). `/loom-works:...` passa intero proprio perché
+# è single-quoted — lo slash e i due punti non sono metacaratteri lì dentro.
+#
+# Precedenza con l'env: LOOM_DECK_ENTER_PROMPT VINCE sul kind (retro-compat: chi
+# lo usa oggi non si accorge del cambio), tranne su `none` — chiedere
+# esplicitamente nessun prompt non è una richiesta che un default d'ambiente
+# possa scavalcare. Il placeholder {TASK} vale solo per il valore dell'override;
+# i template del catalogo interpolano ${TASK} diretto (nel `${VAR:-...}` la `}`
+# di `{TASK}` chiuderebbe in anticipo l'espansione).
+# `run` DISPATCHA sul prefisso: la lista del deck contiene entrambe le famiglie
+# del contratto loom (`T` code, `D` doc) e le due hanno skill di esecuzione
+# diverse — `run-task` è dichiarata code-only, `run-doc` è la sua complementare.
+# Su una D il prompt `run-task` invocherebbe la skill sbagliata. Gli altri kind
+# non discriminano: `recap` è un prompt diretto (nessuna skill) e
+# `preflight-task` risolve il task file per id, indifferente al prefisso.
+case "${PROMPT_KIND:-recap}" in
+  none)      PROMPT="" ;;
+  recap)     PROMPT="recap stato task ${TASK}" ;;
+  preflight) PROMPT="/loom-works:preflight-task ${TASK}" ;;
+  run)       case "$TASK" in
+               D*) PROMPT="/loom-works:run-doc ${TASK}" ;;
+               *)  PROMPT="/loom-works:run-task ${TASK}" ;;
+             esac ;;
+esac
+if [[ "${PROMPT_KIND:-}" != "none" && -n "${LOOM_DECK_ENTER_PROMPT:-}" ]]; then
   PROMPT="${LOOM_DECK_ENTER_PROMPT//\{TASK\}/${TASK}}"
-else
-  PROMPT="recap stato task ${TASK}"
 fi
 
 # Comando eseguito dentro la tab: bind LOOM_TASK per la sessione, avvia CC sul PROMPT.
@@ -213,8 +288,10 @@ fi
 # Su resume (T49) il prompt iniziale salta anche nel ramo task: riprendere una
 # conversazione significa continuarla, non iniettarle un nuovo messaggio. Il
 # fork (T28) ricade nello stesso ramo — è una ripresa, con id nuovo.
-PROMPT_ARG="'${PROMPT}'"
-[[ -n "$RESUME_ID" ]] && PROMPT_ARG=""
+# Il kind `none` (T56) atterra sulla stessa assenza per una ragione diversa: lì
+# la sessione è nuova e bound, ma l'utente ha chiesto di entrarci a mani nude.
+PROMPT_ARG=""
+[[ -n "$PROMPT" && -z "$RESUME_ID" ]] && PROMPT_ARG="'${PROMPT}'"
 # Il SID_FLAG entra anche nel ramo --no-task, che altrimenti lo scarta insieme
 # agli altri elementi task-bound: nel fork di una sessione SPOT il sessionId
 # pinnato non serve a legare una task (non c'è) ma a rendere noto in anticipo

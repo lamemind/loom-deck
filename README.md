@@ -4,15 +4,19 @@ Deck TUI (Ink) **per-progetto** della famiglia [loom](https://github.com/lamemin
 
 Legge il `tasks.md` del progetto e, con un tasto (poi un click), **spawna** una tab
 [Ptyxis](https://gitlab.gnome.org/chergert/ptyxis) che avvia una sessione Claude Code
-già bound alla task via `LOOM_TASK`, con un prompt di recap sullo stato della task.
+già bound alla task via `LOOM_TASK`.
 
 ```
-↑↓ scegli la task  →  ⏎  →  tab CC di fianco  →  LOOM_TASK bound + recap stato task
+↑↓ scegli la task  →  ⏎  →  tab CC di fianco  →  LOOM_TASK bound
 ```
+
+Il tasto premuto sceglie **con quale prompt** si entra: `⏎` a mani nude, `^K`
+recap, `^P` preflight, `^R` esecuzione (vedi [I quattro modi di entrare in una
+task](#i-quattro-modi-di-entrare-in-una-task)).
 
 Entrambi i prefissi del contratto loom entrano in lista: **`T`** (code task) e
-**`D`** (doc task). Nessuna differenza di trattamento — il prompt iniziale è un
-recap, non l'invocazione di una skill, quindi vale identico sulle due famiglie.
+**`D`** (doc task). Il trattamento è identico ovunque tranne che su `^R`, dove il
+prompt dispatcha sulla skill di esecuzione della rispettiva famiglia.
 
 ## Ruolo nella famiglia loom
 
@@ -52,10 +56,10 @@ senza collisioni:
 |---|---|---|
 | `↑` `↓` | naviga nella lista | |
 | `←` `→` `tab` | cambia pane | |
-| `⏎` | azione primaria del pane | Tasks → spawna la task selezionata · Sessions → riprende (`claude --resume`) la sessione selezionata |
+| `⏎` | azione primaria del pane | Tasks → spawna la task selezionata (senza prompt) · Sessions → riprende (`claude --resume`) la sessione selezionata |
 | **MAIUSCOLA** | **apre un modale** | cattura tutti i tasti; `esc` annulla, non esce |
 | minuscola | azione immediata, one-shot | |
-| `CTRL`+lettera | idiomi universali e toggle dentro i modali di testo | `^F` = find, come ovunque |
+| `CTRL`+lettera | idiomi universali, toggle dentro i modali di testo, varianti di un'azione | `^F` = find, come ovunque · `^K`/`^P`/`^R` = spawn con un altro prompt |
 | `1`…`9` | voce `launch` n-esima del progetto | da `.claude/loom-works.json` |
 | `q` `esc` | esce dal deck | in un modale `esc` annulla soltanto |
 
@@ -75,6 +79,9 @@ Assegnazioni correnti:
 | modale | `S` | sort chain |
 | modale | `F` | filtri |
 | modale | `^F` | **ricerca full-text** nelle conversazioni del progetto |
+| immediata | `^K` | spawna la task selezionata col prompt di **recap** |
+| immediata | `^P` | spawna la task selezionata sul **preflight** |
+| immediata | `^R` | spawna la task selezionata in **esecuzione** |
 | immediata | `f` | **forka** la sessione selezionata (solo col focus sul pane Sessions) |
 | immediata | `t` | terminale @project-root (surface standard launch) |
 | immediata | `c` | sessione Claude **nuda**: nessuna task, nessun prompt iniziale |
@@ -93,6 +100,34 @@ sono configurate ma non raggiungibili (e la legenda lo dice).
 finestra Ptyxis, senza passare da un modale. `c` (minuscola, azione) e `C`
 (maiuscola, modale create-task) restano distinte per la regola sopra — così come
 `f` (fork) e `F` (filtri).
+
+### I quattro modi di entrare in una task
+
+Sulla task selezionata (focus sul pane Tasks) quattro tasti aprono una sessione
+**bound**: `LOOM_TASK` iniettata, `sessionId` pinnato, binding scritto nel
+sidecar. Fra loro cambia **solo il prompt iniziale**.
+
+| Tasto | Prompt |
+|---|---|
+| `⏎` | nessuno — il contesto lo carica l'hook `SessionStart`, il primo messaggio lo scrivi tu |
+| `^K` | `recap stato task <id>` — prompt diretto, nessuna skill |
+| `^P` | `/loom-works:preflight-task <id>` |
+| `^R` | `/loom-works:run-task <id>`, oppure `/loom-works:run-doc <id>` se l'id è una `D` |
+
+Il prompt iniziale è la scelta di **chi apre**, non una proprietà della task: lo
+stesso task file si apre per leggerne lo stato, per congelarne le decisioni, per
+eseguirlo o per entrarci a mani nude — e il tasto premuto *è* quell'intento.
+Prima esisteva il solo `⏎` col recap, quindi ogni altro ingresso passava per una
+sessione da correggere a mano.
+
+Col focus sul pane Sessions i tre `CTRL` non spawnano: l'oggetto dell'azione è la
+task selezionata, e senza quel pane a fuoco non ce n'è una (il deck lo dice nella
+riga di nota, invece di aprire qualcosa a caso).
+
+Il catalogo dei prompt vive in `scripts/deck-run`, non nella TUI: è il primitive
+UI-agnostico, il deck gli passa un **simbolo** (`--prompt-kind`) e non una
+stringa. Così il testo sta in un posto solo, e con lui il suo vincolo di quoting
+— il prompt viaggia dentro apici singoli in `bash -lc`, quindi non può contenerne.
 
 ### `f` — forkare una conversazione
 
@@ -241,16 +276,21 @@ npx @lamemind/loom-deck
 ```bash
 # dalla project dir con un tasks.md
 scripts/deck-run T18
+scripts/deck-run T18 --prompt-kind none|recap|preflight|run
 ```
 
-Apre una tab Ptyxis nella window attiva con `LOOM_TASK=T18 claude 'recap stato task T18'`
-(prompt override-abile via `LOOM_DECK_ENTER_PROMPT`, placeholder `{TASK}`).
+Apre una tab Ptyxis nella window attiva con `LOOM_TASK=T18 claude 'recap stato task T18'`.
+Il prompt iniziale è il terzo asse dello spawn, ortogonale al binding task
+(`<TaskID>` vs `--no-task`) e alla continuità (nuova vs `--resume`/`--fork`):
+senza flag resta `recap`, `none` apre la sessione bound **senza** alcun prompt.
+`LOOM_DECK_ENTER_PROMPT` (placeholder `{TASK}`) resta un override che vince sul
+kind — tranne su `none`, che è una richiesta esplicita di non averne.
 
 ## Sviluppo (TUI Ink)
 
 ```bash
 npm install
-npm run dev      # tsx src/cli.tsx — lista tasks.md reale, ↑↓ naviga · ⏎ spawn · q esci
+npm run dev      # tsx src/cli.tsx — lista tasks.md reale, ↑↓ naviga · ⏎/^K/^P/^R spawn · q esci
 npm run build    # tsc → dist/
 npm test         # node:test sul core vista (src/view.ts), senza Ink né terminale
 ```
