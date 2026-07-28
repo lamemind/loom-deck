@@ -82,14 +82,21 @@ export interface LaunchLegend {
 // custom per-progetto, non hanno una lettera fissa per app), quindi la resa deve
 // esporre la mappa, non il conteggio. Degradazione mai silenziosa: ciò che non
 // entra in larghezza finisce in un contatore esplicito, non troncato a metà.
-export function launchLegend(entries: LaunchEntry[], columns: number): LaunchLegend {
+// `reserved` = celle già occupate sulla stessa riga da chi la renderizza (le
+// surface built-in `t`/`c`, che precedono le voci). Parametro e non aritmetica
+// sul chiamante: `columns` significa "colonne del terminale" e passargliene di
+// meno per fargli credere a uno schermo più stretto renderebbe il calcolo
+// illeggibile al primo che lo rilegge.
+export function launchLegend(
+  entries: LaunchEntry[],
+  columns: number,
+  reserved = 0,
+): LaunchLegend {
   const reachable = entries.slice(0, LAUNCH_MAX);
   const unreachable = entries.length - reachable.length;
   // bordo + padding del box ≈ 4 celle, più 2 di margine; pavimento a 24 per
-  // non degenerare a legenda vuota su terminali strettissimi. Il prefisso
-  // "launch " non c'è più (la riga si riconosce dalla forma `indice emoji
-  // label`), quindi le 7 celle che occupava tornano alle voci.
-  const budget = Math.max(24, columns - 6);
+  // non degenerare a legenda vuota su terminali strettissimi.
+  const budget = Math.max(24, columns - 6 - reserved);
   // I fallback di parseLaunch (`▸` per emoji, command per label) sono già
   // applicati a monte: qui non si re-implementano né si assumono campi popolati.
   const parts = reachable.map((e, i) => `${i + 1} ${e.emoji} ${e.label}`);

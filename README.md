@@ -88,21 +88,35 @@ Assegnazioni correnti:
 | immediata | `w` | salva la vista corrente su disco |
 | launch | `1`…`9` | esegue il `command` della voce, con `cwd` = project root |
 
-Le voci `launch` sono elencate in una **riga di legenda** sotto il footer
-(`1 📝 codium · 2 ☕ idea`): l'indice da solo è opaco, perché le voci sono
-custom per-progetto e non hanno una lettera fissa per app. Se non entrano in
-larghezza, la legenda si ferma a voci intere e mostra il contatore di quelle
-fuori riga — mai un troncamento silenzioso. Il cap a `9` è imposto dai tasti-cifra,
-non dallo schema: un progetto può dichiarare più di 9 voci, quelle oltre la nona
-sono configurate ma non raggiungibili (e la legenda lo dice).
+Il footer è **due righe con due nature diverse**:
 
-In legenda le due surface del cappello portano l'emoji del menu compass (`t 💻`,
-`c 🤖`) invece della parola. Per il terminale compass usa 🖥️, che nel frame Ink
-non sopravvive: `sanitize` lo sostituisce perché VTE lo disegna largo 1 mentre
-`string-width` ne conta 2 (invariante ① di `src/width.ts`) — 💻 è il gemello
-concorde. La legenda elenca solo i tasti attivi in quel momento: navigazione,
-uscita e indicatore di focus non ci sono, e le voci contestuali spariscono
-invece di mostrarsi inerti.
+```
+⏎/^K/^P/^R spawn · ^F cerca · C nuova · E edit · S sort · F filtri · w salva
+t 💻 · c 🤖 · 1 📝 codium · 2 ☕ idea
+```
+
+- **tasti** — cosa puoi fare *qui e ora*. Solo le voci attive: quelle contestuali
+  compaiono quando il pane a fuoco le rende possibili e altrimenti spariscono,
+  invece di mostrarsi inerti. Fuori navigazione (`↑↓` `←→`), uscita (`q`) e
+  indicatore `focus:` — le prime due sono universali in qualunque TUI, il pane a
+  fuoco si vede già dall'evidenziazione.
+- **surface** — *dove* puoi aprire qualcosa: prima le due built-in (`t`/`c`), poi
+  le voci `launch` del progetto. Stanno insieme perché hanno la stessa natura —
+  fire-once, `cwd` = project root, nessuno stato — e differiscono solo per essere
+  universali invece che custom.
+
+L'indice da solo è opaco (le `launch` sono custom per-progetto, senza una lettera
+fissa per app), quindi la riga espone la mappa e non il conteggio. Se non entrano
+in larghezza, si ferma a voci intere e mostra il contatore di quelle fuori riga —
+mai un troncamento silenzioso; le celle delle due built-in sono riservate a monte,
+o le voci sfonderebbero il box di quel tanto. Il cap a `9` è imposto dai
+tasti-cifra, non dallo schema: un progetto può dichiarare più di 9 voci, quelle
+oltre la nona sono configurate ma non raggiungibili (e la riga lo dice).
+
+Le emoji sono quelle del menu compass. Per il terminale compass usa 🖥️, che nel
+frame Ink non sopravvive: `sanitize` lo sostituisce perché VTE lo disegna largo 1
+mentre `string-width` ne conta 2 (invariante ① di `src/width.ts`) — 💻 è il
+gemello concorde.
 
 `t` e `c` sono gemelle: entrambe aprono una surface del cappello nella stessa
 finestra Ptyxis, senza passare da un modale. `c` (minuscola, azione) e `C`

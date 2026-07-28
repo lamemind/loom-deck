@@ -48,7 +48,7 @@ import {
   stripProjectCore,
   type SessionRow,
 } from './session-list.js';
-import { launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
+import { cellWidth, launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
 import {
   isCompact,
   layoutBudget,
@@ -1542,9 +1542,21 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // T50 — il pin agisce su qualunque riga selezionata (anche stale, per
   // spinnarla); basta il focus sul pane e una selezione.
   const canPin = focus === 'sessions' && selSessionId !== null;
+  // Le due surface built-in del cappello stanno in testa alla riga launch, non
+  // fra i tasti: hanno la stessa natura delle voci `launch` — fire-once, cwd =
+  // project root, nessuno stato — e la differenza è solo che sono universali
+  // (nessun progetto le dichiara) invece che custom. Emoji del menu compass:
+  // 🤖 = nuova sessione claude. Per il terminale compass usa 🖥️, che nel frame
+  // Ink NON passa — `sanitize` lo sostituisce (VTE lo disegna largo 1,
+  // string-width dice 2: discordante, invariante ① di width.ts) e resterebbe un
+  // `·` muto. 💻 è il gemello concorde; il `sanitize` qui rende il vincolo
+  // automatico invece che da ricordare.
+  const surfaceLegend = sanitize('t 💻 · c 🤖');
   // Larghezza dal medesimo hook che dà l'altezza: dopo un resize la legenda si
-  // ricalcola con lo stesso re-render che ridimensiona i pane.
-  const legend = launchLegend(launch, columns);
+  // ricalcola con lo stesso re-render che ridimensiona i pane. Le celle delle
+  // surface (più il ` · ` che le separa dalle voci) sono già spese sulla riga →
+  // vanno riservate, o le voci launch la sfonderebbero di quel tanto.
+  const legend = launchLegend(launch, columns, cellWidth(surfaceLegend) + 3);
 
   // Legenda della modalità normale. Elenca SOLO i tasti che fanno qualcosa qui e
   // ora: le voci contestuali compaiono quando il pane a fuoco le rende possibili
@@ -1563,14 +1575,6 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       'S sort',
       'F filtri',
       'w salva',
-      // Emoji delle surface, le stesse del menu compass: 🤖 = nuova sessione
-      // claude. Per il terminale compass usa 🖥️, che nel frame Ink NON passa —
-      // `sanitize` lo sostituisce (VTE lo disegna largo 1, string-width dice 2:
-      // discordante, invariante ① di width.ts) e resterebbe un `·` muto. 💻 è il
-      // gemello concorde più vicino. Il `sanitize` attorno all'array è la rete
-      // che rende quel vincolo automatico, non una cosa da ricordarsi.
-      't 💻',
-      'c 🤖',
     ].join(' · '),
   );
 
@@ -1663,7 +1667,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // Ptyxis significa un frame intero versato nello scrollback per ogni tick del
   // poll. Tutto ciò che varia in altezza (le due liste e la descrizione del
   // dettaglio) riceve qui la propria capienza.
-  const launchLine = mode === 'normal' && launch.length > 0;
+  // Le surface built-in `t`/`c` la rendono sempre presente in modalità normale:
+  // non dipende più da quante voci `launch` il progetto dichiara.
+  const launchLine = mode === 'normal';
   const detailParts = detail ? detailMetaOf(detail) : null;
   const budget: Budget = layoutBudget({
     rows,
@@ -1742,11 +1748,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           {keyLegend}
         </Text>
       )}
-      {/* T43 — riga dedicata alla mappa indice→launch. Nessuna voce configurata
-          → riga assente e footer identico a prima (nessuna regressione). */}
-      {mode === 'normal' && launch.length > 0 ? (
+      {/* T43 — riga delle surface: prima le due built-in (`t`/`c`), poi la mappa
+          indice→launch del progetto. Presente in tutta la modalità normale, non
+          più solo con voci configurate: `t` e `c` esistono ovunque, quindi la
+          riga non è mai vuota. */}
+      {mode === 'normal' ? (
         <Text dimColor wrap="truncate-end">
-          {legend.shown}
+          {surfaceLegend}
+          {legend.shown ? ` · ${legend.shown}` : ''}
           {legend.overflow > 0 ? (
             <Text color="yellow"> · +{legend.overflow} fuori riga</Text>
           ) : null}

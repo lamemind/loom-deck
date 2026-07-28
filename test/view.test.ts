@@ -272,6 +272,17 @@ test('legenda: terminale stretto → tronca a voci intere e conta le fuori riga'
   assert.ok(cellWidth(legend.shown) <= 40 - 6);
 });
 
+test('legenda: le celle riservate alle surface built-in escono dal budget', () => {
+  // `t`/`c` stanno in testa alla stessa riga: quelle celle sono già spese,
+  // quindi le voci launch devono vederne di meno — o la riga sfonda il box.
+  const senza = launchLegend(L(6), 120);
+  const con = launchLegend(L(6), 120, 60);
+  assert.equal(senza.overflow, 0); // a 120 colonne nude ci stanno tutte
+  assert.ok(cellWidth(con.shown) < cellWidth(senza.shown));
+  assert.ok(cellWidth(con.shown) <= 120 - 6 - 60);
+  assert.ok(con.overflow > 0); // e la degradazione resta contata, non silenziosa
+});
+
 test('legenda: oltre la nona voce → configurate ma non raggiungibili, contate a parte', () => {
   const legend = launchLegend(L(12), 400);
   assert.equal(legend.unreachable, 3);
