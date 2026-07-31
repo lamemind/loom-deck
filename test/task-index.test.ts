@@ -202,3 +202,51 @@ test('nota: sanificata in lettura, non solo alla digitazione', () => {
   appendNote(r, 'sid', 'done ✅');
   assert.match(loadSessionIndex(r).notes.get('sid')!, /✅️/);
 });
+
+// ── T57 · riassegnazione e detach ───────────────────────────────────────────
+
+test('riassegnazione: un secondo taskId vince sul primo (spot → T10 → T42)', () => {
+  const r = root();
+  appendTaskBinding(r, 'sid', 'T10');
+  appendTaskBinding(r, 'sid', 'T42');
+  assert.equal(loadSessionIndex(r).bindings.get('sid'), 'T42');
+});
+
+test('detach: taskId vuoto CANCELLA il binding (la sessione torna spot)', () => {
+  const r = root();
+  appendTaskBinding(r, 'sid', 'T10');
+  appendTaskBinding(r, 'sid', 'T42');
+  appendTaskBinding(r, 'sid', '');
+  assert.equal(loadSessionIndex(r).bindings.has('sid'), false);
+});
+
+test('detach e riassegnazione si compongono: dopo il vuoto si può ri-legare', () => {
+  const r = root();
+  appendTaskBinding(r, 'sid', 'T10');
+  appendTaskBinding(r, 'sid', '');
+  appendTaskBinding(r, 'sid', 'T57');
+  assert.equal(loadSessionIndex(r).bindings.get('sid'), 'T57');
+});
+
+test('detach: non tocca pin, nota e lineage della stessa sessione', () => {
+  const r = root();
+  appendSessionRecord(r, { sessionId: 'sid', taskId: 'T10', forkOf: 'origine' });
+  appendPin(r, 'sid', true);
+  appendNote(r, 'sid', 'esplorazione');
+  appendTaskBinding(r, 'sid', '');
+  const idx = loadSessionIndex(r);
+  assert.equal(idx.bindings.has('sid'), false);
+  assert.equal(idx.pinned.has('sid'), true);
+  assert.equal(idx.notes.get('sid'), 'esplorazione');
+  assert.equal(idx.forkOf.get('sid'), 'origine', 'il lineage non dipende dalla task');
+});
+
+test('retrocompat: un record senza taskId non stacca un binding scritto prima', () => {
+  const r = root();
+  appendTaskBinding(r, 'sid', 'T57');
+  // Solo il valore VUOTO è una cancellazione; l'ASSENZA del campo no, o ogni
+  // pin successivo renderebbe spot la sessione.
+  appendPin(r, 'sid', true);
+  appendNote(r, 'sid', 'x');
+  assert.equal(loadSessionIndex(r).bindings.get('sid'), 'T57');
+});

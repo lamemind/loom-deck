@@ -42,6 +42,7 @@ import {
   assembleSessionList,
   firstSelectableId,
   moveSelection,
+  neighborId,
   rowIndexOf,
   rowLabel,
   selectedSession,
@@ -50,6 +51,7 @@ import {
 } from './session-list.js';
 import { cellWidth, launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
 import {
+  assignListCapacity,
   isCompact,
   layoutBudget,
   readerCapacity,
@@ -694,6 +696,18 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const [readerRow, setReaderRow] = useState<SearchRow | null>(null);
   const [readerTop, setReaderTop] = useState(0);
 
+  // T57 — stato del modale di assegnazione sessione → task.
+  //
+  // `assignSid` è la conversazione in assegnazione, FOTOGRAFATA all'apertura e
+  // non riletta da `selSessionId`: il modale è fullscreen (D3), quindi il pane
+  // sessioni non è più a schermo e l'oggetto dell'azione deve restare quello
+  // che si è scelto — anche se un tick del poll rimescolasse la lista sotto.
+  // `assignSel` è la task di destinazione: `null` è la riga `detach` (D2), che
+  // sta sempre in testa e scrive un binding vuoto.
+  const [assignSid, setAssignSid] = useState<string | null>(null);
+  const [assignFilter, setAssignFilter] = useState('');
+  const [assignSel, setAssignSel] = useState<string | null>(null);
+
   // Dimensioni vive del terminale: sono l'input del budget d'altezza sotto.
   const { rows, columns } = useTerminalSize();
 
@@ -802,6 +816,28 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const readerCap = readerCapacity(rows);
   const readerMaxTop = Math.max(0, readerLines.length - readerCap);
 
+  // T57 — righe del modale assegnazione: `null` (detach) in testa, poi le task
+  // della VISTA corrente (D4 — filtri e sort inclusi, coerenza con ciò che si
+  // stava leggendo a sinistra; le escluse restano contate nell'header).
+  //
+  // Il filtro è un substring case-insensitive su id + titolo grezzo (D5): un
+  // restringimento veloce, non una ricerca — quella è `^F` e ha il suo motore.
+  // Il solo id non basterebbe, perché il caso d'uso nasce proprio dal «ho
+  // capito ora che questa conversazione è la task del titolo X».
+  //
+  // `detach` NON si filtra: è l'azione di svuotamento, non una task, e sparire
+  // digitando la renderebbe raggiungibile solo a campo vuoto.
+  const assignRows = useMemo<Array<Task | null>>(() => {
+    const q = assignFilter.trim().toLowerCase();
+    const matched = q
+      ? viewTasks.filter(
+          (t) => t.id.toLowerCase().includes(q) || t.rawDesc.toLowerCase().includes(q),
+        )
+      : viewTasks;
+    return [null, ...matched];
+  }, [viewTasks, assignFilter]);
+  const assignCap = assignListCapacity(rows, Boolean(note));
+
   // T39 — selezione stabile sotto trasformazione. Se la task selezionata esce
   // dalla vista (filtro appena attivato, oppure sparita da tasks.md), si cade
   // sulla prima visibile — fallback deterministico, mai una posizione a caso.
@@ -828,6 +864,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       setSearchSelKey(firstRowKey(searchRows));
     }
   }, [searchRows, searchSelKey]);
+  // T57 — la lista del modale si restringe a ogni carattere digitato: quando la
+  // task selezionata esce dal filtro si cade sulla PRIMA TASK, non su `detach`.
+  // Cadere su detach significherebbe che un `⏎` battuto di slancio dopo aver
+  // digitato staccherebbe la sessione invece di assegnarla — l'esatto opposto
+  // dell'intenzione. Senza match la selezione resta detach: è l'unica riga viva.
+  useEffect(() => {
+    if (assignSel !== null && !assignRows.some((t) => t?.id === assignSel)) {
+      setAssignSel(assignRows[1]?.id ?? null);
+    }
+  }, [assignRows, assignSel]);
 
   // T30: submit dell'input box. Il taskId nasce DOPO create-task (lo assegna la
   // skill scrivendo tasks.md) → non è noto allo spawn. Il sessionId invece è
@@ -926,6 +972,61 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       text
         ? `✎ nota su ${sid.slice(0, 8)}: "${cut(text, 40)}"`
         : `✎ nota rimossa da ${sid.slice(0, 8)}`,
+    );
+  }
+
+  // T57 — apertura del modale di assegnazione. La preselezione è la task a cui
+  // la sessione è GIÀ legata (riassegnare è quasi sempre correggere, e vedere da
+  // dove si parte è metà dell'informazione), altrimenti la prima della vista.
+  // Mai `detach`: è l'azione distruttiva della lista, e preselezionarla
+  // metterebbe un `⏎` battuto di slancio a un tasto dal cancellare un binding.
+  function openAssign() {
+    const sid = selSessionId;
+    if (!sid) return;
+    const bound = bindings.get(sid);
+    setAssignSid(sid);
+    setAssignFilter('');
+    setAssignSel(bound && viewTasks.some((t) => t.id === bound) ? bound : viewTasks[0]?.id ?? null);
+    setNote('');
+    setMode('assign');
+  }
+
+  // Sposta la selezione del modale sulle righe (0 = detach, 1..N = task filtrate).
+  function moveAssign(delta: number) {
+    const at = assignRows.findIndex((t) => (t?.id ?? null) === assignSel);
+    const next = Math.max(0, Math.min(assignRows.length - 1, (at < 0 ? 0 : at) + delta));
+    setAssignSel(assignRows[next]?.id ?? null);
+  }
+
+  // T57 — ⏎ nel modale: riscrive il binding nel sidecar e ricarica subito.
+  //
+  // Il binding retroattivo governa il FUTURO della conversazione, non il suo
+  // passato: il titolo della tab è stato deciso allo spawn da `claude --name` e
+  // vive nel transcript, la `LOOM_TASK` di un processo già partito non si
+  // reinietta. Cambia cosa fa il prossimo `⏎ resume`, che rilegge il binding dal
+  // sidecar. La nota lo dice: senza, la promessa implicita è «ho spostato la
+  // conversazione» e il titolo che non cambia sembra un bug.
+  //
+  // Dove atterra la selezione (D6): il pane task non si muove, quindi la
+  // sessione appena assegnata esce dal gruppo contestuale → si scende alla riga
+  // SUCCESSIVA, catturata PRIMA della riscrittura (dopo, la riga non c'è più).
+  // Due eccezioni in cui invece resta dov'è, perché non sparisce affatto: una
+  // pinnata (esente dal contesto) e un'assegnazione al parent già selezionato.
+  function submitAssign() {
+    const sid = assignSid;
+    const target = assignSel;
+    setMode('normal');
+    setAssignFilter('');
+    if (!sid) return;
+    const stays = pinned.has(sid) || target === selectedTaskId;
+    const next = stays ? sid : neighborId(sessionRows, sid);
+    appendTaskBinding(cwd, sid, target ?? '');
+    reloadSessions();
+    setSelSessionId(next);
+    setNote(
+      target
+        ? `A ${sid.slice(0, 8)} → ${target} · vale dal prossimo ⏎ resume (titolo tab invariato)`
+        : `A ${sid.slice(0, 8)} → spot · binding rimosso`,
     );
   }
 
@@ -1186,6 +1287,38 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         editSearchField((s) => s.slice(0, -1));
       } else if (input && !key.meta) {
         typeIntoField(input);
+      }
+      return;
+    }
+
+    // T57 — modale di assegnazione: un campo di filtro più una lista. Come
+    // ricerca e nota, il campo mangia ogni lettera nuda → `^U` (kill-line delle
+    // shell) per svuotarlo, e la navigazione passa dalle frecce.
+    if (mode === 'assign') {
+      if (key.escape) {
+        setMode('normal');
+        setAssignFilter('');
+        setNote('A → assegnazione annullata');
+      } else if (key.return) {
+        submitAssign();
+      } else if (key.upArrow) {
+        moveAssign(-1);
+      } else if (key.downArrow) {
+        moveAssign(1);
+      } else if (key.pageUp) {
+        moveAssign(-Math.max(1, assignCap));
+      } else if (key.pageDown) {
+        moveAssign(Math.max(1, assignCap));
+      } else if (key.ctrl) {
+        // `^U` svuota; ogni altra combo è no-op. Il backspace tenuto premuto
+        // cancella un carattere per CHUNK letto da stdin, non per pressione
+        // (T53): senza `^U` ripulire un filtro digitato di getto sarebbe lento
+        // quanto riaprire il modale.
+        if (input === 'u') setAssignFilter('');
+      } else if (key.backspace || key.delete) {
+        setAssignFilter((f) => f.slice(0, -1));
+      } else if (input && !key.meta) {
+        setAssignFilter((f) => f + sanitizeTyped(input));
       }
       return;
     }
@@ -1505,6 +1638,21 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       } else {
         openNote();
       }
+    } else if (input === 'A') {
+      // T57 — assegna la conversazione selezionata a una task. MAIUSCOLA perché
+      // apre un modale (convenzione T39), e il modale è obbligatorio: il pane
+      // task non può fare da picker, perché spostare la selezione lì cambia il
+      // parent e la sessione da assegnare sparisce dalla lista sotto le mani.
+      // Vincolo di focus identico a `p`/`N`, e vale anche su una pinnata STALE:
+      // il binding è nostro, il transcript è di CC — riassegnare una
+      // conversazione il cui transcript non c'è più resta legittimo.
+      if (focus !== 'sessions') {
+        setNote('A → assegna: seleziona una sessione (←→ per il pane)');
+      } else if (!selSessionId) {
+        setNote('A → nessuna sessione da assegnare');
+      } else {
+        openAssign();
+      }
     } else if (input === 't') {
       const title = identity ? `🖥️ ${identity.name} [term]` : null;
       const child = spawnTerminal(cwd, title);
@@ -1572,7 +1720,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     [
       ...(canSpawn ? ['⏎/^K/^P/^R spawn'] : canResume ? ['⏎ resume'] : []),
       ...(canResume ? ['f fork'] : []),
-      ...(canPin ? ['p pin', 'N nota'] : []),
+      ...(canPin ? ['p pin', 'N nota', 'A assegna'] : []),
       '^F cerca',
       'C nuova',
       'E edit',
@@ -1581,6 +1729,51 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       'w salva',
     ].join(' · '),
   );
+
+  // ── T57 · schermata di assegnazione ─────────────────────────────────────
+  // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
+  // sopra i due pane, e prendendo l'intero frame non costa nulla al loro budget.
+  // Conseguenza obbligata della scelta: la sessione in assegnazione non è più
+  // visibile, quindi va RIPETUTA nel titolo — senza, non si sa più su cosa si
+  // sta agendo.
+  if (mode === 'assign') {
+    if (isCompact(assignCap)) {
+      return (
+        <Text wrap="truncate-end">
+          <Text bold color="cyan">loom-deck</Text>
+          <Text dimColor>
+            {' '}· assegna · terminale {rows}×{columns}: troppo basso, allarga · esc annulla
+          </Text>
+        </Text>
+      );
+    }
+    const at = assignRows.findIndex((t) => (t?.id ?? null) === assignSel);
+    const win = windowRange(assignRows.length, at, assignCap);
+    const s = assignSid ? sessions.find((x) => x.sessionId === assignSid) ?? null : null;
+    // Etichetta della conversazione: la nota umana se c'è (è il nome con cui la
+    // riconosci), altrimenti la stessa derivazione della ricerca. Su una pinnata
+    // stale non resta nulla: il titolo si accontenta dell'hash.
+    const label =
+      (assignSid ? sessionNotes.get(assignSid) : '') ||
+      (s ? conversationLabel(s, projectCore, assignSid ? bindings.get(assignSid) : undefined) : '');
+    return (
+      <AssignScreen
+        sessionId={assignSid ?? ''}
+        label={label}
+        current={assignSid ? bindings.get(assignSid) ?? null : null}
+        filter={assignFilter}
+        rows={assignRows.slice(win.start, win.end)}
+        selected={assignSel}
+        matched={assignRows.length - 1}
+        hidden={hiddenTasks}
+        above={win.start}
+        below={assignRows.length - win.end}
+        childCount={childCount}
+        columns={columns}
+        note={note}
+      />
+    );
+  }
 
   // ── T52 · schermate sostitutive ─────────────────────────────────────────
   // Ricerca e reader sono gli unici modali che NON stanno in flusso sopra i
@@ -2372,6 +2565,130 @@ function ReaderLine({ line, from, to }: { line: WrappedLine; from: number; to: n
       </Text>
       {line.text.slice(b)}
     </Text>
+  );
+}
+
+/**
+ * Larghezza del testo dentro la lista della schermata di assegnazione: box
+ * esterno (2 bordi + 2 padding) + box lista (2 bordi + 2 padding).
+ *
+ * Invariante ③ (`width.ts`): il taglio lo fa il chiamante. Delegarlo a
+ * `wrap="truncate-end"` passerebbe da `cli-truncate`, che restituisce una riga
+ * più larga di quella chiesta di una colonna per emoji — e quelle colonne
+ * finiscono sopra il bordo, che sparisce dalla riga.
+ */
+function assignTextWidth(columns: number): number {
+  return Math.max(20, (columns || 80) - 8);
+}
+
+/**
+ * Schermata di assegnazione di una conversazione a una task (T57).
+ *
+ * Fullscreen sostitutiva (D3) come la ricerca: la lista task non entra in un
+ * box sopra i due pane. Da lì discende che l'oggetto dell'azione — la sessione
+ * selezionata, che non è più a schermo — va ripetuto nel titolo.
+ *
+ * L'header della lista conta le task escluse dai filtri della vista (D4): la
+ * scelta di mostrare `viewTasks` e non tutte le task ha come prezzo noto che un
+ * filtro può nascondere proprio il bersaglio, e quel prezzo non deve essere
+ * silenzioso — stessa convenzione del `+N più vecchie` del pane sessioni.
+ */
+function AssignScreen({
+  sessionId,
+  label,
+  current,
+  filter,
+  rows,
+  selected,
+  matched,
+  hidden,
+  above,
+  below,
+  childCount,
+  columns,
+  note,
+}: {
+  sessionId: string;
+  /** Nota umana o etichetta derivata; '' = solo l'hash (pinnata stale). */
+  label: string;
+  /** Task a cui la sessione è legata ORA; null = spot. */
+  current: string | null;
+  filter: string;
+  /** Solo la finestra visibile: `null` = riga detach. */
+  rows: Array<Task | null>;
+  /** Task selezionata; `null` = riga detach. */
+  selected: string | null;
+  /** Task che passano il filtro (detach escluso). */
+  matched: number;
+  /** Task fuori dai filtri della VISTA (non del campo di questo modale). */
+  hidden: number;
+  above: number;
+  below: number;
+  childCount: Map<string, number>;
+  columns: number;
+  note: string;
+}) {
+  const width = assignTextWidth(columns);
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+      <Text bold color="cyan">loom-deck</Text>
+      {/* `↑↓` non è in legenda: la navigazione è universale in qualunque TUI e
+          qui le colonne servono a dire su COSA si sta agendo — l'unica cosa che
+          la schermata sostitutiva ha tolto da sotto gli occhi. */}
+      <Text dimColor wrap="truncate-end">
+        assegna <Text color="cyan">{sessionId.slice(0, 8)}</Text>
+        {label ? ` «${cut(sanitize(label), Math.max(10, Math.floor(width / 4)))}»` : ''} · ora{' '}
+        {current ? <Text color="green">{current}</Text> : 'spot'} · <Text color="yellow">⏎</Text>{' '}
+        assegna · <Text color="yellow">^U</Text> pulisci · <Text color="yellow">esc</Text> annulla
+      </Text>
+      <Box borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
+        <Text wrap="truncate-end">
+          <Text dimColor>filtro </Text>
+          <Text color="yellow">{cut(filter, Math.max(8, width - 24))}</Text>
+          <Text inverse> </Text>
+          {!filter ? <Text dimColor>  (id o titolo)</Text> : null}
+        </Text>
+      </Box>
+      <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
+        <Text dimColor wrap="truncate-end">
+          {matched} task
+          {hidden > 0 ? <Text color="yellow"> · +{hidden} fuori dai filtri</Text> : null}
+          {above > 0 ? <Text dimColor> · ↑{above}</Text> : null}
+          {below > 0 ? <Text dimColor> · ↓{below}</Text> : null}
+        </Text>
+        {rows.map((task) => {
+          // T57/D2 — `detach` è una VOCE della lista, non un tasto a parte: un
+          // solo gesto (`A`), un solo modale. Speculare alla riga meta `spot`
+          // del pane task, e nominata con l'AZIONE («detach») invece che con lo
+          // stato d'arrivo — è ciò che si sta per fare.
+          if (!task) {
+            const sel = selected === null;
+            // Le colonne fisse (caret + `○ detach` + i due spazi) sono 12: solo
+            // la glossa si taglia, così su un terminale stretto resta comunque
+            // il nome dell'azione invece di un moncone di frase.
+            return (
+              <Text key="detach" inverse={sel} wrap="truncate-end">
+                {sel ? CARET : CARET_OFF}
+                ○ detach  {cut('la sessione torna spot', width - 12)}
+              </Text>
+            );
+          }
+          const sel = selected === task.id;
+          const n = childCount.get(task.id) ?? 0;
+          const head = `${CARET_OFF}${task.id}  ${sanitize(task.pri)}  ${displayProg(task.prog)}  `;
+          const tail = n > 0 ? ` (${n})` : '';
+          const desc = cut(task.desc, Math.max(4, width - termWidth(head) - termWidth(tail)));
+          return (
+            <Text key={task.id} inverse={sel} dimColor={!sel && isDone(task.prog)} wrap="truncate-end">
+              {sel ? CARET : CARET_OFF}
+              {task.id}  {sanitize(task.pri)}  {displayProg(task.prog)}  {desc}
+              {tail}
+            </Text>
+          );
+        })}
+      </Box>
+      {note ? <Text color="green" wrap="truncate-end">{sanitize(note)}</Text> : null}
+    </Box>
   );
 }
 

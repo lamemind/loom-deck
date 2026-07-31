@@ -191,6 +191,24 @@ export function moveSelection(
   return selectable[next].sessionId;
 }
 
+/**
+ * T57 — id su cui atterrare quando la riga `sessionId` sta per USCIRE dalla
+ * lista (riassegnata a un'altra task): la SUCCESSIVA, o la precedente se era
+ * l'ultima, null se era l'unica.
+ *
+ * Serve perché il fallback di `moveSelection` (id perso → prima riga) qui
+ * sarebbe sbagliato: smistare una spot dopo l'altra è il caso d'uso, e ogni
+ * assegnazione rimanderebbe la selezione in cima. L'id va catturato PRIMA di
+ * riscrivere il sidecar — dopo, la riga non c'è più e il vicino non è
+ * calcolabile.
+ */
+export function neighborId(rows: SessionRow[], sessionId: string): string | null {
+  const selectable = rows.filter(isSelectable);
+  const at = selectable.findIndex((r) => r.sessionId === sessionId);
+  if (at < 0) return null;
+  return selectable[at + 1]?.sessionId ?? selectable[at - 1]?.sessionId ?? null;
+}
+
 /** Session della riga selezionata; null se stale o nessuna selezione. */
 export function selectedSession(rows: SessionRow[], sessionId: string | null): Session | null {
   const r = rows.find((row) => isSelectable(row) && row.sessionId === sessionId);

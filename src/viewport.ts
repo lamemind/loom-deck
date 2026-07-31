@@ -55,6 +55,11 @@ export const MODAL_HEIGHT = {
   // distribuiscono `searchListCapacity`/`readerCapacity`.
   search: 0,
   reader: 0,
+  // T57 — assign è la terza schermata sostitutiva, per la stessa ragione della
+  // ricerca: la lista task non entra in un box sopra i due pane, e in flusso
+  // pagherebbe due volte (il suo costo + quello che toglie ai pane sotto, che
+  // in quel momento non si stanno nemmeno guardando).
+  assign: 0,
 } as const;
 
 export type Mode = keyof typeof MODAL_HEIGHT;
@@ -214,6 +219,26 @@ const SEARCH_CHROME = 14;
  *  ci sta nemmeno vuota → la schermata va sostituita (vedi `isCompact`). */
 export function searchListCapacity(rows: number, noteLine: boolean): number {
   return Math.max(0, (rows || 24) - SLACK - SEARCH_CHROME - (noteLine ? 1 : 0));
+}
+
+// T57 — cornice della schermata di assegnazione. Gemella di SEARCH_CHROME, con
+// un box filtro di UNA riga invece di tre.
+//
+//   2  bordi del box esterno
+//   1  titolo "loom-deck"
+//   1  riga hint/legenda tasti
+//   1  marginTop del box filtro
+//   2  bordi del box filtro
+//   1  riga del filtro
+//   1  marginTop del box lista
+//   2  bordi del box lista
+//   1  header della lista (conteggi + escluse dai filtri)
+const ASSIGN_CHROME = 12;
+
+/** Righe di lista task che entrano nel terminale. Zero = nemmeno la cornice ci
+ *  sta → schermata sostituita dalla riga compatta (`isCompact`). */
+export function assignListCapacity(rows: number, noteLine: boolean): number {
+  return Math.max(0, (rows || 24) - SLACK - ASSIGN_CHROME - (noteLine ? 1 : 0));
 }
 
 // T52 — cornice del reader fullscreen.

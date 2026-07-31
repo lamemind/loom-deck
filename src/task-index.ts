@@ -9,6 +9,14 @@ import { sanitize } from './width.js';
 // che il deck popola allo spawn — quando pinna `--session-id <uuid>` (D1
 // preflight) il sessionId è già noto, quindi il binding è deterministico.
 //
+// T57 — lo spawn è il momento in cui il binding NASCE, non l'unico in cui si
+// scrive: `taskId` è a tutti gli effetti un campo MUTABILE (il terzo, dopo
+// `pinned` e `note`), riassegnabile a posteriori dal deck. Il caso è quello di
+// una conversazione aperta nuda per esplorare, che solo dopo si rivela lavoro
+// di una task. Nessun formato nuovo e nessuna migrazione: l'append-only +
+// last-wins per campo regge la riassegnazione esattamente come regge un re-pin,
+// e la CANCELLAZIONE (torna spot) è la stringa vuota, gemella di `note:''`.
+//
 // T28 — il sidecar ospita anche il LINEAGE del fork, per la stessa ragione:
 // `--fork-session` produce un transcript che è una COPIA VERBATIM dell'origine
 // (stessi uuid dei messaggi) e NON contiene da nessuna parte il sessionId di
@@ -44,7 +52,8 @@ import { sanitize } from './width.js';
 
 export interface SessionRecord {
   sessionId: string;
-  /** Task a cui la sessione è legata (assente = spot). */
+  /** Task a cui la sessione è legata (assente = spot; T57 — stringa vuota =
+   *  binding cancellato, la sessione torna spot). */
   taskId?: string;
   /** sessionId dell'origine, se questa sessione nasce da un fork. */
   forkOf?: string;
@@ -64,6 +73,11 @@ export function appendSessionRecord(projectRoot: string, rec: SessionRecord): vo
   appendFileSync(path, JSON.stringify({ ...rec, ts: new Date().toISOString() }) + '\n');
 }
 
+/**
+ * Lega una sessione a una task. T57 — vale sia alla nascita (spawn) sia dopo:
+ * un secondo record con un `taskId` diverso RIASSEGNA la conversazione, e
+ * `taskId` VUOTO la stacca (torna spot), come `note:''` cancella la nota.
+ */
 export function appendTaskBinding(projectRoot: string, sessionId: string, taskId: string): void {
   appendSessionRecord(projectRoot, { sessionId, taskId });
 }
@@ -122,7 +136,14 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
         note?: unknown;
       };
       if (typeof d.sessionId !== 'string') continue;
-      if (typeof d.taskId === 'string') bindings.set(d.sessionId, d.taskId);
+      // T57 — last-wins con la stringa vuota come CANCELLAZIONE: `taskId:''`
+      // toglie la chiave, così chi legge non deve distinguere «mai legata» da
+      // «staccata» (sono la stessa cosa: spot). Il `typeof` esclude i record
+      // senza il campo, che non devono toccare un binding scritto prima.
+      if (typeof d.taskId === 'string') {
+        if (d.taskId) bindings.set(d.sessionId, d.taskId);
+        else bindings.delete(d.sessionId);
+      }
       if (typeof d.forkOf === 'string') forkOf.set(d.sessionId, d.forkOf);
       // last-wins per campo: un `pinned:false` finale rimuove il pin, un
       // `pinned:true` (ri)assegna il rango con la posizione corrente nel file.

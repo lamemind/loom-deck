@@ -207,6 +207,13 @@ const SCENARIOS: Array<[string, string, number[]]> = [
   ['edit titolo lungo', EDIT_TITOLO, [100, 176]],
   ['edit caret a inizio (^A)', `${EDIT_TITOLO}${CTRL_A}`, [100, 176]],
   ['edit caret in mezzo', `${EDIT_TITOLO}${'L'.repeat(30)}`, [100]],
+  // T57 — `R` porta il focus sul pane sessioni, `A` apre la schermata di
+  // assegnazione: righe task a piena larghezza, più il titolo che ripete la
+  // conversazione (hash + nota/etichetta, l'unico pezzo di lunghezza libera lì
+  // sopra). `X` incolla 60 caratteri nel campo filtro — è il campo di testo
+  // della schermata, cioè l'unico che può sfondarne il box.
+  ['assegna sessione a task', 'RA', [100, 176]],
+  ['assegna · filtro lungo', 'RAX', [100]],
 ];
 
 for (const [label, keys, widths] of SCENARIOS) {

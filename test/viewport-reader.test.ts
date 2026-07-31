@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  assignListCapacity,
   isCompact,
   readerCapacity,
   searchListCapacity,
@@ -157,6 +158,28 @@ test('il frame di ricerca non supera mai le righe del terminale', () => {
 test('il frame del reader non supera mai le righe del terminale', () => {
   for (const rows of [20, 24, 30, 40, 60]) {
     assert.ok(readerCapacity(rows) + 8 + SLACK <= rows, `sforo a ${rows} righe`);
+  }
+});
+
+// T57 — la schermata di assegnazione è la terza sostitutiva: stessa invariante
+// delle altre due, cornice propria (12 righe, un box filtro da una riga sola).
+test('il frame di assegnazione non supera mai le righe del terminale', () => {
+  for (const rows of [20, 24, 30, 40, 60]) {
+    for (const note of [false, true]) {
+      const cap = assignListCapacity(rows, note);
+      assert.ok(cap + 12 + (note ? 1 : 0) + SLACK <= rows, `sforo a ${rows} righe, note=${note}`);
+    }
+  }
+});
+
+test('assegnazione: capienza scalante, compatto sui terminali bassi', () => {
+  assert.ok(assignListCapacity(40, false) > assignListCapacity(30, false));
+  assert.equal(assignListCapacity(40, true), assignListCapacity(40, false) - 1);
+  assert.equal(isCompact(assignListCapacity(12, false)), true);
+  assert.equal(isCompact(assignListCapacity(40, false)), false);
+  assert.equal(assignListCapacity(0, false), assignListCapacity(24, false));
+  for (const rows of [1, 5, 8, 12]) {
+    assert.ok(assignListCapacity(rows, true) >= 0, `assign a ${rows} righe`);
   }
 });
 

@@ -4,6 +4,7 @@ import {
   assembleSessionList,
   firstSelectableId,
   moveSelection,
+  neighborId,
   rowIndexOf,
   rowLabel,
   selectedSession,
@@ -181,4 +182,59 @@ test('nota lunga con residuo: la nota cede spazio ma non scende sotto il minimo'
   assert.equal(l.rest, 'T52', 'il residuo resta visibile');
   assert.ok(l.note.length >= 14, 'la nota conserva il suo minimo');
   assert.ok(l.note.endsWith('…'), 'nota troncata, non silenziosamente tagliata');
+});
+
+// ── T57 · dove atterra la selezione quando una sessione cambia parent ───────
+
+test('vicino: la riga SUCCESSIVA, non la prima della lista', () => {
+  const child = [sess('c1', 3), sess('c2', 2), sess('c3', 1)];
+  const a = assembleSessionList(child, child, new Map(), 30);
+  assert.equal(neighborId(a.rows, 'c2'), 'c3');
+  assert.equal(neighborId(a.rows, 'c1'), 'c2');
+});
+
+test('vicino: sull’ultima riga si ripiega sulla precedente', () => {
+  const child = [sess('c1', 3), sess('c2', 2)];
+  const a = assembleSessionList(child, child, new Map(), 30);
+  assert.equal(neighborId(a.rows, 'c2'), 'c1');
+});
+
+test('vicino: unica riga → null (nessun posto dove atterrare)', () => {
+  const child = [sess('c1')];
+  const a = assembleSessionList(child, child, new Map(), 30);
+  assert.equal(neighborId(a.rows, 'c1'), null);
+  assert.equal(neighborId([], 'c1'), null);
+  assert.equal(neighborId(a.rows, 'ignota'), null);
+});
+
+test('vicino: attraversa il separatore senza fermarcisi', () => {
+  const all = [sess('p1'), sess('c1')];
+  const a = assembleSessionList([sess('c1')], all, new Map([['p1', 0]]), 30);
+  assert.deepEqual(kinds(a.rows), ['pinned', 'separator', 'context']);
+  assert.equal(neighborId(a.rows, 'p1'), 'c1', 'il separatore non è una destinazione');
+});
+
+test('cambio di parent: la sessione riassegnata esce dal gruppo contestuale', () => {
+  const all = [sess('s1', 3), sess('s2', 2)];
+  // Prima: entrambe spot (nessun binding) → entrambe figlie della riga spot.
+  const prima = assembleSessionList(all, all, new Map(), 30);
+  assert.deepEqual(ids(prima.rows), ['s1', 's2']);
+  // Dopo: s1 assegnata a T42 → il contesto spot la perde, e chi guarda T42 la trova.
+  const spotDopo = assembleSessionList([sess('s2', 2)], all, new Map(), 30);
+  assert.deepEqual(ids(spotDopo.rows), ['s2']);
+  const taskDopo = assembleSessionList([sess('s1', 3)], all, new Map(), 30);
+  assert.deepEqual(ids(taskDopo.rows), ['s1']);
+});
+
+test('cambio di parent su una PINNATA: resta in lista (esente dal contesto), senza duplicarsi', () => {
+  const all = [sess('s1', 3), sess('s2', 2)];
+  const pin = new Map([['s1', 0]]);
+  // s1 pinnata e assegnata altrove: sparisce dalle contestuali di spot ma
+  // resta nel blocco pinnate — una sola riga, non due.
+  const a = assembleSessionList([sess('s2', 2)], all, pin, 30);
+  assert.deepEqual(kinds(a.rows), ['pinned', 'separator', 'context']);
+  assert.deepEqual(ids(a.rows), ['s1', 's2']);
+  // E quando è ANCHE contestuale, il dedup la tiene solo fra le pinnate.
+  const b = assembleSessionList([sess('s1', 3), sess('s2', 2)], all, pin, 30);
+  assert.deepEqual(ids(b.rows), ['s1', 's2']);
 });
