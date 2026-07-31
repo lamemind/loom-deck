@@ -584,6 +584,12 @@ const WARN = sanitize('⚠');
 // largo 1 sia per string-width sia per il terminale. Corto +
 // wrap="truncate-end" così non va mai a capo nel pane al 50%.
 const SESSION_SEP = '─'.repeat(16);
+// Prefisso del sessionId mostrato in lista: stesso dato e stessa lunghezza del
+// widget `⛓ <8 char>` della statusline, così le due superfici si confrontano a
+// occhio. `SID_W` include lo spazio che segue → è quello che il budget della
+// label deve scalare.
+const SID_CHARS = 8;
+const SID_W = SID_CHARS + 1;
 
 // Marker Done per il DISPLAY. `task.prog` resta il `✔️` letto da tasks.md —
 // `isDone()` e le lookup di `view.ts` ci confrontano sopra, e `task-edit` lo
@@ -2938,7 +2944,11 @@ function SessionsPane({
           const labelBudget = Math.max(
             12,
             paneTextWidth(columns) -
-              (2 /* caret */ + 2 /* icona */ + 1 /* spazio */ + (forked ? 2 : 0)) -
+              (2 /* caret */ +
+                2 /* icona */ +
+                1 /* spazio */ +
+                SID_W /* hash + spazio */ +
+                (forked ? 2 : 0)) -
               termWidth(meta) -
               1 /* spazio prima del meta */,
           );
@@ -2958,6 +2968,7 @@ function SessionsPane({
               ) : (
                 <Text color="green">🔗</Text>
               )}{' '}
+              <Text color="cyan">{s.sessionId.slice(0, SID_CHARS)}</Text>{' '}
               {forked ? <Text color="magenta">⑂ </Text> : null}
               {label.note ? (
                 <Text color="yellow" bold>«{label.note}»</Text>
