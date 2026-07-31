@@ -21,13 +21,14 @@ import { cut, termWidth } from './width.js';
 // ── T53 · etichetta di riga ────────────────────────────────────────────────
 
 /**
- * Toglie dal titolo il core `<owner> <name>` del progetto e la punteggiatura di
- * giunzione che resta appesa davanti.
+ * Toglie dal titolo il core del progetto (il suo `name`) e tutto ciò che lo
+ * precede — emoji inclusa — più la punteggiatura di giunzione che resta appesa
+ * davanti.
  *
- * Il titolo di una sessione È la label della tab Ptyxis (`🧵 LOCAL loom-works ·
- * T52`): dentro un deck che mostra un progetto solo, il core è una COLONNA
- * COSTANTE ripetuta su ogni riga. Toglierlo libera le colonne per ciò che
- * distingue davvero una conversazione dall'altra.
+ * Il titolo di una sessione È la label della tab Ptyxis (`🧵 loom-works · T52`):
+ * dentro un deck che mostra un progetto solo, il core è una COLONNA COSTANTE
+ * ripetuta su ogni riga. Toglierlo libera le colonne per ciò che distingue
+ * davvero una conversazione dall'altra.
  *
  * `core` null (file config assente o senza identità) → titolo intatto: senza
  * sapere cosa togliere non si indovina, si lascia stare.

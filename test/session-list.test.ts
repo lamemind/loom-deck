@@ -119,12 +119,17 @@ test('helper: firstSelectableId, rowIndexOf, selectedSession', () => {
 
 // ── T53 · etichetta di riga (strip del core + nota) ─────────────────────────
 
-const CORE = 'LOCAL loom-works';
-const TITLE = '🧵 LOCAL loom-works · T52';
+const CORE = 'loom-works';
+const TITLE = '🧵 loom-works · T52';
 
 test('stripProjectCore: toglie core ed emoji, e la punteggiatura di giunzione', () => {
   assert.equal(stripProjectCore(TITLE, CORE), 'T52');
-  assert.equal(stripProjectCore('🧵 LOCAL loom-works', CORE), '', 'senza suffisso non resta nulla');
+  assert.equal(stripProjectCore('🧵 loom-works', CORE), '', 'senza suffisso non resta nulla');
+  assert.equal(
+    stripProjectCore('🧵 LOCAL loom-works · T52', CORE),
+    'T52',
+    'i titoli storici (formula con owner) restano ripuliti: il core è il nome nudo',
+  );
 });
 
 test('stripProjectCore: core null o non presente → titolo intatto', () => {
@@ -152,7 +157,7 @@ test('con nota: il core sparisce e resta il residuo (la task)', () => {
 });
 
 test('con nota e nessun residuo: la nota prende tutto il budget', () => {
-  const l = rowLabel('🧵 LOCAL loom-works', 'sessione nuda', CORE, 44);
+  const l = rowLabel('🧵 loom-works', 'sessione nuda', CORE, 44);
   assert.equal(l.note, 'sessione nuda');
   assert.equal(l.rest, '', 'residuo vuoto è un esito legittimo, non un fallback');
 });

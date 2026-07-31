@@ -222,13 +222,11 @@ test('launch: config assente o senza array → nessuna voce', () => {
   assert.deepEqual(parseLaunch(null), []);
 });
 
-test('identity: owner+name presenti → identità; campi mancanti o vuoti → null', () => {
-  assert.deepEqual(parseIdentity({ owner: 'LOCAL', name: 'loom-works' }), {
-    owner: 'LOCAL',
-    name: 'loom-works',
-  });
+test('identity: name presente → identità; owner ignorato, name mancante o vuoto → null', () => {
+  assert.deepEqual(parseIdentity({ owner: 'LOCAL', name: 'loom-works' }), { name: 'loom-works' });
+  assert.deepEqual(parseIdentity({ name: 'loom-works' }), { name: 'loom-works' });
   assert.equal(parseIdentity({ owner: 'LOCAL' }), null);
-  assert.equal(parseIdentity({ owner: '', name: 'loom-works' }), null);
+  assert.equal(parseIdentity({ name: '' }), null);
   assert.equal(parseIdentity(null), null);
 });
 

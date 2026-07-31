@@ -134,3 +134,25 @@ test('--resume: nessun prompt, qualunque sia il kind', () => {
   // messaggio nuovo: il kind non riapre quella porta.
   assert.ok(!cmd.includes("'/loom-works:run-task"), `prompt inatteso sul resume: ${cmd}`);
 });
+
+// T58 — derivazione della label dal file config. Il resto della suite gira su un
+// workdir SENZA `.claude/loom-works.json` (fallback `cc <task>`): questo è
+// l'unico punto che osserva la formula vera, cioè la chiave con cui compass
+// riconosce la finestra.
+const labeledWd = mkdtempSync(join(tmpdir(), 'loom-deck-wd-cfg-'));
+mkdirSync(join(labeledWd, '.claude'), { recursive: true });
+writeFileSync(
+  join(labeledWd, '.claude', 'loom-works.json'),
+  JSON.stringify({ id: 'demo', emoji: '🧵', owner: 'LOCAL', name: 'demo', surfaces: { claude: true } }),
+);
+
+test('titolo tab: `<emoji> <name>` + suffisso task, owner escluso', () => {
+  const cmd = inTabCmd(['T58'], { LOOM_DECK_WORKDIR: labeledWd });
+  assert.ok(cmd.includes("--name '🧵 demo · T58'"), `titolo inatteso: ${cmd}`);
+  assert.ok(!cmd.includes('LOCAL'), `owner presente nel titolo: ${cmd}`);
+});
+
+test('titolo tab senza task: solo la label, nessun suffisso', () => {
+  const cmd = inTabCmd(['--no-task'], { LOOM_DECK_WORKDIR: labeledWd });
+  assert.ok(cmd.includes("--name '🧵 demo'"), `titolo inatteso: ${cmd}`);
+});

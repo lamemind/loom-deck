@@ -159,11 +159,11 @@ PROFILE_UUID="${LOOM_DECK_PROFILE_UUID:-5a36ae48df1c4d4882f43060e3e59656}"
 WORKDIR="${LOOM_DECK_WORKDIR:-$PWD}"
 
 # ── Titolo tab = label standard loom (matchabile da compass) ──────────────────
-# compass matcha le finestre con `window.title.includes(project.label)`, dove la
-# label è DERIVATA dal contratto committato .claude/loom-works.json:
-# `{emoji} {owner} {name}` → es. "🧵 LOCAL loom-works". Un titolo "cc <task>"
-# non contiene la label → finestra ORFANA (progetto appare spento anche mentre ci
-# lavori dentro). Deriviamo la label dal file e la usiamo come titolo, con
+# compass matcha le finestre cercando nel titolo un prefisso `{emoji} {name}`,
+# dove i due token sono DERIVATI dal contratto committato .claude/loom-works.json
+# → es. "🧵 loom-works". Un titolo "cc <task>" non contiene la label → finestra
+# ORFANA (progetto appare spento anche mentre ci lavori dentro). Deriviamo la
+# label dal file e la usiamo come titolo, con
 # suffisso "· <task>" per restare distinguibili fra più tab claude (il suffisso
 # non rompe il match: è .includes, non equals — stesso pattern del "· deck").
 # Fallback su "cc <task>" se manca il file o jq (progetto non loom-registered).
@@ -191,8 +191,8 @@ _cfg=""
 # la sessione è bound, nessun suffisso quando è nuda.
 if [[ $NO_TASK -eq 1 ]]; then TITLE="cc"; else TITLE="cc ${TASK}"; fi
 if [[ -n "$_cfg" ]]; then
-  _label="$(jq -r 'if (.emoji and .owner and .name)
-                   then "\(.emoji) \(.owner) \(.name)" else empty end' \
+  _label="$(jq -r 'if (.emoji and .name)
+                   then "\(.emoji) \(.name)" else empty end' \
             "$_cfg" 2>/dev/null || true)"
   if [[ -n "${_label:-}" ]]; then
     if [[ $NO_TASK -eq 1 ]]; then TITLE="${_label}"; else TITLE="${_label} · ${TASK}"; fi

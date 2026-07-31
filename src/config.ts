@@ -120,20 +120,21 @@ export function launchLegend(
   return { shown: taken.join(' · '), overflow: parts.length - taken.length, unreachable };
 }
 
-// T37 — identità del progetto. Serve a titolare le tab spawnate dal deck col core
-// `<owner> <name>`, che è la chiave con cui compass matcha la finestra al progetto
-// (match window-level sul titolo della tab ATTIVA). Senza titolo la finestra
-// esce dal radar mentre quella tab è in primo piano.
+// T37 — identità del progetto. Serve a titolare le tab spawnate dal deck in modo
+// matchabile: compass riconosce la finestra cercando nel titolo della tab ATTIVA
+// un prefisso `<emoji-di-surface> <name>`. Senza titolo la finestra esce dal
+// radar mentre quella tab è in primo piano.
+// T58 — `owner` non fa più parte del titolo: resta nel file come metadato
+// organizzativo, ma il deck non ha ragione di leggerlo.
 export interface Identity {
-  owner: string;
   name: string;
 }
 
 export function parseIdentity(raw: unknown): Identity | null {
   if (!raw || typeof raw !== 'object') return null;
-  const { owner, name } = raw as Record<string, unknown>;
-  if (typeof owner !== 'string' || !owner || typeof name !== 'string' || !name) return null;
-  return { owner, name };
+  const { name } = raw as Record<string, unknown>;
+  if (typeof name !== 'string' || !name) return null;
+  return { name };
 }
 
 /** File assente o malformato → nessuna identità. Mai un throw. */

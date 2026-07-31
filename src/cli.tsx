@@ -347,7 +347,7 @@ function runLaunch(entry: LaunchEntry, cwd: string) {
 // sé nella stessa finestra, invece di sparpagliare finestre.
 // Nessun `-- CMD`: l'azione È aprire la shell (differenza dalle launch custom,
 // che eseguono un comando dentro `bash -lic`).
-// `-T <title>` col core `<owner> <name>` tiene la finestra matchabile da compass
+// `-T <title>` con la chiave `🖥️ <name>` tiene la finestra matchabile da compass
 // anche mentre la tab attiva è il terminale; senza identità nel file config si
 // spawna senza titolo (la surface resta funzionante, il progetto risulta assente
 // dal radar finché quella tab è in primo piano).
@@ -701,11 +701,15 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const launch = useMemo(() => loadLaunch(cwd), [cwd]);
   // Identità (T37): titolo delle tab terminale spawnate col tasto `t`.
   const identity = useMemo(() => loadIdentity(cwd), [cwd]);
-  // T53 — `<owner> <name>`: il core che ogni titolo di tab porta, quindi la
-  // colonna costante da togliere quando serve spazio. Hoistato qui perché ora
-  // lo consumano DUE schermate (lista e ricerca): calcolarlo su ogni call site
-  // è il modo in cui le due smettono di togliere la stessa cosa.
-  const projectCore = identity ? `${identity.owner} ${identity.name}` : null;
+  // T53 — il core che ogni titolo di tab porta, quindi la colonna costante da
+  // togliere quando serve spazio. Hoistato qui perché ora lo consumano DUE
+  // schermate (lista e ricerca): calcolarlo su ogni call site è il modo in cui
+  // le due smettono di togliere la stessa cosa.
+  // T58 — il core è il solo `name`, non `<emoji> <name>` come la chiave di match
+  // di compass: qui non serve entropia (è un taglio cosmetico, non un matcher) e
+  // il nome nudo ripulisce anche i titoli storici, scritti quando la formula
+  // includeva l'owner.
+  const projectCore = identity ? identity.name : null;
   // La vista è una trasformazione DERIVATA, applicata a valle del load: il
   // polling di tasks.md continua a funzionare senza saperne nulla.
   const { visible: viewTasks, hidden: hiddenTasks } = useMemo(
@@ -1502,7 +1506,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         openNote();
       }
     } else if (input === 't') {
-      const title = identity ? `🖥️ ${identity.owner} ${identity.name} [term]` : null;
+      const title = identity ? `🖥️ ${identity.name} [term]` : null;
       const child = spawnTerminal(cwd, title);
       child.on('error', () => setNote('⚠ t → ptyxis non lanciabile'));
       setNote(`t → terminale su ${projectName}`);
@@ -2034,11 +2038,12 @@ function searchTitleWidth(columns: number): number {
  * Cosa scrivere sulla riga-gruppo per distinguere una conversazione dall'altra.
  *
  * Non basta `session.title`: quel titolo è la label della tab Ptyxis, cioè
- * `<emoji> <owner> <name>` più un eventuale suffisso. Su una lista tutta dello
+ * `<emoji> <name>` più un eventuale suffisso. Su una lista tutta dello
  * stesso progetto (D3) è una COLONNA COSTANTE — tre righe su quattro
  * identiche, che è esattamente il difetto che la riga-gruppo doveva evitare.
  *
- * Si toglie quindi il core `<owner> <name>` (noto dal file config), e se ciò
+ * Si toglie quindi il core `<name>` con tutto ciò che lo precede (noto dal file
+ * config), e se ciò
  * che resta è vuoto o duplica la task già mostrata nella sua colonna, si
  * ripiega sul primo prompt — l'unica cosa che davvero identifica quella
  * conversazione e non un'altra.
@@ -2185,7 +2190,7 @@ function SearchScreen({
   pinned: Map<string, number>;
   /** T53 — sessionId → nota umana (solo le sessioni annotate). */
   sessionNotes: Map<string, string>;
-  /** `<owner> <name>` del progetto: prefisso da togliere ai titoli di tab. */
+  /** `name` del progetto: prefisso da togliere ai titoli di tab. */
   projectCore: string | null;
   columns: number;
   note: string;
@@ -2542,7 +2547,7 @@ function SessionsPane({
   columns: number;
   /** T53 — sessionId → nota umana (solo le sessioni annotate). */
   sessionNotes: Map<string, string>;
-  /** `<owner> <name>` del progetto: il prefisso che la nota fa sparire. */
+  /** `name` del progetto: il prefisso che la nota fa sparire. */
   projectCore: string | null;
 }) {
   return (
