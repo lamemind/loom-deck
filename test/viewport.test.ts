@@ -32,8 +32,10 @@ const frameHeight = (i: BudgetInput, b: ReturnType<typeof layoutBudget>) => {
   if (b.compact) return 1; // riga singola, nessun box
   const outer =
     2 + 1 + 1 + (i.launchLine ? 1 : 0) + MODAL_HEIGHT[i.mode] + 1 + (i.noteLine ? 1 : 0);
+  // T59 — 6 di chrome: 2 bordi + header + riga sort + le DUE righe meta
+  // (`≡ tutte`, `○ spot`).
   const tasksCol =
-    5 + b.taskRows + (b.detailLines > 0 ? 3 + i.detailMetaLines + b.detailLines : 0);
+    6 + b.taskRows + (b.detailLines > 0 ? 3 + i.detailMetaLines + b.detailLines : 0);
   // Detail pane sessione (T49): 3 chrome + 2 fisse (titolo, meta) + le due
   // preview (primo prompt + ultima risposta).
   const sessionsCol =

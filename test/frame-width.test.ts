@@ -197,6 +197,11 @@ const EDIT_TITOLO = 'DEDDDXX';
 const SCENARIOS: Array<[string, string, number[]]> = [
   ['lista task', 'DD', [100, 176]],
   ['pane sessioni + dettaglio', 'DRDD', [100, 176]],
+  // T59 — il pane sessioni della riga `≡ tutte` (dove il deck atterra, quindi
+  // nessun `D` prima di `R`). È l'unica vista che aggiunge il task id inline
+  // sulla riga: colonne sottratte al titolo che le altre non pagano, cioè
+  // esattamente il tipo di taglio che sfonda il pane se sbagliato.
+  ['pane sessioni · vista tutte', 'RDD', [100, 176]],
   ['task done in vista (filtri)', 'DDDDDDDD', [100, 176]],
   ['ricerca full-text', `${CTRL_F}deck`, [176]],
   ['reader fullscreen', `${CTRL_F}deckD\r`, [176]],

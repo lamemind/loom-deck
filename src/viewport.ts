@@ -26,7 +26,10 @@ const MIN_TASK_ROWS = 3;
 const MAX_DETAIL_LINES = 4;
 
 /** Righe di "cornice" fisse dei tre contenitori a lunghezza variabile. */
-const TASKS_PANE_CHROME = 5; // 2 bordi + header "Tasks (n)" + riga sort + riga spot
+// T59 — le righe meta sono DUE (`≡ tutte`, `○ spot`): ogni riga fissa aggiunta
+// a un pane va scalata qui, o il frame sfonda `rows` e Ink passa a
+// clearTerminal (frame-fantasma nello scrollback di VTE).
+const TASKS_PANE_CHROME = 6; // 2 bordi + header "Tasks (n)" + riga sort + 2 righe meta
 const SESSIONS_PANE_CHROME = 3; // 2 bordi + header "Sessions · …"
 const DETAIL_CHROME = 3; // marginTop + 2 bordi
 

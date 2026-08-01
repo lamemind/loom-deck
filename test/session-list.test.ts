@@ -238,3 +238,23 @@ test('cambio di parent su una PINNATA: resta in lista (esente dal contesto), sen
   const b = assembleSessionList([sess('s1', 3), sess('s2', 2)], all, pin, 30);
   assert.deepEqual(ids(b.rows), ['s1', 's2']);
 });
+
+test('vista "tutte" (T59): contesto === universo → nessun doppione delle pinnate', () => {
+  // La riga meta `≡ tutte` passa `sessions` come PRIMO argomento, cioè lo stesso
+  // array che fa da universo. È il caso limite del dedup: ogni pinnata è anche
+  // contestuale, e senza il filtro comparirebbe due volte.
+  const all = [sess('s1', 3), sess('s2', 2), sess('s3', 1)];
+  const a = assembleSessionList(all, all, new Map([['s2', 0]]), 100);
+  assert.deepEqual(kinds(a.rows), ['pinned', 'separator', 'context', 'context']);
+  assert.deepEqual(ids(a.rows), ['s2', 's1', 's3']);
+  assert.equal(a.contextTotal, 2, 'la pinnata non si conta due volte');
+  assert.equal(a.contextHidden, 0);
+});
+
+test('vista "tutte" (T59): il cap dedicato tronca, e lo dichiara', () => {
+  const all = Array.from({ length: 120 }, (_, i) => sess(`s${i}`, 120 - i));
+  const a = assembleSessionList(all, all, new Map(), 100);
+  assert.equal(a.contextTotal, 120);
+  assert.equal(a.contextHidden, 20, 'le troncate restano contate, mai silenziose');
+  assert.equal(a.rows.length, 100);
+});

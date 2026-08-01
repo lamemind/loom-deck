@@ -104,12 +104,31 @@ const POLL_MS = 1500;
 // Cap del pane sessioni: le più recenti (ts desc), le altre restano nell'indice
 // ma fuori vista. Non-silenzioso → l'header mostra quante sono nascoste.
 const MAX_SESSIONS = 30;
+// T59 D3 — cap dedicato alla vista "tutte": a 30 su un progetto con ~170
+// conversazioni la lista sarebbe esaustiva solo sull'ultimo 17%, cioè
+// contraddirebbe lo scopo della riga. 100 copre la finestra temporale utile e
+// tiene comunque un tetto alle righe da attraversare con ↑↓.
+const MAX_SESSIONS_ALL = 100;
 
-// Modello task-centrico: il Tasks pane ha, oltre alle task reali, una riga
-// meta "spot" (sentinella) che raccoglie le sessioni NON legate ad alcuna task.
-// La selezione nel Tasks pane è il "padre"; il Sessions pane mostra i suoi figli.
+// Modello task-centrico: il Tasks pane ha, oltre alle task reali, DUE righe
+// meta in testa — `≡ tutte` (ogni conversazione del progetto) e `○ spot` (le
+// sole NON legate ad alcuna task). La selezione nel Tasks pane è il "padre"; il
+// Sessions pane mostra i suoi figli.
+//
+// T59 D1 — le sentinelle sono Symbol, non `null` né stringhe riservate: la
+// selezione è un ENUM a tre casi (task / spot / tutte), non un flag. Un Symbol
+// non può collidere con un task id e si confronta secco (`sel === ALL`); una
+// stringa sentinella farebbe invece circolare un id-fantasma dentro un tipo che
+// altrove significa "task id".
 const SPOT = Symbol('spot');
-type Parent = string | typeof SPOT; // taskId | spot
+const ALL = Symbol('all');
+type Parent = string | typeof SPOT | typeof ALL; // taskId | spot | tutte
+
+// Le righe meta occupano le prime posizioni della lista: l'indice di una task
+// nella VISTA è quindi il suo indice in `viewTasks` + META_ROWS.
+const ROW_ALL = 0;
+const ROW_SPOT = 1;
+const META_ROWS = 2;
 
 type Focus = 'tasks' | 'sessions';
 
@@ -659,9 +678,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const [focus, setFocus] = useState<Focus>('tasks');
   // T39 — selezione KEYED SU ID, non su indice. Con una vista trasformata
   // (filtro/sort) l'indice non identifica più la stessa task: leggere l'array
-  // grezzo per posizione spawnerebbe la task sbagliata, in silenzio. `null` = la
-  // riga meta "spot", sempre in testa alla lista.
-  const [selId, setSelId] = useState<string | null>(null);
+  // grezzo per posizione spawnerebbe la task sbagliata, in silenzio.
+  // T59 — e le righe meta sono sentinelle, non `null`: gli stati sono tre.
+  // D4 — si apre su `≡ tutte`: la vista più ampia in cima, poi si scende verso
+  // i sottoinsiemi. La selezione non è persistita (a differenza di `view`, T39),
+  // quindi questo atterraggio vale a ogni avvio.
+  const [sel, setSel] = useState<Parent>(ALL);
   // T50 — selezione del pane sessioni KEYED SU sessionId (non indice): la lista
   // a due gruppi + separatore è una vista trasformata, un indice grezzo punterebbe
   // alla riga sbagliata dopo un pin o un cambio di contesto (stesso trap T39).
@@ -737,13 +759,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     [tasks, view],
   );
 
-  const isSpot = selId === null;
+  const isSpot = sel === SPOT;
+  const isAll = sel === ALL;
   const projectName = cwd.split('/').pop() || cwd;
   // Unica fonte della selezione: si legge SEMPRE dalla vista, mai dall'array
   // grezzo — è l'invariante che tiene allineati dettaglio mostrato e spawn.
-  const selTask = selId === null ? null : viewTasks.find((t) => t.id === selId) ?? null;
+  const selTask = typeof sel === 'string' ? viewTasks.find((t) => t.id === sel) ?? null : null;
   const selectedTaskId = selTask?.id ?? null;
-  const selIndex = selTask ? viewTasks.indexOf(selTask) + 1 : 0;
+  const selIndex = selTask ? viewTasks.indexOf(selTask) + META_ROWS : isAll ? ROW_ALL : ROW_SPOT;
   const detail = useTaskDetail(tasksDir, selectedTaskId ?? undefined);
 
   // Conteggio figli per task + spot (badge nel Tasks pane).
@@ -755,24 +778,27 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     else spotCount++;
   }
 
-  // Figli della selezione: sessioni bound alla task selezionata, oppure (spot)
-  // le sessioni senza binding. sessions è già ts desc → l'ordine si eredita.
+  // Figli della selezione: tutte le conversazioni del progetto (`≡ tutte`), le
+  // sessioni bound alla task selezionata, oppure (spot) quelle senza binding.
+  // sessions è già ts desc → l'ordine si eredita in tutti e tre i rami.
   // Memoizzato così `sessionRows` resta stabile fra render che non cambiano gli
   // input: l'effect di validità della selezione non rigira a vuoto.
   const childSessions = useMemo(
     () =>
-      sessions.filter((s) => {
-        const bound = bindings.get(s.sessionId);
-        return selectedTaskId ? bound === selectedTaskId : !bound;
-      }),
-    [sessions, bindings, selectedTaskId],
+      isAll
+        ? sessions
+        : sessions.filter((s) => {
+            const bound = bindings.get(s.sessionId);
+            return selectedTaskId ? bound === selectedTaskId : !bound;
+          }),
+    [sessions, bindings, selectedTaskId, isAll],
   );
   // T50 — lista a due gruppi: pinnate (sempre, in cima) + separatore +
   // contestuali. Dedup, cap solo sulle contestuali, righe stale per le pinnate
   // orfane. Core PURO in session-list.ts (testabile senza Ink).
   const assembled = useMemo(
-    () => assembleSessionList(childSessions, sessions, pinned, MAX_SESSIONS),
-    [childSessions, sessions, pinned],
+    () => assembleSessionList(childSessions, sessions, pinned, isAll ? MAX_SESSIONS_ALL : MAX_SESSIONS),
+    [childSessions, sessions, pinned, isAll],
   );
   const sessionRows = assembled.rows;
   const selSessionObj = selectedSession(sessionRows, selSessionId);
@@ -848,10 +874,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // dalla vista (filtro appena attivato, oppure sparita da tasks.md), si cade
   // sulla prima visibile — fallback deterministico, mai una posizione a caso.
   useEffect(() => {
-    if (selId !== null && !viewTasks.some((t) => t.id === selId)) {
-      setSelId(viewTasks[0]?.id ?? null);
+    if (typeof sel === 'string' && !viewTasks.some((t) => t.id === sel)) {
+      setSel(viewTasks[0]?.id ?? ALL);
     }
-  }, [viewTasks, selId]);
+  }, [viewTasks, sel]);
   // T50 — la selezione (id) resta valida sotto la vista a due gruppi: se l'id
   // non è più una riga selezionabile (cambio parent, lista mutata, pin rimosso,
   // sessione sparita) cade sulla prima riga — fallback deterministico, mai una
@@ -933,8 +959,15 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       setNote(`${keyLabel} → spawn: seleziona una task (←→ per il pane)`);
       return;
     }
-    if (isSpot) {
-      setNote('spot: sessioni libere, nessuna task da spawnare');
+    // T59 — la guardia è "non è una task", non "è spot": le righe meta sono due
+    // e nessuna delle due ha una task da aprire. Il messaggio dice quale delle
+    // due, perché il motivo è diverso (vista di sola lettura vs sessioni libere).
+    if (isAll || isSpot) {
+      setNote(
+        isAll
+          ? 'tutte: vista di sola lettura, nessuna task da spawnare'
+          : 'spot: sessioni libere, nessuna task da spawnare',
+      );
       return;
     }
     if (!selTask) return;
@@ -1126,12 +1159,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     setMode('normal');
   }
 
-  // Sposta la selezione di `delta` righe nella VISTA (0 = spot, 1..N = task
-  // visibili) e la riconverte subito in id: l'indice non sopravvive a un
-  // cambio di filtro, l'id sì.
+  // Sposta la selezione di `delta` righe nella VISTA (0 = tutte, 1 = spot,
+  // 2..N+1 = task visibili) e la riconverte subito in sentinella o id: l'indice
+  // non sopravvive a un cambio di filtro, l'id sì.
   function moveTaskSel(delta: number) {
-    const next = Math.max(0, Math.min(viewTasks.length, selIndex + delta));
-    setSelId(next === 0 ? null : viewTasks[next - 1]?.id ?? null);
+    const next = Math.max(0, Math.min(viewTasks.length + META_ROWS - 1, selIndex + delta));
+    if (next === ROW_ALL) setSel(ALL);
+    else if (next === ROW_SPOT) setSel(SPOT);
+    else setSel(viewTasks[next - META_ROWS]?.id ?? SPOT);
   }
 
   // T52 — `⏎` contestuale al TIPO di riga: la lista ne mescola due e l'azione
@@ -1573,8 +1608,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       setNote('');
       setMode('create');
     } else if (input === 'E') {
-      // L'edit ha senso solo su una task reale: la riga meta "spot" non ne è una.
-      if (isSpot || !selTask) setNote('E → nessuna task selezionata');
+      // L'edit ha senso solo su una task reale: le righe meta non ne sono.
+      if (!selTask) setNote('E → nessuna task selezionata');
       else openEdit();
     } else if (input === 'S') {
       setViewBackup(view);
@@ -1694,8 +1729,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     }
   });
 
-  const parentLabel = isSpot ? 'spot' : selectedTaskId ?? '—';
-  const canSpawn = focus === 'tasks' && !isSpot;
+  const parentLabel = isAll ? 'tutte' : isSpot ? 'spot' : selectedTaskId ?? '—';
+  const canSpawn = focus === 'tasks' && selTask !== null;
   const canResume = focus === 'sessions' && selSessionObj !== null;
   // T50 — il pin agisce su qualunque riga selezionata (anche stale, per
   // spinnarla); basta il focus sul pane e una selezione.
@@ -1894,7 +1929,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // Finestre di rendering. Le liste "logiche" (viewTasks, sessionRows)
   // restano intere: navigazione, selezione e spawn continuano a ragionare su
   // quelle, la finestra è solo ciò che finisce a schermo.
-  const taskWin = windowRange(viewTasks.length, selIndex - 1, budget.taskRows);
+  const taskWin = windowRange(viewTasks.length, selIndex - META_ROWS, budget.taskRows);
   const windowTasks = viewTasks.slice(taskWin.start, taskWin.end);
   const selRowIndex = rowIndexOf(sessionRows, selSessionId);
   const sessionWin = windowRange(sessionRows.length, selRowIndex, budget.sessionRows);
@@ -1908,7 +1943,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       <Text wrap="truncate-end">
         <Text bold color="cyan">loom-deck</Text>
         <Text dimColor>
-          {' '}· {viewTasks.length} task · sel {selectedTaskId ?? 'spot'} · terminale {rows}×
+          {' '}· {viewTasks.length} task · sel {selectedTaskId ?? parentLabel} · terminale {rows}×
           {columns}: troppo basso, allarga
         </Text>
       </Text>
@@ -1998,6 +2033,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           view={view}
           selected={selIndex}
           spotCount={spotCount}
+          allCount={sessions.length}
           childCount={childCount}
           focused={focus === 'tasks'}
           loadError={loadError}
@@ -2011,6 +2047,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         <SessionsPane
           parentLabel={parentLabel}
           isSpot={isSpot}
+          isAll={isAll}
+          bindings={bindings}
           rows={windowRows}
           total={assembled.pinnedCount + assembled.contextTotal}
           pinnedCount={assembled.pinnedCount}
@@ -2706,6 +2744,7 @@ function TasksPane({
   view,
   selected,
   spotCount,
+  allCount,
   childCount,
   focused,
   loadError,
@@ -2723,9 +2762,11 @@ function TasksPane({
   total: number;
   hidden: number;
   view: ViewState;
-  /** Indice nella lista COMPLETA (0 = riga spot). */
+  /** Indice nella lista COMPLETA (0 = riga "tutte", 1 = riga spot). */
   selected: number;
   spotCount: number;
+  /** T59 — conversazioni totali del progetto (badge della riga "tutte"). */
+  allCount: number;
   childCount: Map<string, number>;
   focused: boolean;
   loadError: string;
@@ -2739,7 +2780,8 @@ function TasksPane({
   detailLines: number;
   columns: number;
 }) {
-  const spotSelected = selected === 0;
+  const allSelected = selected === ROW_ALL;
+  const spotSelected = selected === ROW_SPOT;
   return (
     <Box
       flexDirection="column"
@@ -2777,7 +2819,14 @@ function TasksPane({
           </Text>
         ) : null}
       </Text>
-      {/* riga meta "spot" come PRIMA voce: sessioni non legate ad alcuna task */}
+      {/* T59 — riga meta "tutte" come PRIMA voce: ogni conversazione del
+          progetto, scoped e spot insieme. È l'unica vista da cui una sessione
+          legata a una task è raggiungibile senza sapere a quale. */}
+      <Text inverse={allSelected && focused} bold={allSelected && !focused} wrap="truncate-end">
+        {allSelected ? CARET : CARET_OFF}
+        ≡ tutte le sessioni{allCount > 0 ? ` (${allCount})` : ''}
+      </Text>
+      {/* riga meta "spot": sessioni non legate ad alcuna task */}
       <Text inverse={spotSelected && focused} bold={spotSelected && !focused} wrap="truncate-end">
         {spotSelected ? CARET : CARET_OFF}
         ○ spot  sessioni libere{spotCount > 0 ? ` (${spotCount})` : ''}
@@ -2787,8 +2836,9 @@ function TasksPane({
       ) : (
         tasks.map((task, i) => {
           // windowStart riporta l'indice di finestra a quello della lista
-          // completa, su cui è keyata la selezione. +1: lo 0 è spot.
-          const sel = windowStart + i + 1 === selected;
+          // completa, su cui è keyata la selezione. +META_ROWS: le prime due
+          // righe sono le meta.
+          const sel = windowStart + i + META_ROWS === selected;
           const n = childCount.get(task.id) ?? 0;
           // Invariante ③: la descrizione è l'unico pezzo a lunghezza libera, e
           // si taglia QUI sul budget che resta dopo le colonne fisse. Lasciarlo
@@ -2829,6 +2879,8 @@ function TasksPane({
 function SessionsPane({
   parentLabel,
   isSpot,
+  isAll,
+  bindings,
   rows,
   total,
   pinnedCount,
@@ -2847,6 +2899,12 @@ function SessionsPane({
 }: {
   parentLabel: string;
   isSpot: boolean;
+  /** T59 — vista "tutte": la lista mescola scoped e spot, quindi il marker di
+   *  riga non può più venire dal parent (vedi il render sotto). */
+  isAll: boolean;
+  /** T59 — sessionId → taskId, letto dal sidecar. Serve SOLO alla vista "tutte",
+   *  l'unica dove l'appartenenza non è desumibile dal parent selezionato. */
+  bindings: Map<string, string>;
   /** T50 — solo la finestra visibile della lista a due gruppi (pinnate +
    *  separatore + contestuali). */
   rows: SessionRow[];
@@ -2890,7 +2948,11 @@ function SessionsPane({
       </Text>
       {total === 0 ? (
         <Text color="yellow" wrap="truncate-end">
-          {isSpot ? 'nessuna sessione libera' : 'nessuna sessione legata a questa task'}
+          {isAll
+            ? 'nessuna conversazione nel progetto'
+            : isSpot
+              ? 'nessuna sessione libera'
+              : 'nessuna sessione legata a questa task'}
         </Text>
       ) : (
         rows.map((row, i) => {
@@ -2940,14 +3002,31 @@ function SessionsPane({
           // Con un valore fisso (erano 44) su un terminale stretto la riga
           // superava il pane, e a troncarla finiva `cli-truncate` — che sfora
           // di una colonna per emoji e si mangia il bordo destro.
+          // T59 D2 — nella vista "tutte" il marker è PER-SESSIONE (binding letto
+          // dal sidecar) e non deciso dal parent: la lista mescola scoped e spot,
+          // quindi un marker uniforme mentirebbe su metà delle righe. E il solo
+          // glifo direbbe *che* la conversazione è legata senza dire *a cosa* —
+          // informazione monca proprio qui, l'unica vista dove l'appartenenza
+          // non è scritta da nessun'altra parte dello schermo. Da qui il task id
+          // inline, che costa colonne al titolo solo in questa vista.
+          const bound = bindings.get(s.sessionId) ?? null;
+          const idTag = isAll && bound ? `${bound} ` : '';
+          const linked = isAll ? Boolean(bound) : !isSpot;
           const meta = ` · ${s.gitBranch || '-'} · ${relTime(s.ts)}`;
+          // Il pavimento è `0`, non un minimo di cortesia: questo numero è un
+          // TETTO (le colonne che restano), non una preferenza. Un `Math.max(12,
+          // …)` lo alza sopra lo spazio reale appena il resto della riga cresce
+          // — e la riga esce dal pane mangiandosi il bordo, cioè il difetto che
+          // l'invariante ③ esiste per impedire. Con poco spazio è il titolo a
+          // sparire: hash, task id, branch e data restano, e il frame regge.
           const labelBudget = Math.max(
-            12,
+            0,
             paneTextWidth(columns) -
               (2 /* caret */ +
                 2 /* icona */ +
                 1 /* spazio */ +
                 SID_W /* hash + spazio */ +
+                termWidth(idTag) +
                 (forked ? 2 : 0)) -
               termWidth(meta) -
               1 /* spazio prima del meta */,
@@ -2963,12 +3042,13 @@ function SessionsPane({
               {sel ? CARET : CARET_OFF}
               {isPinnedRow ? (
                 <Text color="yellow">📌</Text>
-              ) : isSpot ? (
-                <Text dimColor>○</Text>
-              ) : (
+              ) : linked ? (
                 <Text color="green">🔗</Text>
+              ) : (
+                <Text dimColor>○</Text>
               )}{' '}
               <Text color="cyan">{s.sessionId.slice(0, SID_CHARS)}</Text>{' '}
+              {idTag ? <Text color="green">{idTag}</Text> : null}
               {forked ? <Text color="magenta">⑂ </Text> : null}
               {label.note ? (
                 <Text color="yellow" bold>«{label.note}»</Text>
