@@ -42,6 +42,52 @@ export function stripProjectCore(title: string, core: string | null): string {
   return t.replace(/^[\s·]+/, '').trim();
 }
 
+/**
+ * Toglie il token del task id dal titolo — quello e solo quello, confrontato
+ * per token intero e non per substring (`T5` non deve mordere dentro `T59`).
+ *
+ * Va in coppia con `stripProjectCore`: un titolo di tab è `<emoji> <progetto> ·
+ * <task>`, quindi tolto il progetto resta quasi sempre il solo task id.
+ */
+export function stripTaskId(title: string, taskId: string | null): string {
+  if (!taskId) return title;
+  return title
+    .split(/\s+/)
+    .filter((tok) => tok !== taskId)
+    .join(' ')
+    .replace(/^[\s·]+|[\s·]+$/g, '')
+    .trim();
+}
+
+/**
+ * Il testo che DISTINGUE una conversazione dalle altre — tolto tutto ciò che è
+ * già scritto altrove nella stessa riga.
+ *
+ * Il titolo di una sessione è la label della tab Ptyxis quando esiste
+ * (`🧵 loom-works · T59`), e il primo prompt dell'utente quando non esiste. I
+ * due casi non vanno trattati allo stesso modo, ed è il punto di questa
+ * funzione:
+ *
+ *  - **con titolo custom** → è composto di pezzi che la riga mostra già in
+ *    colonna: il progetto (costante su ogni riga di un deck per-progetto) e il
+ *    task id (colonna sua). Tolti quelli non resta quasi mai nulla → si cade sul
+ *    primo prompt, che è l'unica cosa lì dentro a dire di cosa si parlava.
+ *  - **senza titolo custom** → `title` È già il primo prompt: intatto.
+ *
+ * `title` (non `customTitle`) è la fonte anche nel primo ramo: è la stessa
+ * stringa già sanificata al confine dell'adapter, e usare il campo grezzo
+ * rimetterebbe in circolo glifi che il frame non sa disegnare.
+ */
+export function sessionTitle(
+  s: Pick<Session, 'title' | 'customTitle' | 'firstPrompt'>,
+  core: string | null,
+  taskId: string | null,
+): string {
+  if (!s.customTitle) return s.title;
+  const rest = stripTaskId(stripProjectCore(s.title, core), taskId);
+  return rest || s.firstPrompt || '';
+}
+
 /** T53 — le due parti dell'etichetta di riga, già troncate a budget. */
 export interface RowLabel {
   /** Nota umana, senza caporali (li mette il render). '' = nessuna nota. */
@@ -59,32 +105,25 @@ const MIN_REST = 6;
 const MIN_NOTE = 14;
 
 /**
- * Cosa scrivere sulla riga di una conversazione, dentro `budget` colonne.
+ * Come dividere `budget` colonne fra la nota umana e il testo della
+ * conversazione, quando ci sono entrambi.
  *
- * Due regimi, ed è una decisione deliberata che NON siano lo stesso:
+ * `text` arriva GIÀ ripulito da `sessionTitle`: qui non si decide più *cosa*
+ * mostrare, solo *quanto*. Prima lo strip del prefisso di progetto avveniva
+ * dentro questa funzione e solo sul ramo con nota — asimmetria nata quando il
+ * task id non aveva una colonna sua e togliere il core avrebbe lasciato il
+ * nulla. Con la riga incolonnata quella premessa è caduta, e tenere due regimi
+ * diversi avrebbe reso la colonna titolo larga in un caso e stretta nell'altro.
  *
- *  - **senza nota** → il titolo resta INTATTO, prefisso di progetto incluso.
- *    Togliere il core qui lascerebbe `T52` o il nulla (i titoli di tab non
- *    contengono altro), cioè meno informazione di prima, non più spazio.
- *  - **con nota** → il core se ne va: la nota dice già quale conversazione è,
- *    quindi le colonne del prefisso passano a lei. Il residuo (tipicamente la
- *    task, `T52`) segue dimmato se ci sta; se non resta nulla va benissimo.
- *
- * Il budget si divide dando la precedenza alla nota, ma senza affamare il
- * residuo: con entrambi presenti la nota cede fino a `MIN_NOTE` per lasciare
- * spazio al residuo, e il residuo sparisce del tutto sotto `MIN_REST` invece di
- * ridursi a un moncone.
+ * Il budget dà la precedenza alla nota, ma senza affamare il resto: con
+ * entrambi presenti la nota cede fino a `MIN_NOTE`, e il resto sparisce del
+ * tutto sotto `MIN_REST` invece di ridursi a un moncone.
  */
-export function rowLabel(
-  title: string,
-  note: string | undefined,
-  core: string | null,
-  budget: number,
-): RowLabel {
-  if (!note) return { note: '', rest: cut(title, Math.max(0, budget)) };
+export function rowLabel(text: string, note: string | undefined, budget: number): RowLabel {
+  if (!note) return { note: '', rest: cut(text, Math.max(0, budget)) };
 
   // 2 colonne per i caporali « », 1 per lo spazio prima del residuo.
-  const rest = stripProjectCore(title, core);
+  const rest = text;
   const noteBudget = Math.max(0, budget - 2);
   if (!rest) return { note: cut(note, noteBudget), rest: '' };
 

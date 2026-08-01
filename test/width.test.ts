@@ -12,6 +12,7 @@ import {
   agrees,
   caretWindow,
   cut,
+  pad,
   sanitize,
   termWidth,
   wrapLines,
@@ -232,4 +233,44 @@ test('caretWindow: budget degenere → niente da disegnare, mai una finestra sfo
   // Cursore su un glifo largo 2 con una sola colonna: non ci sta, e mezzo glifo
   // non è un'opzione.
   assert.deepEqual(caretWindow('🔥x', 0, 1), { head: '', at: '', tail: '', cursorCol: 0 });
+});
+
+
+// ── T60 · celle a larghezza esatta (l'invariante che regge l'incolonnamento) ──
+
+test('pad: la cella misura ESATTAMENTE le colonne chieste, glifo largo o stretto', () => {
+  // È il caso che rendeva ragged la lista: `○` largo 1 e `🔗` largo 2 devono
+  // uscire entrambi larghi 2, o tutto ciò che segue slitta di una colonna.
+  for (const g of ['○', '🔗', '📌', '·', '']) {
+    assert.equal(termWidth(pad(g, 2)), 2, `${g} → cella larga 2`);
+  }
+  for (const s of ['T5', 'T59', 'D01', '']) {
+    assert.equal(termWidth(pad(s, 4)), 4, `${s} → cella larga 4`);
+  }
+});
+
+test('pad: `String.padEnd` NON basta — è la trappola che questa funzione esiste per chiudere', () => {
+  // `padEnd` conta code unit. Su un glifo BMP largo 2 (`✅` — 1 code unit, 2
+  // colonne) crede di avere una colonna da riempire e ne aggiunge una terza.
+  assert.equal('✅'.length, 1, 'una code unit…');
+  assert.equal(termWidth('✅'), 2, '…due colonne');
+  assert.equal(termWidth('✅'.padEnd(2)), 3, 'padEnd sfora: 3 colonne per una cella da 2');
+  assert.equal(termWidth(pad('✅', 2)), 2, 'pad misura in colonne e non tocca nulla');
+});
+
+test('pad: eccedenza tagliata al budget, mai sbordata', () => {
+  assert.equal(termWidth(pad('titolo lunghissimo', 6)), 6);
+  assert.ok(pad('titolo lunghissimo', 6).endsWith('…'), 'taglio non silenzioso');
+  assert.equal(termWidth(pad('🔥🔥🔥🔥', 5)), 5, 'nessun mezzo glifo, nessuna colonna in più');
+});
+
+test('pad: allineamento a destra mette il riempimento davanti', () => {
+  assert.equal(pad('3d', 4, 'right'), '  3d');
+  assert.equal(pad('159d', 4, 'right'), '159d');
+  assert.equal(termWidth(pad('47m', 4, 'right')), 4);
+});
+
+test('pad: budget degenere → cella vuota, mai una stringa a sorpresa', () => {
+  assert.equal(pad('qualsiasi', 0), '');
+  assert.equal(pad('qualsiasi', -3), '');
 });

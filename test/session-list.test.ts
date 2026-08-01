@@ -7,6 +7,8 @@ import {
   neighborId,
   rowIndexOf,
   rowLabel,
+  sessionTitle,
+  stripTaskId,
   selectedSession,
   stripProjectCore,
 } from '../src/session-list.js';
@@ -138,50 +140,93 @@ test('stripProjectCore: core null o non presente → titolo intatto', () => {
   assert.equal(stripProjectCore('altro progetto · T1', CORE), 'altro progetto · T1');
 });
 
-test('senza nota il titolo resta INTATTO, prefisso di progetto incluso', () => {
-  const l = rowLabel(TITLE, undefined, CORE, 44);
+test('senza nota il testo passa intatto (lo strip ormai avviene a monte)', () => {
+  const l = rowLabel('T52', undefined, 44);
   assert.equal(l.note, '');
-  assert.equal(l.rest, TITLE, 'lo strip non scatta senza nota: lascerebbe meno info, non più spazio');
+  assert.equal(l.rest, 'T52');
 });
 
-test('senza nota: il titolo troppo lungo viene troncato al budget', () => {
-  const l = rowLabel('x'.repeat(80), undefined, CORE, 20);
+test('senza nota: il testo troppo lungo viene troncato al budget', () => {
+  const l = rowLabel('x'.repeat(80), undefined, 20);
   assert.equal(l.note, '');
   assert.equal(l.rest.length, 20);
   assert.ok(l.rest.endsWith('…'), 'troncatura mai silenziosa');
 });
 
-test('con nota: il core sparisce e resta il residuo (la task)', () => {
-  const l = rowLabel(TITLE, 'regex + reader', CORE, 44);
+test('con nota: nota e resto convivono', () => {
+  const l = rowLabel('T52', 'regex + reader', 44);
   assert.equal(l.note, 'regex + reader');
   assert.equal(l.rest, 'T52');
 });
 
-test('con nota e nessun residuo: la nota prende tutto il budget', () => {
-  const l = rowLabel('🧵 loom-works', 'sessione nuda', CORE, 44);
+test('con nota e nessun resto: la nota prende tutto il budget', () => {
+  const l = rowLabel('', 'sessione nuda', 44);
   assert.equal(l.note, 'sessione nuda');
-  assert.equal(l.rest, '', 'residuo vuoto è un esito legittimo, non un fallback');
+  assert.equal(l.rest, '', 'resto vuoto è un esito legittimo, non un fallback');
 });
 
-test('budget stretto: il residuo sparisce invece di ridursi a un moncone', () => {
-  const l = rowLabel(TITLE, 'una nota parecchio lunga da mostrare', CORE, 22);
-  assert.equal(l.rest, '', 'sotto MIN_REST il residuo non vale la riga');
+test('budget stretto: il resto sparisce invece di ridursi a un moncone', () => {
+  const l = rowLabel('T52', 'una nota parecchio lunga da mostrare', 22);
+  assert.equal(l.rest, '', 'sotto MIN_REST il resto non vale la riga');
   assert.ok(l.note.length <= 20, `nota entro budget-2, invece ${l.note.length}`);
 });
 
 test('budget stretto: nota + caporali non superano MAI il budget (riga a capo = altezza sforata)', () => {
   for (const budget of [0, 1, 2, 4, 8, 12, 16, 30, 44]) {
-    const l = rowLabel(TITLE, 'nota molto molto lunga che non entra', CORE, budget);
+    const l = rowLabel('T52', 'nota molto molto lunga che non entra', budget);
     const used = (l.note ? l.note.length + 2 : 0) + (l.rest ? l.rest.length + 1 : 0);
     assert.ok(used <= budget, `budget ${budget}: usate ${used} colonne`);
   }
 });
 
-test('nota lunga con residuo: la nota cede spazio ma non scende sotto il minimo', () => {
-  const l = rowLabel(TITLE, 'x'.repeat(60), CORE, 44);
-  assert.equal(l.rest, 'T52', 'il residuo resta visibile');
+test('nota lunga con resto: la nota cede spazio ma non scende sotto il minimo', () => {
+  const l = rowLabel('T52', 'x'.repeat(60), 44);
+  assert.equal(l.rest, 'T52', 'il resto resta visibile');
   assert.ok(l.note.length >= 14, 'la nota conserva il suo minimo');
   assert.ok(l.note.endsWith('…'), 'nota troncata, non silenziosamente tagliata');
+});
+
+// ── T60 · pulizia del titolo: via ciò che le colonne accanto dicono già ─────
+
+const sessOf = (customTitle: string, firstPrompt: string) => ({
+  title: customTitle || firstPrompt || '(senza titolo)',
+  customTitle,
+  firstPrompt,
+});
+
+test('sessionTitle: titolo custom svuotato dallo strip → cade sul primo prompt', () => {
+  const s = sessOf(TITLE, 'implementa la ricerca full-text');
+  assert.equal(
+    sessionTitle(s, CORE, 'T52'),
+    'implementa la ricerca full-text',
+    'progetto e task sono già in colonna: senza fallback la cella resterebbe vuota',
+  );
+});
+
+test('sessionTitle: senza titolo custom il titolo È il primo prompt, intatto', () => {
+  const s = sessOf('', 'loom-works:create-task yolo deck');
+  assert.equal(
+    sessionTitle(s, CORE, 'T52'),
+    'loom-works:create-task yolo deck',
+    'qui lo strip morderebbe dentro un prompt, non dentro una label di tab',
+  );
+});
+
+test('sessionTitle: residuo del titolo custom oltre il task id → vince sul primo prompt', () => {
+  const s = sessOf('🧵 loom-works · T52 · fork', 'primo prompt');
+  assert.equal(sessionTitle(s, CORE, 'T52'), 'fork');
+});
+
+test('sessionTitle: senza binding il task id non si toglie (non c’è nulla da dedurre)', () => {
+  const s = sessOf(TITLE, 'primo prompt');
+  assert.equal(sessionTitle(s, CORE, null), 'T52');
+});
+
+test('stripTaskId: match per TOKEN intero, mai per substring', () => {
+  assert.equal(stripTaskId('T5 · nota', 'T5'), 'nota');
+  assert.equal(stripTaskId('T59 · nota', 'T5'), 'T59 · nota', 'T5 non morde dentro T59');
+  assert.equal(stripTaskId('T59', 'T59'), '');
+  assert.equal(stripTaskId('qualcosa', null), 'qualcosa');
 });
 
 // ── T57 · dove atterra la selezione quando una sessione cambia parent ───────

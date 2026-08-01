@@ -46,6 +46,7 @@ import {
   rowIndexOf,
   rowLabel,
   selectedSession,
+  sessionTitle,
   stripProjectCore,
   type SessionRow,
 } from './session-list.js';
@@ -64,6 +65,7 @@ import {
 import {
   caretWindow,
   cut,
+  pad,
   sanitize,
   termWidth,
   wrapLines,
@@ -605,10 +607,13 @@ const WARN = sanitize('⚠');
 const SESSION_SEP = '─'.repeat(16);
 // Prefisso del sessionId mostrato in lista: stesso dato e stessa lunghezza del
 // widget `⛓ <8 char>` della statusline, così le due superfici si confrontano a
-// occhio. `SID_W` include lo spazio che segue → è quello che il budget della
-// label deve scalare.
+// occhio.
 const SID_CHARS = 8;
-const SID_W = SID_CHARS + 1;
+
+/** T60 — segnaposto della colonna task su una riga senza binding. Una cella
+ *  vuota di soli spazi lascerebbe un buco che si legge come "colonna finita",
+ *  e la riga tornerebbe a sembrare disallineata pur non essendolo. */
+const TASK_EMPTY = '·';
 
 // Marker Done per il DISPLAY. `task.prog` resta il `✔️` letto da tasks.md —
 // `isDone()` e le lookup di `view.ts` ci confrontano sopra, e `task-edit` lo
@@ -802,6 +807,27 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   );
   const sessionRows = assembled.rows;
   const selSessionObj = selectedSession(sessionRows, selSessionId);
+
+  // T60 — larghezze delle colonne fisse della lista sessioni, misurate sulla
+  // lista INTERA e non sulla finestra visibile: derivarle dalle sole righe a
+  // schermo le farebbe cambiare a ogni scroll, cioè l'opposto di una tabella.
+  // La colonna task esiste solo nella vista "tutte" (altrove il binding è lo
+  // stesso su ogni riga e sta già nell'header del pane), e `0` la spegne.
+  const sessionCols = useMemo(() => {
+    let task = 0;
+    let age = 2;
+    for (const r of sessionRows) {
+      if (r.kind === 'separator') continue;
+      if (isAll) {
+        const b = bindings.get(r.sessionId);
+        if (b) task = Math.max(task, termWidth(b));
+      }
+      if (r.session) age = Math.max(age, termWidth(relTime(r.session.ts)));
+    }
+    // La cella vuota deve poter entrare nella colonna, o le righe spot
+    // perderebbero il segnaposto e con lui l'allineamento.
+    return { task: task > 0 ? Math.max(task, termWidth(TASK_EMPTY)) : 0, age };
+  }, [sessionRows, bindings, isAll]);
 
   // T52 — ricerca EAGER: rigira a ogni carattere digitato, non su ⏎. È
   // sostenibile perché i corpi sono già in RAM dentro la cache mtime-keyed
@@ -2049,6 +2075,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           isSpot={isSpot}
           isAll={isAll}
           bindings={bindings}
+          taskW={sessionCols.task}
+          ageW={sessionCols.age}
           rows={windowRows}
           total={assembled.pinnedCount + assembled.contextTotal}
           pinnedCount={assembled.pinnedCount}
@@ -2881,6 +2909,8 @@ function SessionsPane({
   isSpot,
   isAll,
   bindings,
+  taskW,
+  ageW,
   rows,
   total,
   pinnedCount,
@@ -2905,6 +2935,12 @@ function SessionsPane({
   /** T59 — sessionId → taskId, letto dal sidecar. Serve SOLO alla vista "tutte",
    *  l'unica dove l'appartenenza non è desumibile dal parent selezionato. */
   bindings: Map<string, string>;
+  /** T60 — larghezza della colonna task; 0 = colonna assente (fuori dalla vista
+   *  "tutte" ogni riga ha lo stesso binding, quindi la colonna direbbe N volte
+   *  ciò che l'header dice una). */
+  taskW: number;
+  /** T60 — larghezza della colonna data, ancorata al margine destro. */
+  ageW: number;
   /** T50 — solo la finestra visibile della lista a due gruppi (pinnate +
    *  separatore + contestuali). */
   rows: SessionRow[];
@@ -2969,6 +3005,15 @@ function SessionsPane({
           // T50 — pin stale: transcript sparito, nessuna Session da mostrare.
           // Riga navigabile e spinnabile (`p`), marcata, mai un crash.
           if (row.kind === 'pinned' && row.stale) {
+            // T60 — anche qui la nota si taglia sul budget DERIVATO, non su un
+            // 30 inchiodato: su un pane stretto quel valore fisso mandava la
+            // riga oltre il bordo, e a ripararla arrivava `cli-truncate` (che
+            // sfora di una colonna per emoji e mangia il bordo stesso).
+            const staleNote = sessionNotes.get(row.sessionId);
+            const staleW = Math.max(
+              0,
+              paneTextWidth(columns) - (2 /* caret */ + termWidth(`${WARN} pin stale `) + SID_CHARS + 3 /* spazio + caporali */),
+            );
             return (
               <Text
                 key={row.sessionId}
@@ -2979,83 +3024,96 @@ function SessionsPane({
               >
                 {sel ? CARET : CARET_OFF}
                 <Text color="yellow">{WARN}</Text> pin stale{' '}
-                <Text dimColor>{row.sessionId.slice(0, 8)}</Text>
+                <Text dimColor>{row.sessionId.slice(0, SID_CHARS)}</Text>
                 {/* T53 — su una riga stale la nota è l'UNICA cosa rimasta che
                     dica cosa fosse quella conversazione: il transcript non c'è
                     più, quindi non esiste titolo né primo prompt da mostrare. */}
-                {sessionNotes.get(row.sessionId) ? (
-                  <Text color="yellow"> «{cut(sessionNotes.get(row.sessionId)!, 30)}»</Text>
-                ) : null}
+                {staleNote ? <Text color="yellow"> «{cut(staleNote, staleW)}»</Text> : null}
               </Text>
             );
           }
           const s = row.session as Session; // non-stale → session presente
           const isPinnedRow = row.kind === 'pinned';
           // T28 — un ramo eredita il titolo dell'origine: senza marcatore le due
-          // righe sarebbero identiche a occhio. `⑂` sta PRIMA del titolo, dove
-          // la troncatura non arriva mai.
+          // righe sarebbero identiche a occhio.
           const forked = forkOf.has(s.sessionId);
-          // T53 — con una nota il prefisso di progetto sparisce e le sue colonne
-          // passano alla nota; senza, il titolo resta com'è (vedi `rowLabel`).
-          //
-          // Invariante ③: il budget è DERIVATO da `columns`, non inchiodato.
-          // Con un valore fisso (erano 44) su un terminale stretto la riga
-          // superava il pane, e a troncarla finiva `cli-truncate` — che sfora
-          // di una colonna per emoji e si mangia il bordo destro.
           // T59 D2 — nella vista "tutte" il marker è PER-SESSIONE (binding letto
           // dal sidecar) e non deciso dal parent: la lista mescola scoped e spot,
           // quindi un marker uniforme mentirebbe su metà delle righe. E il solo
           // glifo direbbe *che* la conversazione è legata senza dire *a cosa* —
           // informazione monca proprio qui, l'unica vista dove l'appartenenza
-          // non è scritta da nessun'altra parte dello schermo. Da qui il task id
-          // inline, che costa colonne al titolo solo in questa vista.
+          // non è scritta da nessun'altra parte dello schermo: da qui la colonna
+          // task accanto, che esiste solo in questa vista.
           const bound = bindings.get(s.sessionId) ?? null;
-          const idTag = isAll && bound ? `${bound} ` : '';
           const linked = isAll ? Boolean(bound) : !isSpot;
-          const meta = ` · ${s.gitBranch || '-'} · ${relTime(s.ts)}`;
-          // Il pavimento è `0`, non un minimo di cortesia: questo numero è un
-          // TETTO (le colonne che restano), non una preferenza. Un `Math.max(12,
-          // …)` lo alza sopra lo spazio reale appena il resto della riga cresce
-          // — e la riga esce dal pane mangiandosi il bordo, cioè il difetto che
-          // l'invariante ③ esiste per impedire. Con poco spazio è il titolo a
-          // sparire: hash, task id, branch e data restano, e il frame regge.
-          const labelBudget = Math.max(
+          // T60 — colonne VERE: ogni cella fissa è larga esattamente quanto
+          // dichiara, riempita di spazi con `pad` (che misura in colonne, non in
+          // caratteri). Il marker va portato a 2 anche quando è `○`, largo 1:
+          // era lui a far slittare a sinistra di una colonna tutta la riga di
+          // ogni sessione spot.
+          const age = relTime(s.ts);
+          // Il taglio del titolo è ciò che RESTA, calcolato per sottrazione: le
+          // colonne fisse sono note, quindi l'unica cella elastica prende il
+          // resto. Pavimento `0` e non un minimo di cortesia — è un tetto, non
+          // una preferenza: alzarlo sopra lo spazio reale fa uscire la riga dal
+          // pane e le mangia il bordo (invariante ③).
+          const titleW = Math.max(
             0,
             paneTextWidth(columns) -
               (2 /* caret */ +
-                2 /* icona */ +
-                1 /* spazio */ +
-                SID_W /* hash + spazio */ +
-                termWidth(idTag) +
-                (forked ? 2 : 0)) -
-              termWidth(meta) -
-              1 /* spazio prima del meta */,
+                2 /* marker */ +
+                1 /* gutter */ +
+                SID_CHARS +
+                1 /* gutter */ +
+                (taskW > 0 ? taskW + 1 : 0) +
+                1 /* gutter prima della data */ +
+                ageW),
           );
+          // T28 — `⑂` sta DENTRO la cella titolo, non in una colonna sua: una
+          // colonna dedicata costerebbe 2 spazi vuoti su ogni riga non-fork, e
+          // metterlo fuori cella sposterebbe il bordo del titolo solo sui rami —
+          // cioè rimetterebbe lo slittamento che le colonne tolgono.
+          const forkMark = forked ? '⑂ ' : '';
+          const inner = Math.max(0, titleW - termWidth(forkMark));
+          // T60 — il testo arriva già ripulito di ciò che le colonne accanto
+          // dicono già (progetto e task id): senza, la cella conterrebbe
+          // `🧵 loom-works · T59` accanto a una colonna che dice `T59`.
           const label = rowLabel(
-            s.title,
+            sessionTitle(s, projectCore, bound),
             sessionNotes.get(s.sessionId),
-            projectCore,
-            labelBudget,
+            inner,
           );
+          const used =
+            (label.note ? termWidth(label.note) + 2 : 0) +
+            (label.note && label.rest ? 1 : 0) +
+            termWidth(label.rest);
           return (
             <Text key={s.sessionId} inverse={sel && focused} bold={sel && !focused} wrap="truncate-end">
               {sel ? CARET : CARET_OFF}
               {isPinnedRow ? (
-                <Text color="yellow">📌</Text>
+                <Text color="yellow">{pad('📌', 2)}</Text>
               ) : linked ? (
-                <Text color="green">🔗</Text>
+                <Text color="green">{pad('🔗', 2)}</Text>
               ) : (
-                <Text dimColor>○</Text>
+                <Text dimColor>{pad('○', 2)}</Text>
               )}{' '}
               <Text color="cyan">{s.sessionId.slice(0, SID_CHARS)}</Text>{' '}
-              {idTag ? <Text color="green">{idTag}</Text> : null}
-              {forked ? <Text color="magenta">⑂ </Text> : null}
+              {taskW > 0 ? (
+                <>
+                  <Text color={bound ? 'green' : undefined} dimColor={!bound}>
+                    {pad(bound ?? TASK_EMPTY, taskW)}
+                  </Text>
+                  {' '}
+                </>
+              ) : null}
+              {forkMark ? <Text color="magenta">{forkMark}</Text> : null}
               {label.note ? (
                 <Text color="yellow" bold>«{label.note}»</Text>
               ) : null}
               {label.note && label.rest ? ' ' : null}
-              {label.rest ? <Text dimColor={Boolean(label.note)}>{label.rest}</Text> : null}{' '}
-              <Text dimColor>· {s.gitBranch || '-'} · {relTime(s.ts)}</Text>
+              {label.rest ? <Text dimColor={Boolean(label.note)}>{label.rest}</Text> : null}
+              {' '.repeat(Math.max(0, inner - used))}{' '}
+              <Text dimColor>{pad(age, ageW, 'right')}</Text>
             </Text>
           );
         })
@@ -3116,8 +3174,12 @@ function SessionDetailPane({
       {/* La provenienza va IN CODA alla riga meta esistente, non su una riga
           propria: il budget d'altezza conta le righe fisse del pannello e una
           riga in più le sforerebbe senza passare da layoutBudget. */}
+      {/* T60 — il branch è sceso qui dalla riga di lista: era `master` su quasi
+          ogni riga, cioè 8 colonne × N che non distinguevano nulla. Nel
+          pannello costa 0 righe in più (la meta è già una riga fissa contata da
+          SESSION_DETAIL_FIXED) e resta consultabile dove serve davvero. */}
       <Text dimColor wrap="truncate-end">
-        {fmtSize(s.sizeBytes)} · {s.turns} turni · {fmtDateTime(s.ts)}
+        {fmtSize(s.sizeBytes)} · {s.turns} turni · {fmtDateTime(s.ts)} · {s.gitBranch || '-'}
         {origin ? ` · ⑂ da ${origin.slice(0, 8)}` : ''}
       </Text>
       {first.map((line, i) => (

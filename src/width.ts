@@ -210,6 +210,26 @@ export function cut(s: string, cols: number): string {
 }
 
 /**
+ * Cella di larghezza ESATTA `cols`: taglia se eccede, riempie di spazi se manca.
+ *
+ * È il gemello di `cut` e serve a una cosa sola: fare colonne vere. Una lista
+ * incolonnata a mano allinea solo finché ogni cella misura davvero quanto
+ * dichiara — e la misura è in COLONNE del terminale (`termWidth`), non in
+ * caratteri: `'○'.padEnd(2)` e `'🔗'.padEnd(2)` danno due stringhe che
+ * `String.length` giura uguali e che il terminale disegna larghe 2 e 3. È
+ * esattamente lo slittamento di una colonna che rende ragged una lista.
+ *
+ * `align: 'right'` mette il riempimento davanti: serve ai campi ancorati al
+ * margine destro (la data), dove ad allinearsi sono le unità, non l'inizio.
+ */
+export function pad(s: string, cols: number, align: 'left' | 'right' = 'left'): string {
+  if (cols <= 0) return '';
+  const t = termWidth(s) > cols ? cut(s, cols) : s;
+  const fill = ' '.repeat(Math.max(0, cols - termWidth(t)));
+  return align === 'right' ? fill + t : t + fill;
+}
+
+/**
  * Larghezza in colonne di UN carattere **dopo** `sanitize`.
  *
  * Misurare il carattere grezzo significa misurare qualcosa che nel frame non
