@@ -42,7 +42,7 @@ function hasPython(): boolean {
 
 const CAN_RUN = hasPython() && existsSync(TASKS);
 
-function capture(cols: number, rows: number, keys: string): string {
+function capture(cols: number, rows: number, keys: string, extraEnv: NodeJS.ProcessEnv = {}): string {
   return execFileSync(
     'python3',
     [
@@ -64,7 +64,12 @@ function capture(cols: number, rows: number, keys: string): string {
       // un'azione — `⏎` apre una tab Ptyxis, `t` un terminale, `⏎` nel modale
       // edit committa. Senza freno ogni run dei test apriva finestre reali
       // (vedi `spawnOut` in cli.tsx).
-      env: { ...process.env, LOOM_DECK_DOCS_ROOT: 'runtime', LOOM_DECK_NO_SPAWN: '1' },
+      env: {
+        ...process.env,
+        LOOM_DECK_DOCS_ROOT: 'runtime',
+        LOOM_DECK_NO_SPAWN: '1',
+        ...extraEnv,
+      },
     },
   );
 }
@@ -192,9 +197,16 @@ const CTRL_A = String.fromCharCode(1);
  *  a entrambe le larghezze provate. */
 const EDIT_TITOLO = 'DEDDDXX';
 
-/** `[label, tasti, larghezze]` — le due schermate sostitutive (T52) si provano a
- *  una larghezza sola: il costo è un deck vero avviato per ogni combinazione. */
-const SCENARIOS: Array<[string, string, number[]]> = [
+/** T61 — con la soglia reale (30gg) il contatore archiviabili è 0 su un progetto
+ *  giovane, quindi il segmento non renderizza e lo scenario non proverebbe
+ *  nulla. A 1 giorno entrano quasi tutte le Done: header al massimo della sua
+ *  lunghezza, che è il caso che deve stare dentro il pane. */
+const ARCHIVABLE_ON = { LOOM_DECK_ARCHIVABLE_DAYS: '1' };
+
+/** `[label, tasti, larghezze, env?]` — le due schermate sostitutive (T52) si
+ *  provano a una larghezza sola: il costo è un deck vero avviato per ogni
+ *  combinazione. */
+const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   ['lista task', 'DD', [100, 176]],
   ['pane sessioni + dettaglio', 'DRDD', [100, 176]],
   // T59 — il pane sessioni della riga `≡ tutte` (dove il deck atterra, quindi
@@ -219,12 +231,19 @@ const SCENARIOS: Array<[string, string, number[]]> = [
   // della schermata, cioè l'unico che può sfondarne il box.
   ['assegna sessione a task', 'RA', [100, 176]],
   ['assegna · filtro lungo', 'RAX', [100]],
+  // T61 — il quarto segmento dell'header del pane task, provato CON i contatori
+  // di finestra già a schermo (gli 8 `D` scrollano la lista → `↑↓`): da solo il
+  // segmento starebbe ovunque, è la somma a riempire la riga. Niente modale
+  // filtri per arrivarci — aprirlo e confermarlo PERSISTE la vista su disco, e un
+  // gate di larghezza non deve lasciare dietro di sé la configurazione di chi lo
+  // lancia.
+  ['archiviabili · header pieno', 'DDDDDDDD', [100, 176], ARCHIVABLE_ON],
 ];
 
-for (const [label, keys, widths] of SCENARIOS) {
+for (const [label, keys, widths, extraEnv] of SCENARIOS) {
   for (const cols of widths) {
     test(`gate larghezza · ${label} @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
-      assertFrameFits(capture(cols, 38, keys), cols, `${label}@${cols}`);
+      assertFrameFits(capture(cols, 38, keys, extraEnv), cols, `${label}@${cols}`);
     });
   }
 }

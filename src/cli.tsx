@@ -50,7 +50,15 @@ import {
   stripProjectCore,
   type SessionRow,
 } from './session-list.js';
-import { cellWidth, launchLegend, loadIdentity, loadLaunch, type LaunchEntry } from './config.js';
+import {
+  cellWidth,
+  launchLegend,
+  loadArchivableDays,
+  loadIdentity,
+  loadLaunch,
+  type LaunchEntry,
+} from './config.js';
+import { countArchivable, SCAN_INTERVAL_MS } from './archivable.js';
 import {
   assignListCapacity,
   isCompact,
@@ -582,6 +590,47 @@ function useSessions(projectRoot: string) {
   return { ...state, reload: () => reloadRef.current() };
 }
 
+// T61 — conteggio delle Done oltre soglia, su una scala di refresh TUTTA SUA.
+//
+// Non è appeso a POLL_MS (1,5s) come tasks.md e le sessioni: l'età di una task
+// cambia una volta al giorno, e ogni giro costa la lettura di N task file più
+// qualche spawn di git. Due trigger:
+//
+//   · quando cambia l'INSIEME delle task Done (`doneSig`) — copre l'avvio, dove
+//     il primo render ha `tasks` ancora vuoto, e la chiusura di una task, dove
+//     il numero deve muoversi senza aspettare ore;
+//   · ogni SCAN_INTERVAL_MS — copre il caso opposto, in cui non cambia nulla
+//     sul disco ed è il calendario a far scattare una task oltre soglia.
+//
+// `doneSig` è una stringa, non l'array: `tasks` cambia identità a ogni re-read
+// di tasks.md, e usarlo come dipendenza rimetterebbe lo scan sul tick da 1,5s
+// per la via di dietro.
+function useArchivable(doneSig: string, tasksDir: string, projectRoot: string, days: number) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const ids = doneSig ? doneSig.split(',') : [];
+    const scan = () => {
+      countArchivable(ids, { tasksDir, projectRoot, days })
+        .then((n) => {
+          if (alive) setCount(n);
+        })
+        // Scan fallito (task file illeggibili, git muto) → 0, cioè segmento
+        // omesso. Un contatore informativo non merita un errore a schermo.
+        .catch(() => {
+          if (alive) setCount(0);
+        });
+    };
+    scan();
+    const id = setInterval(scan, SCAN_INTERVAL_MS);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [doneSig, tasksDir, projectRoot, days]);
+  return count;
+}
+
 // Legge il task file della task selezionata (Q1+B T20). On-id-change: navigare
 // con ↑↓ ricarica il dettaglio; leggere un singolo file 4-9KB è I/O triviale,
 // niente debounce serve per la tastiera. Il refresh del contenuto a file fermo
@@ -763,6 +812,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     () => applyView(tasks, view),
     [tasks, view],
   );
+
+  // T61 — il conteggio guarda la lista GREZZA, non `viewTasks`: le Done fuori
+  // dai filtri della vista restano archiviabili, e un contatore che cambiasse
+  // filtrando direbbe qualcosa sulla vista invece che sulla task list.
+  const doneSig = useMemo(
+    () => tasks.filter((t) => isDone(t.prog)).map((t) => t.id).join(','),
+    [tasks],
+  );
+  const archivableDays = useMemo(() => loadArchivableDays(cwd), [cwd]);
+  const archivable = useArchivable(doneSig, tasksDir, cwd, archivableDays);
 
   const isSpot = sel === SPOT;
   const isAll = sel === ALL;
@@ -2056,6 +2115,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           filtered={viewTasks.length}
           total={tasks.length}
           hidden={hiddenTasks}
+          archivable={archivable}
           view={view}
           selected={selIndex}
           spotCount={spotCount}
@@ -2782,6 +2842,7 @@ function TasksPane({
   below,
   detailLines,
   columns,
+  archivable,
 }: {
   /** Solo la finestra visibile, non la lista completa. */
   tasks: Task[];
@@ -2789,6 +2850,8 @@ function TasksPane({
   filtered: number;
   total: number;
   hidden: number;
+  /** T61 — Done oltre soglia d'età; 0 = segmento omesso. */
+  archivable: number;
   view: ViewState;
   /** Indice nella lista COMPLETA (0 = riga "tutte", 1 = riga spot). */
   selected: number;
@@ -2826,12 +2889,21 @@ function TasksPane({
           Le task fuori finestra sono un secondo tipo di invisibile, distinto
           dalle filtrate: non sono escluse dalla vista, solo oltre il bordo del
           terminale. Il contatore ↑↓ sta nell'header perché una riga dedicata
-          costerebbe proprio la riga di lista che sta segnalando come mancante. */}
+          costerebbe proprio la riga di lista che sta segnalando come mancante.
+
+          T61 — `archiviabili` va IN CODA e in dimColor, non accanto a
+          `nascoste`. Il colore: `yellow` su `nascoste` avverte che la vista è
+          distorta da un filtro, mentre le Done oltre soglia non alterano ciò
+          che stai guardando — sono informative, non urgenti. La posizione:
+          `truncate-end` taglia dalla fine, quindi l'ultimo segmento è il primo
+          a sparire su un terminale stretto, ed è giusto che a cedere il posto
+          sia questo e non i contatori della vista corrente. */}
       <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
         Tasks ({hidden > 0 ? `${filtered}/${total}` : filtered})
         {hidden > 0 ? <Text color="yellow"> · {hidden} nascoste</Text> : null}
         {above > 0 ? <Text dimColor> · ↑{above}</Text> : null}
         {below > 0 ? <Text dimColor> · ↓{below}</Text> : null}
+        {archivable > 0 ? <Text dimColor> · {archivable} archiviabili</Text> : null}
       </Text>
       <Text dimColor wrap="truncate-end">
         sort: {describeSort(view.sort)}

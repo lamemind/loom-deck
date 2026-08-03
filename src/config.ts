@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sanitize } from './width.js';
+import { DEFAULT_ARCHIVABLE_DAYS } from './archivable.js';
 
 export interface LaunchEntry {
   emoji: string;
@@ -118,6 +119,46 @@ export function launchLegend(
   let taken = fit(0);
   if (taken.length < parts.length) taken = fit(10);
   return { shown: taken.join(' · '), overflow: parts.length - taken.length, unreachable };
+}
+
+// T61 — soglia d'età del contatore archiviabili, campo `archivableDays`.
+//
+// È il PRIMO scalare che il lato TypeScript legge dal file config: `launch` e
+// `identity` sopra sono strutture, e `docsRoot` arriva ancora dalla sola env
+// `LOOM_DECK_DOCS_ROOT` (vedi `tasks.ts`). La catena da percorrere si ferma
+// qui: nessun passaggio da `lib-config.sh`/`reg_pull`/dconf, perché il solo
+// consumer è il deck e il file ce l'ha sotto mano. Il precedente esatto è
+// `permissionMode`, che vive nel file, lo legge `deck-run` via jq e non è
+// propagato al registry.
+
+/** Interi positivi soltanto: uno 0 spegnerebbe la soglia (tutte le Done
+ *  archiviabili), un negativo o un decimale sono un typo. Valore fuori dominio
+ *  → default, mai passaggio cieco di un numero senza senso al conteggio. */
+export function parseArchivableDays(raw: unknown): number | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const v = (raw as { archivableDays?: unknown }).archivableDays;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) return null;
+  return v;
+}
+
+/**
+ * Precedenza `env → file → default`, la stessa che `deck-run` applica a
+ * `permissionMode`. L'env esiste per i test e per la verifica manuale (con la
+ * soglia reale il segmento resta invisibile per settimane su un progetto
+ * giovane): la configurazione vera è il campo nel file, che viaggia col repo.
+ */
+export function loadArchivableDays(projectRoot: string): number {
+  const env = Number(process.env.LOOM_DECK_ARCHIVABLE_DAYS);
+  if (Number.isInteger(env) && env > 0) return env;
+  try {
+    const fromFile = parseArchivableDays(
+      JSON.parse(readFileSync(configFilePath(projectRoot), 'utf8')),
+    );
+    if (fromFile !== null) return fromFile;
+  } catch {
+    // file assente o malformato → default, come loadLaunch/loadIdentity
+  }
+  return DEFAULT_ARCHIVABLE_DAYS;
 }
 
 // T37 — identità del progetto. Serve a titolare le tab spawnate dal deck in modo
