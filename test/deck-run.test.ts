@@ -156,3 +156,51 @@ test('titolo tab senza task: solo la label, nessun suffisso', () => {
   const cmd = inTabCmd(['--no-task'], { LOOM_DECK_WORKDIR: labeledWd });
   assert.ok(cmd.includes("--name '🧵 demo'"), `titolo inatteso: ${cmd}`);
 });
+
+// T64 — nota nel titolo. Il gate vero non è il formato ma la RIDUZIONE: la nota
+// è l'unico testo libero che entra in un titolo destinato a viaggiare dentro
+// apici singoli in `bash -lc`, quindi un apice che sopravvive non è un titolo
+// brutto, è un comando in-tab rotto.
+test('--title-note: suffisso «nota» dopo la task, label intatta in testa', () => {
+  const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', 'Puppa'], {
+    LOOM_DECK_WORKDIR: labeledWd,
+  });
+  assert.ok(cmd.includes("--name '🧵 demo · T64 «Puppa»'"), `titolo inatteso: ${cmd}`);
+});
+
+test('--title-note: alfabeto ridotto, apici e metacaratteri spariti', () => {
+  const sporca = `l'ordine "conta" $(id) \`x\` ; rm -rf / & àèéìòù 🔥  spazi__ok`;
+  const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', sporca], {
+    LOOM_DECK_WORKDIR: labeledWd,
+  });
+  const title = cmd.match(/--name '([^']*)'/)?.[1];
+  assert.ok(title, `titolo non estraibile (apice sopravvissuto?): ${cmd}`);
+  // Solo lettere/cifre/accentate/spazio/-/_ , spazi collassati.
+  assert.equal(title, '🧵 demo · T64 «lordine conta id x rm -rf àèéìòù spazi__ok»');
+  // Il comando resta una riga sola: nessun `;` o `&` che spezzi in due comandi.
+  assert.ok(!/[;&`$]/.test(title!), `metacarattere superstite: ${title}`);
+});
+
+test('--title-note: nota tutta scartata → nessun «» a vuoto', () => {
+  const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', '🔥🔥 !!! 🔥'], {
+    LOOM_DECK_WORKDIR: labeledWd,
+  });
+  assert.ok(cmd.includes("--name '🧵 demo · T64'"), `titolo inatteso: ${cmd}`);
+  assert.ok(!cmd.includes('«'), `suffisso vuoto emesso: ${cmd}`);
+});
+
+test('--title-note: cap a 60 caratteri, taglio non a metà di un multibyte', () => {
+  const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', 'à'.repeat(80)], {
+    LOOM_DECK_WORKDIR: labeledWd,
+  });
+  const nota = cmd.match(/«([^»]*)»/)?.[1] ?? '';
+  assert.equal(nota, 'à'.repeat(60));
+});
+
+test('--title-note con --fork: il suffisso fork resta in coda', () => {
+  const cmd = inTabCmd(
+    ['T64', '--resume', SID, '--fork', '--title-note', 'ramo'],
+    { LOOM_DECK_WORKDIR: labeledWd },
+  );
+  assert.ok(cmd.includes("--name '🧵 demo · T64 «ramo» · fork'"), `titolo inatteso: ${cmd}`);
+});

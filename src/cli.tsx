@@ -309,8 +309,23 @@ function spawnDeck(id: string, cwd: string, sessionId: string, kind: PromptKind)
 // task). Spot → `--no-task --resume`: resume nudo, solo label progetto. Nessun
 // prompt iniziale in entrambi i casi: riprendere una conversazione significa
 // continuarla, non iniettarle un messaggio (lo salta deck-run).
-function spawnDeckResume(taskId: string | null, cwd: string, sessionId: string) {
+//
+// T64 — la NOTA della conversazione (se c'è) viaggia nel titolo della tab. Più
+// sessioni sulla stessa task hanno oggi titoli identici (`label · T81`): la nota
+// è già ciò con cui l'utente le distingue in lista, quindi è anche ciò che
+// distingue le tab. La passa il DECK e non la legge deck-run perché la nota vive
+// nel sidecar `session-tasks.jsonl`, che deck-run non tocca (legge solo
+// `.claude/loom-works.json`): tenerlo così evita di dare al primitive un secondo
+// file da conoscere. Il titolo si congela qui — `claude --name` lo setta una
+// volta sola, quindi una nota cambiata DOPO non ri-titola la tab già aperta.
+function spawnDeckResume(
+  taskId: string | null,
+  cwd: string,
+  sessionId: string,
+  note?: string,
+) {
   const args = taskId ? [taskId, '--resume', sessionId] : ['--no-task', '--resume', sessionId];
+  if (note) args.push('--title-note', note);
   const child = spawnOut(DECK_RUN, args, { cwd, detached: true, stdio: 'ignore' });
   child.unref();
   return child;
@@ -324,6 +339,10 @@ function spawnDeckResume(taskId: string | null, cwd: string, sessionId: string) 
 // conoscerlo prima che la sessione esista, e senza conoscerlo non si possono
 // scrivere né il binding task né il record di lineage (il transcript del fork
 // non nomina da nessuna parte la sessione d'origine).
+// Nessun `--title-note` (T64): il ramo nasce con un sessionId proprio e SENZA
+// nota nel sidecar — ereditare quella dell'origine metterebbe nel titolo una
+// maniglia che nella lista non compare, cioè una promessa falsa. Il fork si
+// distingue col suo marcatore, `· fork`.
 function spawnDeckFork(taskId: string | null, cwd: string, originId: string, newId: string) {
   const args = [
     ...(taskId ? [taskId] : ['--no-task']),
@@ -1265,7 +1284,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     }
     if (row.kind === 'session') {
       const bound = bindings.get(row.session.sessionId) ?? null;
-      const child = spawnDeckResume(bound, cwd, row.session.sessionId);
+      const child = spawnDeckResume(
+        bound,
+        cwd,
+        row.session.sessionId,
+        sessionNotes.get(row.session.sessionId),
+      );
       child.on('error', () => setNote(`⚠ resume fallito (${DECK_RUN})`));
       setNote(
         `⏎ resume ${row.session.sessionId.slice(0, 8)} → tab CC${bound ? ` (${bound})` : ' (spot)'}`,
@@ -1682,7 +1706,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           setNote(selSessionId ? 'pin stale: transcript non più presente' : 'nessuna sessione da riprendere');
         } else {
           const bound = bindings.get(s.sessionId) ?? null;
-          const child = spawnDeckResume(bound, cwd, s.sessionId);
+          const child = spawnDeckResume(bound, cwd, s.sessionId, sessionNotes.get(s.sessionId));
           child.on('error', () => setNote(`⚠ resume fallito (${DECK_RUN})`));
           setNote(
             `⏎ resume ${s.sessionId.slice(0, 8)} → tab CC${bound ? ` (${bound})` : ' (spot)'}`,

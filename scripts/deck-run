@@ -49,6 +49,7 @@ SESSION_ID=""
 RESUME_ID=""
 NO_TASK=0
 FORK=0
+TITLE_NOTE=""
 # Vuoto = flag non passato (≠ un default già risolto): serve a distinguere
 # "kind implicito" da "kind chiesto", perché con --no-task il primo è legittimo
 # (nessun prompt, come sempre) e il secondo è un errore d'uso.
@@ -76,8 +77,17 @@ PROMPT_KIND=""
 # dentro apici singoli in `bash -lc`, quindi il testo va tenuto in un posto solo
 # e verificato una volta, invece di spostare il rischio di quoting su ogni
 # chiamante. Assente → `recap`, così ogni invocazione preesistente è invariata.
+# --title-note <testo> (T64): appende la nota della conversazione al titolo della
+# tab. È l'UNICO ingresso di testo libero nel titolo — gli altri componenti
+# (emoji/name dal file committato, TaskID) sono controllati — quindi il testo non
+# si quota, si RIDUCE a un alfabeto sicuro (vedi _sane_note): tutto ciò che non
+# ci rientra sparisce, apici inclusi.
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --title-note)
+      TITLE_NOTE="${2:-}"; shift 2 ;;
+    --title-note=*)
+      TITLE_NOTE="${1#*=}"; shift ;;
     --prompt-kind)
       PROMPT_KIND="${2:-}"; shift 2 ;;
     --prompt-kind=*)
@@ -112,7 +122,10 @@ USAGE="uso: deck-run <TaskID> [--prompt-kind <kind>] [--session-id <uuid>]
        none        nessun prompt — sessione aperta sulla task, a mani nude
        recap       recap stato task <TaskID>
        preflight   /loom-works:preflight-task <TaskID>
-       run         /loom-works:run-task <TaskID>  (run-doc sulle task D)"
+       run         /loom-works:run-task <TaskID>  (run-doc sulle task D)
+
+  --title-note   nota della conversazione, appesa al titolo tab come «nota»
+                 (ridotta a lettere/cifre/spazi/-/_, cap 60 char)"
 
 if [[ $NO_TASK -eq 1 && -n "$TASK" ]]; then
   echo "--no-task e <TaskID> sono mutuamente esclusivi" >&2
@@ -167,6 +180,29 @@ WORKDIR="${LOOM_DECK_WORKDIR:-$PWD}"
 # suffisso "· <task>" per restare distinguibili fra più tab claude (il suffisso
 # non rompe il match: è .includes, non equals — stesso pattern del "· deck").
 # Fallback su "cc <task>" se manca il file o jq (progetto non loom-registered).
+
+# Riduzione della nota a un alfabeto sicuro (T64). Whitelist, non blacklist: il
+# titolo finisce dentro apici singoli in `bash -lc "claude --name '…'"`, e la
+# nota è testo digitato a mano — enumerare i caratteri pericolosi significa
+# sbagliarne uno, enumerare quelli ammessi no. Restano lettere, cifre, accentate
+# italiane, spazio, trattino, underscore; tutto il resto (apici, backslash,
+# `$`, backtick, `;`, emoji…) cade.
+# Il cap a 60 CHARACTER è largo di proposito: una tab che sfora tronca a destra
+# da sola, quindi il limite serve solo a non spingere fuori vista la parte del
+# titolo che compass matcha, non a far stare la nota nella tab.
+_sane_note() {  # <raw> → nota ridotta, spazi collassati, cap 60 char
+  # LC_ALL locale alla funzione: serve a bash per tagliare a 60 CARATTERI e non
+  # a 60 byte (a byte, un cap che cade a metà di una `à` lascia UTF-8 rotto nel
+  # titolo). L'assegnazione rifà setlocale, l'uscita dalla funzione lo ripristina.
+  local LC_ALL=C.UTF-8
+  local s
+  s="$(printf '%s' "$1" \
+       | sed 's/[^A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ-]//g' \
+       | tr -s ' ')"
+  s="${s# }"; s="${s% }"
+  printf '%s' "${s:0:60}"
+}
+
 _find_project_root() {  # <start-dir> → dir con .claude/loom-works.json, o vuoto
   local d="${1%/}"
   while [[ -n "$d" && "$d" != "/" ]]; do
@@ -197,6 +233,18 @@ if [[ -n "$_cfg" ]]; then
   if [[ -n "${_label:-}" ]]; then
     if [[ $NO_TASK -eq 1 ]]; then TITLE="${_label}"; else TITLE="${_label} · ${TASK}"; fi
   fi
+fi
+# Suffisso nota (T64): distingue fra loro le tab di più conversazioni sulla
+# STESSA task, che altrimenti condividono un titolo identico (`label · T81`) —
+# la nota è già la maniglia con cui l'utente le distingue in lista, e le stesse
+# `«…»` della lista la rendono riconoscibile a colpo d'occhio anche nella tab
+# bar. In coda per la solita ragione degli altri suffissi: il match compass è
+# `.includes(label)`, la label deve restare intatta in TESTA.
+# Nota ridotta a vuoto (era tutta emoji/punteggiatura) → nessun suffisso, non
+# `«»` a vuoto.
+if [[ -n "$TITLE_NOTE" ]]; then
+  _note="$(_sane_note "$TITLE_NOTE")"
+  [[ -n "$_note" ]] && TITLE="${TITLE} «${_note}»"
 fi
 # Suffisso fork (T28): un ramo eredita task e label dell'origine, quindi senza
 # marcatore le due tab risulterebbero omonime nella stessa window. Suffisso e
