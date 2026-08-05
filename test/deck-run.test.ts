@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -32,25 +32,28 @@ mkdirSync(workdir, { recursive: true });
 
 type Run = { ok: boolean; out: string; err: string };
 
+// spawnSync e non execFileSync: quest'ultimo espone lo stderr solo lanciando,
+// cioè solo sui fallimenti — ma deck-run avvisa su stderr anche quando riesce
+// (valore scartato con fallback), e quella riga è essa stessa sotto gate.
 function deckRun(args: string[], env: Record<string, string> = {}): Run {
-  try {
-    const out = execFileSync('bash', [DECK_RUN, ...args], {
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        PATH: `${shimDir}:${process.env.PATH ?? ''}`,
-        LOOM_DECK_WORKDIR: workdir,
-        LOOM_DECK_PERMISSION_MODE: 'manual',
-        LOOM_DECK_ENTER_PROMPT: '',
-        ...env,
-      },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return { ok: true, out, err: '' };
-  } catch (e) {
-    const x = e as { stdout?: string; stderr?: string };
-    return { ok: false, out: x.stdout ?? '', err: x.stderr ?? '' };
-  }
+  const r = spawnSync('bash', [DECK_RUN, ...args], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: `${shimDir}:${process.env.PATH ?? ''}`,
+      LOOM_DECK_WORKDIR: workdir,
+      LOOM_DECK_PERMISSION_MODE: 'manual',
+      LOOM_DECK_ENTER_PROMPT: '',
+      // Settata a VUOTO = "niente lookup dconf": senza questo la suite
+      // leggerebbe il registry della macchina su cui gira, e il comando atteso
+      // dipenderebbe dai progetti registrati lì. I test che vogliono il
+      // prefisso lo passano esplicito via `env`.
+      LOOM_DECK_STATE_PROFILE: '',
+      ...env,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  return { ok: r.status === 0, out: r.stdout ?? '', err: r.stderr ?? '' };
 }
 
 /** Ultimo argv dello shim = il comando passato a `bash -lc` dentro la tab. */
@@ -203,4 +206,42 @@ test('--title-note con --fork: il suffisso fork resta in coda', () => {
     { LOOM_DECK_WORKDIR: labeledWd },
   );
   assert.ok(cmd.includes("--name '🧵 demo · T64 «ramo» · fork'"), `titolo inatteso: ${cmd}`);
+});
+
+// Profilo di stato per compass. Il canale è invisibile al resto della suite: il
+// titolo (match FINESTRA) e lo stato (annuncio D-Bus keyed su PTYXIS_PROFILE)
+// sono due canali distinti, e finora solo il primo era sotto gate — motivo per
+// cui una tab poteva risultare presente e insieme senza stato per sempre.
+const STATE_UUID = '64b5dc77eed04031ae0c0ab8431088b8';
+
+test('profilo di stato: PTYXIS_PROFILE forzata in testa al comando in-tab', () => {
+  const cmd = inTabCmd(['T60'], { LOOM_DECK_STATE_PROFILE: STATE_UUID });
+  // In TESTA e prima di LOOM_TASK: sono due assegnazioni env dello stesso
+  // prefisso, ma l'ordine tiene stabile l'unica riga che i test leggono.
+  assert.match(cmd, new RegExp(`^PTYXIS_PROFILE=${STATE_UUID} LOOM_TASK=T60 claude `));
+});
+
+test('profilo di stato: presente anche sulla sessione nuda (--no-task)', () => {
+  // Lo stato è proprietà della sessione, non della task: una sessione spot che
+  // chiede conferma deve accendere il pallino come qualunque altra.
+  const cmd = inTabCmd(['--no-task'], { LOOM_DECK_STATE_PROFILE: STATE_UUID });
+  assert.match(cmd, new RegExp(`^PTYXIS_PROFILE=${STATE_UUID} claude `));
+});
+
+test('profilo di stato assente: comando invariato, nessun prefisso a vuoto', () => {
+  // Progetto non registrato nel registry → si degrada al comportamento di prima
+  // (stato orfano), non a uno spawn rotto.
+  const cmd = inTabCmd(['T60'], { LOOM_DECK_STATE_PROFILE: '' });
+  assert.match(cmd, /^LOOM_TASK=T60 claude /);
+  assert.ok(!cmd.includes('PTYXIS_PROFILE'), `prefisso emesso a vuoto: ${cmd}`);
+});
+
+test('profilo di stato con caratteri non ammessi: scartato, non quotato', () => {
+  // Il valore arriva da dconf, che è un file editabile a mano, e finisce dentro
+  // `bash -lc "…"`: whitelist come per la nota del titolo.
+  const r = deckRun(['T60'], { LOOM_DECK_STATE_PROFILE: 'abc"; id; #' });
+  assert.equal(r.ok, true);
+  const cmd = r.out.trimEnd().split('\n').pop() ?? '';
+  assert.ok(!cmd.includes('PTYXIS_PROFILE'), `valore ostile passato in-tab: ${cmd}`);
+  assert.match(r.err, /profilo di stato ignorato/);
 });

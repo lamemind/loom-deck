@@ -40,6 +40,8 @@
 #   LOOM_DECK_WORKDIR      dir di lavoro della tab (default: $PWD)
 #   LOOM_DECK_ENTER_PROMPT override del prompt iniziale, {TASK}=TaskID (vince sul kind, tranne `none`)
 #   LOOM_DECK_INTAB_CMD    override comando in-tab (default: la sessione CC; usato per i test)
+#   LOOM_DECK_STATE_PROFILE  PTYXIS_PROFILE annunciata a compass (default: bindings/claude
+#                            del progetto, letto da dconf; settata a vuoto = nessun annuncio)
 #   LOOM_DECK_PERMISSION_MODE  override del permissionMode del file config (default: campo file, poi 'manual')
 #
 set -euo pipefail
@@ -271,6 +273,48 @@ case "${PERM_MODE:-}" in
 esac
 MODE_FLAG="--permission-mode ${PERM_MODE} "
 
+# ── Profilo di stato per compass ─────────────────────────────────────────────
+# Lo stato di una sessione (running/ask/done) viaggia verso compass via D-Bus
+# keyed su $PTYXIS_PROFILE (hook Claude → `compass <stato>`), e compass lo mappa
+# a un progetto SOLO se quell'UUID compare in `bindings/<surface>/profile` del
+# registry. Ma nel modo `inline` la tab nasce da `ptyxis --tab` nudo, che eredita
+# il profilo DEFAULT di Ptyxis: l'annuncio arriva keyed su un UUID che nessun
+# progetto dichiara → stato scartato, pallino fermo su idle per sempre. Il match
+# della FINESTRA non se ne accorge (passa dal titolo, non dal profilo), quindi il
+# progetto risulta presente ma senza stato — un guasto che non si manifesta come
+# errore, solo come pallino che non cambia mai.
+# Rimedio: forzare in-tab la PTYXIS_PROFILE del binding claude del progetto, così
+# l'annuncio è keyed sull'UUID che compass cerca davvero. Il profilo bindato NON
+# è usabile come profilo vero della tab (`--tab-with-profile`): ha
+# use-custom-command=true, che fa scartare il comando inline — vedi il ramo
+# `profile` sotto, che per questo deve riscrivere dconf.
+#
+# `${VAR+set}`, non `${VAR:-}`: env settata anche a VUOTO = "salta il lookup"
+# (deterministico per i test, che altrimenti leggerebbero il dconf della macchina
+# su cui gira la suite). Non settata = risolvi dal registry.
+# Assente/non risolvibile → nessun prefisso: si degrada al comportamento di prima
+# (stato orfano) invece di rompere lo spawn.
+if [[ -n "${LOOM_DECK_STATE_PROFILE+set}" ]]; then
+  STATE_PROFILE="${LOOM_DECK_STATE_PROFILE}"
+else
+  STATE_PROFILE=""
+  if [[ -n "$_cfg" ]] && command -v dconf >/dev/null 2>&1; then
+    _pid="$(jq -r '.id // empty' "$_cfg" 2>/dev/null || true)"
+    if [[ -n "$_pid" ]]; then
+      STATE_PROFILE="$(dconf read "/org/lamemind/loom/projects/${_pid}/bindings/claude/profile" 2>/dev/null | tr -d "'" || true)"
+    fi
+  fi
+fi
+# Whitelist come per la nota del titolo: il valore entra in `bash -lc "…"`, e un
+# registry è pur sempre un file editabile a mano. Un UUID Ptyxis è esadecimale;
+# accetto l'alfabeto id-safe e scarto il resto invece di quotare.
+if [[ -n "$STATE_PROFILE" && ! "$STATE_PROFILE" =~ ^[A-Za-z0-9_-]+$ ]]; then
+  echo "profilo di stato ignorato (caratteri non ammessi): '${STATE_PROFILE}'" >&2
+  STATE_PROFILE=""
+fi
+PROFILE_ENV=""
+[[ -n "$STATE_PROFILE" ]] && PROFILE_ENV="PTYXIS_PROFILE=${STATE_PROFILE} "
+
 # --session-id per la tab: pinna il sessionId della sessione CC (vuoto → CC ne
 # genera uno). Lo spazio finale tiene la concatenazione pulita quando è assente.
 SID_FLAG=""
@@ -344,10 +388,13 @@ PROMPT_ARG=""
 # agli altri elementi task-bound: nel fork di una sessione SPOT il sessionId
 # pinnato non serve a legare una task (non c'è) ma a rendere noto in anticipo
 # l'id del ramo, senza il quale il lineage non sarebbe registrabile.
+# PROFILE_ENV in testa a entrambi i rami: lo stato è una proprietà della SESSIONE
+# (esiste anche senza task), esattamente come la label del titolo — legarlo al
+# ramo task-bound ripeterebbe l'errore di layer già evitato per la titolazione.
 if [[ $NO_TASK -eq 1 ]]; then
-  _default_intab="claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}"
+  _default_intab="${PROFILE_ENV}claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}"
 else
-  _default_intab="LOOM_TASK=${TASK} claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}${PROMPT_ARG}"
+  _default_intab="${PROFILE_ENV}LOOM_TASK=${TASK} claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}${PROMPT_ARG}"
 fi
 IN_TAB_CMD="${LOOM_DECK_INTAB_CMD:-$_default_intab}"
 

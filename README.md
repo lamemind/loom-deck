@@ -308,6 +308,14 @@ senza flag resta `recap`, `none` apre la sessione bound **senza** alcun prompt.
 `LOOM_DECK_ENTER_PROMPT` (placeholder `{TASK}`) resta un override che vince sul
 kind — tranne su `none`, che è una richiesta esplicita di non averne.
 
+La tab porta anche `PTYXIS_PROFILE` forzata al profilo bindato al progetto nel
+registry (`bindings/claude`), letto da dconf: è la chiave con cui loom-compass
+associa a un progetto lo stato annunciato dagli hook (running/ask/done). Una tab
+`ptyxis --tab` nuda erediterebbe il profilo di default, e l'annuncio finirebbe
+keyed su un UUID che nessun progetto dichiara — pallino fermo su idle, senza
+alcun errore visibile. Override o disattivazione via `LOOM_DECK_STATE_PROFILE`
+(settata a vuoto → nessun annuncio); progetto non registrato → nessun prefisso.
+
 ## Sviluppo (TUI Ink)
 
 ```bash
