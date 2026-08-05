@@ -73,6 +73,7 @@ import {
 import {
   caretWindow,
   cut,
+  cutParts,
   pad,
   sanitize,
   termWidth,
@@ -2852,6 +2853,62 @@ function AssignScreen({
   );
 }
 
+/**
+ * Header del pane task, tagliato QUI e non da Ink — stesso motivo del gemello
+ * `SessionsHeader`, con una differenza di rischio: qui i segmenti sono tutti
+ * ASCII più le frecce `↑↓` (larghe 1), quindi `cli-truncate` oggi darebbe la
+ * riga giusta per caso. Il taglio resta del deck perché la correttezza non deve
+ * dipendere dall'alfabeto che capita nella riga: il primo glifo largo 2 che
+ * entrasse in un segmento nuovo riaprirebbe il difetto in silenzio, e a
+ * scoprirlo sarebbe il bordo del pane a schermo.
+ *
+ * `truncate-end` taglia dalla coda, e `cutParts` conserva l'ordine: l'ultimo
+ * segmento resta il primo a cedere il posto (vedi T61 sotto, `archiviabili` in
+ * coda ai contatori della vista corrente).
+ */
+function TasksHeader({
+  filtered,
+  total,
+  hidden,
+  above,
+  below,
+  archivable,
+  focused,
+  columns,
+}: {
+  filtered: number;
+  total: number;
+  hidden: number;
+  above: number;
+  below: number;
+  archivable: number;
+  focused: boolean;
+  columns: number;
+}) {
+  const segments: Array<{ text: string; color?: string; dim?: boolean }> = [
+    { text: `Tasks (${hidden > 0 ? `${filtered}/${total}` : filtered})` },
+    ...(hidden > 0 ? [{ text: ` · ${hidden} nascoste`, color: 'yellow' }] : []),
+    ...(above > 0 ? [{ text: ` · ↑${above}`, dim: true }] : []),
+    ...(below > 0 ? [{ text: ` · ↓${below}`, dim: true }] : []),
+    ...(archivable > 0 ? [{ text: ` · ${archivable} archiviabili`, dim: true }] : []),
+  ];
+  const shown = cutParts(
+    segments.map((s) => s.text),
+    paneTextWidth(columns),
+  );
+  return (
+    <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
+      {segments.map((seg, i) =>
+        shown[i] ? (
+          <Text key={i} color={seg.color} dimColor={seg.dim}>
+            {shown[i]}
+          </Text>
+        ) : null,
+      )}
+    </Text>
+  );
+}
+
 function TasksPane({
   tasks,
   filtered,
@@ -2926,26 +2983,38 @@ function TasksPane({
           `truncate-end` taglia dalla fine, quindi l'ultimo segmento è il primo
           a sparire su un terminale stretto, ed è giusto che a cedere il posto
           sia questo e non i contatori della vista corrente. */}
-      <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
-        Tasks ({hidden > 0 ? `${filtered}/${total}` : filtered})
-        {hidden > 0 ? <Text color="yellow"> · {hidden} nascoste</Text> : null}
-        {above > 0 ? <Text dimColor> · ↑{above}</Text> : null}
-        {below > 0 ? <Text dimColor> · ↓{below}</Text> : null}
-        {archivable > 0 ? <Text dimColor> · {archivable} archiviabili</Text> : null}
-      </Text>
+      <TasksHeader
+        filtered={filtered}
+        total={total}
+        hidden={hidden}
+        above={above}
+        below={below}
+        archivable={archivable}
+        focused={focused}
+        columns={columns}
+      />
+      {/* La riga sort/filtri è tutta dim: un pezzo solo, quindi `cut` basta e
+          `cutParts` sarebbe cerimonia. Ma il taglio va fatto lo stesso QUI — i
+          filtri elencano i glifi di priorità e stato (`−🔥 −⚡`), larghi 2, cioè
+          la stessa condizione che sull'header delle sessioni faceva sparire il
+          bordo. Si sanifica PRIMA di misurare (invariante ①: `✔` largo 1 diventa
+          `✅` largo 2, e chi taglia deve contare le colonne disegnate). */}
       <Text dimColor wrap="truncate-end">
-        sort: {describeSort(view.sort)}
-        {view.hiddenPri.length + view.hiddenProg.length > 0 ? (
-          <Text>
-            {' '}· filtri:{' '}
-            {[
-              ...PRI_ENTRIES.filter((e) => view.hiddenPri.includes(e.name)),
-              ...PROG_ENTRIES.filter((e) => view.hiddenProg.includes(e.name)),
-            ]
-              .map((e) => `−${sanitize(e.glyph)}`)
-              .join(' ')}
-          </Text>
-        ) : null}
+        {cut(
+          sanitize(
+            `sort: ${describeSort(view.sort)}` +
+              (view.hiddenPri.length + view.hiddenProg.length > 0
+                ? ' · filtri: ' +
+                  [
+                    ...PRI_ENTRIES.filter((e) => view.hiddenPri.includes(e.name)),
+                    ...PROG_ENTRIES.filter((e) => view.hiddenProg.includes(e.name)),
+                  ]
+                    .map((e) => `−${e.glyph}`)
+                    .join(' ')
+                : ''),
+          ),
+          paneTextWidth(columns),
+        )}
       </Text>
       {/* T59 — riga meta "tutte" come PRIMA voce: ogni conversazione del
           progetto, scoped e spot insieme. È l'unica vista da cui una sessione
@@ -3001,6 +3070,62 @@ function TasksPane({
         <DetailPane detail={detail} maxLines={detailLines} columns={columns} />
       ) : null}
     </Box>
+  );
+}
+
+/**
+ * Header del pane sessioni, tagliato QUI e non da Ink.
+ *
+ * `📌{pinnedCount}` è un glifo largo 2 in mezzo alla riga: con
+ * `wrap="truncate-end"` il taglio passava da `cli-truncate`, che indicizza per
+ * code point con un budget in colonne e restituiva una riga larga 45 su un
+ * budget di 44 — la colonna in più finiva sopra il bordo destro del pane, che
+ * spariva dalla riga (invariante ③ di `width.ts`).
+ *
+ * I segmenti restano segmenti fino al render: il taglio è della RIGA (budget
+ * condiviso, `cutParts`), la resa è del pezzo. Il giallo su `📌N` distingue le
+ * pinnate dal resto dell'header e non è decorazione.
+ */
+function SessionsHeader({
+  parentLabel,
+  total,
+  pinnedCount,
+  hidden,
+  above,
+  below,
+  focused,
+  columns,
+}: {
+  parentLabel: string;
+  total: number;
+  pinnedCount: number;
+  hidden: number;
+  above: number;
+  below: number;
+  focused: boolean;
+  columns: number;
+}) {
+  const segments: Array<{ text: string; color?: string; dim?: boolean }> = [
+    { text: `Sessions · ${parentLabel} (${total})` },
+    ...(pinnedCount > 0 ? [{ text: ` · 📌${pinnedCount}`, color: 'yellow' }] : []),
+    ...(hidden > 0 ? [{ text: ` · +${hidden} più vecchie`, dim: true }] : []),
+    ...(above > 0 ? [{ text: ` · ↑${above}`, dim: true }] : []),
+    ...(below > 0 ? [{ text: ` · ↓${below}`, dim: true }] : []),
+  ];
+  const shown = cutParts(
+    segments.map((s) => s.text),
+    paneTextWidth(columns),
+  );
+  return (
+    <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
+      {segments.map((seg, i) =>
+        shown[i] ? (
+          <Text key={i} color={seg.color} dimColor={seg.dim}>
+            {shown[i]}
+          </Text>
+        ) : null,
+      )}
+    </Text>
   );
 }
 
@@ -3076,13 +3201,16 @@ function SessionsPane({
       borderColor={focused ? 'cyan' : 'gray'}
       paddingX={1}
     >
-      <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
-        Sessions · {parentLabel} ({total})
-        {pinnedCount > 0 ? <Text color="yellow"> · 📌{pinnedCount}</Text> : null}
-        {hidden > 0 ? <Text dimColor> · +{hidden} più vecchie</Text> : null}
-        {above > 0 ? <Text dimColor> · ↑{above}</Text> : null}
-        {below > 0 ? <Text dimColor> · ↓{below}</Text> : null}
-      </Text>
+      <SessionsHeader
+        parentLabel={parentLabel}
+        total={total}
+        pinnedCount={pinnedCount}
+        hidden={hidden}
+        above={above}
+        below={below}
+        focused={focused}
+        columns={columns}
+      />
       {total === 0 ? (
         <Text color="yellow" wrap="truncate-end">
           {isAll

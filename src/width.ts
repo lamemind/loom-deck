@@ -210,6 +210,60 @@ export function cut(s: string, cols: number): string {
 }
 
 /**
+ * Taglio di una riga COMPOSTA da più pezzi, ognuno con la propria resa (colore,
+ * dim, bold). Restituisce un array della stessa lunghezza: i pezzi interi finché
+ * il budget regge, quello a cavallo del taglio accorciato, i successivi vuoti.
+ *
+ * Perché non basta `cut` chiamato pezzo per pezzo: il budget è della RIGA, non
+ * del singolo pezzo — un pezzo va tagliato in base a quanto hanno già consumato
+ * quelli prima di lui. E `cut` collassa il whitespace, quindi mangerebbe lo
+ * spazio che separa i segmenti (` · 📌3` diventerebbe `· 📌3`), disallineando la
+ * riga di una colonna per ogni giunzione.
+ *
+ * Perché non basta concatenare e tagliare una volta sola: il risultato sarebbe
+ * una stringa unica, e i pezzi tornerebbero renderizzabili solo tutti dello
+ * stesso colore. Un header che perde il giallo su `📌N` perde il segnale, non
+ * solo la vernice.
+ *
+ * Invariante ③ (§ in testa a questo file): serve a togliere l'ultima riga
+ * composita ancora tagliata da Ink. Gli header dei due pane sono l'ultimo posto
+ * dove `wrap="truncate-end"` era rimasto il meccanismo e non la rete: entrambi
+ * portano glifi larghi 2 (`📌` nelle sessioni, i glifi di priorità nei filtri
+ * delle task), cioè la condizione esatta in cui `cli-truncate` restituisce una
+ * riga più larga del budget e il bordo del pane sparisce.
+ */
+export function cutParts(parts: string[], cols: number): string[] {
+  const empty = parts.map(() => '');
+  if (cols <= 0) return empty;
+  if (parts.reduce((w, p) => w + termWidth(p), 0) <= cols) return [...parts];
+
+  const out = [...empty];
+  const budget = cols - 1; // -1 = la colonna dell'ellissi, che qui c'è di sicuro
+  let w = 0;
+  let full = false;
+  for (let i = 0; i < parts.length && !full; i++) {
+    let acc = '';
+    for (const ch of parts[i]!) {
+      const cw = termWidth(ch);
+      if (w + cw > budget) {
+        full = true;
+        break;
+      }
+      acc += ch;
+      w += cw;
+    }
+    out[i] = acc;
+  }
+  // L'ellissi va sull'ultimo pezzo che ha davvero del testo: appiccicarla a un
+  // pezzo vuoto la staccherebbe dal punto di taglio, e il lettore la leggerebbe
+  // come un segmento a sé.
+  let last = out.length - 1;
+  while (last > 0 && out[last] === '') last--;
+  out[last] = out[last]!.trimEnd().replace(/…$/, '') + '…';
+  return out;
+}
+
+/**
  * Cella di larghezza ESATTA `cols`: taglia se eccede, riempie di spazi se manca.
  *
  * È il gemello di `cut` e serve a una cosa sola: fare colonne vere. Una lista

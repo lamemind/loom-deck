@@ -12,6 +12,7 @@ import {
   agrees,
   caretWindow,
   cut,
+  cutParts,
   pad,
   sanitize,
   termWidth,
@@ -273,4 +274,77 @@ test('pad: allineamento a destra mette il riempimento davanti', () => {
 test('pad: budget degenere → cella vuota, mai una stringa a sorpresa', () => {
   assert.equal(pad('qualsiasi', 0), '');
   assert.equal(pad('qualsiasi', -3), '');
+});
+
+// ── riga composita: budget della RIGA, resa del PEZZO ────────────────────────
+
+/** Larghezza del testo in un pane al 50% su un terminale da 100 colonne: è il
+ *  budget su cui il difetto si è manifestato. */
+const PANE_44 = 44;
+
+/** L'header del pane sessioni com'era quando il gate ha aperto il difetto. */
+const HEADER_SESSIONI = ['Sessions · spot (83)', ' · 📌3', ' · +50 più vecchie', ' · ↓12'];
+
+test('cutParts: è il caso che apriva il bordo — cli-truncate sfora, cutParts no', () => {
+  // Il controllo vero non è "cutParts sta nel budget", è che l'alternativa NON
+  // ci sta: senza questa riga il test non distingue il fix dal caso fortunato.
+  const joined = HEADER_SESSIONI.join('');
+  assert.equal(
+    termWidth(cliTruncate(joined, PANE_44, { position: 'end' })),
+    PANE_44 + 1,
+    'cli-truncate restituisce una colonna in più: è quella che mangiava il bordo',
+  );
+  assert.ok(
+    termWidth(cutParts(HEADER_SESSIONI, PANE_44).join('')) <= PANE_44,
+    'cutParts resta dentro il budget',
+  );
+});
+
+test('cutParts: mai oltre il budget, a qualunque larghezza e con glifi larghi ovunque', () => {
+  const parts = ['Tasks (19/54)', ' · 📌3', ' · 🔥⚡ filtri', ' · +50 più vecchie'];
+  for (let cols = 0; cols <= 60; cols++) {
+    const w = termWidth(cutParts(parts, cols).join(''));
+    assert.ok(w <= cols, `budget ${cols}: uscita larga ${w}`);
+  }
+});
+
+test('cutParts: sotto il budget nessun pezzo è toccato (niente ellissi gratis)', () => {
+  const parts = ['Sessions · spot (3)', ' · 📌1'];
+  assert.deepEqual(cutParts(parts, 40), parts);
+});
+
+test('cutParts: array della stessa lunghezza — i pezzi caduti sono stringhe vuote', () => {
+  const out = cutParts(HEADER_SESSIONI, 22);
+  assert.equal(out.length, HEADER_SESSIONI.length, 'stessa lunghezza: il render mappa 1:1');
+  assert.ok(
+    out.slice(2).every((p) => p === ''),
+    'i segmenti oltre il taglio spariscono, non si accorciano a caso',
+  );
+});
+
+test('cutParts: lo spazio fra i segmenti sopravvive (è il separatore, non whitespace)', () => {
+  // `cut` collassa e trimma: applicato pezzo per pezzo mangerebbe lo spazio
+  // iniziale di ` · 📌3` e la riga slitterebbe di una colonna per giunzione.
+  const out = cutParts(HEADER_SESSIONI, PANE_44);
+  assert.ok(out[1]!.startsWith(' · '), `separatore perso: ${JSON.stringify(out[1])}`);
+});
+
+test('cutParts: ellissi UNA sola, sull\'ultimo pezzo che ha testo', () => {
+  const out = cutParts(HEADER_SESSIONI, 30);
+  const joined = out.join('');
+  assert.equal([...joined].filter((c) => c === '…').length, 1, 'una sola ellissi in tutta la riga');
+  const lastWithText = [...out].reverse().find((p) => p !== '')!;
+  assert.ok(lastWithText.endsWith('…'), 'l\'ellissi sta al punto di taglio, non staccata');
+});
+
+test('cutParts: nessun glifo largo spezzato a metà dal taglio', () => {
+  for (let cols = 1; cols <= 30; cols++) {
+    const joined = cutParts(['abc', '📌📌📌📌', 'def'], cols).join('');
+    assert.equal(stringWidth(joined), termWidth(joined), `budget ${cols}: glifo spezzato`);
+  }
+});
+
+test('cutParts: budget degenere → tutti i pezzi vuoti, mai una stringa a sorpresa', () => {
+  assert.deepEqual(cutParts(['a', 'b'], 0), ['', '']);
+  assert.deepEqual(cutParts(['a', 'b'], -5), ['', '']);
 });
