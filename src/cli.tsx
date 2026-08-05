@@ -69,6 +69,7 @@ import {
   windowRange,
   type Budget,
   type Mode as ViewportMode,
+  type PreviewKind,
 } from './viewport.js';
 import {
   caretWindow,
@@ -2023,21 +2024,27 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // non dipende più da quante voci `launch` il progetto dichiara.
   const launchLine = mode === 'normal';
   const detailParts = detail ? detailMetaOf(detail) : null;
+  // T70 — un solo blocco preview, sotto i due pane, e il FOCUS decide cosa
+  // contiene: a sinistra la task selezionata, a destra la conversazione. È il
+  // focus e non la selezione perché il blocco è uno — averne due significava
+  // pagare due cornici per mostrare contemporaneamente il dettaglio di una cosa
+  // che si sta guardando e di una che non si sta guardando.
+  // `none` quando non c'è contenuto (riga meta selezionata, task file assente,
+  // pin stale): il blocco sparisce del tutto, non resta una cornice vuota.
+  const previewKind: PreviewKind =
+    focus === 'tasks' ? (detail ? 'task' : 'none') : selSessionObj ? 'session' : 'none';
   const budget: Budget = layoutBudget({
     rows,
     mode,
     launchLine,
     noteLine: Boolean(note),
-    hasDetail: Boolean(detail),
+    preview: previewKind,
     detailMetaLines: detailParts?.metaLines ?? 0,
-    // T49 — il detail pane sessione esiste solo con il focus sul pane: è
-    // l'hover, non uno stato persistente; navigando le task non ruba righe.
-    hasSessionDetail: canResume,
-    // Riservo righe di preview solo per i blocchi che davvero renderizzano: il
+    // Riservo righe di anteprima solo per i blocchi che davvero renderizzano: il
     // primo prompt aggiunge info solo con un titolo custom (senza, titolo ===
     // primo prompt); l'ultima risposta solo se il modello ha già risposto.
-    sessionHasFirstPreview: canResume && Boolean(selSessionObj?.customTitle),
-    sessionHasLastPreview: canResume && Boolean(selSessionObj?.lastReply),
+    sessionHasFirstPreview: previewKind === 'session' && Boolean(selSessionObj?.customTitle),
+    sessionHasLastPreview: previewKind === 'session' && Boolean(selSessionObj?.lastReply),
   });
 
   // Finestre di rendering. Le liste "logiche" (viewTasks, sessionRows)
@@ -2152,11 +2159,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           childCount={childCount}
           focused={focus === 'tasks'}
           loadError={loadError}
-          detail={detail}
           windowStart={taskWin.start}
           above={taskWin.start}
           below={viewTasks.length - taskWin.end}
-          detailLines={budget.detailLines}
           columns={columns}
         />
         <SessionsPane
@@ -2174,15 +2179,33 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           focused={focus === 'sessions'}
           above={sessionWin.start}
           below={sessionRows.length - sessionWin.end}
-          detail={budget.sessionDetail ? selSessionObj : null}
-          firstLines={budget.sessionFirstLines}
-          lastLines={budget.sessionLastLines}
           columns={columns}
           forkOf={forkOf}
           sessionNotes={sessionNotes}
           projectCore={projectCore}
         />
       </Box>
+      {/* T70 — blocco preview UNICO, a piena larghezza, sotto le due liste.
+          Renderizzato solo con contenuto E spazio: `budget.preview` copre il
+          secondo, `previewKind` il primo. */}
+      {budget.preview && previewKind === 'task' && detail ? (
+        <PreviewPane
+          kind="task"
+          detail={detail}
+          maxLines={budget.detailLines}
+          columns={columns}
+        />
+      ) : budget.preview && previewKind === 'session' && selSessionObj ? (
+        <PreviewPane
+          kind="session"
+          s={selSessionObj}
+          firstLines={budget.sessionFirstLines}
+          lastLines={budget.sessionLastLines}
+          columns={columns}
+          origin={forkOf.get(selSessionObj.sessionId) ?? null}
+          note={sessionNotes.get(selSessionObj.sessionId) ?? ''}
+        />
+      ) : null}
       {note ? <Text color="green" wrap="truncate-end">{sanitize(note)}</Text> : null}
     </Box>
   );
@@ -2921,11 +2944,9 @@ function TasksPane({
   childCount,
   focused,
   loadError,
-  detail,
   windowStart,
   above,
   below,
-  detailLines,
   columns,
   archivable,
 }: {
@@ -2946,14 +2967,11 @@ function TasksPane({
   childCount: Map<string, number>;
   focused: boolean;
   loadError: string;
-  detail: TaskDetail | null;
   /** Offset della finestra nella lista completa. */
   windowStart: number;
   /** Task fuori finestra sopra / sotto. */
   above: number;
   below: number;
-  /** Righe di descrizione concesse al dettaglio; 0 = pannello omesso. */
-  detailLines: number;
   columns: number;
 }) {
   const allSelected = selected === ROW_ALL;
@@ -3064,11 +3082,6 @@ function TasksPane({
           );
         })
       )}
-      {/* detailLines a 0 = il budget non ha spazio per il pannello: si omette
-          del tutto, non si rende una cornice vuota che ruberebbe altre righe. */}
-      {detail && detailLines > 0 ? (
-        <DetailPane detail={detail} maxLines={detailLines} columns={columns} />
-      ) : null}
     </Box>
   );
 }
@@ -3144,9 +3157,6 @@ function SessionsPane({
   focused,
   above,
   below,
-  detail,
-  firstLines,
-  lastLines,
   columns,
   forkOf,
   sessionNotes,
@@ -3181,12 +3191,6 @@ function SessionsPane({
   /** Sessioni fuori finestra sopra / sotto. */
   above: number;
   below: number;
-  /** T49 — sessione nel detail pane; null = pannello omesso (dal budget). */
-  detail: Session | null;
-  /** Righe di preview del primo prompt concesse dal budget. */
-  firstLines: number;
-  /** Righe di preview dell'ultima risposta del modello. */
-  lastLines: number;
   columns: number;
   /** T53 — sessionId → nota umana (solo le sessioni annotate). */
   sessionNotes: Map<string, string>;
@@ -3364,29 +3368,67 @@ function SessionsPane({
           );
         })
       )}
-      {detail ? (
-        <SessionDetailPane
-          s={detail}
-          firstLines={firstLines}
-          lastLines={lastLines}
-          columns={columns}
-          origin={forkOf.get(detail.sessionId) ?? null}
-          note={sessionNotes.get(detail.sessionId) ?? ''}
-        />
-      ) : null}
     </Box>
   );
 }
 
-// T49 — detail pane della sessione selezionata (hover), gemello del DetailPane
-// task. Tutti i campi vengono dal parse già cached dell'adapter (mtime-keyed):
-// il pannello non costa I/O al movimento di selezione. Mostra "da dove parte,
-// dove è arrivata": il primo prompt utente (`» `) e l'ultima risposta del
-// modello (`« `). La preview del primo prompt compare SOLO con un titolo custom
-// — senza, il titolo È già il primo prompt e la riga lo duplicherebbe (D4
-// preflight). Le righe rese non superano mai il riservato dal budget
-// (`firstLines`/`lastLines`); renderne meno è sicuro (frame più corto).
-function SessionDetailPane({
+/**
+ * T70 — blocco preview UNICO, a piena larghezza, sotto le due liste.
+ *
+ * Sostituisce i due pannelli che stavano in fondo a ciascun pane. Tre cose
+ * cambiano insieme, e sono la ragione del blocco unico:
+ *
+ *  · **una cornice invece di due** — le righe di cornice (marginTop + 2 bordi)
+ *    si pagavano due volte per mostrare due dettagli di cui se ne guarda uno;
+ *  · **piena larghezza** — dentro un pane al 50% il testo aveva ~40 colonne, e
+ *    una descrizione di task ci finiva spezzata in 4 righe di moncone;
+ *  · **segue il focus** — a sinistra la task, a destra la conversazione. Il
+ *    contenuto è quello dell'oggetto su cui si sta agendo, non di entrambi.
+ *
+ * Il box è qui e i due corpi sono componenti separati: la cornice (e quindi il
+ * costo in righe che `layoutBudget` conta) è una sola, scritta una volta sola.
+ */
+type PreviewProps =
+  | { kind: 'task'; detail: TaskDetail; maxLines: number; columns: number }
+  | {
+      kind: 'session';
+      s: Session;
+      firstLines: number;
+      lastLines: number;
+      columns: number;
+      /** T28 — id d'origine se la sessione è un ramo, altrimenti null. */
+      origin: string | null;
+      /** T53 — nota umana; '' = nessuna. */
+      note: string;
+    };
+
+function PreviewPane(p: PreviewProps) {
+  return (
+    <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+      {p.kind === 'task' ? (
+        <TaskPreview detail={p.detail} maxLines={p.maxLines} columns={p.columns} />
+      ) : (
+        <SessionPreview
+          s={p.s}
+          firstLines={p.firstLines}
+          lastLines={p.lastLines}
+          columns={p.columns}
+          origin={p.origin}
+          note={p.note}
+        />
+      )}
+    </Box>
+  );
+}
+
+// T49 — corpo della preview sessione. Tutti i campi vengono dal parse già
+// cached dell'adapter (mtime-keyed): non costa I/O al movimento di selezione.
+// Mostra "da dove parte, dove è arrivata": il primo prompt utente (`» `) e
+// l'ultima risposta del modello (`« `). L'anteprima del primo prompt compare
+// SOLO con un titolo custom — senza, il titolo È già il primo prompt e la riga
+// lo duplicherebbe (D4 preflight). Le righe rese non superano mai il riservato
+// dal budget (`firstLines`/`lastLines`); renderne meno è sicuro (frame più corto).
+function SessionPreview({
   s,
   firstLines,
   lastLines,
@@ -3398,31 +3440,30 @@ function SessionDetailPane({
   firstLines: number;
   lastLines: number;
   columns: number;
-  /** T28 — id d'origine se la sessione è un ramo, altrimenti null. */
   origin: string | null;
-  /** T53 — nota umana; '' = nessuna. */
   note: string;
 }) {
-  const width = detailTextWidth(columns);
+  const width = previewTextWidth(columns);
   const first = s.customTitle && firstLines > 0 ? wrapLines(s.firstPrompt, width, firstLines) : [];
   const last = s.lastReply && lastLines > 0 ? wrapLines(s.lastReply, width, lastLines) : [];
   return (
-    <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+    <>
       {/* T53 — la nota va sulla riga del titolo, non su una propria: le righe
-          FISSE del pannello sono contate dal budget d'altezza (SESSION_DETAIL_FIXED)
+          FISSE del blocco sono contate dal budget d'altezza (SESSION_DETAIL_FIXED)
           e una riga in più sforerebbe senza passare da `layoutBudget`. Qui il
           titolo resta INTERO anche con la nota — a differenza della lista, nel
-          pannello lo spazio c'è e il prefisso non si ripete su N righe. */}
+          blocco lo spazio c'è e il prefisso non si ripete su N righe. */}
       <Text bold wrap="truncate-end">
+        <Text color="cyan">{s.sessionId.slice(0, SID_CHARS)}</Text>{' '}
         {note ? <Text color="yellow">«{note}» </Text> : null}
         <Text dimColor={Boolean(note)}>{s.title}</Text>
       </Text>
       {/* La provenienza va IN CODA alla riga meta esistente, non su una riga
-          propria: il budget d'altezza conta le righe fisse del pannello e una
+          propria: il budget d'altezza conta le righe fisse del blocco e una
           riga in più le sforerebbe senza passare da layoutBudget. */}
       {/* T60 — il branch è sceso qui dalla riga di lista: era `master` su quasi
           ogni riga, cioè 8 colonne × N che non distinguevano nulla. Nel
-          pannello costa 0 righe in più (la meta è già una riga fissa contata da
+          blocco costa 0 righe in più (la meta è già una riga fissa contata da
           SESSION_DETAIL_FIXED) e resta consultabile dove serve davvero. */}
       <Text dimColor wrap="truncate-end">
         {fmtSize(s.sizeBytes)} · {s.turns} turni · {fmtDateTime(s.ts)} · {s.gitBranch || '-'}
@@ -3440,7 +3481,7 @@ function SessionDetailPane({
           {line}
         </Text>
       ))}
-    </Box>
+    </>
   );
 }
 
@@ -3458,15 +3499,16 @@ function detailMetaOf(detail: TaskDetail) {
 }
 
 /**
- * Larghezza utile del testo di descrizione, ricavata dalle colonne del
- * terminale: box esterno (2 bordi + 2 padding) → pane al 50% → box dettaglio
- * (2 bordi + 2 padding).
+ * T70 — larghezza utile del testo dentro il blocco preview, che è a PIENA
+ * larghezza: box esterno (2 bordi + 2 padding) → box preview (2 bordi + 2
+ * padding). Niente più `/2`: il blocco non vive più dentro un pane al 50%,
+ * quindi una riga di descrizione dispone del doppio delle colonne.
  *
  * Volutamente prudente: sottostimare tronca qualche carattere in più,
  * sovrastimare farebbe andare a capo una riga e sforare il tetto d'altezza.
  */
-function detailTextWidth(columns: number) {
-  return Math.max(10, Math.floor(((columns || 80) - 4) / 2) - 9);
+function previewTextWidth(columns: number) {
+  return Math.max(10, (columns || 80) - 8);
 }
 
 /**
@@ -3484,7 +3526,8 @@ function paneTextWidth(columns: number) {
   return Math.max(20, Math.floor(((columns || 80) - 4) / 2) - 4);
 }
 
-function DetailPane({
+/** Corpo della preview task: titolo, meta, descrizione wrappata, commit. */
+function TaskPreview({
   detail,
   maxLines,
   columns,
@@ -3498,17 +3541,17 @@ function DetailPane({
   // riservato ESATTAMENTE `maxLines` righe, e un wrap deciso da Ink a runtime
   // ne produrrebbe un numero che il budget non conosce — cioè il frame torna a
   // sforare e il bug si riapre da questa singola casella di testo.
-  const lines = wrapLines(detail.description ?? '', detailTextWidth(columns), maxLines);
+  const lines = wrapLines(detail.description ?? '', previewTextWidth(columns), maxLines);
 
   return (
-    <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
+    <>
       <Text bold wrap="truncate-end">{detail.title || detail.id}</Text>
       {meta ? <Text dimColor wrap="truncate-end">{meta}</Text> : null}
       {lines.map((line, i) => (
         <Text key={i} wrap="truncate-end">{line}</Text>
       ))}
       {commit ? <Text dimColor wrap="truncate-end">↳ {commit}</Text> : null}
-    </Box>
+    </>
   );
 }
 

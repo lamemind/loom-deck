@@ -19,28 +19,28 @@
 export const SLACK = 1;
 
 /** Sotto questa soglia la lista task non è più utilizzabile: meglio sacrificare
- *  il pannello di dettaglio che ridurre la lista a due righe. */
+ *  il blocco preview che ridurre la lista a due righe. */
 const MIN_TASK_ROWS = 3;
 
-/** Il dettaglio è secondario: non si prende mai più di così, anche con spazio. */
-const MAX_DETAIL_LINES = 4;
+/** La preview è secondaria: non si prende mai più di così, anche con spazio.
+ *  A piena larghezza (T70) una riga contiene il doppio del testo di prima,
+ *  quindi il tetto sale insieme allo spazio: il blocco è uno solo e lo paga
+ *  una volta sola per entrambi i pane. */
+const MAX_DETAIL_LINES = 6;
 
-/** Righe di "cornice" fisse dei tre contenitori a lunghezza variabile. */
+/** Righe di "cornice" fisse dei contenitori a lunghezza variabile. */
 // T59 — le righe meta sono DUE (`≡ tutte`, `○ spot`): ogni riga fissa aggiunta
 // a un pane va scalata qui, o il frame sfonda `rows` e Ink passa a
 // clearTerminal (frame-fantasma nello scrollback di VTE).
 const TASKS_PANE_CHROME = 6; // 2 bordi + header "Tasks (n)" + riga sort + 2 righe meta
 const SESSIONS_PANE_CHROME = 3; // 2 bordi + header "Sessions · …"
-const DETAIL_CHROME = 3; // marginTop + 2 bordi
+const PREVIEW_CHROME = 3; // marginTop + 2 bordi
 
-/** Detail pane sessione (T49): righe fisse = titolo + riga meta (size · turni ·
- *  ultima attività). Le preview (primo prompt + ultima risposta) sono variabili,
- *  ciascuna al più MAX_SESSION_PREVIEW righe. */
+/** Preview sessione: righe fisse = titolo + riga meta (size · turni · ultima
+ *  attività · branch). Le due anteprime (primo prompt + ultima risposta) sono
+ *  variabili, ciascuna al più MAX_SESSION_PREVIEW righe. */
 const SESSION_DETAIL_FIXED = 2;
-const MAX_SESSION_PREVIEW = 2;
-/** Gemello di MIN_TASK_ROWS: sotto questa soglia la lista sessioni non serve
- *  più — meglio sacrificare il detail pane. */
-const MIN_SESSION_ROWS = 3;
+const MAX_SESSION_PREVIEW = 3;
 
 /** Altezza di ciascuna modale, marginTop incluso. In flusso, non in overlay:
  *  spingono giù i pane, quindi il loro costo va scalato dal budget. */
@@ -67,18 +67,28 @@ export const MODAL_HEIGHT = {
 
 export type Mode = keyof typeof MODAL_HEIGHT;
 
+/**
+ * Cosa mostra il blocco preview UNICO sotto i due pane (T70).
+ *
+ * Non è "quale pane ha il focus": è il contenuto che quel focus rende
+ * disponibile. Con il focus sul pane task ma una riga meta selezionata (`≡
+ * tutte`, `○ spot`) non c'è nessuna task da mostrare, e il blocco non esiste —
+ * `none` è quindi uno stato pieno, non un fallback.
+ */
+export type PreviewKind = 'none' | 'task' | 'session';
+
 export type Budget = {
   /** Task renderizzabili nella finestra scorrevole. */
   taskRows: number;
   /** Sessioni renderizzabili. */
   sessionRows: number;
-  /** Righe di descrizione nel pannello dettaglio; 0 = pannello omesso. */
+  /** Il blocco preview è richiesto E ha spazio; false = omesso del tutto. */
+  preview: boolean;
+  /** Righe di descrizione della task nel blocco preview (kind `task`). */
   detailLines: number;
-  /** Detail pane sessione (T49): richiesto E con spazio; false = omesso. */
-  sessionDetail: boolean;
-  /** Righe di preview del PRIMO prompt concesse al detail pane sessione. */
+  /** Righe di anteprima del PRIMO prompt (kind `session`). */
   sessionFirstLines: number;
-  /** Righe di preview dell'ULTIMA risposta del modello. */
+  /** Righe di anteprima dell'ULTIMA risposta del modello (kind `session`). */
   sessionLastLines: number;
   /**
    * Il terminale non ospita nemmeno la cornice a righe zero: il layout a box va
@@ -97,13 +107,11 @@ export type BudgetInput = {
   launchLine: boolean;
   /** Riga di note in fondo al frame. */
   noteLine: boolean;
-  /** Il pannello dettaglio è richiesto (task selezionata con task file). */
-  hasDetail: boolean;
-  /** Righe non-wrappabili del dettaglio: titolo + meta + commit. */
+  /** Contenuto del blocco preview sotto i pane; `none` = nessun blocco. */
+  preview: PreviewKind;
+  /** Righe non-wrappabili della preview task: titolo + meta + commit. */
   detailMetaLines: number;
-  /** Detail pane sessione richiesto (focus sessions + sessione selezionata). */
-  hasSessionDetail: boolean;
-  /** La sessione selezionata ha un titolo custom → la preview del primo prompt
+  /** La sessione selezionata ha un titolo custom → l'anteprima del primo prompt
    *  aggiunge info (senza, titolo === primo prompt e la riga duplicherebbe). */
   sessionHasFirstPreview: boolean;
   /** La sessione selezionata ha un'ultima risposta del modello da mostrare. */
@@ -111,14 +119,21 @@ export type BudgetInput = {
 };
 
 /**
- * Distribuisce le righe disponibili fra lista task, lista sessioni e dettaglio.
+ * Distribuisce le righe disponibili fra lista task, lista sessioni e preview.
  *
  * I due pane stanno affiancati (flexDirection row) → l'altezza del blocco è il
  * MAX delle due colonne, non la somma: ognuna riceve lo stesso tetto.
  *
+ * T70 — il blocco preview è UNO e sta SOTTO i due pane, non dentro uno di essi:
+ * il suo costo esce quindi da `avail` PRIMA della distribuzione, e ciò che
+ * resta va a entrambe le colonne. Con i due pannelli separati il costo gravava
+ * su una colonna sola, e siccome l'altezza del blocco è il max delle due, il
+ * pannello del pane meno alto era di fatto gratis: contabilità che qui non
+ * esiste più.
+ *
  * Ordine di sacrificio quando lo spazio stringe:
- *   1. righe di descrizione del dettaglio (fino a sparire col pannello),
- *   2. righe della lista task, mai sotto MIN_TASK_ROWS finché il dettaglio c'è.
+ *   1. righe variabili della preview (fino a sparire col blocco),
+ *   2. righe delle liste, mai sotto MIN_TASK_ROWS finché la preview c'è.
  */
 export function layoutBudget(input: BudgetInput): Budget {
   const outerChrome =
@@ -141,62 +156,66 @@ export function layoutBudget(input: BudgetInput): Budget {
     return {
       taskRows: 0,
       sessionRows: 0,
+      preview: false,
       detailLines: 0,
-      sessionDetail: false,
       sessionFirstLines: 0,
       sessionLastLines: 0,
       compact: true,
     };
   }
 
-  // Detail pane sessione (T49): stesso schema del dettaglio task — prima la
-  // lista minima, poi la cornice, le preview solo con lo spazio che avanza.
-  // A differenza del dettaglio task il box regge anche senza righe variabili:
-  // titolo + meta sono il valore, le preview (primo prompt + ultima risposta)
-  // sono bonus. Priorità al primo prompt, poi l'ultima risposta prende ciò che
-  // resta: su terminale stretto cade prima l'ultima risposta, non il primo.
-  // Riservo righe solo per le preview che davvero renderizzeranno (i due
-  // `has…Preview`), così non sottraggo righe alla lista per un blocco vuoto.
-  let sessionDetail = false;
-  let sessionDetailCost = 0;
+  // Pavimento sotto cui la preview non si concede: la lista minima del pane
+  // TASK, cioè il più caro in cornice dei due. Garantito lui, il pane sessioni
+  // (3 di cornice contro 6) sta comodo per costruzione — un secondo controllo
+  // sul suo minimo sarebbe una condizione che non può mai scattare.
+  const floor = TASKS_PANE_CHROME + MIN_TASK_ROWS;
+
+  let preview = false;
+  let previewCost = 0;
+  let detailLines = 0;
   let sessionFirstLines = 0;
   let sessionLastLines = 0;
-  if (input.hasSessionDetail) {
-    const fixed = DETAIL_CHROME + SESSION_DETAIL_FIXED;
-    const spare = avail - SESSIONS_PANE_CHROME - MIN_SESSION_ROWS - fixed;
+
+  if (input.preview === 'task') {
+    const fixed = PREVIEW_CHROME + input.detailMetaLines;
+    // Serve almeno 1 riga di descrizione per giustificare il blocco: titolo e
+    // meta sono già nella riga di lista, quindi una cornice senza descrizione
+    // ruberebbe righe alle liste per non aggiungere niente.
+    const spare = avail - floor - fixed;
+    if (spare >= 1) {
+      preview = true;
+      detailLines = Math.min(MAX_DETAIL_LINES, spare);
+      previewCost = fixed + detailLines;
+    }
+  } else if (input.preview === 'session') {
+    const fixed = PREVIEW_CHROME + SESSION_DETAIL_FIXED;
+    const spare = avail - floor - fixed;
+    // A differenza della task il blocco regge anche a zero righe variabili:
+    // titolo e riga meta (size, turni, data, branch) non stanno da nessun'altra
+    // parte a schermo, quindi sono già il valore. Priorità al primo prompt, poi
+    // l'ultima risposta prende ciò che resta: quando lo spazio stringe cade
+    // prima l'ultima risposta, non il primo prompt. Le righe si riservano solo
+    // per le anteprime che davvero renderizzeranno (i due `has…Preview`), o si
+    // toglierebbero righe alle liste per un blocco vuoto.
     if (spare >= 0) {
-      sessionDetail = true;
+      preview = true;
       if (input.sessionHasFirstPreview) sessionFirstLines = Math.min(MAX_SESSION_PREVIEW, spare);
       if (input.sessionHasLastPreview) {
         sessionLastLines = Math.min(MAX_SESSION_PREVIEW, spare - sessionFirstLines);
       }
-      sessionDetailCost = fixed + sessionFirstLines + sessionLastLines;
+      previewCost = fixed + sessionFirstLines + sessionLastLines;
     }
   }
 
-  const sessionRows = Math.max(0, avail - SESSIONS_PANE_CHROME - sessionDetailCost);
-
-  let detailLines = 0;
-  let detailChrome = 0;
-  if (input.hasDetail) {
-    const fixed = DETAIL_CHROME + input.detailMetaLines;
-    // Righe che avanzano dopo aver garantito la lista minima e la cornice del
-    // dettaglio. Serve almeno 1 riga di descrizione per giustificare il box:
-    // un pannello con la sola cornice ruberebbe 3+ righe per mostrare nulla.
-    const spare = avail - TASKS_PANE_CHROME - MIN_TASK_ROWS - fixed;
-    if (spare >= 1) {
-      detailChrome = fixed;
-      detailLines = Math.min(MAX_DETAIL_LINES, spare);
-    }
-  }
-
-  const taskRows = Math.max(0, avail - TASKS_PANE_CHROME - detailChrome - detailLines);
+  // Ciò che resta va a ENTRAMBE le colonne: la preview sta sotto il blocco dei
+  // pane, quindi il suo costo lo pagano insieme una volta sola.
+  const listAvail = avail - previewCost;
 
   return {
-    taskRows,
-    sessionRows,
+    taskRows: Math.max(0, listAvail - TASKS_PANE_CHROME),
+    sessionRows: Math.max(0, listAvail - SESSIONS_PANE_CHROME),
+    preview,
     detailLines,
-    sessionDetail,
     sessionFirstLines,
     sessionLastLines,
     compact: false,

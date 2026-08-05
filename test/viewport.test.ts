@@ -7,6 +7,7 @@ import {
   SLACK,
   type BudgetInput,
   type Mode,
+  type PreviewKind,
 } from '../src/viewport.js';
 import { wrapLines } from '../src/width.js';
 
@@ -15,9 +16,8 @@ const input = (over: Partial<BudgetInput> = {}): BudgetInput => ({
   mode: 'normal',
   launchLine: false,
   noteLine: false,
-  hasDetail: false,
+  preview: 'none',
   detailMetaLines: 0,
-  hasSessionDetail: false,
   sessionHasFirstPreview: false,
   sessionHasLastPreview: false,
   ...over,
@@ -27,6 +27,9 @@ const input = (over: Partial<BudgetInput> = {}): BudgetInput => ({
  * Ricostruisce l'altezza del frame dal budget, con la stessa aritmetica del
  * componente: è QUESTA la proprietà che tiene chiuso il bug (frame < rows),
  * non i singoli numeri.
+ *
+ * T70 — il blocco preview non sta più DENTRO una colonna: è una riga di frame a
+ * sé, sotto il `max` delle due, quindi si somma invece di competere.
  */
 const frameHeight = (i: BudgetInput, b: ReturnType<typeof layoutBudget>) => {
   if (b.compact) return 1; // riga singola, nessun box
@@ -34,48 +37,50 @@ const frameHeight = (i: BudgetInput, b: ReturnType<typeof layoutBudget>) => {
     2 + 1 + 1 + (i.launchLine ? 1 : 0) + MODAL_HEIGHT[i.mode] + 1 + (i.noteLine ? 1 : 0);
   // T59 — 6 di chrome: 2 bordi + header + riga sort + le DUE righe meta
   // (`≡ tutte`, `○ spot`).
-  const tasksCol =
-    6 + b.taskRows + (b.detailLines > 0 ? 3 + i.detailMetaLines + b.detailLines : 0);
-  // Detail pane sessione (T49): 3 chrome + 2 fisse (titolo, meta) + le due
-  // preview (primo prompt + ultima risposta).
-  const sessionsCol =
-    3 + b.sessionRows + (b.sessionDetail ? 3 + 2 + b.sessionFirstLines + b.sessionLastLines : 0);
-  return outer + Math.max(tasksCol, sessionsCol);
+  const tasksCol = 6 + b.taskRows;
+  const sessionsCol = 3 + b.sessionRows;
+  // Blocco preview: 3 chrome (marginTop + 2 bordi) + le righe fisse del suo
+  // contenuto (task: titolo/meta/commit · sessione: titolo + meta) + le
+  // variabili.
+  const preview = !b.preview
+    ? 0
+    : i.preview === 'task'
+      ? 3 + i.detailMetaLines + b.detailLines
+      : 3 + 2 + b.sessionFirstLines + b.sessionLastLines;
+  return outer + Math.max(tasksCol, sessionsCol) + preview;
 };
 
 test('layoutBudget: il frame resta sotto stdout.rows su ogni combinazione', () => {
   const modes: Mode[] = ['normal', 'create', 'sort', 'filter', 'edit'];
+  const kinds: PreviewKind[] = ['none', 'task', 'session'];
   for (let rows = 8; rows <= 80; rows++) {
     for (const mode of modes) {
       for (const launchLine of [false, true]) {
         for (const noteLine of [false, true]) {
-          for (const hasDetail of [false, true]) {
-            for (const hasSessionDetail of [false, true]) {
-              for (const previews of [
-                [false, false],
-                [true, false],
-                [false, true],
-                [true, true],
-              ] as const) {
-                for (const detailMetaLines of [1, 2, 3]) {
-                  const i = input({
-                    rows,
-                    mode,
-                    launchLine,
-                    noteLine,
-                    hasDetail,
-                    detailMetaLines,
-                    hasSessionDetail,
-                    sessionHasFirstPreview: hasSessionDetail && previews[0],
-                    sessionHasLastPreview: hasSessionDetail && previews[1],
-                  });
-                  const h = frameHeight(i, layoutBudget(i));
-                  // Condizione di Ink: `outputHeight >= rows` → ramo clearTerminal.
-                  assert.ok(
-                    h <= rows - SLACK,
-                    `frame ${h} > ${rows - SLACK} (rows=${rows} mode=${mode} detail=${hasDetail} sessionDetail=${hasSessionDetail} previews=${previews})`,
-                  );
-                }
+          for (const preview of kinds) {
+            for (const previews of [
+              [false, false],
+              [true, false],
+              [false, true],
+              [true, true],
+            ] as const) {
+              for (const detailMetaLines of [1, 2, 3]) {
+                const i = input({
+                  rows,
+                  mode,
+                  launchLine,
+                  noteLine,
+                  preview,
+                  detailMetaLines,
+                  sessionHasFirstPreview: preview === 'session' && previews[0],
+                  sessionHasLastPreview: preview === 'session' && previews[1],
+                });
+                const h = frameHeight(i, layoutBudget(i));
+                // Condizione di Ink: `outputHeight >= rows` → ramo clearTerminal.
+                assert.ok(
+                  h <= rows - SLACK,
+                  `frame ${h} > ${rows - SLACK} (rows=${rows} mode=${mode} preview=${preview} anteprime=${previews})`,
+                );
               }
             }
           }
@@ -91,16 +96,39 @@ test('layoutBudget: rows mancante (non-TTY / pre-SIGWINCH) degrada a 24', () => 
   assert.ok(frameHeight(input({ rows: 24 }), b) <= 24 - SLACK);
 });
 
-test('layoutBudget: terminale alto → lista task ampia, dettaglio al suo tetto', () => {
-  const b = layoutBudget(input({ rows: 60, hasDetail: true, detailMetaLines: 2 }));
-  assert.equal(b.detailLines, 4);
+test('layoutBudget: terminale alto → lista task ampia, preview al suo tetto', () => {
+  const b = layoutBudget(input({ rows: 60, preview: 'task', detailMetaLines: 2 }));
+  assert.equal(b.detailLines, 6);
   assert.ok(b.taskRows >= 30);
 });
 
-test('layoutBudget: terminale basso → sacrifica il dettaglio, non la lista', () => {
-  const b = layoutBudget(input({ rows: 16, hasDetail: true, detailMetaLines: 2 }));
+test('layoutBudget: terminale basso → sacrifica la preview, non la lista', () => {
+  const b = layoutBudget(input({ rows: 16, preview: 'task', detailMetaLines: 2 }));
+  assert.equal(b.preview, false);
   assert.equal(b.detailLines, 0);
   assert.ok(b.taskRows >= 3);
+});
+
+// T70 — il costo del blocco lo pagano ENTRAMBE le colonne, perché sta sotto di
+// esse e non dentro una. Con i due pannelli separati quello del pane sessioni
+// era di fatto gratis (la colonna più corta non decideva l'altezza del frame).
+test('layoutBudget: la preview scala righe da entrambe le liste, non da una sola', () => {
+  const base = layoutBudget(input({ rows: 60 }));
+  for (const kind of ['task', 'session'] as const) {
+    const b = layoutBudget(
+      input({
+        rows: 60,
+        preview: kind,
+        detailMetaLines: 2,
+        sessionHasFirstPreview: true,
+        sessionHasLastPreview: true,
+      }),
+    );
+    assert.equal(b.preview, true);
+    const cut = base.taskRows - b.taskRows;
+    assert.ok(cut > 0, `${kind}: la lista task non ha pagato nulla`);
+    assert.equal(base.sessionRows - b.sessionRows, cut, `${kind}: costo non condiviso`);
+  }
 });
 
 test('layoutBudget: terminale ridicolo → compact, mai un frame che sfora', () => {
@@ -116,55 +144,68 @@ test('layoutBudget: un pane non-compact mostra sempre almeno una task', () => {
   }
 });
 
-test('layoutBudget: detail pane sessione su terminale alto → entrambe le preview piene, lista ridotta del costo', () => {
+test('layoutBudget: preview sessione su terminale alto → entrambe le anteprime piene, liste ridotte del costo', () => {
   const base = layoutBudget(input({ rows: 60 }));
   const b = layoutBudget(
-    input({ rows: 60, hasSessionDetail: true, sessionHasFirstPreview: true, sessionHasLastPreview: true }),
+    input({ rows: 60, preview: 'session', sessionHasFirstPreview: true, sessionHasLastPreview: true }),
   );
-  assert.equal(b.sessionDetail, true);
-  assert.equal(b.sessionFirstLines, 2);
-  assert.equal(b.sessionLastLines, 2);
-  // Costo intero del pannello: 3 chrome + 2 fisse + 2 first + 2 last.
-  assert.equal(base.sessionRows - b.sessionRows, 9);
+  assert.equal(b.preview, true);
+  assert.equal(b.sessionFirstLines, 3);
+  assert.equal(b.sessionLastLines, 3);
+  // Costo intero del blocco: 3 chrome + 2 fisse + 3 first + 3 last.
+  assert.equal(base.sessionRows - b.sessionRows, 11);
 });
 
 test('layoutBudget: solo ultima risposta (nessun titolo custom) → riservate solo le sue righe', () => {
-  const b = layoutBudget(input({ rows: 60, hasSessionDetail: true, sessionHasLastPreview: true }));
+  const b = layoutBudget(input({ rows: 60, preview: 'session', sessionHasLastPreview: true }));
   assert.equal(b.sessionFirstLines, 0);
-  assert.equal(b.sessionLastLines, 2);
+  assert.equal(b.sessionLastLines, 3);
 });
 
 test('layoutBudget: primo prompt ha priorità sull\'ultima risposta quando lo spazio è poco', () => {
-  // spare = 1: basta per 1 riga di preview, va al primo prompt, l'ultima resta a 0.
-  // rows scelto per lasciare esattamente 1 riga di spare al pannello.
+  // spare = 1: basta per 1 riga di anteprima, va al primo prompt, l'ultima resta a 0.
   let found = false;
   for (let rows = 8; rows <= 80; rows++) {
     const b = layoutBudget(
-      input({ rows, hasSessionDetail: true, sessionHasFirstPreview: true, sessionHasLastPreview: true }),
+      input({ rows, preview: 'session', sessionHasFirstPreview: true, sessionHasLastPreview: true }),
     );
-    if (b.sessionDetail && b.sessionFirstLines === 1) {
-      assert.equal(b.sessionLastLines, 0, `rows=${rows}: con 1 sola riga di preview vince il primo prompt`);
+    if (b.preview && b.sessionFirstLines === 1) {
+      assert.equal(b.sessionLastLines, 0, `rows=${rows}: con 1 sola riga vince il primo prompt`);
       found = true;
     }
   }
-  assert.ok(found, 'nessun rows produce esattamente 1 riga di preview — copertura mancante');
+  assert.ok(found, 'nessun rows produce esattamente 1 riga di anteprima — copertura mancante');
 });
 
-test('layoutBudget: detail pane sessione sacrificato prima della lista minima', () => {
+test('layoutBudget: preview sessione sacrificata prima delle liste', () => {
   const b = layoutBudget(
-    input({ rows: 14, hasSessionDetail: true, sessionHasFirstPreview: true, sessionHasLastPreview: true }),
+    input({ rows: 14, preview: 'session', sessionHasFirstPreview: true, sessionHasLastPreview: true }),
   );
+  const bare = layoutBudget(input({ rows: 14 }));
   assert.equal(b.compact, false);
-  assert.equal(b.sessionDetail, false);
-  assert.ok(b.sessionRows >= 3);
+  assert.equal(b.preview, false);
+  // Rinunciata la preview, le liste tornano ESATTAMENTE quelle di un frame che
+  // non la chiedeva: un blocco negato non deve lasciare righe riservate dietro.
+  assert.equal(b.taskRows, bare.taskRows);
+  assert.equal(b.sessionRows, bare.sessionRows);
 });
 
-test('layoutBudget: detail pane sessione concesso → lista sessioni mai sotto il minimo', () => {
+test('layoutBudget: preview concessa → nessuna delle due liste sotto il minimo', () => {
   for (let rows = 8; rows <= 80; rows++) {
-    const b = layoutBudget(
-      input({ rows, hasSessionDetail: true, sessionHasFirstPreview: true, sessionHasLastPreview: true }),
-    );
-    if (b.sessionDetail) assert.ok(b.sessionRows >= 3, `rows=${rows} → lista sotto il minimo`);
+    for (const kind of ['task', 'session'] as const) {
+      const b = layoutBudget(
+        input({
+          rows,
+          preview: kind,
+          detailMetaLines: 3,
+          sessionHasFirstPreview: true,
+          sessionHasLastPreview: true,
+        }),
+      );
+      if (!b.preview) continue;
+      assert.ok(b.taskRows >= 3, `rows=${rows} ${kind} → lista task sotto il minimo`);
+      assert.ok(b.sessionRows >= 3, `rows=${rows} ${kind} → lista sessioni sotto il minimo`);
+    }
   }
 });
 

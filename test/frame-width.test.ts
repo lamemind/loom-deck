@@ -125,34 +125,45 @@ function assertFrameFits(raw: string, cols: number, label: string) {
   });
 
   // ② Nessun bordo MANGIATO — controllato SEPARATAMENTE per regione (vedi
-  //    `splitRegions`): confrontare le righe di un modale con la forma dei pane
-  //    darebbe un falso positivo, perché il modale quella struttura la sostituisce.
+  //    `splitRegions`): confrontare le righe di un box a piena larghezza con la
+  //    forma dei pane darebbe un falso positivo, perché quel box la struttura a
+  //    due pane la sostituisce.
   for (const region of splitRegions(lines)) assertBordersHold(region, label);
 }
 
-/** Un modale in flusso apre un box a PIENA LARGHEZZA dentro la cornice del deck
- *  (`│ ╭…╮ │` … `│ ╰…╯ │`): per quelle righe la struttura a due pane non esiste,
- *  le colonne di bordo sono le sue. Si separano quindi le regioni e ognuna viene
- *  confrontata con la propria forma ricorrente — dentro il modale il controllo
- *  resta pieno (una riga che ne mangia il bordo destro esce dalla forma comune),
- *  ma non lo si misura col metro dei pane.
+/** Due cose aprono un box a PIENA LARGHEZZA dentro la cornice del deck: un
+ *  modale in flusso (`│ ╭…╮ │`, angoli round) e il blocco preview sotto le due
+ *  liste (`│ ┌…┐ │`, angoli single — T70). Per quelle righe la struttura a due
+ *  pane non esiste, le colonne di bordo sono le loro. Si separano quindi le
+ *  regioni e ognuna viene confrontata con la propria forma ricorrente — dentro
+ *  il box il controllo resta pieno (una riga che ne mangia il bordo destro esce
+ *  dalla forma comune), ma non lo si misura col metro dei pane.
  *
- *  L'angolo ROUND a profondità 1 è il discriminante: il pannello di dettaglio è
- *  anch'esso un box annidato, ma sta DENTRO un pane (`│ │ ┌`), conserva le
- *  colonne dei pane e va confrontato con loro. */
-const MODAL_OPEN = /^│ ╭/;
-const MODAL_CLOSE = /^│ ╰/;
+ *  Il discriminante è il NUMERO di angoli sulla riga d'apertura, non lo stile né
+ *  la profondità: i due pane stanno affiancati, quindi si aprono e si chiudono
+ *  con DUE angoli sulla stessa riga (`│ ┌…┐ ┌…┐ │`); un box a piena larghezza ne
+ *  ha uno solo. Contarli è ciò che tiene la coppia di pane fuori dalla regione
+ *  full-width — altrimenti ci finirebbe dentro e la forma dei pane, che è la
+ *  maggioranza, farebbe risultare "mangiato" il bordo di ogni riga di preview.
+ *
+ *  I due box a piena larghezza condividono le stesse colonne di bordo, quindi
+ *  stanno nella stessa regione anche quando compaiono insieme. */
+const countCorners = (line: string, chars: string) =>
+  [...line].filter((ch) => chars.includes(ch)).length;
+
+const isFullOpen = (line: string) => /^│ [╭┌]/.test(line) && countCorners(line, '╭┌') === 1;
+const isFullClose = (line: string) => /^│ [╰└]/.test(line) && countCorners(line, '╰└') === 1;
 
 function splitRegions(lines: string[]): Array<Array<{ line: string; i: number }>> {
   const main: Array<{ line: string; i: number }> = [];
-  const modal: Array<{ line: string; i: number }> = [];
-  let inModal = false;
+  const full: Array<{ line: string; i: number }> = [];
+  let inFull = false;
   lines.forEach((line, i) => {
-    if (MODAL_OPEN.test(line)) inModal = true;
-    (inModal ? modal : main).push({ line, i });
-    if (inModal && MODAL_CLOSE.test(line)) inModal = false;
+    if (isFullOpen(line)) inFull = true;
+    (inFull ? full : main).push({ line, i });
+    if (inFull && isFullClose(line)) inFull = false;
   });
-  return [main, modal].filter((r) => r.length > 0);
+  return [main, full].filter((r) => r.length > 0);
 }
 
 /**
