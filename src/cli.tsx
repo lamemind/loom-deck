@@ -896,7 +896,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     let age = 2;
     for (const r of sessionRows) {
       if (r.kind === 'separator') continue;
-      if (isAll) {
+      // La colonna serve dove l'appartenenza NON è già scritta altrove sullo
+      // schermo: nella vista "tutte" (ogni riga ha un binding proprio) e su
+      // OGNI riga pinnata, in qualunque vista — una pinnata è sganciata dal
+      // parent selezionato, quindi l'header del pane non parla per lei.
+      if (isAll || r.kind === 'pinned') {
         const b = bindings.get(r.sessionId);
         if (b) task = Math.max(task, termWidth(b));
       }
@@ -3031,9 +3035,10 @@ function SessionsPane({
   /** T59 — sessionId → taskId, letto dal sidecar. Serve SOLO alla vista "tutte",
    *  l'unica dove l'appartenenza non è desumibile dal parent selezionato. */
   bindings: Map<string, string>;
-  /** T60 — larghezza della colonna task; 0 = colonna assente (fuori dalla vista
-   *  "tutte" ogni riga ha lo stesso binding, quindi la colonna direbbe N volte
-   *  ciò che l'header dice una). */
+  /** T60 — larghezza della colonna task; 0 = colonna assente. Fuori dalla vista
+   *  "tutte" la cella si riempie solo sulle righe pinnate: le contestuali
+   *  condividono il binding dell'header, e ripeterlo N volte direbbe ciò che
+   *  l'header dice una. */
   taskW: number;
   /** T60 — larghezza della colonna data, ancorata al margine destro. */
   ageW: number;
@@ -3106,9 +3111,18 @@ function SessionsPane({
             // riga oltre il bordo, e a ripararla arrivava `cli-truncate` (che
             // sfora di una colonna per emoji e mangia il bordo stesso).
             const staleNote = sessionNotes.get(row.sessionId);
+            // La riga stale è libera (niente colonne: non ha né titolo né
+            // data), ma il binding va detto lo stesso — è una pinnata, quindi
+            // l'header del pane non ne dice l'appartenenza.
+            const staleTask = bindings.get(row.sessionId) ?? null;
             const staleW = Math.max(
               0,
-              paneTextWidth(columns) - (2 /* caret */ + termWidth(`${WARN} pin stale `) + SID_CHARS + 3 /* spazio + caporali */),
+              paneTextWidth(columns) -
+                (2 /* caret */ +
+                  termWidth(`${WARN} pin stale `) +
+                  SID_CHARS +
+                  (staleTask ? termWidth(staleTask) + 1 : 0) +
+                  3 /* spazio + caporali */),
             );
             return (
               <Text
@@ -3121,6 +3135,7 @@ function SessionsPane({
                 {sel ? CARET : CARET_OFF}
                 <Text color="yellow">{WARN}</Text> pin stale{' '}
                 <Text dimColor>{row.sessionId.slice(0, SID_CHARS)}</Text>
+                {staleTask ? <Text color="green"> {staleTask}</Text> : null}
                 {/* T53 — su una riga stale la nota è l'UNICA cosa rimasta che
                     dica cosa fosse quella conversazione: il transcript non c'è
                     più, quindi non esiste titolo né primo prompt da mostrare. */}
@@ -3142,6 +3157,13 @@ function SessionsPane({
           // task accanto, che esiste solo in questa vista.
           const bound = bindings.get(s.sessionId) ?? null;
           const linked = isAll ? Boolean(bound) : !isSpot;
+          // Stesso motivo per cui la colonna esiste: una pinnata resta in lista
+          // qualunque sia il parent selezionato, quindi l'header non ne dice
+          // l'appartenenza e la cella va riempita anche fuori dalla vista
+          // "tutte". Sulle contestuali, dove l'header parla già, resta vuota —
+          // ma la cella è comunque larga `taskW`, o le colonne a destra
+          // slitterebbero riga per riga.
+          const taskCell = isAll || isPinnedRow ? (bound ?? TASK_EMPTY) : '';
           // T60 — colonne VERE: ogni cella fissa è larga esattamente quanto
           // dichiara, riempita di spazi con `pad` (che misura in colonne, non in
           // caratteri). Il marker va portato a 2 anche quando è `○`, largo 1:
@@ -3196,8 +3218,8 @@ function SessionsPane({
               <Text color="cyan">{s.sessionId.slice(0, SID_CHARS)}</Text>{' '}
               {taskW > 0 ? (
                 <>
-                  <Text color={bound ? 'green' : undefined} dimColor={!bound}>
-                    {pad(bound ?? TASK_EMPTY, taskW)}
+                  <Text color={bound && taskCell ? 'green' : undefined} dimColor={!bound}>
+                    {pad(taskCell, taskW)}
                   </Text>
                   {' '}
                 </>
