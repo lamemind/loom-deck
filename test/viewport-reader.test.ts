@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assignListCapacity,
+  detailCapacity,
   isCompact,
   readerCapacity,
   searchListCapacity,
@@ -169,6 +170,35 @@ test('il frame di assegnazione non supera mai le righe del terminale', () => {
       const cap = assignListCapacity(rows, note);
       assert.ok(cap + 12 + (note ? 1 : 0) + SLACK <= rows, `sforo a ${rows} righe, note=${note}`);
     }
+  }
+});
+
+// T66 — il detail è la quarta sostitutiva. Cornice di 10 righe: due in più del
+// reader, e sono proprio la riga bottoni col suo marginTop — la riga FISSA
+// aggiunta dentro l'overlay, che va scalata dalla capienza del testo o il frame
+// sfonda `rows` sui terminali bassi.
+test('il frame del detail non supera mai le righe del terminale', () => {
+  for (const rows of [20, 24, 30, 40, 60]) {
+    assert.ok(detailCapacity(rows) + 10 + SLACK <= rows, `sforo a ${rows} righe`);
+  }
+});
+
+test('detail: la barra azioni costa due righe in più del reader', () => {
+  // Gate sul motivo per cui il detail non può riusare READER_CHROME. Se un
+  // domani la riga bottoni sparisse (o ne arrivasse una seconda) questo test
+  // cade, che è esattamente il punto: la cornice è un conteggio, non una stima.
+  for (const rows of [24, 40, 60]) {
+    assert.equal(detailCapacity(rows), readerCapacity(rows) - 2, `a ${rows} righe`);
+  }
+});
+
+test('detail: capienza scalante, compatto sui terminali bassi', () => {
+  assert.ok(detailCapacity(40) > detailCapacity(30));
+  assert.equal(isCompact(detailCapacity(10)), true);
+  assert.equal(isCompact(detailCapacity(40)), false);
+  assert.equal(detailCapacity(0), detailCapacity(24));
+  for (const rows of [1, 5, 8, 10]) {
+    assert.ok(detailCapacity(rows) >= 0, `detail a ${rows} righe`);
   }
 });
 

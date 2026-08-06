@@ -148,6 +148,28 @@ export function parseTaskDetail(id: string, content: string): TaskDetail {
   };
 }
 
+/**
+ * Testo INTEGRALE del task file (T66 · detail).
+ *
+ * Distinto da `loadTaskDetail`, che estrae header e Description per il blocco
+ * preview: qui si legge la task per intero — Acceptance, Deliverables,
+ * Implementation Notes — e un parse che tenesse solo le sezioni note
+ * nasconderebbe proprio ciò per cui si apre l'overlay.
+ *
+ * `sanitize` al confine come per il detail parsato: il task file è testo libero
+ * e porta glifi che Ink e il terminale misurano diversamente. Non torna mai su
+ * disco da qui, quindi la sostituzione non ha il rischio di `pri`/`prog`.
+ */
+export function loadTaskFileText(dir: string, id: string): string | null {
+  const path = findTaskFile(dir, id);
+  if (!path) return null;
+  try {
+    return sanitize(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 export function loadTaskDetail(dir: string, id: string): TaskDetail | null {
   const path = findTaskFile(dir, id);
   if (!path) return null;

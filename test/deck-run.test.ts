@@ -69,6 +69,7 @@ const PROMPTS: Array<[string, string | null]> = [
   ['recap', 'recap stato task T56'],
   ['preflight', '/loom-works:preflight-task T56'],
   ['run', '/loom-works:run-task T56'],
+  ['checkpoint', '/loom-works:checkpoint-task T56'],
 ];
 
 for (const [kind, prompt] of PROMPTS) {
@@ -100,6 +101,17 @@ test('kind run su una task D: dispatch su run-doc, non run-task', () => {
   // Gli altri kind non discriminano: preflight-task risolve per id.
   assert.ok(
     inTabCmd(['D02', '--prompt-kind', 'preflight']).endsWith("'/loom-works:preflight-task D02'"),
+  );
+});
+
+test('kind checkpoint su una task D: nessun dispatch, la skill copre entrambi i prefissi', () => {
+  // T66 — la verifica che `run` ha reso obbligatoria per ogni kind nuovo: la
+  // skill invocata copre anche le D? `checkpoint-task` estrae il taskId con
+  // `T\d+|D\d+`, quindi sì — e un dispatch qui punterebbe a una complementare
+  // che non esiste. Il gate serve a impedire che il caso venga aggiunto per
+  // simmetria con `run` quando la simmetria non c'è.
+  assert.ok(
+    inTabCmd(['D02', '--prompt-kind', 'checkpoint']).endsWith("'/loom-works:checkpoint-task D02'"),
   );
 });
 

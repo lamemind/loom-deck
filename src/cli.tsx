@@ -12,10 +12,12 @@ import {
   resolveTasksDir,
   loadTasks,
   loadTaskDetail,
+  loadTaskFileText,
   type Task,
   type TaskDetail,
 } from './tasks.js';
 import { discoverProjectSessions, type BodyKind, type Session } from './sessions.js';
+import { discoverLiveSessions, liveSig, type LiveSession } from './live-sessions.js';
 import {
   buildRows,
   firstRowKey,
@@ -61,6 +63,7 @@ import {
 import { countArchivable, SCAN_INTERVAL_MS } from './archivable.js';
 import {
   assignListCapacity,
+  detailCapacity,
   isCompact,
   layoutBudget,
   readerCapacity,
@@ -287,7 +290,23 @@ function spawnOut(cmd: string, args: string[], opts: SpawnOptions): ChildProcess
 // non il testo: il catalogo vive in deck-run (primitive UI-agnostico), così il
 // quoting del prompt resta verificato in un posto solo e il deck non conosce le
 // stringhe. Nomi identici ai valori di `--prompt-kind`.
-type PromptKind = 'none' | 'recap' | 'preflight' | 'run';
+type PromptKind = 'none' | 'recap' | 'preflight' | 'run' | 'checkpoint';
+
+// T66 — le azioni del detail. Non sono un catalogo nuovo: ognuna è un
+// `--prompt-kind` già esistente più `checkpoint`, e tutte passano dallo stesso
+// `spawnForTask` dei CTRL della lista — una superficie in più, zero percorsi di
+// spawn in più.
+//
+// L'etichetta è distinta dal kind dove il kind è il nome del MECCANISMO e
+// l'etichetta quello dell'INTENZIONE: `none` è "aprire la task a mani nude",
+// `recap` è "vedere a che punto sta".
+const DETAIL_ACTIONS: ReadonlyArray<{ kind: PromptKind; label: string }> = [
+  { kind: 'none', label: 'open' },
+  { kind: 'preflight', label: 'preflight' },
+  { kind: 'run', label: 'run' },
+  { kind: 'recap', label: 'status' },
+  { kind: 'checkpoint', label: 'checkpoint' },
+];
 
 // Spawn detached: il deck spawna ma NON contiene la sessione (la possiede
 // ptyxis-agent). unref + stdio ignore → ritorna subito, la TUI resta viva.
@@ -560,12 +579,14 @@ function useSessions(projectRoot: string) {
     forkOf: Map<string, string>;
     pinned: Map<string, number>;
     notes: Map<string, string>;
+    live: Map<string, LiveSession>;
   }>({
     sessions: [],
     bindings: new Map(),
     forkOf: new Map(),
     pinned: new Map(),
     notes: new Map(),
+    live: new Map(),
   });
   // T50 — pin/unpin scrive il sidecar e vuole feedback IMMEDIATO, non al
   // prossimo tick del poll (1.5s): la reload è esposta via ref così il toggle la
@@ -584,6 +605,17 @@ function useSessions(projectRoot: string) {
         sessions = [];
         index = { bindings: new Map(), forkOf: new Map(), pinned: new Map(), notes: new Map() };
       }
+      // T62 — le vive stanno sullo STESSO tick delle altre fonti, non su una
+      // scala propria come `useArchivable`: `status` cambia a ogni turno, quindi
+      // un refresh più lento mostrerebbe `idle` su una sessione che lavora.
+      // Il try è separato perché il registry è una fonte indipendente: se manca
+      // (versione del CLI che non lo scrive) la lista deve restare, senza vive.
+      let live: Map<string, LiveSession>;
+      try {
+        live = discoverLiveSessions(projectRoot);
+      } catch {
+        live = new Map();
+      }
       const { bindings, forkOf, pinned, notes } = index;
       // La signature copre anche fork, pin e note: un record di lineage, un
       // toggle di pin o una nota appena scritta cambiano la lista renderizzata,
@@ -597,10 +629,12 @@ function useSessions(projectRoot: string) {
         '#' +
         [...pinned.entries()].map(([k, v]) => `${k}@${v}`).sort().join(',') +
         '#' +
-        [...notes.entries()].map(([k, v]) => `${k}"${v}`).sort().join(',');
+        [...notes.entries()].map(([k, v]) => `${k}"${v}`).sort().join(',') +
+        '#' +
+        liveSig(live);
       if (sig === lastSig) return;
       lastSig = sig;
-      setState({ sessions, bindings, forkOf, pinned, notes });
+      setState({ sessions, bindings, forkOf, pinned, notes, live });
     };
     reloadRef.current = reload;
     reload();
@@ -685,6 +719,19 @@ const SID_CHARS = 8;
  *  e la riga tornerebbe a sembrare disallineata pur non essendolo. */
 const TASK_EMPTY = '·';
 
+// T62 — colonna liveness, larga 1, incollata al sessionId senza gutter proprio:
+// il glifo qualifica QUELL'id, e uno spazio in mezzo lo farebbe leggere come una
+// colonna a sé. Entrambi Ambiguous (EAW) → 1 colonna per il terminale e 1 cella
+// per Ink, quindi concordi (invariante ① di width.ts): il pieno/vuoto del
+// cerchio è l'unico asse che varia, e resta scandibile in verticale.
+//
+// Sulla riga CHIUSA c'è uno spazio e non un terzo glifo: le chiuse sono la
+// maggioranza di ogni lista, e marcarle vorrebbe dire disegnare N volte «niente
+// da dire» — la colonna diventerebbe rumore invece di un segnale.
+const LIVE_IDLE = '●';
+const LIVE_BUSY = '◍';
+const LIVE_NONE = ' ';
+
 // Marker Done per il DISPLAY. `task.prog` resta il `✔️` letto da tasks.md —
 // `isDone()` e le lookup di `view.ts` ci confrontano sopra, e `task-edit` lo
 // riscrive sul file: è una chiave semantica, non testo. Qui `sanitize` lo
@@ -748,6 +795,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     forkOf,
     pinned,
     notes: sessionNotes,
+    live,
     reload: reloadSessions,
   } = useSessions(cwd);
   const [focus, setFocus] = useState<Focus>('tasks');
@@ -810,6 +858,22 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const [assignSid, setAssignSid] = useState<string | null>(null);
   const [assignFilter, setAssignFilter] = useState('');
   const [assignSel, setAssignSel] = useState<string | null>(null);
+
+  // T66 — la task aperta nel detail, FOTOGRAFATA all'apertura: id, titolo e
+  // testo integrale del task file (`text` null = file assente). Non si rilegge
+  // da `selTask` per la stessa ragione di `assignSid`: l'overlay copre la lista,
+  // quindi l'oggetto dell'azione deve restare quello che si è scelto anche se un
+  // tick del poll spostasse la selezione sotto.
+  //
+  // Si chiama `sheet` e non `detail` perché `detail` in questo componente è già
+  // il `TaskDetail` del blocco preview sotto i pane: due cose vicine con lo
+  // stesso nome sono una trappola di lettura (stesso motivo di
+  // `note`/`sessionNotes`).
+  const [sheet, setSheet] = useState<{ id: string; title: string; text: string | null } | null>(
+    null,
+  );
+  const [sheetTop, setSheetTop] = useState(0);
+  const [sheetAction, setSheetAction] = useState(0);
 
   // Dimensioni vive del terminale: sono l'input del budget d'altezza sotto.
   const { rows, columns } = useTerminalSize();
@@ -887,6 +951,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   );
   const sessionRows = assembled.rows;
   const selSessionObj = selectedSession(sessionRows, selSessionId);
+  // T62 — contato sulla lista INTERA (stessa ragione delle larghezze di colonna
+  // qui sotto): derivarlo dalla finestra visibile lo farebbe cambiare a ogni
+  // scroll, cioè un contatore che conta lo schermo invece della lista.
+  const liveCount = useMemo(
+    () => sessionRows.filter((r) => r.kind !== 'separator' && live.has(r.sessionId)).length,
+    [sessionRows, live],
+  );
 
   // T60 — larghezze delle colonne fisse della lista sessioni, misurate sulla
   // lista INTERA e non sulla finestra visibile: derivarle dalle sole righe a
@@ -957,6 +1028,23 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   );
   const readerCap = readerCapacity(rows);
   const readerMaxTop = Math.max(0, readerLines.length - readerCap);
+
+  // T66 — testo del task file wrappato per il detail. `wrapWithOffsets` e non
+  // `wrapLines`: quest'ultimo appiattisce gli a-capo in un flusso unico, che per
+  // una preview di 4 righe va bene e per un task file — titoli, bullet, tabelle,
+  // blocchi di codice — significa renderlo illeggibile. Memoizzato per (testo,
+  // larghezza), o ogni pressione di freccia rifarebbe l'a-capo di 9KB.
+  //
+  // Cornici da scalare: box esterno (2 bordi + 2 padding) + box testo (2 bordi +
+  // 2 padding) = 8. Sottostimare tronca un carattere, sovrastimare manda a capo
+  // una riga che il budget d'altezza non ha contato.
+  const sheetWidth = Math.max(20, (columns || 80) - 8);
+  const sheetLines = useMemo(
+    () => (sheet?.text ? wrapWithOffsets(sheet.text, sheetWidth).map((l) => l.text) : []),
+    [sheet, sheetWidth],
+  );
+  const sheetCap = detailCapacity(rows);
+  const sheetMaxTop = Math.max(0, sheetLines.length - sheetCap);
 
   // T57 — righe del modale assegnazione: `null` (detach) in testa, poi le task
   // della VISTA corrente (D4 — filtri e sort inclusi, coerenza con ciò che si
@@ -1064,10 +1152,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // è la task SELEZIONATA: senza il pane task a fuoco non ce n'è una. Per `⏎` il
   // ramo è irraggiungibile (ci arriva già dentro `focus === 'tasks'`); per i tre
   // CTRL, che il ramo `key.ctrl` intercetta globalmente, è l'unico posto.
-  function spawnTaskSession(kind: PromptKind, keyLabel: string) {
+  // T66 — la guardia, estratta perché ora ha due chiamanti: gli spawn dalla
+  // lista e l'apertura del detail. Le tre uscite sono le stesse (pane sbagliato,
+  // riga meta, task sparita), e duplicarle vorrebbe dire tenerne allineati i
+  // messaggi a mano. `verb` è l'unica cosa che cambia fra i due usi.
+  function selectedTaskOr(keyLabel: string, verb: string): Task | null {
     if (focus !== 'tasks') {
-      setNote(`${keyLabel} → spawn: seleziona una task (←→ per il pane)`);
-      return;
+      setNote(`${keyLabel} → ${verb}: seleziona una task (←→ per il pane)`);
+      return null;
     }
     // T59 — la guardia è "non è una task", non "è spot": le righe meta sono due
     // e nessuna delle due ha una task da aprire. Il messaggio dice quale delle
@@ -1075,19 +1167,61 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     if (isAll || isSpot) {
       setNote(
         isAll
-          ? 'tutte: vista di sola lettura, nessuna task da spawnare'
-          : 'spot: sessioni libere, nessuna task da spawnare',
+          ? `tutte: vista di sola lettura, nessuna task da ${verb}`
+          : `spot: sessioni libere, nessuna task da ${verb}`,
       );
-      return;
+      return null;
     }
-    if (!selTask) return;
-    const task = selTask;
+    return selTask;
+  }
+
+  // Lo spawn vero, su una task GIÀ risolta. Separato dalla guardia perché il
+  // detail passa l'id fotografato all'apertura e non la selezione corrente: la
+  // lista lì sotto non è più a schermo, quindi non è più la fonte dell'oggetto.
+  function spawnForTask(id: string, kind: PromptKind, keyLabel: string) {
     const sid = randomUUID();
-    appendTaskBinding(cwd, sid, task.id);
-    const child = spawnDeck(task.id, cwd, sid, kind);
-    child.on('error', () => setNote(`⚠ spawn ${task.id} fallito (${DECK_RUN})`));
+    appendTaskBinding(cwd, sid, id);
+    const child = spawnDeck(id, cwd, sid, kind);
+    child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
     const what = kind === 'none' ? '' : ` · ${kind}`;
-    setNote(`${keyLabel} spawn ${task.id}${what} → tab CC (sid ${sid.slice(0, 8)})`);
+    setNote(`${keyLabel} spawn ${id}${what} → tab CC (sid ${sid.slice(0, 8)})`);
+  }
+
+  function spawnTaskSession(kind: PromptKind, keyLabel: string) {
+    const task = selectedTaskOr(keyLabel, 'spawnare');
+    if (task) spawnForTask(task.id, kind, keyLabel);
+  }
+
+  // T66 — `⏎` sul pane task apre il detail invece di spawnare. Il testo del task
+  // file si legge QUI e non a ogni cambio selezione: l'overlay è l'unico
+  // consumer, e leggerlo in anticipo pagherebbe un file a ogni pressione di
+  // freccia per una schermata che quasi sempre non si apre.
+  // File assente → `text` null: l'overlay si apre lo stesso, perché spawnare una
+  // sessione non richiede il file (lo risolve `deck-run` per id).
+  function openDetail() {
+    const task = selectedTaskOr('⏎', 'aprire');
+    if (!task) return;
+    setSheet({
+      id: task.id,
+      // Il titolo del task file quando c'è (è l'H1, cioè la forma lunga), la
+      // riga di tasks.md altrimenti: il detail non deve restare senza intestazione
+      // solo perché il file manca.
+      title: detail?.title || task.desc,
+      text: loadTaskFileText(tasksDir, task.id),
+    });
+    setSheetTop(0);
+    setSheetAction(0);
+    setNote('');
+    setMode('detail');
+  }
+
+  function closeDetail() {
+    setMode('normal');
+    setSheet(null);
+  }
+
+  function scrollDetail(delta: number) {
+    setSheetTop((t) => Math.max(0, Math.min(sheetMaxTop, t + delta)));
   }
 
   // T53 — apertura del modale nota sulla conversazione selezionata. Come
@@ -1666,6 +1800,50 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       return;
     }
 
+    // T66 — detail della task: due zone (testo scrollabile + barra azioni) e una
+    // selezione per ognuna. Sta PRIMA del ramo di default per la stessa ragione
+    // di reader e ricerca — Ink non ha focus-trap, quindi la cattura È l'ordine
+    // dei rami — e il `return` in fondo è ciò che impedisce a `←→` di cambiare
+    // pane mentre muove fra le azioni: qui quel binding non esiste più.
+    // È anche prima del ramo CTRL, quindi `^K`/`^P`/`^R` restano acceleratori
+    // della sola lista: chi è già nel detail ha i bottoni.
+    if (mode === 'detail') {
+      if (key.escape) {
+        // Nessun reset di `sel`: la selezione della lista non è mai stata
+        // toccata, quindi si ritrova esattamente dov'era.
+        closeDetail();
+      } else if (key.return) {
+        // `⏎` esegue SEMPRE l'azione selezionata, mai "scrolla" o "chiudi": il
+        // testo non è un campo attivo (si scorre, non si edita), quindi nessuna
+        // competizione sul tasto.
+        const action = DETAIL_ACTIONS[sheetAction]!;
+        const id = sheet?.id;
+        closeDetail();
+        if (id) spawnForTask(id, action.kind, `⏎ ${action.label}`);
+      } else if (key.leftArrow || key.rightArrow) {
+        // Scorrimento CICLICO come le righe di scelta del modale edit: cinque
+        // voci, arrivare in fondo e ripartire costa meno che invertire direzione.
+        const d = key.leftArrow ? -1 : 1;
+        setSheetAction((i) => (i + d + DETAIL_ACTIONS.length) % DETAIL_ACTIONS.length);
+      } else if (key.upArrow) {
+        scrollDetail(-1);
+      } else if (key.downArrow) {
+        scrollDetail(1);
+      } else if (key.pageUp) {
+        scrollDetail(-sheetCap);
+      } else if (key.pageDown) {
+        scrollDetail(sheetCap);
+      } else if (input === 'g') {
+        // Estremi su lettera per lo stesso motivo del reader: Ink riconosce
+        // `Home`/`End` ma non le espone, e qui non c'è input di testo che
+        // contenda le lettere.
+        setSheetTop(0);
+      } else if (input === 'G') {
+        setSheetTop(sheetMaxTop);
+      }
+      return;
+    }
+
     // T52/D1 — il ramo CTRL sta PRIMA di quelli su lettera nuda e li chiude
     // tutti. `CTRL+F` e `f` nudo arrivano con lo STESSO `input` ('f'),
     // distinguibili solo da `key.ctrl`: senza questa precedenza `CTRL+F`
@@ -1698,12 +1876,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       else setSelSessionId((id) => moveSelection(sessionRows, id, 1));
     } else if (key.return) {
       if (focus === 'tasks') {
-        // T56 — ⏎ apre la sessione a MANI NUDE: bound alla task (LOOM_TASK,
-        // sessionId pinnato, binding) ma senza messaggio iniettato — il contesto
-        // lo carica l'hook SessionStart, il primo messaggio lo scrive l'utente.
-        // Il recap che ⏎ faceva prima è passato a ^K: resta a un tasto, ma smette
-        // di essere l'unico ingresso possibile nella task.
-        spawnTaskSession('none', '⏎');
+        // T66 — ⏎ apre il DETAIL, non più una sessione. Secondo rimappaggio in
+        // due task (T56 lo spostò da recap a sessione a mani nude), e la
+        // direzione è una sola: da azione singola a punto d'ingresso. Il tasto
+        // più battuto non è il posto dove inchiodare una scelta di prompt — le
+        // shortcut CTRL restano per chi sa già cosa vuole, `⏎` apre il ventaglio.
+        // Lo spawn a mani nude di prima è `open`, cioè `⏎ ⏎` (è il focus iniziale).
+        openDetail();
       } else {
         // T49 — ⏎ su una sessione = resume in nuova tab. Il binding si rilegge
         // dal sidecar (non dal padre selezionato): vale anche per le spot.
@@ -1874,7 +2053,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // ridirlo a parole costava colonne su una riga che tronca in silenzio.
   const keyLegend = sanitize(
     [
-      ...(canSpawn ? ['⏎/^K/^P/^R spawn'] : canResume ? ['⏎ resume'] : []),
+      ...(canSpawn ? ['⏎ detail', '^K/^P/^R spawn'] : canResume ? ['⏎ resume'] : []),
       ...(canResume ? ['f fork'] : []),
       ...(canPin ? ['p pin', 'N nota', 'A assegna'] : []),
       '^F cerca',
@@ -1927,6 +2106,40 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         childCount={childCount}
         columns={columns}
         note={note}
+      />
+    );
+  }
+
+  // ── T66 · detail della task ─────────────────────────────────────────────
+  // Quarta schermata sostitutiva, stessa ragione delle altre tre: un task file
+  // non entra in un box sopra i due pane. Il budget dei pane non viene nemmeno
+  // calcolato — il render esce di qui prima.
+  if (mode === 'detail' && sheet) {
+    if (isCompact(sheetCap)) {
+      return (
+        <Text wrap="truncate-end">
+          <Text bold color="cyan">loom-deck</Text>
+          <Text dimColor>
+            {' '}· {sheet.id} · terminale {rows}×{columns}: troppo basso, allarga · esc chiude
+          </Text>
+        </Text>
+      );
+    }
+    // Niente `windowRange`: quella centra la finestra su una selezione, qui la
+    // posizione è lo scroll mosso a mano. Il clamp serve comunque — un resize
+    // può accorciare il testo sotto uno scroll già dato.
+    const start = Math.min(sheetTop, sheetMaxTop);
+    return (
+      <DetailScreen
+        id={sheet.id}
+        title={sheet.title}
+        missing={sheet.text === null}
+        lines={sheetLines.slice(start, start + sheetCap)}
+        top={start}
+        total={sheetLines.length}
+        capacity={sheetCap}
+        action={sheetAction}
+        columns={columns}
       />
     );
   }
@@ -2183,6 +2396,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           forkOf={forkOf}
           sessionNotes={sessionNotes}
           projectCore={projectCore}
+          live={live}
+          liveCount={liveCount}
         />
       </Box>
       {/* T70 — blocco preview UNICO, a piena larghezza, sotto le due liste.
@@ -2204,6 +2419,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           columns={columns}
           origin={forkOf.get(selSessionObj.sessionId) ?? null}
           note={sessionNotes.get(selSessionObj.sessionId) ?? ''}
+          live={live.get(selSessionObj.sessionId) ?? null}
         />
       ) : null}
       {note ? <Text color="green" wrap="truncate-end">{sanitize(note)}</Text> : null}
@@ -2753,6 +2969,110 @@ function ReaderLine({ line, from, to }: { line: WrappedLine; from: number; to: n
 }
 
 /**
+ * Detail della task (T66): il task file scrollabile più la barra azioni.
+ *
+ * Unisce due gesti che erano due schermate — leggere la task e agire su di essa
+ * — perché convergono sullo stesso oggetto: si legge la Description proprio per
+ * decidere QUALE azione lanciare, e con due overlay separati quella decisione
+ * costava uscire dal viewer e ricordarsi la combo.
+ *
+ * Le azioni sono BOTTONI AFFIANCATI e non voci di un menu verticale: un
+ * rettangolo ha già coordinate e area cliccabile, quindi il layout sopravvive
+ * all'arrivo del mouse (T21 · SGR enable + hit-test) senza migrazione. La
+ * navigazione da tastiera ci si sovrappone senza conflitti.
+ */
+function DetailScreen({
+  id,
+  title,
+  missing,
+  lines,
+  top,
+  total,
+  capacity,
+  action,
+  columns,
+}: {
+  id: string;
+  title: string;
+  /** Il task file non esiste: si mostra il perché, le azioni restano attive. */
+  missing: boolean;
+  /** Solo la finestra visibile del testo wrappato. */
+  lines: string[];
+  top: number;
+  total: number;
+  capacity: number;
+  /** Indice dell'azione selezionata in DETAIL_ACTIONS. */
+  action: number;
+  columns: number;
+}) {
+  const last = Math.min(total, top + capacity);
+  // Il taglio lo fa il chiamante (invariante ③ di width.ts): la riga bottoni è
+  // ASCII, quindi `truncate-end` oggi darebbe il risultato giusto per caso — ma
+  // la correttezza non deve dipendere dall'alfabeto che capita nella riga.
+  const width = Math.max(20, (columns || 80) - 4);
+  const segs = DETAIL_ACTIONS.map((a) => `[ ${a.label} ]`);
+  const parts: string[] = [];
+  segs.forEach((s, i) => {
+    if (i > 0) parts.push('  ');
+    parts.push(s);
+  });
+  const dropped = (v: string[]) => segs.filter((s, i) => v[i * 2] !== s).length;
+  // Due passate: la seconda serve SOLO quando qualcosa cade, e riserva le
+  // colonne del contatore. Riservarle sempre costerebbe 6 colonne su ogni
+  // terminale largo per un avviso che lì non comparirà mai.
+  let shown = cutParts(parts, width);
+  if (dropped(shown) > 0) shown = cutParts(parts, Math.max(0, width - 6));
+  const cutCount = dropped(shown);
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
+      <Text bold color="cyan">loom-deck</Text>
+      <Text dimColor wrap="truncate-end">
+        <Text color="cyan">{id}</Text> · {cut(title, Math.max(10, width - 34))}
+        {/* Senza file la posizione nel testo non è un dato mancante: non esiste
+            proprio. Un `righe 0-0 di 0` la annuncerebbe come tale. */}
+        {missing ? '' : ` · righe ${total === 0 ? 0 : top + 1}-${last} di ${total}`}
+      </Text>
+      <Text dimColor wrap="truncate-end">
+        <Text color="yellow">↑↓</Text> riga · <Text color="yellow">PgUp/PgDn</Text> pagina ·{' '}
+        <Text color="yellow">g/G</Text> estremi · <Text color="yellow">←→</Text> azione ·{' '}
+        <Text color="yellow">⏎</Text> esegui · <Text color="yellow">esc</Text> chiudi
+      </Text>
+      <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
+        {missing ? (
+          <Text color="yellow" wrap="truncate-end">
+            {WARN} task file non trovato · le azioni restano attive (deck-run risolve la task per id)
+          </Text>
+        ) : (
+          // Riga vuota → uno spazio: un `<Text>` senza contenuto Ink non lo
+          // disegna, e il testo si compatterebbe perdendo la struttura del file.
+          lines.map((l, i) => (
+            <Text key={top + i} wrap="truncate-end">
+              {l || ' '}
+            </Text>
+          ))
+        )}
+      </Box>
+      <Box marginTop={1}>
+        <Text wrap="truncate-end">
+          {shown.map((part, i) =>
+            i % 2 === 1 ? (
+              <Text key={i}>{part}</Text>
+            ) : (
+              <Text key={i} inverse={i / 2 === action} color={i / 2 === action ? 'green' : 'gray'}>
+                {part}
+              </Text>
+            ),
+          )}
+          {/* Troncamento mai silenzioso, come le liste: un bottone che sparisce
+              su un terminale stretto non deve sembrare un'azione che non esiste. */}
+          {cutCount > 0 ? <Text color="yellow"> · +{cutCount}</Text> : null}
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
+/**
  * Larghezza del testo dentro la lista della schermata di assegnazione: box
  * esterno (2 bordi + 2 padding) + box lista (2 bordi + 2 padding).
  *
@@ -3103,6 +3423,7 @@ function SessionsHeader({
   parentLabel,
   total,
   pinnedCount,
+  liveCount,
   hidden,
   above,
   below,
@@ -3112,6 +3433,10 @@ function SessionsHeader({
   parentLabel: string;
   total: number;
   pinnedCount: number;
+  /** T62 — quante delle righe MOSTRATE sono vive. Contate sulla lista assemblata
+   *  e non sul registry: le vive di un altro parent non sono in questa lista, e
+   *  un numero più grande di quello che si vede si legge come un bug. */
+  liveCount: number;
   hidden: number;
   above: number;
   below: number;
@@ -3120,6 +3445,7 @@ function SessionsHeader({
 }) {
   const segments: Array<{ text: string; color?: string; dim?: boolean }> = [
     { text: `Sessions · ${parentLabel} (${total})` },
+    ...(liveCount > 0 ? [{ text: ` · ${LIVE_IDLE}${liveCount} vive`, color: 'green' }] : []),
     ...(pinnedCount > 0 ? [{ text: ` · 📌${pinnedCount}`, color: 'yellow' }] : []),
     ...(hidden > 0 ? [{ text: ` · +${hidden} più vecchie`, dim: true }] : []),
     ...(above > 0 ? [{ text: ` · ↑${above}`, dim: true }] : []),
@@ -3161,6 +3487,8 @@ function SessionsPane({
   forkOf,
   sessionNotes,
   projectCore,
+  live,
+  liveCount,
 }: {
   parentLabel: string;
   isSpot: boolean;
@@ -3196,6 +3524,14 @@ function SessionsPane({
   sessionNotes: Map<string, string>;
   /** `name` del progetto: il prefisso che la nota fa sparire. */
   projectCore: string | null;
+  /** T62 — sessionId → processo vivo. Assente dalla mappa = conversazione
+   *  chiusa (o aperta in un processo che non la sta più scrivendo, dopo un
+   *  `/clear`: il flag dice «questo transcript è l'attivo di un processo vivo»,
+   *  non «la tab esiste ancora»). */
+  live: Map<string, LiveSession>;
+  /** T62 — vive nella lista INTERA, non nella sola finestra visibile: `rows` è
+   *  già windowed, contarci sopra farebbe cambiare il numero scorrendo. */
+  liveCount: number;
 }) {
   return (
     <Box
@@ -3209,6 +3545,7 @@ function SessionsPane({
         parentLabel={parentLabel}
         total={total}
         pinnedCount={pinnedCount}
+        liveCount={liveCount}
         hidden={hidden}
         above={above}
         below={below}
@@ -3289,6 +3626,10 @@ function SessionsPane({
           // task accanto, che esiste solo in questa vista.
           const bound = bindings.get(s.sessionId) ?? null;
           const linked = isAll ? Boolean(bound) : !isSpot;
+          // T62 — liveness e binding sono ORTOGONALI: la cella marker dice a chi
+          // appartiene la conversazione (pin/task/spot), questa dice se è aperta
+          // adesso. Farle condividere una cella perderebbe una delle due.
+          const liveEntry = live.get(s.sessionId);
           // Stesso motivo per cui la colonna esiste: una pinnata resta in lista
           // qualunque sia il parent selezionato, quindi l'header non ne dice
           // l'appartenenza e la cella va riempita anche fuori dalla vista
@@ -3313,6 +3654,7 @@ function SessionsPane({
               (2 /* caret */ +
                 2 /* marker */ +
                 1 /* gutter */ +
+                1 /* T62 · colonna liveness */ +
                 SID_CHARS +
                 1 /* gutter */ +
                 (taskW > 0 ? taskW + 1 : 0) +
@@ -3347,7 +3689,12 @@ function SessionsPane({
               ) : (
                 <Text dimColor>{pad('○', 2)}</Text>
               )}{' '}
-              <Text color="cyan">{s.sessionId.slice(0, SID_CHARS)}</Text>{' '}
+              <Text color={liveEntry ? (liveEntry.status === 'busy' ? 'yellow' : 'green') : undefined}>
+                {liveEntry ? (liveEntry.status === 'busy' ? LIVE_BUSY : LIVE_IDLE) : LIVE_NONE}
+              </Text>
+              <Text color={liveEntry ? (liveEntry.status === 'busy' ? 'yellow' : 'green') : 'cyan'} bold={Boolean(liveEntry)}>
+                {s.sessionId.slice(0, SID_CHARS)}
+              </Text>{' '}
               {taskW > 0 ? (
                 <>
                   <Text color={bound && taskCell ? 'green' : undefined} dimColor={!bound}>
@@ -3400,6 +3747,8 @@ type PreviewProps =
       origin: string | null;
       /** T53 — nota umana; '' = nessuna. */
       note: string;
+      /** T62 — processo vivo che sta scrivendo questo transcript; null = chiuso. */
+      live: LiveSession | null;
     };
 
 function PreviewPane(p: PreviewProps) {
@@ -3415,6 +3764,7 @@ function PreviewPane(p: PreviewProps) {
           columns={p.columns}
           origin={p.origin}
           note={p.note}
+          live={p.live}
         />
       )}
     </Box>
@@ -3435,6 +3785,7 @@ function SessionPreview({
   columns,
   origin,
   note,
+  live,
 }: {
   s: Session;
   firstLines: number;
@@ -3442,6 +3793,7 @@ function SessionPreview({
   columns: number;
   origin: string | null;
   note: string;
+  live: LiveSession | null;
 }) {
   const width = previewTextWidth(columns);
   const first = s.customTitle && firstLines > 0 ? wrapLines(s.firstPrompt, width, firstLines) : [];
@@ -3468,6 +3820,16 @@ function SessionPreview({
       <Text dimColor wrap="truncate-end">
         {fmtSize(s.sizeBytes)} · {s.turns} turni · {fmtDateTime(s.ts)} · {s.gitBranch || '-'}
         {origin ? ` · ⑂ da ${origin.slice(0, 8)}` : ''}
+        {/* T62 — il pid va IN CODA alla riga meta, come la provenienza e per lo
+            stesso motivo (le righe fisse del blocco sono contate dal budget
+            d'altezza). È l'unica coordinata che il deck non mostra da nessuna
+            altra parte, e serve proprio quando la si vuole: attaccarsi al
+            processo, o ucciderlo. */}
+        {live ? (
+          <Text color={live.status === 'busy' ? 'yellow' : 'green'}>
+            {` · ${live.status === 'busy' ? LIVE_BUSY : LIVE_IDLE} viva pid ${live.pid} (${live.status})`}
+          </Text>
+        ) : null}
       </Text>
       {first.map((line, i) => (
         <Text key={`f${i}`} dimColor wrap="truncate-end">

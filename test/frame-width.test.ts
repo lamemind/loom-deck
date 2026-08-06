@@ -242,6 +242,19 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // della schermata, cioè l'unico che può sfondarne il box.
   ['assegna sessione a task', 'RA', [100, 176]],
   ['assegna · filtro lungo', 'RAX', [100]],
+  // T66 — il detail: `DD` porta la selezione sulla prima task (il deck atterra
+  // su `≡ tutte`), `\r` apre l'overlay. Le righe del task file sono l'unico
+  // testo a lunghezza libera lì dentro, e la riga bottoni l'unica riga fissa
+  // aggiunta — cioè i due modi in cui l'overlay può sfondare.
+  ['detail task', 'DD\r', [100, 176]],
+  // Fondo del testo (`G`): l'ultima schermata è quella con meno righe di
+  // contenuto, dove uno scroll non clampato lascerebbe righe vuote e il box si
+  // accorcerebbe sotto il budget.
+  ['detail · fondo del testo', 'DD\rG', [100]],
+  // Quattro `→` portano sull'ultima azione (`checkpoint`, l'etichetta più
+  // lunga): il bottone selezionato è reso `inverse`, ed è la cella che deve
+  // restare dentro il frame anche in coda alla riga.
+  ['detail · ultima azione', 'DD\rRRRR', [100, 176]],
   // T61 — il quarto segmento dell'header del pane task, provato CON i contatori
   // di finestra già a schermo (gli 8 `D` scrollano la lista → `↑↓`): da solo il
   // segmento starebbe ovunque, è la somma a riempire la riga. Niente modale

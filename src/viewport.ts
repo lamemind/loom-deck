@@ -63,6 +63,11 @@ export const MODAL_HEIGHT = {
   // pagherebbe due volte (il suo costo + quello che toglie ai pane sotto, che
   // in quel momento non si stanno nemmeno guardando).
   assign: 0,
+  // T66 — il detail della task: task file scrollabile + barra azioni. Quarta
+  // sostitutiva, stesso motivo delle altre tre — un task file da 200 righe non
+  // entra in un box sopra i pane. La sua altezza la distribuisce
+  // `detailCapacity`.
+  detail: 0,
 } as const;
 
 export type Mode = keyof typeof MODAL_HEIGHT;
@@ -275,6 +280,27 @@ const READER_CHROME = 8;
 /** Righe di testo del messaggio che entrano nel terminale. */
 export function readerCapacity(rows: number): number {
   return Math.max(0, (rows || 24) - SLACK - READER_CHROME);
+}
+
+// T66 — cornice del detail della task.
+//   2  bordi del box esterno
+//   1  titolo "loom-deck"
+//   1  riga meta (id · titolo · posizione nel testo)
+//   1  riga hint
+//   1  marginTop del box testo
+//   2  bordi del box testo
+//   1  marginTop della riga azioni
+//   1  riga azioni
+//
+// Le ultime due sono il motivo per cui il detail non può riusare READER_CHROME:
+// la barra bottoni è una riga FISSA in più dentro l'overlay, e ogni riga fissa
+// aggiunta va scalata dalla capienza del contenuto o il frame sfonda `rows`
+// (stessa invariante di TASKS_PANE_CHROME).
+const DETAIL_CHROME = 10;
+
+/** Righe di task file che entrano nel terminale. */
+export function detailCapacity(rows: number): number {
+  return Math.max(0, (rows || 24) - SLACK - DETAIL_CHROME);
 }
 
 // T52 — cornice del pannello di anteprima sotto la lista occorrenze:

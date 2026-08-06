@@ -10,9 +10,10 @@ già bound alla task via `LOOM_TASK`.
 ↑↓ scegli la task  →  ⏎  →  tab CC di fianco  →  LOOM_TASK bound
 ```
 
-Il tasto premuto sceglie **con quale prompt** si entra: `⏎` a mani nude, `^K`
-recap, `^P` preflight, `^R` esecuzione (vedi [I quattro modi di entrare in una
-task](#i-quattro-modi-di-entrare-in-una-task)).
+`⏎` apre il **detail** della task — task file scrollabile più una barra azioni —
+e da lì si sceglie con quale prompt entrare; `^K`/`^P`/`^R` restano acceleratori
+per chi lo sa già (vedi [I cinque modi di entrare in una
+task](#i-cinque-modi-di-entrare-in-una-task)).
 
 Entrambi i prefissi del contratto loom entrano in lista: **`T`** (code task) e
 **`D`** (doc task). Il trattamento è identico ovunque tranne che su `^R`, dove il
@@ -37,7 +38,7 @@ Ptyxis. Chiudere il deck non uccide le sessioni. La tab nasce nella window *atti
 
 ## Stato
 
-Bootstrap + spike ① + **TUI ③** funzionante (legge `tasks.md`, `⏎` spawna). Roadmap:
+Bootstrap + spike ① + **TUI ③** funzionante (legge `tasks.md`, `⏎` apre il detail). Roadmap:
 
 ```
 ① spike spawn-tab + LOOM_TASK   ✅ scripts/deck-run
@@ -56,7 +57,7 @@ senza collisioni:
 |---|---|---|
 | `↑` `↓` | naviga nella lista | |
 | `←` `→` `tab` | cambia pane | |
-| `⏎` | azione primaria del pane | Tasks → spawna la task selezionata (senza prompt) · Sessions → riprende (`claude --resume`) la sessione selezionata |
+| `⏎` | azione primaria del pane | Tasks → apre il **detail** della task selezionata · Sessions → riprende (`claude --resume`) la sessione selezionata |
 | **MAIUSCOLA** | **apre un modale** | cattura tutti i tasti; `esc` annulla, non esce |
 | minuscola | azione immediata, one-shot | |
 | `CTRL`+lettera | idiomi universali, toggle dentro i modali di testo, varianti di un'azione | `^F` = find, come ovunque · `^K`/`^P`/`^R` = spawn con un altro prompt |
@@ -79,6 +80,7 @@ Assegnazioni correnti:
 | modale | `S` | sort chain |
 | modale | `F` | filtri |
 | modale | `^F` | **ricerca full-text** nelle conversazioni del progetto |
+| modale | `⏎` | **detail** della task selezionata: task file scrollabile + barra azioni |
 | immediata | `^K` | spawna la task selezionata col prompt di **recap** |
 | immediata | `^P` | spawna la task selezionata sul **preflight** |
 | immediata | `^R` | spawna la task selezionata in **esecuzione** |
@@ -91,7 +93,7 @@ Assegnazioni correnti:
 Il footer è **due righe con due nature diverse**:
 
 ```
-⏎/^K/^P/^R spawn · ^F cerca · C nuova · E edit · S sort · F filtri · w salva
+⏎ detail · ^K/^P/^R spawn · ^F cerca · C nuova · E edit · S sort · F filtri · w salva
 t 💻 · c 🤖 · 1 📝 codium · 2 ☕ idea
 ```
 
@@ -123,28 +125,50 @@ finestra Ptyxis, senza passare da un modale. `c` (minuscola, azione) e `C`
 (maiuscola, modale create-task) restano distinte per la regola sopra — così come
 `f` (fork) e `F` (filtri).
 
-### I quattro modi di entrare in una task
+### I cinque modi di entrare in una task
 
-Sulla task selezionata (focus sul pane Tasks) quattro tasti aprono una sessione
-**bound**: `LOOM_TASK` iniettata, `sessionId` pinnato, binding scritto nel
-sidecar. Fra loro cambia **solo il prompt iniziale**.
+Sulla task selezionata (focus sul pane Tasks) si apre una sessione **bound**:
+`LOOM_TASK` iniettata, `sessionId` pinnato, binding scritto nel sidecar. Fra i
+modi cambia **solo il prompt iniziale**.
 
-| Tasto | Prompt |
-|---|---|
-| `⏎` | nessuno — il contesto lo carica l'hook `SessionStart`, il primo messaggio lo scrivi tu |
-| `^K` | `recap stato task <id>` — prompt diretto, nessuna skill |
-| `^P` | `/loom-works:preflight-task <id>` |
-| `^R` | `/loom-works:run-task <id>`, oppure `/loom-works:run-doc <id>` se l'id è una `D` |
+| Azione (detail) | Tasto diretto | Prompt |
+|---|---|---|
+| `open` | — | nessuno — il contesto lo carica l'hook `SessionStart`, il primo messaggio lo scrivi tu |
+| `status` | `^K` | `recap stato task <id>` — prompt diretto, nessuna skill |
+| `preflight` | `^P` | `/loom-works:preflight-task <id>` |
+| `run` | `^R` | `/loom-works:run-task <id>`, oppure `/loom-works:run-doc <id>` se l'id è una `D` |
+| `checkpoint` | — | `/loom-works:checkpoint-task <id>` |
 
 Il prompt iniziale è la scelta di **chi apre**, non una proprietà della task: lo
 stesso task file si apre per leggerne lo stato, per congelarne le decisioni, per
-eseguirlo o per entrarci a mani nude — e il tasto premuto *è* quell'intento.
-Prima esisteva il solo `⏎` col recap, quindi ogni altro ingresso passava per una
-sessione da correggere a mano.
+eseguirlo o per entrarci a mani nude — e l'azione scelta *è* quell'intento.
 
-Col focus sul pane Sessions i tre `CTRL` non spawnano: l'oggetto dell'azione è la
-task selezionata, e senza quel pane a fuoco non ce n'è una (il deck lo dice nella
-riga di nota, invece di aprire qualcosa a caso).
+Le due superfici sono complementari, non alternative. `⏎` apre il **detail** e lì
+si legge la Description *mentre* si decide: è il caso normale, perché la domanda
+«quale azione?» quasi sempre si risponde leggendo la task. I tre `CTRL` saltano
+il passaggio per chi lo sa già. Dentro il detail sono inerti — i bottoni sono lì.
+
+Col focus sul pane Sessions né `⏎` né i `CTRL` spawnano: l'oggetto dell'azione è
+la task selezionata, e senza quel pane a fuoco non ce n'è una (il deck lo dice
+nella riga di nota, invece di aprire qualcosa a caso).
+
+### `⏎` — il detail della task
+
+Overlay fullscreen a due zone: il **task file per intero**, scrollabile
+(`↑↓` riga, `PgUp`/`PgDn` pagina, `g`/`G` estremi), e una riga di **bottoni**
+navigabile con `←→`, con `open` a fuoco all'apertura. `⏎` esegue l'azione
+selezionata e chiude; `esc` chiude lasciando la lista con la stessa selezione.
+
+Le azioni non sono un catalogo nuovo: chiamano lo **stesso** percorso di spawn
+dei tasti diretti. Una superficie in più, zero percorsi di spawn in più.
+
+Sono bottoni affiancati e non voci di un menu verticale perché è la forma che
+sopravvive all'arrivo del mouse: un rettangolo ha già coordinate e area
+cliccabile, una lista di voci andrebbe rifatta.
+
+Dentro il detail `←→` non cambia più pane — il ramo `useInput` della modalità
+chiude prima di arrivare a quello di default. Ink non ha focus-trap: la cattura
+**è** l'ordine dei rami.
 
 Il catalogo dei prompt vive in `scripts/deck-run`, non nella TUI: è il primitive
 UI-agnostico, il deck gli passa un **simbolo** (`--prompt-kind`) e non una
@@ -298,7 +322,7 @@ npx @lamemind/loom-deck
 ```bash
 # dalla project dir con un tasks.md
 scripts/deck-run T18
-scripts/deck-run T18 --prompt-kind none|recap|preflight|run
+scripts/deck-run T18 --prompt-kind none|recap|preflight|run|checkpoint
 ```
 
 Apre una tab Ptyxis nella window attiva con `LOOM_TASK=T18 claude 'recap stato task T18'`.
@@ -320,7 +344,7 @@ alcun errore visibile. Override o disattivazione via `LOOM_DECK_STATE_PROFILE`
 
 ```bash
 npm install
-npm run dev      # tsx src/cli.tsx — lista tasks.md reale, ↑↓ naviga · ⏎/^K/^P/^R spawn · q esci
+npm run dev      # tsx src/cli.tsx — lista tasks.md reale, ↑↓ naviga · ⏎ detail · ^K/^P/^R spawn · q esci
 npm run build    # tsc → dist/
 npm test         # node:test sul core vista (src/view.ts), senza Ink né terminale
 ```

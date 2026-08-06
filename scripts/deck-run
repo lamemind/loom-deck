@@ -11,7 +11,7 @@
 # Tre assi ORTOGONALI, da non confondere fra loro:
 #   binding task   <TaskID> ..... --no-task
 #   continuità     nuova ........ --resume [--fork]
-#   prompt         --prompt-kind none|recap|preflight|run
+#   prompt         --prompt-kind none|recap|preflight|run|checkpoint
 # Il terzo asse (T56) prima non esisteva: il prompt era una CONSEGUENZA degli
 # altri due (bound ⇒ recap, --no-task ⇒ niente, --resume ⇒ niente), quindi
 # "task-bound SENZA prompt" era inesprimibile e l'unico modo di non avere un
@@ -74,7 +74,7 @@ PROMPT_KIND=""
 # Sotto --fork il --session-id torna AMMESSO (anzi: è il punto) — la mutua
 # esclusione con --resume esiste perché una ripresa nuda riscrive il transcript
 # dell'id ripreso, mentre il fork ne apre uno NUOVO, che possiamo quindi pinnare.
-# --prompt-kind <none|recap|preflight|run> (T56): sceglie il prompt iniziale fra
+# --prompt-kind <none|recap|preflight|run|checkpoint> (T56, T66): sceglie il prompt iniziale fra
 # quelli del catalogo qui sotto. Enum e non stringa libera: il prompt viaggia
 # dentro apici singoli in `bash -lc`, quindi il testo va tenuto in un posto solo
 # e verificato una volta, invece di spostare il rischio di quoting su ogni
@@ -125,6 +125,7 @@ USAGE="uso: deck-run <TaskID> [--prompt-kind <kind>] [--session-id <uuid>]
        recap       recap stato task <TaskID>
        preflight   /loom-works:preflight-task <TaskID>
        run         /loom-works:run-task <TaskID>  (run-doc sulle task D)
+       checkpoint  /loom-works:checkpoint-task <TaskID>
 
   --title-note   nota della conversazione, appesa al titolo tab come «nota»
                  (ridotta a lettere/cifre/spazi/-/_, cap 60 char)"
@@ -154,8 +155,8 @@ fi
 # lì il valore arriva da un file editabile a mano, qui da un argomento nostro.
 if [[ -n "$PROMPT_KIND" ]]; then
   case "$PROMPT_KIND" in
-    none|recap|preflight|run) ;;
-    *) echo "--prompt-kind ignoto: '${PROMPT_KIND}' (usa none|recap|preflight|run)" >&2
+    none|recap|preflight|run|checkpoint) ;;
+    *) echo "--prompt-kind ignoto: '${PROMPT_KIND}' (usa none|recap|preflight|run|checkpoint)" >&2
        echo "$USAGE" >&2
        exit 2 ;;
   esac
@@ -336,11 +337,12 @@ FORK_FLAG=""
 # Il prompt iniziale è la scelta di CHI APRE la sessione, non una proprietà della
 # task: lo stesso task file si apre per leggerne lo stato, per un preflight, per
 # eseguirlo o a mani nude. Il kind è quell'intento.
-#   none      → nessun prompt (≠ stringa vuota: PROMPT_ARG sparisce del tutto,
-#               come sul ramo --resume, altrimenti CC riceve un posizionale vuoto)
-#   recap     → prompt DIRETTO, no skill: l'utente rivede/steera prima di lanciare
-#   preflight → skill di preflight sulla task
-#   run       → skill di esecuzione sulla task
+#   none       → nessun prompt (≠ stringa vuota: PROMPT_ARG sparisce del tutto,
+#                come sul ramo --resume, altrimenti CC riceve un posizionale vuoto)
+#   recap      → prompt DIRETTO, no skill: l'utente rivede/steera prima di lanciare
+#   preflight  → skill di preflight sulla task
+#   run        → skill di esecuzione sulla task
+#   checkpoint → skill di checkpoint sulla task
 # Vincolo di quoting: nessun template deve contenere apici singoli (viaggia
 # dentro '...' nel comando in-tab). `/loom-works:...` passa intero proprio perché
 # è single-quoted — lo slash e i due punti non sono metacaratteri lì dentro.
@@ -355,16 +357,19 @@ FORK_FLAG=""
 # del contratto loom (`T` code, `D` doc) e le due hanno skill di esecuzione
 # diverse — `run-task` è dichiarata code-only, `run-doc` è la sua complementare.
 # Su una D il prompt `run-task` invocherebbe la skill sbagliata. Gli altri kind
-# non discriminano: `recap` è un prompt diretto (nessuna skill) e
-# `preflight-task` risolve il task file per id, indifferente al prefisso.
+# non discriminano, ma è una verifica da rifare per OGNI kind nuovo, non una
+# proprietà del catalogo: `recap` è un prompt diretto (nessuna skill),
+# `preflight-task` risolve il task file per id, e `checkpoint-task` estrae il
+# taskId con `T\d+|D\d+` — copre quindi entrambi i prefissi da sé.
 case "${PROMPT_KIND:-recap}" in
-  none)      PROMPT="" ;;
-  recap)     PROMPT="recap stato task ${TASK}" ;;
-  preflight) PROMPT="/loom-works:preflight-task ${TASK}" ;;
-  run)       case "$TASK" in
-               D*) PROMPT="/loom-works:run-doc ${TASK}" ;;
-               *)  PROMPT="/loom-works:run-task ${TASK}" ;;
-             esac ;;
+  none)       PROMPT="" ;;
+  recap)      PROMPT="recap stato task ${TASK}" ;;
+  preflight)  PROMPT="/loom-works:preflight-task ${TASK}" ;;
+  checkpoint) PROMPT="/loom-works:checkpoint-task ${TASK}" ;;
+  run)        case "$TASK" in
+                D*) PROMPT="/loom-works:run-doc ${TASK}" ;;
+                *)  PROMPT="/loom-works:run-task ${TASK}" ;;
+              esac ;;
 esac
 if [[ "${PROMPT_KIND:-}" != "none" && -n "${LOOM_DECK_ENTER_PROMPT:-}" ]]; then
   PROMPT="${LOOM_DECK_ENTER_PROMPT//\{TASK\}/${TASK}}"
