@@ -255,6 +255,19 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // lunga): il bottone selezionato è reso `inverse`, ed è la cella che deve
   // restare dentro il frame anche in coda alla riga.
   ['detail · ultima azione', 'DD\rRRRR', [100, 176]],
+  // T91 — la ricerca dentro il detail: modale dentro modale. Il campo è l'unico
+  // testo a lunghezza libera della riga che lo ospita, e la riga stessa è la
+  // seconda riga FISSA aggiunta dentro l'overlay.
+  ['detail · ricerca aperta', `DD\r${CTRL_F}task`, [100, 176]],
+  // `D` dopo la query muove fra le occorrenze (non scrolla): il contatore `n/N`
+  // cambia e con esso la larghezza della coda della riga.
+  ['detail · ricerca · seconda occorrenza', `DD\r${CTRL_F}taskD`, [100]],
+  // Zero occorrenze: la riga porta un avviso invece del contatore, ed è più
+  // lunga di quello — il caso che sfonda se il budget è tarato sul contatore.
+  ['detail · ricerca senza occorrenze', `DD\r${CTRL_F}zzqqww`, [100]],
+  // Query più larga del campo: la finestra si ancora al caret, come nel modale
+  // edit, e il testo non deve uscire dal box.
+  ['detail · ricerca · query lunga', `DD\r${CTRL_F}X`, [100]],
   // T61 — il quarto segmento dell'header del pane task, provato CON i contatori
   // di finestra già a schermo (gli 8 `D` scrollano la lista → `↑↓`): da solo il
   // segmento starebbe ovunque, è la somma a riempire la riga. Niente modale
@@ -270,4 +283,20 @@ for (const [label, keys, widths, extraEnv] of SCENARIOS) {
       assertFrameFits(capture(cols, 38, keys, extraEnv), cols, `${label}@${cols}`);
     });
   }
+}
+
+// T91 — il budget d'ALTEZZA, che gli scenari sopra non provano: girano tutti a
+// 38 righe, dove due righe in più non si notano. Il campo di ricerca è la riga
+// fissa che, non scalata dalla cornice, fa sfondare `rows` su un terminale basso
+// — e Ink che sfonda cade nel ramo `clearTerminal`, che su VTE versa un frame
+// nello scrollback a ogni tick del poll.
+for (const rows of [16, 20]) {
+  test(`altezza · detail con ricerca @ ${rows} righe`, { skip: !CAN_RUN }, () => {
+    const raw = capture(100, rows, `DD\r${CTRL_F}task`);
+    const frame = lastFrame(raw).filter((l) => l !== '');
+    assert.ok(
+      frame.length <= rows,
+      `frame di ${frame.length} righe in un terminale di ${rows}`,
+    );
+  });
 }

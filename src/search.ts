@@ -118,9 +118,10 @@ function escapeLiteral(s: string): string {
  */
 export function buildMatcher(
   query: string,
-  opts: SearchOptions,
+  opts: Pick<SearchOptions, 'regex' | 'caseSensitive' | 'wholeWord'>,
+  min: number = MIN_QUERY,
 ): { re: RegExp | null; error: string } {
-  if (query.length < MIN_QUERY) return { re: null, error: '' };
+  if (query.length < min) return { re: null, error: '' };
   let source = opts.regex ? query : escapeLiteral(query);
   // Il gruppo non-catturante è obbligatorio: senza, `\b` si legherebbe al solo
   // primo/ultimo ramo di un'alternativa (`\bfoo|bar\b` ≠ `\b(?:foo|bar)\b`).

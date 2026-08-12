@@ -192,6 +192,26 @@ test('detail: la barra azioni costa due righe in più del reader', () => {
   }
 });
 
+// T91 — il campo di ricerca è la SECONDA riga fissa aggiunta dentro l'overlay,
+// dopo la barra azioni. Gemello del gate qui sopra: se un domani il campo si
+// prendesse una riga in più senza dirlo alla cornice, il frame sfonderebbe
+// `rows` a terminale basso e Ink cadrebbe nel ramo `clearTerminal`.
+test('detail con ricerca aperta: il frame non supera le righe del terminale', () => {
+  for (const rows of [20, 24, 30, 40, 60]) {
+    assert.ok(detailCapacity(rows, true) + 12 + SLACK <= rows, `sforo a ${rows} righe`);
+    assert.equal(detailCapacity(rows, true), detailCapacity(rows) - 2, `a ${rows} righe`);
+  }
+});
+
+test('detail con ricerca: capienza mai negativa a terminale basso', () => {
+  for (const rows of [1, 5, 8, 10, 12]) {
+    assert.ok(detailCapacity(rows, true) >= 0, `detail+ricerca a ${rows} righe`);
+  }
+  // Il default resta quello di T66: un chiamante che non sa della ricerca
+  // continua a misurare la cornice senza campo.
+  assert.equal(detailCapacity(40), detailCapacity(40, false));
+});
+
 test('detail: capienza scalante, compatto sui terminali bassi', () => {
   assert.ok(detailCapacity(40) > detailCapacity(30));
   assert.equal(isCompact(detailCapacity(10)), true);

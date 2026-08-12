@@ -298,9 +298,21 @@ export function readerCapacity(rows: number): number {
 // (stessa invariante di TASKS_PANE_CHROME).
 const DETAIL_CHROME = 10;
 
-/** Righe di task file che entrano nel terminale. */
-export function detailCapacity(rows: number): number {
-  return Math.max(0, (rows || 24) - SLACK - DETAIL_CHROME);
+// T91 — la ricerca dentro il detail: marginTop + riga del campo.
+//
+// `MODAL_HEIGHT` dice che il detail costa 0 ai due pane (li sostituisce), e da
+// lì è facile leggere «dentro l'overlay lo spazio è gratis». Le due contabilità
+// sono distinte: quella dice quanto l'overlay toglie ai PANE, questa quanto
+// toglie al PROPRIO contenuto. Una riga fissa aggiunta e non scalata è ciò che
+// fa sfondare `rows` e manda Ink nel ramo `clearTerminal`, che su VTE riversa un
+// frame nello scrollback a ogni tick del poll.
+const DETAIL_SEARCH_CHROME = 2;
+
+/** Righe di task file che entrano nel terminale; con la ricerca aperta il campo
+ *  si paga qui, non altrove. */
+export function detailCapacity(rows: number, searching = false): number {
+  const extra = searching ? DETAIL_SEARCH_CHROME : 0;
+  return Math.max(0, (rows || 24) - SLACK - DETAIL_CHROME - extra);
 }
 
 // T52 — cornice del pannello di anteprima sotto la lista occorrenze:

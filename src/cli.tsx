@@ -86,6 +86,12 @@ import {
   type WrappedLine,
 } from './width.js';
 import {
+  scanText,
+  sliceLine,
+  topForOffset,
+  type Occurrence,
+} from './text-search.js';
+import {
   applyView,
   cycleSort,
   describeSort,
@@ -875,6 +881,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const [sheetTop, setSheetTop] = useState(0);
   const [sheetAction, setSheetAction] = useState(0);
 
+  // T91 — ricerca dentro il detail. `open` distingue i due modi in cui la si
+  // lascia: `esc` butta via ciò che il modale ha prodotto (`find` a null,
+  // evidenziazione via), `⏎` lo congela e restituisce il controllo allo strato
+  // sotto — campo chiuso, occorrenze ancora colorate, scroll dov'era. Senza il
+  // flag i due gesti collasserebbero su uno solo.
+  const [find, setFind] = useState<{ q: string; caret: number; open: boolean } | null>(null);
+  const [occIdx, setOccIdx] = useState(0);
+
   // Dimensioni vive del terminale: sono l'input del budget d'altezza sotto.
   const { rows, columns } = useTerminalSize();
 
@@ -1039,12 +1053,39 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // 2 padding) = 8. Sottostimare tronca un carattere, sovrastimare manda a capo
   // una riga che il budget d'altezza non ha contato.
   const sheetWidth = Math.max(20, (columns || 80) - 8);
+  // Le righe conservano i propri offset invece di essere appiattite a stringa
+  // (T66 le buttava con `.map((l) => l.text)`): è ciò che rende
+  // l'evidenziazione un'intersezione di intervalli invece di un caso speciale
+  // per il match spezzato dall'a-capo.
   const sheetLines = useMemo(
-    () => (sheet?.text ? wrapWithOffsets(sheet.text, sheetWidth).map((l) => l.text) : []),
+    () => (sheet?.text ? wrapWithOffsets(sheet.text, sheetWidth) : []),
     [sheet, sheetWidth],
   );
-  const sheetCap = detailCapacity(rows);
+  const sheetCap = detailCapacity(rows, find?.open === true);
   const sheetMaxTop = Math.max(0, sheetLines.length - sheetCap);
+
+  // Lo scan gira sulla STESSA stringa che si renderizza (`sheet.text`, già
+  // passata da `sanitize` in `loadTaskFileText`): una rilettura del file darebbe
+  // offset che indicizzano un documento diverso da quello a schermo, cioè
+  // un'evidenziazione spostata di N caratteri e nessun errore.
+  const findRes = useMemo(
+    () => (find && sheet?.text ? scanText(sheet.text, find.q) : { occ: [] as Occurrence[], error: '' }),
+    [find?.q, sheet],
+  );
+  // L'indice si clampa qui invece di essere corretto a ogni `setOccIdx`: la
+  // lista si accorcia da sola mentre si digita, e un indice fuori range vivrebbe
+  // per il tempo di un render.
+  const occCur = findRes.occ.length > 0 ? Math.min(occIdx, findRes.occ.length - 1) : -1;
+
+  // Salto all'occorrenza corrente, centrata. Non dipende da `sheetTop`, quindi
+  // non si auto-rilancia; dipende da `sheetLines` e `sheetCap`, quindi un resize
+  // ricalcola la posizione senza toccare le occorrenze — che sono offset del
+  // sorgente e il resize non le sposta.
+  useEffect(() => {
+    const o = occCur >= 0 ? findRes.occ[occCur] : undefined;
+    if (!o) return;
+    setSheetTop(topForOffset(sheetLines, o.start, sheetCap));
+  }, [findRes, occCur, sheetLines, sheetCap]);
 
   // T57 — righe del modale assegnazione: `null` (detach) in testa, poi le task
   // della VISTA corrente (D4 — filtri e sort inclusi, coerenza con ciò che si
@@ -1211,6 +1252,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     });
     setSheetTop(0);
     setSheetAction(0);
+    setFind(null);
+    setOccIdx(0);
     setNote('');
     setMode('detail');
   }
@@ -1218,10 +1261,25 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   function closeDetail() {
     setMode('normal');
     setSheet(null);
+    setFind(null);
   }
 
   function scrollDetail(delta: number) {
     setSheetTop((t) => Math.max(0, Math.min(sheetMaxTop, t + delta)));
+  }
+
+  /** Modifica la query: l'insieme delle occorrenze cambia, quindi si riparte
+   *  dalla prima. Il movimento del caret NON passa di qui — sposta il cursore,
+   *  non i risultati. */
+  function editFind(next: (f: { q: string; caret: number; open: boolean }) => typeof f) {
+    setFind((f) => (f ? next(f) : f));
+    setOccIdx(0);
+  }
+
+  function moveOcc(d: number) {
+    const n = findRes.occ.length;
+    if (n === 0) return;
+    setOccIdx((i) => (Math.min(i, n - 1) + d + n) % n);
   }
 
   // T53 — apertura del modale nota sulla conversazione selezionata. Come
@@ -1808,10 +1866,58 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     // È anche prima del ramo CTRL, quindi `^K`/`^P`/`^R` restano acceleratori
     // della sola lista: chi è già nel detail ha i bottoni.
     if (mode === 'detail') {
+      // T91 — modale DENTRO il modale, e sta prima per la stessa ragione per cui
+      // il detail sta prima del ramo CTRL: Ink non ha focus-trap, quindi la
+      // cattura È l'ordine dei rami. Mentre il campo è aperto mangia ogni lettera
+      // nuda, `g`/`G` compresi.
+      if (find?.open) {
+        if (key.escape) {
+          // Annulla: butta via ciò che il modale ha prodotto. Lo scroll resta
+          // dove la ricerca l'ha portato — riavvolgerlo sarebbe una terza
+          // semantica che nessun tasto ha chiesto.
+          setFind(null);
+        } else if (key.return) {
+          // Congela: campo chiuso, occorrenze ancora colorate, scroll intatto.
+          setFind((f) => (f ? { ...f, open: false } : f));
+        } else if (key.upArrow) {
+          moveOcc(-1);
+        } else if (key.downArrow) {
+          moveOcc(1);
+        } else if (key.leftArrow || key.rightArrow) {
+          const d = key.leftArrow ? -1 : 1;
+          setFind((f) =>
+            f ? { ...f, caret: Math.max(0, Math.min(cpLen(f.q), f.caret + d)) } : f,
+          );
+        } else if (key.backspace || key.delete) {
+          editFind((f) =>
+            f.caret > 0 ? { ...f, q: removeAt(f.q, f.caret - 1), caret: f.caret - 1 } : f,
+          );
+        } else if (key.ctrl) {
+          // `^U` svuota, come il filtro del modale assegnazione; ogni altra combo
+          // è no-op — `^F` incluso, siamo già dentro.
+          if (input === 'u') editFind((f) => ({ ...f, q: '', caret: 0 }));
+        } else if (input && !key.meta) {
+          const ins = sanitizeTyped(input);
+          editFind((f) => ({ ...f, q: insertAt(f.q, f.caret, ins), caret: f.caret + cpLen(ins) }));
+        }
+        return;
+      }
+
+      if (key.ctrl && input === 'f') {
+        // Fuori dal detail `^F` è la ricerca conversazioni; qui è la ricerca nel
+        // testo. La query sopravvive a una chiusura con `⏎`, quindi riaprire
+        // riprende da dov'era invece di ricominciare.
+        setFind((f) => (f ? { ...f, open: true } : { q: '', caret: 0, open: true }));
+        return;
+      }
+
       if (key.escape) {
+        // Uno strato alla volta: se resta un'evidenziazione congelata, `esc`
+        // smonta quella; il detail lo chiude il secondo.
         // Nessun reset di `sel`: la selezione della lista non è mai stata
         // toccata, quindi si ritrova esattamente dov'era.
-        closeDetail();
+        if (find) setFind(null);
+        else closeDetail();
       } else if (key.return) {
         // `⏎` esegue SEMPRE l'azione selezionata, mai "scrolla" o "chiudi": il
         // testo non è un campo attivo (si scorre, non si edita), quindi nessuna
@@ -2140,6 +2246,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         capacity={sheetCap}
         action={sheetAction}
         columns={columns}
+        find={find}
+        occ={findRes.occ}
+        occCur={occCur}
       />
     );
   }
@@ -2887,6 +2996,7 @@ function SearchScreen({
  */
 function SearchPreviewPane({ p }: { p: SearchPreview }) {
   const last = Math.min(p.total, p.from + p.lines.length);
+  const occ = [{ start: p.hit.matchStart, end: p.hit.matchEnd }];
   return (
     <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
       <Text dimColor wrap="truncate-end">
@@ -2895,7 +3005,7 @@ function SearchPreviewPane({ p }: { p: SearchPreview }) {
         <Text color="yellow">⏎</Text> apre il reader
       </Text>
       {p.lines.map((l, i) => (
-        <ReaderLine key={p.from + i} line={l} from={p.hit.matchStart} to={p.hit.matchEnd} />
+        <ReaderLine key={p.from + i} line={l} occ={occ} current={0} />
       ))}
     </Box>
   );
@@ -2926,6 +3036,7 @@ function ReaderScreen({
   bound: string | null;
 }) {
   const last = Math.min(total, top + capacity);
+  const occ = [{ start: hit.matchStart, end: hit.matchEnd }];
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
       <Text bold color="cyan">loom-deck</Text>
@@ -2941,30 +3052,61 @@ function ReaderScreen({
       </Text>
       <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
         {lines.map((l, i) => (
-          <ReaderLine key={top + i} line={l} from={hit.matchStart} to={hit.matchEnd} />
+          <ReaderLine key={top + i} line={l} occ={occ} current={0} />
         ))}
       </Box>
     </Box>
   );
 }
 
-/** Una riga del reader, con la sola porzione di match evidenziata. Gli offset
- *  sono quelli del testo sorgente, quindi un match a cavallo dell'a-capo si
- *  colora su entrambe le righe senza casi speciali. */
-function ReaderLine({ line, from, to }: { line: WrappedLine; from: number; to: number }) {
-  const a = Math.max(0, Math.min(line.text.length, from - line.start));
-  const b = Math.max(0, Math.min(line.text.length, to - line.start));
-  if (b <= a) {
-    return <Text wrap="truncate-end">{line.text || ' '}</Text>;
-  }
+/** Una riga con le porzioni di match evidenziate. Gli offset sono quelli del
+ *  testo sorgente, quindi un match a cavallo dell'a-capo si colora su entrambe
+ *  le righe senza casi speciali — entrambe intersecano il suo intervallo.
+ *
+ *  Regge N occorrenze perché il detail (T91) ne mostra tutte quelle visibili; il
+ *  reader (T52) ne passa una sola, che è il caso degenere dello stesso taglio. */
+function ReaderLine({
+  line,
+  occ,
+  current,
+}: {
+  line: WrappedLine;
+  occ: readonly Occurrence[];
+  /** Indice in `occ` dell'occorrenza su cui si è posizionati; -1 = nessuna. */
+  current: number;
+}) {
+  const segs = sliceLine(line.text, line.start, occ, current);
+  if (segs.length === 0) return <Text wrap="truncate-end">{line.text || ' '}</Text>;
   return (
     <Text wrap="truncate-end">
-      {line.text.slice(0, a)}
-      <Text backgroundColor="yellow" color="black">
-        {line.text.slice(a, b)}
-      </Text>
-      {line.text.slice(b)}
+      {segs.map((s, i) =>
+        s.hit ? (
+          // La corrente si distingue dalle altre per COLORE di sfondo, non per
+          // presenza: tutte restano visibili, o navigare fra occorrenze non
+          // mostrerebbe più dove sono le altre.
+          <Text key={i} backgroundColor={s.current ? 'cyan' : 'yellow'} color="black">
+            {s.text}
+          </Text>
+        ) : (
+          <Text key={i}>{s.text}</Text>
+        ),
+      )}
     </Text>
+  );
+}
+
+/** Campo della ricerca nel detail: finestra ancorata al caret, cursore inverso
+ *  sulla cella reale. Gemello di `EditTextField` senza la label, che qui sta
+ *  fuori perché il campo vive in FLUSSO su una riga condivisa col contatore —
+ *  non su una riga propria. */
+function DetailFindField({ value, caret, cols }: { value: string; caret: number; cols: number }) {
+  const win = caretWindow(value, caret, cols);
+  return (
+    <>
+      <Text>{sanitize(win.head)}</Text>
+      <Text inverse>{sanitize(win.at)}</Text>
+      <Text>{sanitize(win.tail)}</Text>
+    </>
   );
 }
 
@@ -2991,19 +3133,26 @@ function DetailScreen({
   capacity,
   action,
   columns,
+  find,
+  occ,
+  occCur,
 }: {
   id: string;
   title: string;
   /** Il task file non esiste: si mostra il perché, le azioni restano attive. */
   missing: boolean;
-  /** Solo la finestra visibile del testo wrappato. */
-  lines: string[];
+  /** Solo la finestra visibile del testo wrappato, con gli offset del sorgente. */
+  lines: WrappedLine[];
   top: number;
   total: number;
   capacity: number;
   /** Indice dell'azione selezionata in DETAIL_ACTIONS. */
   action: number;
   columns: number;
+  /** T91 — ricerca nel testo: `null` nessuna, `open:false` evidenziazione congelata. */
+  find: { q: string; caret: number; open: boolean } | null;
+  occ: readonly Occurrence[];
+  occCur: number;
 }) {
   const last = Math.min(total, top + capacity);
   // Il taglio lo fa il chiamante (invariante ③ di width.ts): la riga bottoni è
@@ -3032,11 +3181,22 @@ function DetailScreen({
             proprio. Un `righe 0-0 di 0` la annuncerebbe come tale. */}
         {missing ? '' : ` · righe ${total === 0 ? 0 : top + 1}-${last} di ${total}`}
       </Text>
-      <Text dimColor wrap="truncate-end">
-        <Text color="yellow">↑↓</Text> riga · <Text color="yellow">PgUp/PgDn</Text> pagina ·{' '}
-        <Text color="yellow">g/G</Text> estremi · <Text color="yellow">←→</Text> azione ·{' '}
-        <Text color="yellow">⏎</Text> esegui · <Text color="yellow">esc</Text> chiudi
-      </Text>
+      {/* La riga hint cambia CONTENUTO, mai altezza: è ciò che permette al
+          budget di contare le sole righe del campo di ricerca. */}
+      {find?.open ? (
+        <Text dimColor wrap="truncate-end">
+          <Text color="yellow">↑↓</Text> occorrenza · <Text color="yellow">←→</Text> caret ·{' '}
+          <Text color="yellow">^U</Text> svuota · <Text color="yellow">⏎</Text> tieni ·{' '}
+          <Text color="yellow">esc</Text> annulla
+        </Text>
+      ) : (
+        <Text dimColor wrap="truncate-end">
+          <Text color="yellow">↑↓</Text> riga · <Text color="yellow">PgUp/PgDn</Text> pagina ·{' '}
+          <Text color="yellow">g/G</Text> estremi · <Text color="yellow">←→</Text> azione ·{' '}
+          <Text color="yellow">^F</Text> cerca · <Text color="yellow">⏎</Text> esegui ·{' '}
+          <Text color="yellow">esc</Text> chiudi
+        </Text>
+      )}
       <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
         {missing ? (
           <Text color="yellow" wrap="truncate-end">
@@ -3045,13 +3205,30 @@ function DetailScreen({
         ) : (
           // Riga vuota → uno spazio: un `<Text>` senza contenuto Ink non lo
           // disegna, e il testo si compatterebbe perdendo la struttura del file.
-          lines.map((l, i) => (
-            <Text key={top + i} wrap="truncate-end">
-              {l || ' '}
-            </Text>
-          ))
+          lines.map((l, i) => <ReaderLine key={top + i} line={l} occ={occ} current={occCur} />)
         )}
       </Box>
+      {find?.open ? (
+        <Box marginTop={1}>
+          <Text wrap="truncate-end">
+            <Text dimColor>cerca </Text>
+            <DetailFindField value={find.q} caret={find.caret} cols={Math.max(10, width - 28)} />
+            {/* Zero occorrenze si dice, non si lascia dedurre da un campo che
+                non evidenzia niente — sotto il minimo di query non c'è ancora
+                nulla da dire. */}
+            {find.q.length === 0 ? (
+              <Text dimColor> · digita per cercare</Text>
+            ) : occ.length === 0 ? (
+              <Text color="yellow"> · nessuna occorrenza</Text>
+            ) : (
+              <Text color="cyan">
+                {' '}
+                · {occCur + 1}/{occ.length}
+              </Text>
+            )}
+          </Text>
+        </Box>
+      ) : null}
       <Box marginTop={1}>
         <Text wrap="truncate-end">
           {shown.map((part, i) =>
