@@ -248,6 +248,33 @@ export function neighborId(rows: SessionRow[], sessionId: string): string | null
   return selectable[at + 1]?.sessionId ?? selectable[at - 1]?.sessionId ?? null;
 }
 
+/**
+ * Id su cui atterrare quando la riga pinnata `sessionId` viene SPINNATA: la
+ * pinnata successiva, la precedente se era l'ultima, la prima contestuale se il
+ * gruppo pinnate si svuota. `null` se `sessionId` non è pinnata o non resta
+ * nessuna riga.
+ *
+ * Non è `neighborId` ristretto al gruppo: quello attraversa il separatore,
+ * quindi sull'ULTIMA pinnata atterrerebbe sulla prima contestuale — il caret
+ * scavalcherebbe l'intero gruppo invece di risalire di una riga. Qui il confine
+ * fra i due gruppi è la regola, non un ostacolo.
+ *
+ * L'id va calcolato PRIMA di riscrivere il sidecar: dopo, la riga pinnata non
+ * c'è più e il vicino nel gruppo non è calcolabile. Serve perché una spinnata
+ * non sparisce necessariamente dalla lista — se appartiene al parent
+ * selezionato ricompare fra le contestuali, e la selezione keyed sull'id la
+ * seguirebbe fin laggiù, trascinando il caret.
+ */
+export function unpinLandingId(rows: SessionRow[], sessionId: string): string | null {
+  const pinnedRows = rows.filter((r) => r.kind === 'pinned') as SelectableRow[];
+  const at = pinnedRows.findIndex((r) => r.sessionId === sessionId);
+  if (at < 0) return null;
+  const inGroup = pinnedRows[at + 1]?.sessionId ?? pinnedRows[at - 1]?.sessionId;
+  if (inGroup) return inGroup;
+  const firstContext = rows.find((r) => r.kind === 'context');
+  return firstContext && isSelectable(firstContext) ? firstContext.sessionId : null;
+}
+
 /** Session della riga selezionata; null se stale o nessuna selezione. */
 export function selectedSession(rows: SessionRow[], sessionId: string | null): Session | null {
   const r = rows.find((row) => isSelectable(row) && row.sessionId === sessionId);

@@ -50,6 +50,7 @@ import {
   selectedSession,
   sessionTitle,
   stripProjectCore,
+  unpinLandingId,
   type SessionRow,
 } from './session-list.js';
 import {
@@ -2061,8 +2062,15 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         setNote('p → nessuna sessione da pinnare');
       } else {
         const isPinned = pinned.has(selSessionId);
+        // Dove atterra la selezione: sul pin resta sulla sessione (sale in cima
+        // con lei, il caret la segue perché è l'oggetto dell'azione); sull'unpin
+        // resta IN PLACE nel gruppo pinnate — successiva, precedente, o prima
+        // contestuale se il gruppo si svuota. Calcolato PRIMA della riscrittura
+        // del sidecar, quando la riga pinnata esiste ancora.
+        const landing = isPinned ? unpinLandingId(sessionRows, selSessionId) : null;
         appendPin(cwd, selSessionId, !isPinned);
         reloadSessions();
+        if (landing) setSelSessionId(landing);
         setNote(`${isPinned ? 'unpin' : '📌 pin'} ${selSessionId.slice(0, 8)}`);
       }
     } else if (input === 'N') {

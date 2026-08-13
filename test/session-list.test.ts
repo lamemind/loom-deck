@@ -5,6 +5,7 @@ import {
   firstSelectableId,
   moveSelection,
   neighborId,
+  unpinLandingId,
   rowIndexOf,
   rowLabel,
   sessionTitle,
@@ -257,6 +258,38 @@ test('vicino: attraversa il separatore senza fermarcisi', () => {
   const a = assembleSessionList([sess('c1')], all, new Map([['p1', 0]]), 30);
   assert.deepEqual(kinds(a.rows), ['pinned', 'separator', 'context']);
   assert.equal(neighborId(a.rows, 'p1'), 'c1', 'il separatore non è una destinazione');
+});
+
+test('unpin: si atterra sulla pinnata successiva', () => {
+  const all = [sess('p1'), sess('p2'), sess('p3'), sess('c1')];
+  // Rango desc → l'ultima pinnata sta in cima: p3, p2, p1.
+  const pins = new Map([['p1', 0], ['p2', 1], ['p3', 2]]);
+  const a = assembleSessionList([sess('c1')], all, pins, 30);
+  assert.deepEqual(ids(a.rows), ['p3', 'p2', 'p1', 'c1']);
+  assert.equal(unpinLandingId(a.rows, 'p3'), 'p2');
+  assert.equal(unpinLandingId(a.rows, 'p2'), 'p1');
+});
+
+test('unpin: sull’ultima pinnata si risale, non si scavalca il gruppo', () => {
+  const all = [sess('p1'), sess('p2'), sess('c1')];
+  const a = assembleSessionList([sess('c1')], all, new Map([['p1', 0], ['p2', 1]]), 30);
+  assert.equal(unpinLandingId(a.rows, 'p1'), 'p2');
+  assert.equal(neighborId(a.rows, 'p1'), 'c1', 'il vicino generico esce dal gruppo');
+});
+
+test('unpin: gruppo che si svuota → prima contestuale', () => {
+  const all = [sess('p1'), sess('c1', 3), sess('c2', 2)];
+  const a = assembleSessionList([sess('c1', 3), sess('c2', 2)], all, new Map([['p1', 0]]), 30);
+  assert.equal(unpinLandingId(a.rows, 'p1'), 'c1');
+});
+
+test('unpin: unica pinnata senza contestuali, o riga non pinnata → null', () => {
+  const only = assembleSessionList([], [sess('p1')], new Map([['p1', 0]]), 30);
+  assert.equal(unpinLandingId(only.rows, 'p1'), null);
+  const ctx = [sess('c1'), sess('c2')];
+  const a = assembleSessionList(ctx, ctx, new Map(), 30);
+  assert.equal(unpinLandingId(a.rows, 'c1'), null, 'una contestuale non si spinna');
+  assert.equal(unpinLandingId([], 'p1'), null);
 });
 
 test('cambio di parent: la sessione riassegnata esce dal gruppo contestuale', () => {
