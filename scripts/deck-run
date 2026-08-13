@@ -124,7 +124,7 @@ USAGE="uso: deck-run <TaskID> [--prompt-kind <kind>] [--session-id <uuid>]
        none        nessun prompt — sessione aperta sulla task, a mani nude
        recap       recap stato task <TaskID>
        preflight   /loom-works:preflight-task <TaskID>
-       run         /loom-works:run-task <TaskID>  (run-doc sulle task D)
+       run         /loom-works:run-task <TaskID>
        checkpoint  /loom-works:checkpoint-task <TaskID>
 
   --title-note   nota della conversazione, appesa al titolo tab come «nota»
@@ -353,23 +353,15 @@ FORK_FLAG=""
 # possa scavalcare. Il placeholder {TASK} vale solo per il valore dell'override;
 # i template del catalogo interpolano ${TASK} diretto (nel `${VAR:-...}` la `}`
 # di `{TASK}` chiuderebbe in anticipo l'espansione).
-# `run` DISPATCHA sul prefisso: la lista del deck contiene entrambe le famiglie
-# del contratto loom (`T` code, `D` doc) e le due hanno skill di esecuzione
-# diverse — `run-task` è dichiarata code-only, `run-doc` è la sua complementare.
-# Su una D il prompt `run-task` invocherebbe la skill sbagliata. Gli altri kind
-# non discriminano, ma è una verifica da rifare per OGNI kind nuovo, non una
-# proprietà del catalogo: `recap` è un prompt diretto (nessuna skill),
-# `preflight-task` risolve il task file per id, e `checkpoint-task` estrae il
-# taskId con `T\d+|D\d+` — copre quindi entrambi i prefissi da sé.
+# Ogni kind è un template diretto sull'id: la lista del deck è monofamiglia
+# (`T`, unico prefisso del contratto loom), quindi nessun prompt discrimina sulla
+# forma dell'id.
 case "${PROMPT_KIND:-recap}" in
   none)       PROMPT="" ;;
   recap)      PROMPT="recap stato task ${TASK}" ;;
   preflight)  PROMPT="/loom-works:preflight-task ${TASK}" ;;
   checkpoint) PROMPT="/loom-works:checkpoint-task ${TASK}" ;;
-  run)        case "$TASK" in
-                D*) PROMPT="/loom-works:run-doc ${TASK}" ;;
-                *)  PROMPT="/loom-works:run-task ${TASK}" ;;
-              esac ;;
+  run)        PROMPT="/loom-works:run-task ${TASK}" ;;
 esac
 if [[ "${PROMPT_KIND:-}" != "none" && -n "${LOOM_DECK_ENTER_PROMPT:-}" ]]; then
   PROMPT="${LOOM_DECK_ENTER_PROMPT//\{TASK\}/${TASK}}"

@@ -11,19 +11,19 @@ import {
 
 const TASKS_MD = `# Tasks
 
-| ID  | Pri | K  | Prog | Task (max 64)                    |
-| --- | --- | -- | ---- | -------------------------------- |
-| T40 | 🔥 | ⚙️ | 🔵 | Budget iniezione SessionStart    |
-| T39 | ⚡ | ⚙️ | ✔️ | Deck: filtri + sort              |
-| D01 | ⚡ | 📝 | 🔵 | Importare la doc compass         |
+| ID  | Pri | Prog | Task (max 64)                    |
+| --- | --- | ---- | -------------------------------- |
+| T40 | 🔥 | 🔵 | Budget iniezione SessionStart    |
+| T39 | ⚡ | ✔️ | Deck: filtri + sort              |
+| T01 | ⚡ | 🔵 | Importare la doc compass         |
 `;
 
 test('updateTasksMdRow riscrive solo pri e prog della riga giusta', () => {
   const { content, ok } = updateTasksMdRow(TASKS_MD, 'T39', '🔥', '🟡');
   assert.equal(ok, true);
-  assert.match(content, /\| T39 \| 🔥 \| ⚙️ \| 🟡 \| Deck: filtri \+ sort\s+\|/);
+  assert.match(content, /\| T39 \| 🔥 \| 🟡 \| Deck: filtri \+ sort\s+\|/);
   // la riga non toccata resta identica
-  assert.match(content, /\| T40 \| 🔥 \| ⚙️ \| 🔵 \|/);
+  assert.match(content, /\| T40 \| 🔥 \| 🔵 \|/);
 });
 
 test('updateTasksMdRow su id assente non tocca nulla', () => {
@@ -32,21 +32,35 @@ test('updateTasksMdRow su id assente non tocca nulla', () => {
   assert.equal(content, TASKS_MD);
 });
 
-test('updateTasksMdRow edita anche una riga D (doc task)', () => {
-  const { content, ok } = updateTasksMdRow(TASKS_MD, 'D01', '🔥', '🟡');
-  assert.equal(ok, true);
-  assert.match(content, /\| D01 \| 🔥 \| 📝 \| 🟡 \| Importare la doc compass\s+\|/);
-});
-
 test('updateTasksMdRow ignora header e separatori', () => {
   const { ok } = updateTasksMdRow(TASKS_MD, 'ID', '🔥', '🟡');
   assert.equal(ok, false);
 });
 
+// Qui si SCRIVE su disco: un indice cablato su una tabella più larga metterebbe
+// il glifo di progresso sopra la prima parola del titolo.
+test('updateTasksMdRow segue l’header anche con una colonna in più', () => {
+  const larga = [
+    '| ID  | Pri | K  | Prog | Task |',
+    '| --- | --- | -- | ---- | ---- |',
+    '| T40 | 🔥 | 📝 | 🔵 | Budget iniezione |',
+  ].join('\n');
+  const { content, ok } = updateTasksMdRow(larga, 'T40', '⚡', '🟡');
+  assert.equal(ok, true);
+  assert.match(content, /\| T40 \| ⚡ \| 📝 \| 🟡 \| Budget iniezione \|/);
+});
+
+test('updateTasksMdRow senza header non scrive nulla', () => {
+  const orfana = '| T40 | 🔥 | 🔵 | Budget iniezione |\n';
+  const { content, ok } = updateTasksMdRow(orfana, 'T40', '⚡', '🟡');
+  assert.equal(ok, false);
+  assert.equal(content, orfana);
+});
+
 test('updateTasksMdRow riscrive anche la descrizione quando la si passa', () => {
   const { content, ok } = updateTasksMdRow(TASKS_MD, 'T39', '⚡', '🟡', 'Titolo nuovo di zecca');
   assert.equal(ok, true);
-  assert.match(content, /\| T39 \| ⚡ \| ⚙️ \| 🟡 \| Titolo nuovo di zecca \|/);
+  assert.match(content, /\| T39 \| ⚡ \| 🟡 \| Titolo nuovo di zecca \|/);
   // nessun residuo del titolo vecchio in coda alla riga
   assert.doesNotMatch(content, /filtri \+ sort/);
 });
@@ -55,21 +69,21 @@ test('updateTasksMdRow: desc undefined ≠ desc vuota', () => {
   // undefined → cella intatta (chiamata di sola pri/prog)
   assert.match(updateTasksMdRow(TASKS_MD, 'T39', '⚡', '🟡').content, /Deck: filtri \+ sort/);
   // '' → cella davvero svuotata
-  assert.match(updateTasksMdRow(TASKS_MD, 'T39', '⚡', '🟡', '').content, /\| T39 \| ⚡ \| ⚙️ \| 🟡 \|  \|/);
+  assert.match(updateTasksMdRow(TASKS_MD, 'T39', '⚡', '🟡', '').content, /\| T39 \| ⚡ \| 🟡 \|  \|/);
 });
 
 test('updateTasksMdRow: un `|` nel titolo viene escapato, non spezza la cella', () => {
   const { content } = updateTasksMdRow(TASKS_MD, 'T39', '⚡', '🟡', 'a | b');
   const row = content.split('\n').find((l) => l.startsWith('| T39'))!;
-  // 5 colonne + le due stringhe vuote ai bordi = 7 token, come una riga sana
-  assert.equal(row.split('|').length, 7 + 1); // +1: lo `\|` escapato resta uno split
+  // 4 colonne + le due stringhe vuote ai bordi = 6 token, come una riga sana
+  assert.equal(row.split('|').length, 6 + 1); // +1: lo `\|` escapato resta uno split
   assert.match(row, /\| a \\\| b \|/);
 });
 
 test('updateTasksMdRow: descrizione con `|` già presente collassa in una cella sola', () => {
-  const md = '| T39 | ⚡ | ⚙️ | 🔵 | vecchio | con pipe |\n';
+  const md = '| ID | Pri | Prog | Task |\n| T39 | ⚡ | 🔵 | vecchio | con pipe |\n';
   const { content } = updateTasksMdRow(md, 'T39', '⚡', '🟡', 'nuovo');
-  assert.equal(content, '| T39 | ⚡ | ⚙️ | 🟡 | nuovo |\n');
+  assert.equal(content, '| ID | Pri | Prog | Task |\n| T39 | ⚡ | 🟡 | nuovo |\n');
 });
 
 const TASK_FILE = `# Task: Qualcosa
@@ -97,12 +111,6 @@ test('updateTaskFileFields riscrive l’H1 conservando il cappello `Task:`', () 
   const { content, ok } = updateTaskFileFields(TASK_FILE, 'High', '🟡 42%', 'Altro titolo');
   assert.equal(ok, true);
   assert.match(content, /^# Task: Altro titolo$/m);
-});
-
-test('updateTaskFileFields: su una doc task resta `# Doc Task:`', () => {
-  const doc = '# Doc Task: Vecchio\n\n- **Priority**: Low\n';
-  const { content } = updateTaskFileFields(doc, 'Med', '🔵 Todo', 'Nuovo');
-  assert.match(content, /^# Doc Task: Nuovo$/m);
 });
 
 test('updateTaskFileFields: H1 senza cappello resta senza cappello', () => {

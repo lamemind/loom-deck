@@ -3,12 +3,12 @@ import { dirname, join } from 'node:path';
 import { sanitize } from './width.js';
 
 /**
- * Forma di un ID task: `T` (code) o `D` (doc) + numero. FONTE UNICA del gate —
- * `parseTasks` lo usa per scartare header/separatore della tabella, `task-edit`
- * per non riscrivere per sbaglio quelle stesse righe. Tenerlo in un posto solo
- * evita che i due gate divergano (uno accetterebbe righe che l'altro rifiuta).
+ * Forma di un ID task: `T` + numero. FONTE UNICA del gate — `parseTasks` lo usa
+ * per scartare header/separatore della tabella, `task-edit` per non riscrivere
+ * per sbaglio quelle stesse righe. Tenerlo in un posto solo evita che i due gate
+ * divergano (uno accetterebbe righe che l'altro rifiuta).
  */
-export const TASK_ID_RE = /^[TD]\d+$/;
+export const TASK_ID_RE = /^T\d+$/;
 
 export interface Task {
   id: string;
@@ -45,27 +45,65 @@ export function resolveTasksDir(cwd: string = process.cwd()): string {
   return join(dirname(resolveTasksPath(cwd)), 'tasks');
 }
 
-// Estrae le righe `| Tnn | Pri | K | Prog | Task |` della Tasks Overview.
-// Due prefissi ammessi (contratto plugin, counter separati): `T` = code task,
-// `D` = doc task. Le D entrano in lista come le T perché `deck-run` NON inietta
-// `run-task`: il prompt iniziale è un recap diretto ("recap stato task <id>"),
-// valido identico su una doc task. Righe header/separatore non matchano `^[TD]\d+$`
-// → scartate.
+/** Posizione delle celle dentro `line.split('|')`, presa dall'header. */
+export interface TaskColumns {
+  pri: number;
+  prog: number;
+  /** Prima cella della descrizione — le successive vanno rijoinate, può contenere `|`. */
+  desc: number;
+}
+
+/**
+ * Indici di colonna della Tasks Overview letti dall'HEADER, non cablati.
+ *
+ * Cablarli lega il parser al NUMERO di colonne invece che al loro nome: toglierne
+ * una fa scivolare tutto di uno e il deck legge la cella sbagliata **senza
+ * sollevare un errore** — la descrizione finisce dove si cerca il glifo di
+ * progresso, e `updateTasksMdRow` riscrive quella posizione su disco. È la stessa
+ * trappola già nota sull'indice di RIGA (selezione keyed su id, mai su posizione),
+ * applicata all'indice di colonna.
+ *
+ * Solo `pri` e `prog` si cercano per nome; la descrizione è per costruzione la
+ * colonna successiva a Prog, quindi rinominarla non rompe il parse. `null` = la
+ * riga non è l'header — l'header della tabella Lane (`| Lane | …`) cade qui.
+ */
+export function headerColumns(line: string): TaskColumns | null {
+  const t = line.trim();
+  if (!t.startsWith('|')) return null;
+  const cells = t.split('|').map((c) => c.trim().toLowerCase());
+  if (cells[1] !== 'id') return null;
+  const pri = cells.indexOf('pri');
+  const prog = cells.indexOf('prog');
+  if (pri < 0 || prog < 0) return null;
+  return { pri, prog, desc: prog + 1 };
+}
+
+// Estrae le righe `| Tnn | Pri | Prog | Task |` della Tasks Overview. Righe
+// header/separatore non matchano `^T\d+$` → scartate.
+//
+// Le righe si parsano solo DOPO aver incontrato l'header: senza indici derivati
+// non si tira a indovinare, la lista resta vuota. Un fallimento visibile invece
+// di una cella letta al posto sbagliato.
 export function parseTasks(content: string): Task[] {
   const tasks: Task[] = [];
+  let cols: TaskColumns | null = null;
   for (const line of content.split('\n')) {
+    const header = headerColumns(line);
+    if (header) {
+      cols = header;
+      continue;
+    }
+    if (!cols) continue;
     const t = line.trim();
     if (!t.startsWith('|')) continue;
     const cells = t.split('|').map((c) => c.trim());
     // cells[0] = '' (prima del primo |), cells[last] = '' (dopo l'ultimo |)
     const id = cells[1];
     if (!TASK_ID_RE.test(id)) continue;
-    // Colonne overview: | ID | Pri | K | Prog | Task | → cells[2]=Pri (icona
-    // priorità), cells[4]=Prog. K (Kind, cells[3]) non serve al deck.
-    const pri = cells[2] ?? '';
-    const prog = cells[4] ?? '';
+    const pri = cells[cols.pri] ?? '';
+    const prog = cells[cols.prog] ?? '';
     // desc = colonna finale; join per resistere a eventuali `|` nella descrizione.
-    const desc = cells.slice(5, -1).join('|').trim();
+    const desc = cells.slice(cols.desc, -1).join('|').trim();
     // Sanificazione AL CONFINE: tutto ciò che entra da tasks.md è testo
     // arbitrario e può contenere glifi che Ink e il terminale misurano in modo
     // diverso (vedi `width.ts`). Farlo qui invece che a ogni sito di render è
@@ -114,10 +152,9 @@ export function parseTaskDetail(id: string, content: string): TaskDetail {
 
   for (const line of content.split('\n')) {
     if (!title && line.startsWith('# ')) {
-      // I due template scrivono H1 diversi — `# Task: …` (code) e
-      // `# Doc Task: …` (doc): entrambi i cappelli vanno via, il titolo mostrato
-      // è la descrizione, non la sua categoria (già data dall'id).
-      title = line.replace(/^#\s+/, '').replace(/^(?:Doc\s+)?Task:\s*/, '').trim();
+      // Il cappello `Task:` del template va via: il titolo mostrato è la
+      // descrizione, non la categoria (già data dall'id).
+      title = line.replace(/^#\s+/, '').replace(/^Task:\s*/, '').trim();
       continue;
     }
     if (line.startsWith('## ')) {

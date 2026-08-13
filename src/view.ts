@@ -84,17 +84,11 @@ export function progRank(glyph: string): number {
 }
 
 // `T10`.localeCompare(`T9`) mette T10 prima: l'ID va confrontato NUMERICO.
-// parseTasks ammette due prefissi con counter SEPARATI (`T` code, `D` doc) →
-// il solo numero non basta, T01 e D01 collidono. Il prefisso pesa quindi come
-// cifra più significativa (T prima di D, blocco doc in coda), il numero come
-// meno significativa: il rango resta un intero singolo, quindi il comparator
-// della chain non cambia forma. Il gap 1e6 è oltre qualunque counter reale.
+// Prefisso unico → il numero è già una chiave totale, e il rango è il numero.
 // Un id fuori forma non deve far esplodere il comparator → coda con MAX_SAFE.
-const ID_PREFIX_RANK: Record<string, number> = { T: 0, D: 1 };
-
 export function idNum(id: string): number {
-  const m = /^([TD])(\d+)$/.exec(id);
-  return m ? ID_PREFIX_RANK[m[1]] * 1_000_000 + Number(m[2]) : Number.MAX_SAFE_INTEGER;
+  const m = /^T(\d+)$/.exec(id);
+  return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
 }
 
 function rankOf(task: Task, key: SortKey): number {

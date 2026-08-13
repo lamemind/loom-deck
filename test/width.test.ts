@@ -245,7 +245,7 @@ test('pad: la cella misura ESATTAMENTE le colonne chieste, glifo largo o stretto
   for (const g of ['○', '🔗', '📌', '·', '']) {
     assert.equal(termWidth(pad(g, 2)), 2, `${g} → cella larga 2`);
   }
-  for (const s of ['T5', 'T59', 'D01', '']) {
+  for (const s of ['T5', 'T59', 'T101', '']) {
     assert.equal(termWidth(pad(s, 4)), 4, `${s} → cella larga 4`);
   }
 });

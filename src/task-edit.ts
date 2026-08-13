@@ -4,7 +4,7 @@
 // senza toccare il filesystem.
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { TASK_ID_RE, findTaskFile } from './tasks.js';
+import { TASK_ID_RE, findTaskFile, headerColumns, type TaskColumns } from './tasks.js';
 import type { PriName, ProgName } from './view.js';
 
 // Il task file scrive la priorità per NOME (`- **Priority**: Med`), tasks.md la
@@ -82,25 +82,28 @@ export function initialDetail(current: string, prog: ProgName, date: string = to
 }
 
 /**
- * Riscrive le celle Pri (col 2), Prog (col 4) e — se `desc` è passata — la
- * descrizione (col 5) della riga `| Tnn | … |` in tasks.md. Solo la PRIMA riga
- * con quell'id — l'overview è unica, un secondo match sarebbe un duplicato da
- * non propagare. Le celle non toccate restano i token grezzi originali: nessun
- * re-flow della tabella, il diff resta di una riga. `ok:false` = id assente →
- * il chiamante non scrive nulla.
+ * Riscrive le celle Pri, Prog e — se `desc` è passata — la descrizione della
+ * riga `| Tnn | … |` in tasks.md. Solo la PRIMA riga con quell'id — l'overview
+ * è unica, un secondo match sarebbe un duplicato da non propagare. Le celle non
+ * toccate restano i token grezzi originali: nessun re-flow della tabella, il
+ * diff resta di una riga. `ok:false` = id assente → il chiamante non scrive nulla.
+ *
+ * Le posizioni vengono dall'HEADER (`headerColumns`, stessa fonte di
+ * `parseTasks`), mai da un indice cablato: qui si SCRIVE su disco, quindi una
+ * colonna in più o in meno non produrrebbe una lettura sbagliata ma un titolo
+ * sovrascritto col glifo. Header assente → `ok:false`, non si tira a indovinare.
  *
  * `desc` undefined ≠ `desc` vuota: la prima non tocca la cella (chiamata
  * legacy, solo pri/prog), la seconda la svuota davvero.
  *
  * La descrizione è l'ULTIMA colonna e può contenere `|` — che in una tabella
  * markdown spezza la cella. Riscriverla significa quindi collassare tutte le
- * celle da 5 fino alla penultima in una sola (`splice`), altrimenti i pezzi
- * della vecchia descrizione resterebbero appesi in coda alla nuova.
+ * celle da `cols.desc` fino alla penultima in una sola (`splice`), altrimenti i
+ * pezzi della vecchia descrizione resterebbero appesi in coda alla nuova.
  *
  * L'id deve rispettare `TASK_ID_RE` (importato da tasks.ts — stesso gate di
  * `parseTasks`, non una copia): senza, un id arbitrario matcherebbe la riga di
- * HEADER (`| ID | Pri | K | Prog |`) o quella di separatore, riscrivendone le
- * celle e sfondando la tabella.
+ * separatore, riscrivendone le celle e sfondando la tabella.
  */
 export function updateTasksMdRow(
   content: string,
@@ -110,25 +113,29 @@ export function updateTasksMdRow(
   desc?: string,
 ): { content: string; ok: boolean } {
   if (!TASK_ID_RE.test(id)) return { content, ok: false };
+  const lines = content.split('\n');
+  const cols = lines.reduce<TaskColumns | null>((found, l) => found ?? headerColumns(l), null);
+  if (!cols) return { content, ok: false };
   let ok = false;
-  const lines = content.split('\n').map((line) => {
+  const out = lines.map((line) => {
     if (ok) return line;
     if (!line.trim().startsWith('|')) return line;
     const cells = line.split('|');
     if ((cells[1] ?? '').trim() !== id) return line;
-    if (cells.length < 6) return line; // riga malformata → non toccarla
+    // Serve la cella desc PIÙ la coda dopo il `|` finale: senza la coda lo
+    // splice inserirebbe invece di sostituire.
+    if (cells.length < cols.desc + 2) return line; // riga malformata → non toccarla
     ok = true;
-    cells[2] = ` ${priGlyph} `;
-    cells[4] = ` ${progGlyph} `;
+    cells[cols.pri] = ` ${priGlyph} `;
+    cells[cols.prog] = ` ${progGlyph} `;
     if (desc !== undefined) {
-      // Da cells[5] fino alla penultima: l'ultima è la coda dopo il `|` finale
-      // (stringa vuota su una riga ben formata) e va conservata, o la riga
-      // perderebbe il proprio bordo destro.
-      cells.splice(5, cells.length - 6, ` ${sanitizeCell(desc)} `);
+      // L'ultima cella è la coda dopo il `|` finale (stringa vuota su una riga
+      // ben formata) e va conservata, o la riga perderebbe il bordo destro.
+      cells.splice(cols.desc, cells.length - cols.desc - 1, ` ${sanitizeCell(desc)} `);
     }
     return cells.join('|');
   });
-  return { content: ok ? lines.join('\n') : content, ok };
+  return { content: ok ? out.join('\n') : content, ok };
 }
 
 /**
@@ -149,11 +156,10 @@ function sanitizeCell(s: string): string {
  * ricompare nel body (residuo template) vince quello dell'header — così ciò che
  * il deck mostra e ciò che scrive restano la stessa riga.
  *
- * L'H1 conserva il proprio CAPPELLO (`# Task: …` code, `# Doc Task: …` doc):
- * `parseTaskDetail` lo strippa in lettura, quindi il titolo che arriva dal
- * modale non ce l'ha e riscrivere la riga nuda perderebbe la categoria. Il
- * prefisso si rilegge dalla riga esistente e si ri-antepone tale e quale — così
- * una T resta `# Task:` e una D resta `# Doc Task:` senza doverlo sapere qui.
+ * L'H1 conserva il proprio CAPPELLO (`# Task: …`): `parseTaskDetail` lo strippa
+ * in lettura, quindi il titolo che arriva dal modale non ce l'ha e riscrivere la
+ * riga nuda lo perderebbe. Si rilegge dalla riga esistente e si ri-antepone tale
+ * e quale, così un file senza cappello resta senza.
  */
 export function updateTaskFileFields(
   content: string,
@@ -167,7 +173,7 @@ export function updateTaskFileFields(
   const lines = content.split('\n').map((line) => {
     if (title !== undefined && !titleDone && /^#\s+/.test(line)) {
       titleDone = true;
-      const prefix = line.match(/^#\s+((?:Doc\s+)?Task:\s*)/)?.[1] ?? '';
+      const prefix = line.match(/^#\s+(Task:\s*)/)?.[1] ?? '';
       return `# ${prefix}${title.replace(/\s+/g, ' ').trim()}`;
     }
     if (!priDone && /^-\s*\*\*Priority\*\*:/.test(line)) {
