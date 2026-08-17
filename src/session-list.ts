@@ -156,6 +156,11 @@ export interface AssembledList {
   contextTotal: number;
   /** Contestuali troncate dal cap (contatore non-silenzioso). */
   contextHidden: number;
+  /** T100 — le troncate stesse, non solo il loro numero: il contatore
+   *  `+N più vecchie` è diventato una vista, e una vista ha bisogno delle righe.
+   *  Ordine `ts desc` invariato, pinnate escluse (sono esenti dal cap, quindi
+   *  non sono mai fra le troncate). */
+  contextOverflow: Session[];
 }
 
 export function assembleSessionList(
@@ -178,7 +183,9 @@ export function assembleSessionList(
 
   const pinnedSet = new Set(pinnedIds);
   const dedupedContext = childSessions.filter((s) => !pinnedSet.has(s.sessionId));
-  const shownContext = dedupedContext.slice(0, Math.max(0, maxContext));
+  const cap = Math.max(0, maxContext);
+  const shownContext = dedupedContext.slice(0, cap);
+  const overflowContext = dedupedContext.slice(cap);
   const contextRows: SessionRow[] = shownContext.map((s) => ({
     kind: 'context',
     sessionId: s.sessionId,
@@ -195,7 +202,8 @@ export function assembleSessionList(
     rows,
     pinnedCount: pinnedRows.length,
     contextTotal: dedupedContext.length,
-    contextHidden: dedupedContext.length - shownContext.length,
+    contextHidden: overflowContext.length,
+    contextOverflow: overflowContext,
   };
 }
 

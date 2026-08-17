@@ -22,11 +22,13 @@ import time
 import select
 import signal
 
+# 'T' = tab, l'unico tasto che sposta il focus fra i due pane da T100 in poi:
+# le frecce orizzontali sono passate al selettore di vista dell'header.
 # 'X' = INCOLLAGGIO: 60 caratteri in una scrittura sola, cioè un chunk unico di
 # stdin. Riempie un campo di testo oltre il budget al costo di UN tasto (una
 # `x` per volta costerebbe 60 pump da 0.7s), ed è anche l'unico modo di provare
 # dal gate la strada che `useInput` percorre davvero su un paste.
-KEYS = {'D': b'\x1b[B', 'U': b'\x1b[A', 'R': b'\x1b[C', 'L': b'\x1b[D', 'X': b'x' * 60}
+KEYS = {'D': b'\x1b[B', 'U': b'\x1b[A', 'R': b'\x1b[C', 'L': b'\x1b[D', 'T': b'\t', 'X': b'x' * 60}
 
 argv = sys.argv[1:]
 keys = ''

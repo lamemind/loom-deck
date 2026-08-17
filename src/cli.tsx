@@ -61,7 +61,21 @@ import {
   loadLaunch,
   type LaunchEntry,
 } from './config.js';
-import { countArchivable, SCAN_INTERVAL_MS } from './archivable.js';
+import { archivableIds, SCAN_INTERVAL_MS } from './archivable.js';
+import {
+  cycleSessionView,
+  cycleTaskView,
+  selectSessionRows,
+  selectTasks,
+  sessionView,
+  taskView,
+  SESSION_VIEWS,
+  TASK_VIEWS,
+  type SessionViewCounts,
+  type SessionViewId,
+  type TaskViewCounts,
+  type TaskViewId,
+} from './pane-views.js';
 import {
   assignListCapacity,
   detailCapacity,
@@ -667,20 +681,24 @@ function useSessions(projectRoot: string) {
 // `doneSig` è una stringa, non l'array: `tasks` cambia identità a ogni re-read
 // di tasks.md, e usarlo come dipendenza rimetterebbe lo scan sul tick da 1,5s
 // per la via di dietro.
+//
+// T100 — tiene gli ID e non più il conteggio: `archiviabili` è una vista del
+// pane, quindi servono le righe. Il contatore dell'header è `.size` dello stesso
+// insieme che disegna la lista — un numero e una lista che non possono divergere.
 function useArchivable(doneSig: string, tasksDir: string, projectRoot: string, days: number) {
-  const [count, setCount] = useState(0);
+  const [ids, setIds] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     let alive = true;
-    const ids = doneSig ? doneSig.split(',') : [];
+    const done = doneSig ? doneSig.split(',') : [];
     const scan = () => {
-      countArchivable(ids, { tasksDir, projectRoot, days })
-        .then((n) => {
-          if (alive) setCount(n);
+      archivableIds(done, { tasksDir, projectRoot, days })
+        .then((found) => {
+          if (alive) setIds(new Set(found));
         })
-        // Scan fallito (task file illeggibili, git muto) → 0, cioè segmento
-        // omesso. Un contatore informativo non merita un errore a schermo.
+        // Scan fallito (task file illeggibili, git muto) → insieme vuoto, cioè
+        // voce a 0. Un contatore informativo non merita un errore a schermo.
         .catch(() => {
-          if (alive) setCount(0);
+          if (alive) setIds(new Set());
         });
     };
     scan();
@@ -690,7 +708,7 @@ function useArchivable(doneSig: string, tasksDir: string, projectRoot: string, d
       clearInterval(id);
     };
   }, [doneSig, tasksDir, projectRoot, days]);
-  return count;
+  return ids;
 }
 
 // Legge il task file della task selezionata (Q1+B T20). On-id-change: navigare
@@ -832,6 +850,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // modale: la lista si aggiorna dal vivo, quindi `esc` deve poter ripristinare.
   const [view, setView] = useState<ViewState>(() => loadView(cwd));
   const [viewBackup, setViewBackup] = useState<ViewState | null>(null);
+  // T100 — vista attiva di ciascun pane, navigata con ←/→. VOLATILE per
+  // decisione (D3 create): non entra in `deck-view.json`, il deck riapre sempre
+  // su `Tasks` e su `{parent}`. Il criterio è il rischio di leggere una lista
+  // parziale credendola completa — un filtro salvato lo si è scelto, una vista
+  // riaperta a freddo si legge come la lista intera.
+  const [taskViewId, setTaskViewId] = useState<TaskViewId>('tasks');
+  const [sessionViewId, setSessionViewId] = useState<SessionViewId>('context');
   const [filterCursor, setFilterCursor] = useState<FilterCursor>({ row: 0, col: 0 });
   // T41 — bozza dell'edit (null fuori dal modale) e riga attiva della griglia.
   const [edit, setEdit] = useState<EditDraft | null>(null);
@@ -923,15 +948,36 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const archivableDays = useMemo(() => loadArchivableDays(cwd), [cwd]);
   const archivable = useArchivable(doneSig, tasksDir, cwd, archivableDays);
 
+  // T100 — le task effettivamente a schermo: la vista principale coincide con
+  // `viewTasks` (nessun ricalcolo sul cammino di default), le altre due passano
+  // dal predicato del catalogo. I CONTATORI restano misurati sulla vista di
+  // default, o navigare cambierebbe i numeri che si sta navigando.
+  const taskCounts: TaskViewCounts = {
+    filtered: viewTasks.length,
+    total: tasks.length,
+    hidden: hiddenTasks,
+    archivable: archivable.size,
+  };
+  const paneTasks = useMemo(
+    () =>
+      taskViewId === 'tasks'
+        ? viewTasks
+        : selectTasks(tasks, taskViewId, { view, archivable }),
+    [taskViewId, viewTasks, tasks, view, archivable],
+  );
+
   const isSpot = sel === SPOT;
   const isAll = sel === ALL;
   const projectName = cwd.split('/').pop() || cwd;
   // Unica fonte della selezione: si legge SEMPRE dalla vista, mai dall'array
   // grezzo — è l'invariante che tiene allineati dettaglio mostrato e spawn.
-  const selTask = typeof sel === 'string' ? viewTasks.find((t) => t.id === sel) ?? null : null;
+  const selTask = typeof sel === 'string' ? paneTasks.find((t) => t.id === sel) ?? null : null;
   const selectedTaskId = selTask?.id ?? null;
-  const selIndex = selTask ? viewTasks.indexOf(selTask) + META_ROWS : isAll ? ROW_ALL : ROW_SPOT;
+  const selIndex = selTask ? paneTasks.indexOf(selTask) + META_ROWS : isAll ? ROW_ALL : ROW_SPOT;
   const detail = useTaskDetail(tasksDir, selectedTaskId ?? undefined);
+  // Il parent delle conversazioni: l'asse che sceglie il pane task, ortogonale
+  // alla vista che sceglie l'header (D2 create).
+  const parentLabel = isAll ? 'tutte' : isSpot ? 'spot' : selectedTaskId ?? '—';
 
   // Conteggio figli per task + spot (badge nel Tasks pane).
   const childCount = new Map<string, number>();
@@ -964,15 +1010,30 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     () => assembleSessionList(childSessions, sessions, pinned, isAll ? MAX_SESSIONS_ALL : MAX_SESSIONS),
     [childSessions, sessions, pinned, isAll],
   );
-  const sessionRows = assembled.rows;
-  const selSessionObj = selectedSession(sessionRows, selSessionId);
   // T62 — contato sulla lista INTERA (stessa ragione delle larghezze di colonna
   // qui sotto): derivarlo dalla finestra visibile lo farebbe cambiare a ogni
   // scroll, cioè un contatore che conta lo schermo invece della lista.
+  // T100 — «intera» ora vuol dire la lista della vista di DEFAULT (`assembled`),
+  // non quella a schermo: il contatore di una voce del catalogo non può
+  // dipendere da quale voce è selezionata, o navigare muoverebbe i numeri.
   const liveCount = useMemo(
-    () => sessionRows.filter((r) => r.kind !== 'separator' && live.has(r.sessionId)).length,
-    [sessionRows, live],
+    () => assembled.rows.filter((r) => r.kind !== 'separator' && live.has(r.sessionId)).length,
+    [assembled, live],
   );
+  const sessionCounts: SessionViewCounts = {
+    total: assembled.pinnedCount + assembled.contextTotal,
+    live: liveCount,
+    pinned: assembled.pinnedCount,
+    older: assembled.contextHidden,
+  };
+  // T100 — le righe a schermo sono quelle della vista attiva. Fuori dalla vista
+  // di default il separatore non c'è: segna il confine fra pinnate e
+  // contestuali, e in un sottoinsieme quel confine non esiste più.
+  const sessionRows = useMemo(
+    () => selectSessionRows(sessionViewId, { assembled, isLive: (id) => live.has(id) }),
+    [sessionViewId, assembled, live],
+  );
+  const selSessionObj = selectedSession(sessionRows, selSessionId);
 
   // T60 — larghezze delle colonne fisse della lista sessioni, misurate sulla
   // lista INTERA e non sulla finestra visibile: derivarle dalle sole righe a
@@ -1114,10 +1175,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // dalla vista (filtro appena attivato, oppure sparita da tasks.md), si cade
   // sulla prima visibile — fallback deterministico, mai una posizione a caso.
   useEffect(() => {
-    if (typeof sel === 'string' && !viewTasks.some((t) => t.id === sel)) {
-      setSel(viewTasks[0]?.id ?? ALL);
+    if (typeof sel === 'string' && !paneTasks.some((t) => t.id === sel)) {
+      setSel(paneTasks[0]?.id ?? ALL);
     }
-  }, [viewTasks, sel]);
+  }, [paneTasks, sel]);
   // T50 — la selezione (id) resta valida sotto la vista a due gruppi: se l'id
   // non è più una riga selezionabile (cambio parent, lista mutata, pin rimosso,
   // sessione sparita) cade sulla prima riga — fallback deterministico, mai una
@@ -1200,7 +1261,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // messaggi a mano. `verb` è l'unica cosa che cambia fra i due usi.
   function selectedTaskOr(keyLabel: string, verb: string): Task | null {
     if (focus !== 'tasks') {
-      setNote(`${keyLabel} → ${verb}: seleziona una task (←→ per il pane)`);
+      setNote(`${keyLabel} → ${verb}: seleziona una task (tab per il pane)`);
       return null;
     }
     // T59 — la guardia è "non è una task", non "è spot": le righe meta sono due
@@ -1466,10 +1527,30 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // 2..N+1 = task visibili) e la riconverte subito in sentinella o id: l'indice
   // non sopravvive a un cambio di filtro, l'id sì.
   function moveTaskSel(delta: number) {
-    const next = Math.max(0, Math.min(viewTasks.length + META_ROWS - 1, selIndex + delta));
+    const next = Math.max(0, Math.min(paneTasks.length + META_ROWS - 1, selIndex + delta));
     if (next === ROW_ALL) setSel(ALL);
     else if (next === ROW_SPOT) setSel(SPOT);
-    else setSel(viewTasks[next - META_ROWS]?.id ?? SPOT);
+    else setSel(paneTasks[next - META_ROWS]?.id ?? SPOT);
+  }
+
+  // T100 — ←/→ navigano il catalogo viste del pane in focus. Il reset della
+  // selezione è la regola letterale «prima riga in alto», senza eccezioni: sul
+  // pane task è `ROW_ALL` (D2 preflight — le righe meta non si saltano, e il
+  // parent delle sessioni che torna a `tutte` è un effetto accettato); sul pane
+  // sessioni basta invalidare l'id, e l'effect di validità atterra sulla prima
+  // riga selezionabile della vista nuova.
+  function cycleView(delta: number) {
+    if (focus === 'tasks') {
+      const next = cycleTaskView(taskViewId, delta);
+      setTaskViewId(next);
+      setSel(ALL);
+      setNote(`vista task: ${taskView(next).label(taskCounts)}`);
+    } else {
+      const next = cycleSessionView(sessionViewId, delta);
+      setSessionViewId(next);
+      setSelSessionId(null);
+      setNote(`vista sessioni: ${sessionView(next).label(sessionCounts, parentLabel)}`);
+    }
   }
 
   // T52 — `⏎` contestuale al TIPO di riga: la lista ne mescola due e l'azione
@@ -1973,8 +2054,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       return;
     }
 
-    if (key.leftArrow || key.rightArrow || key.tab) {
+    if (key.tab) {
+      // T100 — `tab` resta l'unico tasto che sposta il focus fra i due pane. Le
+      // frecce orizzontali facevano lo stesso lavoro (due tasti per un'azione)
+      // mentre la navigazione DENTRO un pane non ne aveva nessuno: ora sono il
+      // selettore di vista dell'header. Il ramo `mode === 'detail'`, anteposto e
+      // chiuso da `return`, non è più l'eccezione a «cambia pane» ma a «cambia
+      // vista» — l'ordine dei rami non cambia, cambia cosa cattura.
       setFocus((f) => (f === 'tasks' ? 'sessions' : 'tasks'));
+    } else if (key.leftArrow || key.rightArrow) {
+      cycleView(key.leftArrow ? -1 : 1);
     } else if (key.upArrow) {
       if (focus === 'tasks') moveTaskSel(-1);
       else setSelSessionId((id) => moveSelection(sessionRows, id, -1));
@@ -2017,16 +2106,28 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       setNote('');
       setMode('sort');
     } else if (input === 'F') {
-      setViewBackup(view);
-      setNote('');
-      setMode('filter');
+      // T100/D3 — i filtri valgono SOLO sulla vista principale: su `nascoste`
+      // riapplicarli non ha senso (quella vista È il loro complemento), su
+      // `archiviabili` non li si vuole (è cieca ai filtri per decisione). Stessa
+      // forma dell'inerzia di ^K/^P/^R dentro il detail, ma keyed sulla vista
+      // invece che sul modo — e come là, l'inerzia lo DICE invece di non fare
+      // niente in silenzio.
+      if (taskViewId !== 'tasks') {
+        setNote(
+          `F → filtri: solo sulla vista ${TASK_VIEWS[0]!.label(taskCounts)} (ora: ${taskView(taskViewId).label(taskCounts)})`,
+        );
+      } else {
+        setViewBackup(view);
+        setNote('');
+        setMode('filter');
+      }
     } else if (input === 'f') {
       // T28 — fork della sessione selezionata. Minuscola come `t`/`c` (T39):
       // azione immediata, nessun modale — la `F` maiuscola resta ai filtri.
       // Vive solo sul pane sessioni: il fork ha per oggetto una conversazione,
       // e senza focus lì non ce n'è una selezionata su cui agire.
       if (focus !== 'sessions') {
-        setNote('f → fork: seleziona una sessione (←→ per il pane)');
+        setNote('f → fork: seleziona una sessione (tab per il pane)');
       } else {
         const s = selSessionObj;
         if (!s) {
@@ -2057,7 +2158,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       // pinnata STALE (l'unico modo di spinnarla). Scrive il sidecar e ricarica
       // subito, senza attendere il tick del poll.
       if (focus !== 'sessions') {
-        setNote('p → pin: seleziona una sessione (←→ per il pane)');
+        setNote('p → pin: seleziona una sessione (tab per il pane)');
       } else if (!selSessionId) {
         setNote('p → nessuna sessione da pinnare');
       } else {
@@ -2081,7 +2182,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       // su una pinnata STALE, perché annotare «questa non c'è più, era X» è
       // proprio il caso in cui una nota serve.
       if (focus !== 'sessions') {
-        setNote('N → nota: seleziona una sessione (←→ per il pane)');
+        setNote('N → nota: seleziona una sessione (tab per il pane)');
       } else if (!selSessionId) {
         setNote('N → nessuna sessione da annotare');
       } else {
@@ -2096,7 +2197,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       // il binding è nostro, il transcript è di CC — riassegnare una
       // conversazione il cui transcript non c'è più resta legittimo.
       if (focus !== 'sessions') {
-        setNote('A → assegna: seleziona una sessione (←→ per il pane)');
+        setNote('A → assegna: seleziona una sessione (tab per il pane)');
       } else if (!selSessionId) {
         setNote('A → nessuna sessione da assegnare');
       } else {
@@ -2137,7 +2238,6 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     }
   });
 
-  const parentLabel = isAll ? 'tutte' : isSpot ? 'spot' : selectedTaskId ?? '—';
   const canSpawn = focus === 'tasks' && selTask !== null;
   const canResume = focus === 'sessions' && selSessionObj !== null;
   // T50 — il pin agisce su qualunque riga selezionata (anche stale, per
@@ -2380,8 +2480,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // Finestre di rendering. Le liste "logiche" (viewTasks, sessionRows)
   // restano intere: navigazione, selezione e spawn continuano a ragionare su
   // quelle, la finestra è solo ciò che finisce a schermo.
-  const taskWin = windowRange(viewTasks.length, selIndex - META_ROWS, budget.taskRows);
-  const windowTasks = viewTasks.slice(taskWin.start, taskWin.end);
+  const taskWin = windowRange(paneTasks.length, selIndex - META_ROWS, budget.taskRows);
+  const windowTasks = paneTasks.slice(taskWin.start, taskWin.end);
   const selRowIndex = rowIndexOf(sessionRows, selSessionId);
   const sessionWin = windowRange(sessionRows.length, selRowIndex, budget.sessionRows);
   const windowRows = sessionRows.slice(sessionWin.start, sessionWin.end);
@@ -2478,10 +2578,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       <Box flexDirection="row" marginTop={1}>
         <TasksPane
           tasks={windowTasks}
-          filtered={viewTasks.length}
-          total={tasks.length}
-          hidden={hiddenTasks}
-          archivable={archivable}
+          counts={taskCounts}
+          activeView={taskViewId}
+          paneCount={paneTasks.length}
           view={view}
           selected={selIndex}
           spotCount={spotCount}
@@ -2491,7 +2590,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           loadError={loadError}
           windowStart={taskWin.start}
           above={taskWin.start}
-          below={viewTasks.length - taskWin.end}
+          below={paneTasks.length - taskWin.end}
           columns={columns}
         />
         <SessionsPane
@@ -2502,9 +2601,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           taskW={sessionCols.task}
           ageW={sessionCols.age}
           rows={windowRows}
-          total={assembled.pinnedCount + assembled.contextTotal}
-          pinnedCount={assembled.pinnedCount}
-          hidden={assembled.contextHidden}
+          counts={sessionCounts}
+          activeView={sessionViewId}
+          paneCount={sessionRows.length}
           selectedId={selSessionId ?? undefined}
           focused={focus === 'sessions'}
           above={sessionWin.start}
@@ -2514,7 +2613,6 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           sessionNotes={sessionNotes}
           projectCore={projectCore}
           live={live}
-          liveCount={liveCount}
         />
       </Box>
       {/* T70 — blocco preview UNICO, a piena larghezza, sotto le due liste.
@@ -3391,44 +3489,56 @@ function AssignScreen({
  * scoprirlo sarebbe il bordo del pane a schermo.
  *
  * `truncate-end` taglia dalla coda, e `cutParts` conserva l'ordine: l'ultimo
- * segmento resta il primo a cedere il posto (vedi T61 sotto, `archiviabili` in
- * coda ai contatori della vista corrente).
+ * segmento resta il primo a cedere il posto (`↑↓` in coda alle voci navigabili).
+ *
+ * T100 — la riga non è più informativa: le voci del catalogo sono SELEZIONABILI
+ * con ←/→, e l'attiva si distingue in video inverso (D5 — costa 0 colonne e non
+ * entra in gara con la semantica di colore già occupata). Le voci ci sono tutte
+ * anche a 0 (D1): un catalogo che si accorcia sposta le voci sotto le dita.
+ * L'ordine è vincolato — le navigabili PRIMA di `↑N`/`↓N`, che cadono per primi
+ * su un terminale stretto — e la voce attiva ha la precedenza sul budget (D6).
  */
 function TasksHeader({
-  filtered,
-  total,
-  hidden,
+  counts,
+  active,
   above,
   below,
-  archivable,
   focused,
   columns,
 }: {
-  filtered: number;
-  total: number;
-  hidden: number;
+  counts: TaskViewCounts;
+  active: TaskViewId;
   above: number;
   below: number;
-  archivable: number;
   focused: boolean;
   columns: number;
 }) {
-  const segments: Array<{ text: string; color?: string; dim?: boolean }> = [
-    { text: `Tasks (${hidden > 0 ? `${filtered}/${total}` : filtered})` },
-    ...(hidden > 0 ? [{ text: ` · ${hidden} nascoste`, color: 'yellow' }] : []),
-    ...(above > 0 ? [{ text: ` · ↑${above}`, dim: true }] : []),
-    ...(below > 0 ? [{ text: ` · ↓${below}`, dim: true }] : []),
-    ...(archivable > 0 ? [{ text: ` · ${archivable} archiviabili`, dim: true }] : []),
+  const views = TASK_VIEWS.map((v, i) => {
+    const n = v.count(counts);
+    return {
+      // Il separatore sta nel segmento, non fra i segmenti: `cutParts` misura la
+      // riga pezzo per pezzo e uno spazio fuori dai pezzi non verrebbe contato.
+      text: `${i > 0 ? ' · ' : ''}${v.label(counts)}`,
+      color: v.color,
+      dim: v.dim || n === 0,
+      active: v.id === active,
+    };
+  });
+  const segments = [
+    ...views,
+    { text: above > 0 ? ` · ↑${above}` : '', dim: true, active: false, color: undefined },
+    { text: below > 0 ? ` · ↓${below}` : '', dim: true, active: false, color: undefined },
   ];
   const shown = cutParts(
     segments.map((s) => s.text),
     paneTextWidth(columns),
+    segments.findIndex((s) => s.active),
   );
   return (
     <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
       {segments.map((seg, i) =>
         shown[i] ? (
-          <Text key={i} color={seg.color} dimColor={seg.dim}>
+          <Text key={i} color={seg.color} dimColor={seg.dim} inverse={seg.active}>
             {shown[i]}
           </Text>
         ) : null,
@@ -3439,9 +3549,9 @@ function TasksHeader({
 
 function TasksPane({
   tasks,
-  filtered,
-  total,
-  hidden,
+  counts,
+  activeView,
+  paneCount,
   view,
   selected,
   spotCount,
@@ -3453,16 +3563,16 @@ function TasksPane({
   above,
   below,
   columns,
-  archivable,
 }: {
   /** Solo la finestra visibile, non la lista completa. */
   tasks: Task[];
-  /** Task superstiti ai filtri — NON `tasks.length`, che è la sola finestra. */
-  filtered: number;
-  total: number;
-  hidden: number;
-  /** T61 — Done oltre soglia d'età; 0 = segmento omesso. */
-  archivable: number;
+  /** T100 — i contatori delle tre voci del catalogo, misurati sulla vista di
+   *  default: l'header è un selettore, non un riassunto di ciò che si vede. */
+  counts: TaskViewCounts;
+  activeView: TaskViewId;
+  /** Righe della vista ATTIVA (non `tasks.length`, che è la sola finestra): 0 →
+   *  nota della vista vuota al posto della lista. */
+  paneCount: number;
   view: ViewState;
   /** Indice nella lista COMPLETA (0 = riga "tutte", 1 = riga spot). */
   selected: number;
@@ -3507,12 +3617,10 @@ function TasksPane({
           a sparire su un terminale stretto, ed è giusto che a cedere il posto
           sia questo e non i contatori della vista corrente. */}
       <TasksHeader
-        filtered={filtered}
-        total={total}
-        hidden={hidden}
+        counts={counts}
+        active={activeView}
         above={above}
         below={below}
-        archivable={archivable}
         focused={focused}
         columns={columns}
       />
@@ -3553,6 +3661,14 @@ function TasksPane({
       </Text>
       {loadError ? (
         <Text color="red" wrap="truncate-end">{loadError}</Text>
+      ) : paneCount === 0 ? (
+        // T100/D1 — una voce a contatore 0 resta navigabile, e selezionarla dà
+        // una lista vuota che DICE perché è vuota. Senza la nota il pane si
+        // legge come rotto: le righe meta restano, le task no, e niente spiega
+        // che è la vista scelta a non contenere nulla.
+        <Text color="yellow" wrap="truncate-end">
+          {cut(taskView(activeView).empty, paneTextWidth(columns))}
+        </Text>
       ) : (
         tasks.map((task, i) => {
           // windowStart riporta l'indice di finestra a quello della lista
@@ -3606,45 +3722,52 @@ function TasksPane({
  */
 function SessionsHeader({
   parentLabel,
-  total,
-  pinnedCount,
-  liveCount,
-  hidden,
+  counts,
+  active,
   above,
   below,
   focused,
   columns,
 }: {
   parentLabel: string;
-  total: number;
-  pinnedCount: number;
-  /** T62 — quante delle righe MOSTRATE sono vive. Contate sulla lista assemblata
-   *  e non sul registry: le vive di un altro parent non sono in questa lista, e
-   *  un numero più grande di quello che si vede si legge come un bug. */
-  liveCount: number;
-  hidden: number;
+  /** T62 — le vive sono quelle delle righe MOSTRATE, contate sulla lista
+   *  assemblata e non sul registry: le vive di un altro parent non sono in
+   *  questa lista, e un numero più grande di quello che si vede si legge come un
+   *  bug. T100 — «mostrate» = la vista di default, ferma sotto le frecce. */
+  counts: SessionViewCounts;
+  active: SessionViewId;
   above: number;
   below: number;
   focused: boolean;
   columns: number;
 }) {
-  const segments: Array<{ text: string; color?: string; dim?: boolean }> = [
-    { text: `Sessions · ${parentLabel} (${total})` },
-    ...(liveCount > 0 ? [{ text: ` · ${LIVE_IDLE}${liveCount} vive`, color: 'green' }] : []),
-    ...(pinnedCount > 0 ? [{ text: ` · 📌${pinnedCount}`, color: 'yellow' }] : []),
-    ...(hidden > 0 ? [{ text: ` · +${hidden} più vecchie`, dim: true }] : []),
-    ...(above > 0 ? [{ text: ` · ↑${above}`, dim: true }] : []),
-    ...(below > 0 ? [{ text: ` · ↓${below}`, dim: true }] : []),
+  const views = SESSION_VIEWS.map((v) => {
+    const n = v.count(counts);
+    return {
+      text: ` · ${v.label(counts, parentLabel)}`,
+      color: v.color,
+      dim: v.dim || n === 0,
+      active: v.id === active,
+    };
+  });
+  const segments = [
+    // `Sessions` non è una voce del catalogo: nomina il pane, non un
+    // sottoinsieme, quindi non è raggiungibile con le frecce.
+    { text: 'Sessions', color: undefined, dim: false, active: false },
+    ...views,
+    { text: above > 0 ? ` · ↑${above}` : '', dim: true, active: false, color: undefined },
+    { text: below > 0 ? ` · ↓${below}` : '', dim: true, active: false, color: undefined },
   ];
   const shown = cutParts(
     segments.map((s) => s.text),
     paneTextWidth(columns),
+    segments.findIndex((s) => s.active),
   );
   return (
     <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
       {segments.map((seg, i) =>
         shown[i] ? (
-          <Text key={i} color={seg.color} dimColor={seg.dim}>
+          <Text key={i} color={seg.color} dimColor={seg.dim} inverse={seg.active}>
             {shown[i]}
           </Text>
         ) : null,
@@ -3661,9 +3784,9 @@ function SessionsPane({
   taskW,
   ageW,
   rows,
-  total,
-  pinnedCount,
-  hidden,
+  counts,
+  activeView,
+  paneCount,
   selectedId,
   focused,
   above,
@@ -3673,7 +3796,6 @@ function SessionsPane({
   sessionNotes,
   projectCore,
   live,
-  liveCount,
 }: {
   parentLabel: string;
   isSpot: boolean;
@@ -3691,12 +3813,15 @@ function SessionsPane({
   /** T60 — larghezza della colonna data, ancorata al margine destro. */
   ageW: number;
   /** T50 — solo la finestra visibile della lista a due gruppi (pinnate +
-   *  separatore + contestuali). */
+   *  separatore + contestuali). T100 — della vista attiva, non più
+   *  necessariamente di quella di default. */
   rows: SessionRow[];
-  total: number;
-  /** T50 — quante delle `total` sono pinnate (badge 📌 nell'header). */
-  pinnedCount: number;
-  hidden: number;
+  /** T100 — contatori delle 4 voci del catalogo, tutti misurati sulla vista di
+   *  default: l'header è un selettore e le sue cifre non si muovono navigando. */
+  counts: SessionViewCounts;
+  activeView: SessionViewId;
+  /** Righe della vista ATTIVA (non `rows.length`, che è la sola finestra). */
+  paneCount: number;
   selectedId: string | undefined;
   focused: boolean;
   /** T28 — sessionId → origine, per marcare i rami nella lista. */
@@ -3714,9 +3839,6 @@ function SessionsPane({
    *  `/clear`: il flag dice «questo transcript è l'attivo di un processo vivo»,
    *  non «la tab esiste ancora»). */
   live: Map<string, LiveSession>;
-  /** T62 — vive nella lista INTERA, non nella sola finestra visibile: `rows` è
-   *  già windowed, contarci sopra farebbe cambiare il numero scorrendo. */
-  liveCount: number;
 }) {
   return (
     <Box
@@ -3728,22 +3850,28 @@ function SessionsPane({
     >
       <SessionsHeader
         parentLabel={parentLabel}
-        total={total}
-        pinnedCount={pinnedCount}
-        liveCount={liveCount}
-        hidden={hidden}
+        counts={counts}
+        active={activeView}
         above={above}
         below={below}
         focused={focused}
         columns={columns}
       />
-      {total === 0 ? (
+      {paneCount === 0 ? (
+        // T100 — la nota della vista di default resta quella storica, che nomina
+        // il PARENT (task, spot o tutte); le altre tre viste portano la propria,
+        // che nomina il sottoinsieme. Sono due vuoti diversi: «questo parent non
+        // ha conversazioni» e «questo sottoinsieme del parent è vuoto».
         <Text color="yellow" wrap="truncate-end">
-          {isAll
-            ? 'nessuna conversazione nel progetto'
-            : isSpot
-              ? 'nessuna sessione libera'
-              : 'nessuna sessione legata a questa task'}
+          {cut(
+            sessionView(activeView).empty ??
+              (isAll
+                ? 'nessuna conversazione nel progetto'
+                : isSpot
+                  ? 'nessuna sessione libera'
+                  : 'nessuna sessione legata a questa task'),
+            paneTextWidth(columns),
+          )}
         </Text>
       ) : (
         rows.map((row, i) => {

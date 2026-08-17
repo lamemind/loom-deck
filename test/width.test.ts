@@ -348,3 +348,70 @@ test('cutParts: budget degenere → tutti i pezzi vuoti, mai una stringa a sorpr
   assert.deepEqual(cutParts(['a', 'b'], 0), ['', '']);
   assert.deepEqual(cutParts(['a', 'b'], -5), ['', '']);
 });
+
+// ---- T100/D6 · la voce attiva ha la precedenza sul budget ---------------------
+
+/** Header-selettore del pane task, tutte le voci presenti (catalogo fisso). */
+const HEADER_VISTE = ['Tasks (20/78)', ' · 58 nascoste', ' · 23 archiviabili', ' · ↑7', ' · ↓9'];
+
+test('cutParts: la voce prioritaria resta a schermo anche quando la precedono voci più lunghe', () => {
+  // Senza la riserva, su terminale stretto `→` cambierebbe la lista mentre
+  // l'header non dice più su quale vista sei: cade il criterio di
+  // distinguibilità della vista attiva.
+  const out = cutParts(HEADER_VISTE, 24, 2);
+  assert.ok(out[2]!.includes('archiviabili'), `voce attiva persa: ${JSON.stringify(out)}`);
+  assert.ok(termWidth(out.join('')) <= 24);
+});
+
+test('cutParts: riservare non allarga la riga — resta un tetto, a ogni larghezza', () => {
+  for (let cols = 0; cols <= 60; cols++) {
+    for (let p = 0; p < HEADER_VISTE.length; p++) {
+      const w = termWidth(cutParts(HEADER_VISTE, cols, p).join(''));
+      assert.ok(w <= cols, `budget ${cols}, priorità ${p}: uscita larga ${w}`);
+    }
+  }
+});
+
+test('cutParts: la voce prioritaria da sola più larga del budget è tagliata, non omessa', () => {
+  const out = cutParts(HEADER_VISTE, 8, 2);
+  assert.ok(out[2] !== '', 'meglio monca che assente: è quella su cui si sta agendo');
+  assert.ok(termWidth(out.join('')) <= 8);
+});
+
+test('cutParts: col prioritario servito per primo, l ordine di RESA non cambia', () => {
+  // Cambia chi paga il taglio, non dove sta scritto: `nascoste` resta prima di
+  // `archiviabili` anche quando è la seconda a essere servita.
+  const out = cutParts(HEADER_VISTE, 34, 2);
+  const shown = out.map((p, i) => (p ? i : -1)).filter((i) => i >= 0);
+  assert.deepEqual(shown, [...shown].sort((a, b) => a - b));
+});
+
+test('cutParts: nessun segmento monco accanto a uno intero in modo prioritario', () => {
+  // Un pezzo tagliato a metà seguito da una voce intera si legge come due cose
+  // slegate, non come una riga troncata: col prioritario o entra tutto o cede.
+  const out = cutParts(HEADER_VISTE, 34, 2);
+  const partial = out.filter((p, i) => p !== '' && i !== 2 && !HEADER_VISTE[i]!.startsWith(p.replace(/…$/, '')));
+  assert.deepEqual(partial, []);
+});
+
+test('cutParts: chi cede il posto si porta dietro tutta la coda, nessun sorpasso', () => {
+  // L'ordine dell'array è l'ordine di importanza: le voci navigabili prima dei
+  // contatori di scroll. Con un riempimento a buchi, `↓9` (corto) passerebbe
+  // davanti a `archiviabili` (lunga) e l'header mostrerebbe una posizione avendo
+  // buttato una voce selezionabile.
+  const out = cutParts(HEADER_VISTE, 32, 1);
+  assert.ok(out[1]!.includes('nascoste'), 'la voce attiva resta');
+  assert.equal(out[2], '', 'archiviabili non ci sta');
+  assert.deepEqual(out.slice(3), ['', ''], 'e con lei cadono i contatori che la seguono');
+});
+
+test('cutParts: la riga non apre con un separatore appeso al nulla', () => {
+  const out = cutParts(HEADER_VISTE, 20, 2);
+  const first = out.find((p) => p !== '')!;
+  assert.ok(!/^\s*·/.test(first), `separatore orfano in testa: ${JSON.stringify(first)}`);
+});
+
+test('cutParts: priorità fuori range → comportamento identico a prima', () => {
+  assert.deepEqual(cutParts(HEADER_SESSIONI, 30, -1), cutParts(HEADER_SESSIONI, 30));
+  assert.deepEqual(cutParts(HEADER_SESSIONI, 30, 99), cutParts(HEADER_SESSIONI, 30));
+});

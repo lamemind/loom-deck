@@ -56,7 +56,8 @@ senza collisioni:
 | Tasto | Semantica | Note |
 |---|---|---|
 | `↑` `↓` | naviga nella lista | |
-| `←` `→` `tab` | cambia pane | |
+| `tab` | cambia pane | l'unico tasto che sposta il focus |
+| `←` `→` | cambia **vista** del pane a fuoco | ciclico; il catalogo è l'header stesso |
 | `⏎` | azione primaria del pane | Tasks → apre il **detail** della task selezionata · Sessions → riprende (`claude --resume`) la sessione selezionata |
 | **MAIUSCOLA** | **apre un modale** | cattura tutti i tasti; `esc` annulla, non esce |
 | minuscola | azione immediata, one-shot | |
@@ -166,9 +167,10 @@ Sono bottoni affiancati e non voci di un menu verticale perché è la forma che
 sopravvive all'arrivo del mouse: un rettangolo ha già coordinate e area
 cliccabile, una lista di voci andrebbe rifatta.
 
-Dentro il detail `←→` non cambia più pane — il ramo `useInput` della modalità
-chiude prima di arrivare a quello di default. Ink non ha focus-trap: la cattura
-**è** l'ordine dei rami.
+Dentro il detail `←→` cicla i bottoni invece di cambiare la vista del pane — il
+ramo `useInput` della modalità chiude prima di arrivare a quello di default. Ink
+non ha focus-trap: la cattura **è** l'ordine dei rami, e cambiare cosa fa un
+tasto fuori dal detail non tocca cosa fa dentro.
 
 Il catalogo dei prompt vive in `scripts/deck-run`, non nella TUI: è il primitive
 UI-agnostico, il deck gli passa un **simbolo** (`--prompt-kind`) e non una
@@ -298,6 +300,40 @@ Con un filtro attivo l'header dichiara sempre quanto sta nascondendo
 **Persistenza.** La vista non si salva da sola — sperimentare non sporca nulla.
 `w` la scrive in `.claude/loom/deck-view.json` (macchina-locale, da gitignorare)
 e al riavvio viene ripristinata. File assente o corrotto → default puliti.
+
+## L'header è un selettore di vista
+
+Ogni segmento dell'header nomina un sottoinsieme che il deck sa già calcolare.
+`←`/`→` lo rendono **raggiungibile**: la voce attiva si evidenzia in video
+inverso e la lista sotto mostra quel sottoinsieme.
+
+```
+Tasks (20/78) · 58 nascoste · 23 archiviabili · ↑7 · ↓9
+Sessions · tutte (317) · ●2 vive · 📌4 · +213 più vecchie · ↑7 · ↓9
+```
+
+| Pane | Viste |
+|---|---|
+| Tasks | `Tasks (n/N)` (filtri applicati) · `N nascoste` (il complemento esatto di quei filtri) · `N archiviabili` (Done oltre `archivableDays`, cieca ai filtri) |
+| Sessions | `{parent} (N)` · `●N vive` · `📌N` · `+N più vecchie` (le contestuali che il cap `maxContext` tronca) |
+
+- **Il catalogo è fisso**, anche a contatore 0 (la voce si mostra dim). Un
+  catalogo che si accorcia sposta le voci sotto le dita, e la vista corrente può
+  svanire mentre la guardi — togliere un filtro mentre sei su `nascoste`.
+- **`↑N` `↓N` non sono viste**: contano elementi fuori finestra per altezza del
+  terminale, cioè una posizione, non un insieme. Restano in coda, non selezionabili.
+- **Due assi ortogonali**: il pane task sceglie il *parent* delle conversazioni
+  (`≡ tutte` / `○ spot` / una task), l'header sceglie *quale sottoinsieme* di quel
+  parent. Cambiare parent non azzera la vista, che si ricalcola dentro il nuovo.
+- **`F` è inerte fuori dalla vista `Tasks`** e lo dice con una nota: su
+  `nascoste` riapplicare i filtri non ha senso, `archiviabili` è cieca per scelta.
+- **La vista è volatile**: non entra in `deck-view.json`, il deck riapre sempre
+  sulla voce 1. Un filtro salvato lo si è scelto; una vista non-default riaperta
+  a freddo si leggerebbe come la lista intera.
+- **Cambiare vista riporta la selezione in cima**, righe meta comprese: nessuna
+  regola di mantenimento, nessun tentativo di ritrovare l'elemento precedente.
+- Su un terminale stretto **la voce attiva è servita per prima** dal budget di
+  larghezza: sparisce un contatore, mai la voce che dice dove sei.
 
 ## Installazione
 

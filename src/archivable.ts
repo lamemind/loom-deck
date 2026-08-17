@@ -126,17 +126,23 @@ async function gitOut(args: string[], cwd: string): Promise<string | null> {
 }
 
 /**
- * Quante fra le task Done passate sono oltre soglia. Le indeterminate (nessuno
+ * Quali fra le task Done passate sono oltre soglia. Le indeterminate (nessuno
  * dei tre gradini risolve) e le righe orfane (Done in tasks.md ma task file
- * assente) NON entrano nel conteggio: il deck non chiama "vecchia" una task di
- * cui non sa l'età.
+ * assente) NON entrano: il deck non chiama "vecchia" una task di cui non sa
+ * l'età.
  *
  * Riceve gli id già filtrati sul glifo Done invece della lista completa: lo
  * scan resta così proporzionale al vecchiume, non alla lunghezza della lista.
+ *
+ * T100 — ritorna gli ID e non più il solo conteggio: `archiviabili` è diventata
+ * una vista navigabile del pane task, e il numero da solo non basta più a
+ * disegnarne le righe. Il contatore dell'header è la lunghezza della lista, così
+ * ciò che si conta e ciò che si mostra restano lo stesso insieme per
+ * costruzione.
  */
-export async function countArchivable(doneIds: string[], opts: ScanOptions): Promise<number> {
+export async function archivableIds(doneIds: string[], opts: ScanOptions): Promise<string[]> {
   const now = opts.now ?? Date.now();
-  let n = 0;
+  const out: string[] = [];
   for (const id of doneIds) {
     const taskFile = findTaskFile(opts.tasksDir, id);
     if (!taskFile) continue;
@@ -149,7 +155,7 @@ export async function countArchivable(doneIds: string[], opts: ScanOptions): Pro
     const iso = await resolveDoneDate(id, content, taskFile, opts.projectRoot);
     if (!iso) continue;
     const age = ageDays(iso, now);
-    if (age !== null && age >= opts.days) n++;
+    if (age !== null && age >= opts.days) out.push(id);
   }
-  return n;
+  return out;
 }

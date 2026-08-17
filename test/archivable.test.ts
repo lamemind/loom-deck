@@ -11,11 +11,22 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ageDays, countArchivable, DEFAULT_ARCHIVABLE_DAYS } from '../src/archivable.js';
+import {
+  ageDays,
+  archivableIds,
+  DEFAULT_ARCHIVABLE_DAYS,
+  type ScanOptions,
+} from '../src/archivable.js';
 import { parseArchivableDays } from '../src/config.js';
 
 /** Riferimento fisso: senza, i test cambierebbero esito col passare dei giorni. */
 const NOW = new Date(2026, 7, 3, 12, 0, 0).getTime(); // 2026-08-03 12:00 locale
+
+/** Questi test misurano il CONFINE d'età, non l'identità delle task: il numero è
+ *  la forma più stretta per dirlo. Gli id li verifica il test dedicato in coda. */
+async function countArchivable(doneIds: string[], opts: ScanOptions): Promise<number> {
+  return (await archivableIds(doneIds, opts)).length;
+}
 
 function taskFile(progress: string, extra = ''): string {
   return `# Task: sintetica\n\n- **ID**: T99\n- **Progress**: ${progress}\n${extra}\n## Description\n\ncorpo\n`;
@@ -207,6 +218,29 @@ test('gradino ②: `Last tracked commit` batte il commit del file', async () => 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// ---- T100 · gli ID, non solo il numero ---------------------------------------
+
+test('lo scan ritorna GLI ID: il contatore e la vista sono lo stesso insieme', async () => {
+  // Il numero da solo bastava a un header informativo; `archiviabili` è ora una
+  // vista navigabile, e una lista di righe non si disegna da un intero.
+  await withTasksDir(
+    {
+      'T01-vecchia.md': taskFile('✔️ Done at 2026-05-01'),
+      'T02-recente.md': taskFile('✔️ Done at 2026-08-01'),
+      'T03-vecchia.md': taskFile('✔️ Done at 2026-04-01'),
+    },
+    async (dir) => {
+      const ids = await archivableIds(['T01', 'T02', 'T03'], {
+        tasksDir: dir,
+        projectRoot: dir,
+        days: 30,
+        now: NOW,
+      });
+      assert.deepEqual(ids, ['T01', 'T03']);
+    },
+  );
 });
 
 // ---- Soglia dal file config --------------------------------------------------

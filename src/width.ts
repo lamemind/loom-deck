@@ -231,8 +231,16 @@ export function cut(s: string, cols: number): string {
  * portano glifi larghi 2 (`📌` nelle sessioni, i glifi di priorità nei filtri
  * delle task), cioè la condizione esatta in cui `cli-truncate` restituisce una
  * riga più larga del budget e il bordo del pane sparisce.
+ *
+ * T100/D6 — `priority` è l'indice del pezzo che il budget serve PER PRIMO,
+ * quando la riga porta un segmento su cui si sta agendo (la vista attiva di un
+ * header-selettore). Gli altri si mostrano solo se avanza spazio, e cadono dalla
+ * coda come prima. L'ORDINE DI RESA non cambia — cambia chi paga il taglio: su
+ * un terminale stretto sparisce un contatore, mai la voce che dice dove sei.
+ * Riservare non allarga la riga: resta un tetto, e con `priority` da solo più
+ * largo del budget è lui a essere tagliato.
  */
-export function cutParts(parts: string[], cols: number): string[] {
+export function cutParts(parts: string[], cols: number, priority = -1): string[] {
   const empty = parts.map(() => '');
   if (cols <= 0) return empty;
   if (parts.reduce((w, p) => w + termWidth(p), 0) <= cols) return [...parts];
@@ -240,10 +248,44 @@ export function cutParts(parts: string[], cols: number): string[] {
   const out = [...empty];
   const budget = cols - 1; // -1 = la colonna dell'ellissi, che qui c'è di sicuro
   let w = 0;
-  let full = false;
-  for (let i = 0; i < parts.length && !full; i++) {
+  const hasPriority = priority >= 0 && priority < parts.length;
+
+  if (hasPriority) {
+    // Il prioritario prende il suo spazio per primo, e se non ci sta intero è
+    // lui a essere tagliato: dev'esserci comunque, anche monco.
     let acc = '';
-    for (const ch of parts[i]!) {
+    for (const ch of parts[priority]!) {
+      const cw = termWidth(ch);
+      if (w + cw > budget) break;
+      acc += ch;
+      w += cw;
+    }
+    out[priority] = acc;
+  }
+
+  for (let i = 0; i < parts.length; i++) {
+    if (hasPriority && i === priority) continue;
+    const part = parts[i]!;
+    const pw = termWidth(part);
+    if (hasPriority) {
+      // Col prioritario già servito il taglio a metà di un altro segmento
+      // lascerebbe a schermo un moncone seguito da una voce intera, che si legge
+      // come due cose slegate invece che come una riga troncata: qui un pezzo o
+      // entra tutto o cede il posto.
+      //
+      // E chi cede si porta dietro tutti quelli dopo di lui, invece di lasciare
+      // passare il primo più corto: l'ordine dell'array È l'ordine di
+      // importanza (le voci navigabili prima dei contatori di scroll), e un
+      // riempimento a buchi lo scavalcherebbe — l'header mostrerebbe `↓46`
+      // avendo buttato la voce che si può selezionare.
+      if (w + pw > budget) break;
+      out[i] = part;
+      w += pw;
+      continue;
+    }
+    let acc = '';
+    let full = false;
+    for (const ch of part) {
       const cw = termWidth(ch);
       if (w + cw > budget) {
         full = true;
@@ -253,7 +295,13 @@ export function cutParts(parts: string[], cols: number): string[] {
       w += cw;
     }
     out[i] = acc;
+    if (full) break;
   }
+  // Col prioritario servito per primo il primo pezzo a schermo può non essere il
+  // pezzo 0, e i segmenti portano il proprio separatore in testa: senza questa
+  // potatura la riga aprirebbe con un ` · ` appeso al nulla.
+  const first = out.findIndex((p) => p !== '');
+  if (first > 0) out[first] = out[first]!.replace(/^[\s·]+/, '');
   // L'ellissi va sull'ultimo pezzo che ha davvero del testo: appiccicarla a un
   // pezzo vuoto la staccherebbe dal punto di taglio, e il lettore la leggerebbe
   // come un segmento a sé.
