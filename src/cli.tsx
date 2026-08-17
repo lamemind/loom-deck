@@ -107,6 +107,12 @@ import {
   type Occurrence,
 } from './text-search.js';
 import {
+  parseMarkdown,
+  sliceSpans,
+  type Span,
+  type SpanKind,
+} from './markdown.js';
+import {
   applyView,
   cycleSort,
   describeSort,
@@ -1115,24 +1121,42 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // 2 padding) = 8. Sottostimare tronca un carattere, sovrastimare manda a capo
   // una riga che il budget d'altezza non ha contato.
   const sheetWidth = Math.max(20, (columns || 80) - 8);
+  // T75 — il markdown si rende PRIMA del wrap, e il resto della catena lavora
+  // sul testo reso: `**foo**` occupa 3 colonne rese e 7 grezze, quindi
+  // wrappare sui marker manderebbe a capo su un conteggio che il terminale non
+  // disegna. Memo separato dal wrap perché il parse dipende solo dal testo: un
+  // resize ri-wrappa 9KB, non li ri-parsa.
+  const sheetDoc = useMemo(
+    () => (sheet?.text ? parseMarkdown(sheet.text) : null),
+    [sheet],
+  );
   // Le righe conservano i propri offset invece di essere appiattite a stringa
   // (T66 le buttava con `.map((l) => l.text)`): è ciò che rende
   // l'evidenziazione un'intersezione di intervalli invece di un caso speciale
-  // per il match spezzato dall'a-capo.
+  // per il match spezzato dall'a-capo. Dopo T75 gli offset indicizzano il testo
+  // RESO, ed è l'unica coordinata coerente che resti — il sorgente non è più
+  // ciò che sta a schermo.
   const sheetLines = useMemo(
-    () => (sheet?.text ? wrapWithOffsets(sheet.text, sheetWidth) : []),
-    [sheet, sheetWidth],
+    () => (sheetDoc ? wrapWithOffsets(sheetDoc.text, sheetWidth) : []),
+    [sheetDoc, sheetWidth],
   );
   const sheetCap = detailCapacity(rows, find?.open === true);
   const sheetMaxTop = Math.max(0, sheetLines.length - sheetCap);
 
-  // Lo scan gira sulla STESSA stringa che si renderizza (`sheet.text`, già
-  // passata da `sanitize` in `loadTaskFileText`): una rilettura del file darebbe
-  // offset che indicizzano un documento diverso da quello a schermo, cioè
-  // un'evidenziazione spostata di N caratteri e nessun errore.
+  // Lo scan gira sulla STESSA stringa che si renderizza: cercare su un testo
+  // diverso da quello a schermo darebbe offset che indicizzano un altro
+  // documento, cioè un'evidenziazione spostata di N caratteri e nessun errore.
+  //
+  // Dopo T75 quella stringa è il testo RESO, non più il sorgente: si cerca ciò
+  // che si vede. Ne discende che `**` non è più cercabile — è la conseguenza
+  // voluta, perché a schermo non c'è; e `Priority`, che prima era `**Priority**`
+  // e si trovava lo stesso, continua a trovarsi.
   const findRes = useMemo(
-    () => (find && sheet?.text ? scanText(sheet.text, find.q) : { occ: [] as Occurrence[], error: '' }),
-    [find?.q, sheet],
+    () =>
+      find && sheetDoc
+        ? scanText(sheetDoc.text, find.q)
+        : { occ: [] as Occurrence[], error: '' },
+    [find?.q, sheetDoc],
   );
   // L'indice si clampa qui invece di essere corretto a ogni `setOccIdx`: la
   // lista si accorcia da sola mentre si digita, e un indice fuori range vivrebbe
@@ -2349,6 +2373,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         title={sheet.title}
         missing={sheet.text === null}
         lines={sheetLines.slice(start, start + sheetCap)}
+        spans={sheetDoc?.spans ?? []}
         top={start}
         total={sheetLines.length}
         capacity={sheetCap}
@@ -3201,6 +3226,81 @@ function ReaderLine({
   );
 }
 
+/** Resa di ogni costrutto markdown (T75 · D4): un solo livello di enfasi per
+ *  costrutto, senza un secondo alfabeto da imparare. Heading uguali a ogni
+ *  livello — la gerarchia la porta già il testo. `code` e `fence` condividono
+ *  il giallo perché sono lo stesso costrutto a due granularità: dargli due
+ *  colori direbbe che sono due cose. */
+const MD_STYLE: Record<SpanKind, { bold?: boolean; color?: string }> = {
+  heading: { bold: true, color: 'cyan' },
+  bold: { bold: true },
+  code: { color: 'yellow' },
+  fence: { color: 'yellow' },
+};
+
+/**
+ * Una riga del detail (T75): markdown reso, con sopra l'evidenziazione della
+ * ricerca.
+ *
+ * Due segmentazioni sulla stessa riga, annidate e non fuse: prima si taglia sui
+ * costrutti markdown, poi ogni pezzo si ritaglia sulle occorrenze. L'ordine non
+ * è indifferente — così un match a cavallo di un `**grassetto**` resta
+ * evidenziato per intero e insieme conserva il grassetto sulla metà che ce
+ * l'ha, cosa che una segmentazione unica dovrebbe risolvere decidendo chi vince.
+ *
+ * Gli offset di `occ` e di `spans` indicizzano ENTRAMBI il testo reso: è ciò
+ * che permette di comporli senza rimappature. Vedi `sheetDoc` per il perché la
+ * ricerca del detail ha smesso di scandire il sorgente.
+ */
+function DetailLine({
+  line,
+  spans,
+  occ,
+  current,
+}: {
+  line: WrappedLine;
+  spans: readonly Span[];
+  occ: readonly Occurrence[];
+  current: number;
+}) {
+  const styled = sliceSpans(line, spans);
+  // Riga vuota → uno spazio: un `<Text>` senza contenuto Ink non lo disegna, e
+  // il testo si compatterebbe perdendo la struttura del file.
+  if (styled.length === 0) return <Text wrap="truncate-end"> </Text>;
+  let off = line.start;
+  return (
+    <Text wrap="truncate-end">
+      {styled.map((seg, i) => {
+        const st = seg.kind ? MD_STYLE[seg.kind] : undefined;
+        const at = off;
+        off += seg.text.length;
+        // Senza ricerca aperta il secondo taglio non ha niente da tagliare, e
+        // saltarlo evita di allocare tre array per ogni riga a ogni freccia.
+        if (occ.length === 0) {
+          return (
+            <Text key={i} bold={st?.bold} color={st?.color}>
+              {seg.text}
+            </Text>
+          );
+        }
+        return (
+          <Text key={i} bold={st?.bold} color={st?.color}>
+            {sliceLine(seg.text, at, occ, current).map((p, j) =>
+              p.hit ? (
+                <Text key={j} backgroundColor={p.current ? 'cyan' : 'yellow'} color="black">
+                  {p.text}
+                </Text>
+              ) : (
+                <Text key={j}>{p.text}</Text>
+              ),
+            )}
+          </Text>
+        );
+      })}
+    </Text>
+  );
+}
+
 /** Campo della ricerca nel detail: finestra ancorata al caret, cursore inverso
  *  sulla cella reale. Gemello di `EditTextField` senza la label, che qui sta
  *  fuori perché il campo vive in FLUSSO su una riga condivisa col contatore —
@@ -3234,6 +3334,7 @@ function DetailScreen({
   title,
   missing,
   lines,
+  spans,
   top,
   total,
   capacity,
@@ -3247,8 +3348,11 @@ function DetailScreen({
   title: string;
   /** Il task file non esiste: si mostra il perché, le azioni restano attive. */
   missing: boolean;
-  /** Solo la finestra visibile del testo wrappato, con gli offset del sorgente. */
+  /** Solo la finestra visibile del testo RESO wrappato, con i suoi offset. */
   lines: WrappedLine[];
+  /** Costrutti markdown dell'intero documento, non solo della finestra: il
+   *  taglio per riga lo fa `sliceSpans` intersecando. */
+  spans: readonly Span[];
   top: number;
   total: number;
   capacity: number;
@@ -3309,9 +3413,9 @@ function DetailScreen({
             {WARN} task file non trovato · le azioni restano attive (deck-run risolve la task per id)
           </Text>
         ) : (
-          // Riga vuota → uno spazio: un `<Text>` senza contenuto Ink non lo
-          // disegna, e il testo si compatterebbe perdendo la struttura del file.
-          lines.map((l, i) => <ReaderLine key={top + i} line={l} occ={occ} current={occCur} />)
+          lines.map((l, i) => (
+            <DetailLine key={top + i} line={l} spans={spans} occ={occ} current={occCur} />
+          ))
         )}
       </Box>
       {find?.open ? (
