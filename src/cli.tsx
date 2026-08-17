@@ -856,7 +856,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // modale: la lista si aggiorna dal vivo, quindi `esc` deve poter ripristinare.
   const [view, setView] = useState<ViewState>(() => loadView(cwd));
   const [viewBackup, setViewBackup] = useState<ViewState | null>(null);
-  // T100 — vista attiva di ciascun pane, navigata con ←/→. VOLATILE per
+  // T100 — vista attiva di ciascun pane, navigata con `tab`. VOLATILE per
   // decisione (D3 create): non entra in `deck-view.json`, il deck riapre sempre
   // su `Tasks` e su `{parent}`. Il criterio è il rischio di leggere una lista
   // parziale credendola completa — un filtro salvato lo si è scelto, una vista
@@ -1285,7 +1285,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // messaggi a mano. `verb` è l'unica cosa che cambia fra i due usi.
   function selectedTaskOr(keyLabel: string, verb: string): Task | null {
     if (focus !== 'tasks') {
-      setNote(`${keyLabel} → ${verb}: seleziona una task (tab per il pane)`);
+      setNote(`${keyLabel} → ${verb}: seleziona una task (← per il pane)`);
       return null;
     }
     // T59 — la guardia è "non è una task", non "è spot": le righe meta sono due
@@ -1557,7 +1557,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     else setSel(paneTasks[next - META_ROWS]?.id ?? SPOT);
   }
 
-  // T100 — ←/→ navigano il catalogo viste del pane in focus. Il reset della
+  // T100 — `tab` naviga il catalogo viste del pane in focus. Il reset della
   // selezione è la regola letterale «prima riga in alto», senza eccezioni: sul
   // pane task è `ROW_ALL` (D2 preflight — le righe meta non si saltano, e il
   // parent delle sessioni che torna a `tutte` è un effetto accettato); sul pane
@@ -1968,7 +1968,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     // selezione per ognuna. Sta PRIMA del ramo di default per la stessa ragione
     // di reader e ricerca — Ink non ha focus-trap, quindi la cattura È l'ordine
     // dei rami — e il `return` in fondo è ciò che impedisce a `←→` di cambiare
-    // pane mentre muove fra le azioni: qui quel binding non esiste più.
+    // pane mentre muove fra le azioni: qui quel binding non esiste più. Cade lì
+    // anche `tab`, cioè il cambio vista: dentro il detail nessuno dei due tasti
+    // di navigazione del pane risponde, e non è un'eccezione da ricordare per
+    // ognuno — è il `return` che chiude tutto il ramo di default in una volta.
     // È anche prima del ramo CTRL, quindi `^K`/`^P`/`^R` restano acceleratori
     // della sola lista: chi è già nel detail ha i bottoni.
     if (mode === 'detail') {
@@ -2079,15 +2082,21 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     }
 
     if (key.tab) {
-      // T100 — `tab` resta l'unico tasto che sposta il focus fra i due pane. Le
-      // frecce orizzontali facevano lo stesso lavoro (due tasti per un'azione)
-      // mentre la navigazione DENTRO un pane non ne aveva nessuno: ora sono il
-      // selettore di vista dell'header. Il ramo `mode === 'detail'`, anteposto e
-      // chiuso da `return`, non è più l'eccezione a «cambia pane» ma a «cambia
-      // vista» — l'ordine dei rami non cambia, cambia cosa cattura.
-      setFocus((f) => (f === 'tasks' ? 'sessions' : 'tasks'));
+      // `tab` cicla la VISTA del pane a fuoco, `←→` spostano il focus fra i due
+      // pane: il criterio dell'assegnazione è spaziale. Una freccia orizzontale
+      // porta con sé una direzione e i pane sono affiancati (task a sinistra,
+      // sessioni a destra), quindi il tasto NOMINA il pane invece di limitarsi
+      // a scambiarlo; un catalogo ciclico non ha un verso da rispettare, e un
+      // tasto solo gli basta. `shift+tab` (backtab, `[Z`) scorre a rovescio — il
+      // verso che un tasto singolo non esprime sta nel modificatore, e su cinque
+      // voci risparmia quattro pressioni.
+      cycleView(key.shift ? -1 : 1);
     } else if (key.leftArrow || key.rightArrow) {
-      cycleView(key.leftArrow ? -1 : 1);
+      // Binding ASSOLUTO, non toggle: `←` porta sempre sui task e `→` sempre
+      // sulle sessioni, quindi ripremere lo stesso tasto non riporta indietro.
+      // È ciò che lo rende spaziale — la direzione indica una destinazione, e
+      // con due soli pane un toggle sarebbe indistinguibile solo per caso.
+      setFocus(key.leftArrow ? 'tasks' : 'sessions');
     } else if (key.upArrow) {
       if (focus === 'tasks') moveTaskSel(-1);
       else setSelSessionId((id) => moveSelection(sessionRows, id, -1));
@@ -2151,7 +2160,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       // Vive solo sul pane sessioni: il fork ha per oggetto una conversazione,
       // e senza focus lì non ce n'è una selezionata su cui agire.
       if (focus !== 'sessions') {
-        setNote('f → fork: seleziona una sessione (tab per il pane)');
+        setNote('f → fork: seleziona una sessione (→ per il pane)');
       } else {
         const s = selSessionObj;
         if (!s) {
@@ -2182,7 +2191,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       // pinnata STALE (l'unico modo di spinnarla). Scrive il sidecar e ricarica
       // subito, senza attendere il tick del poll.
       if (focus !== 'sessions') {
-        setNote('p → pin: seleziona una sessione (tab per il pane)');
+        setNote('p → pin: seleziona una sessione (→ per il pane)');
       } else if (!selSessionId) {
         setNote('p → nessuna sessione da pinnare');
       } else {
@@ -2206,7 +2215,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       // su una pinnata STALE, perché annotare «questa non c'è più, era X» è
       // proprio il caso in cui una nota serve.
       if (focus !== 'sessions') {
-        setNote('N → nota: seleziona una sessione (tab per il pane)');
+        setNote('N → nota: seleziona una sessione (→ per il pane)');
       } else if (!selSessionId) {
         setNote('N → nessuna sessione da annotare');
       } else {
@@ -2221,7 +2230,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       // il binding è nostro, il transcript è di CC — riassegnare una
       // conversazione il cui transcript non c'è più resta legittimo.
       if (focus !== 'sessions') {
-        setNote('A → assegna: seleziona una sessione (tab per il pane)');
+        setNote('A → assegna: seleziona una sessione (→ per il pane)');
       } else if (!selSessionId) {
         setNote('A → nessuna sessione da assegnare');
       } else {
@@ -3596,7 +3605,7 @@ function AssignScreen({
  * segmento resta il primo a cedere il posto (`↑↓` in coda alle voci navigabili).
  *
  * T100 — la riga non è più informativa: le voci del catalogo sono SELEZIONABILI
- * con ←/→, e l'attiva si distingue in video inverso (D5 — costa 0 colonne e non
+ * con `tab`, e l'attiva si distingue in video inverso (D5 — costa 0 colonne e non
  * entra in gara con la semantica di colore già occupata). Le voci ci sono tutte
  * anche a 0 (D1): un catalogo che si accorcia sposta le voci sotto le dita.
  * L'ordine è vincolato — le navigabili PRIMA di `↑N`/`↓N`, che cadono per primi

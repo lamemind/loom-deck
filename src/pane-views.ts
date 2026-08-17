@@ -1,7 +1,7 @@
 // T100 — Catalogo delle viste dei due pane. L'header smette di essere una riga
 // di contatori e diventa un SELETTORE: ogni segmento che nomina un sottoinsieme
 // calcolabile (`nascoste`, `archiviabili`, `vive`, `📌`, `+più vecchie`) è una
-// vista raggiungibile con ←/→.
+// vista raggiungibile con `tab`.
 //
 // Modulo PURO: nessun import da ink/react, nessun I/O. Il calcolo resta dove
 // stava — `view.ts` per i filtri task, `session-list.ts` per l'assemblaggio a

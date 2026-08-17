@@ -45,8 +45,8 @@ Regola unica, senza eccezioni — pensata per reggere l'aggiunta di nuove azioni
 | Tasto | Semantica | Note |
 |---|---|---|
 | `↑` `↓` | naviga nella lista | |
-| `tab` | cambia pane | l'unico tasto che sposta il focus |
-| `←` `→` | cambia **vista** del pane a fuoco | ciclico; il catalogo è l'header stesso |
+| `←` `→` | cambia pane | assoluto, non toggle: `←` = Tasks, `→` = Sessions — la direzione nomina il pane, che è affiancato |
+| `tab` | cambia **vista** del pane a fuoco | ciclico (`shift+tab` indietro); il catalogo è l'header stesso |
 | `⏎` | azione primaria del pane | Tasks → apre il **detail** della task selezionata · Sessions → riprende (`claude --resume`) la sessione selezionata |
 | **MAIUSCOLA** | **apre un modale** | cattura tutti i tasti; `esc` annulla, non esce |
 | minuscola | azione immediata, one-shot | |
@@ -122,7 +122,7 @@ Le azioni non sono un catalogo nuovo: chiamano lo **stesso** percorso di spawn d
 
 Sono bottoni affiancati e non voci di un menu verticale perché è la forma che sopravvive all'arrivo del mouse: un rettangolo ha già coordinate e area cliccabile, una lista di voci andrebbe rifatta.
 
-Dentro il detail `←→` cicla i bottoni invece di cambiare la vista del pane — il
+Dentro il detail `←→` cicla i bottoni invece di cambiare pane, e `tab` non cambia la vista — il
 ramo `useInput` della modalità chiude prima di arrivare a quello di default. Ink non ha focus-trap: la cattura **è** l'ordine dei rami, e cambiare cosa fa un tasto fuori dal detail non tocca cosa fa dentro.
 
 Il catalogo dei prompt vive in `scripts/deck-run`, non nella TUI: è il primitive UI-agnostico, il deck gli passa un **simbolo** (`--prompt-kind`) e non una stringa. Così il testo sta in un posto solo, e con lui il suo vincolo di quoting — il prompt viaggia dentro apici singoli in `bash -lc`, quindi non può contenerne.
@@ -209,7 +209,7 @@ e al riavvio viene ripristinata. File assente o corrotto → default puliti.
 ## L'header è un selettore di vista
 
 Ogni segmento dell'header nomina un sottoinsieme che il deck sa già calcolare.
-`←`/`→` lo rendono **raggiungibile**: la voce attiva si evidenzia in video
+`tab` lo rende **raggiungibile**: la voce attiva si evidenzia in video
 inverso e la lista sotto mostra quel sottoinsieme.
 
 ```

@@ -22,8 +22,10 @@ import time
 import select
 import signal
 
-# 'T' = tab, l'unico tasto che sposta il focus fra i due pane da T100 in poi:
-# le frecce orizzontali sono passate al selettore di vista dell'header.
+# 'T' = tab, il selettore di vista dell'header; 'L'/'R' = frecce orizzontali,
+# cioè il cambio pane ('L' = task, 'R' = sessioni). Chi scrive uno scenario deve
+# guardare qui: la lettera dice il TASTO, non l'intenzione, e un rimappaggio
+# lascia verde ogni scenario che continua a battere il tasto vecchio.
 # 'X' = INCOLLAGGIO: 60 caratteri in una scrittura sola, cioè un chunk unico di
 # stdin. Riempie un campo di testo oltre il budget al costo di UN tasto (una
 # `x` per volta costerebbe 60 pump da 0.7s), ed è anche l'unico modo di provare

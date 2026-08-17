@@ -219,12 +219,12 @@ const ARCHIVABLE_ON = { LOOM_DECK_ARCHIVABLE_DAYS: '1' };
  *  combinazione. */
 const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   ['lista task', 'DD', [100, 176]],
-  ['pane sessioni + dettaglio', 'DTDD', [100, 176]],
+  ['pane sessioni + dettaglio', 'DRDD', [100, 176]],
   // T59 — il pane sessioni della riga `≡ tutte` (dove il deck atterra, quindi
-  // nessun `D` prima di `T`). È l'unica vista che aggiunge il task id inline
+  // nessun `D` prima di `R`). È l'unica vista che aggiunge il task id inline
   // sulla riga: colonne sottratte al titolo che le altre non pagano, cioè
   // esattamente il tipo di taglio che sfonda il pane se sbagliato.
-  ['pane sessioni · vista tutte', 'TDD', [100, 176]],
+  ['pane sessioni · vista tutte', 'RDD', [100, 176]],
   ['task done in vista (filtri)', 'DDDDDDDD', [100, 176]],
   ['ricerca full-text', `${CTRL_F}deck`, [176]],
   ['reader fullscreen', `${CTRL_F}deckD\r`, [176]],
@@ -235,13 +235,13 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   ['edit titolo lungo', EDIT_TITOLO, [100, 176]],
   ['edit caret a inizio (^A)', `${EDIT_TITOLO}${CTRL_A}`, [100, 176]],
   ['edit caret in mezzo', `${EDIT_TITOLO}${'L'.repeat(30)}`, [100]],
-  // T57 — `T` porta il focus sul pane sessioni, `A` apre la schermata di
+  // T57 — `R` porta il focus sul pane sessioni, `A` apre la schermata di
   // assegnazione: righe task a piena larghezza, più il titolo che ripete la
   // conversazione (hash + nota/etichetta, l'unico pezzo di lunghezza libera lì
   // sopra). `X` incolla 60 caratteri nel campo filtro — è il campo di testo
   // della schermata, cioè l'unico che può sfondarne il box.
-  ['assegna sessione a task', 'TA', [100, 176]],
-  ['assegna · filtro lungo', 'TAX', [100]],
+  ['assegna sessione a task', 'RA', [100, 176]],
+  ['assegna · filtro lungo', 'RAX', [100]],
   // T66 — il detail: `DD` porta la selezione sulla prima task (il deck atterra
   // su `≡ tutte`), `\r` apre l'overlay. Le righe del task file sono l'unico
   // testo a lunghezza libera lì dentro, e la riga bottoni l'unica riga fissa
@@ -280,14 +280,14 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // avuto, e la voce attiva ci sta dentro in video inverso. Gli 8 `D` dopo il
   // cambio vista rimettono a schermo anche i contatori `↑↓`, che il reset di
   // selezione aveva tolto — da sola nessuna voce sfonda, è la somma a farlo.
-  ['viste task · nascoste attiva', 'RDDDDDDDD', [100, 176], ARCHIVABLE_ON],
-  ['viste task · archiviabili attiva', 'RRDDDDDDDD', [100], ARCHIVABLE_ON],
+  ['viste task · nascoste attiva', 'TDDDDDDDD', [100, 176], ARCHIVABLE_ON],
+  ['viste task · archiviabili attiva', 'TTDDDDDDDD', [100], ARCHIVABLE_ON],
   // La voce attiva in CODA al catalogo sessioni (`+N più vecchie`) su un pane
   // stretto: è il caso di D6 — il budget la serve per prima, le voci che la
   // precedono cadono, e ciò che resta a schermo non apre con un separatore
   // orfano.
-  ['viste sessioni · vive attiva', 'TR', [100]],
-  ['viste sessioni · più vecchie attiva', 'TRRR', [100, 176]],
+  ['viste sessioni · vive attiva', 'RT', [100]],
+  ['viste sessioni · più vecchie attiva', 'RTTT', [100, 176]],
 ];
 
 for (const [label, keys, widths, extraEnv] of SCENARIOS) {
