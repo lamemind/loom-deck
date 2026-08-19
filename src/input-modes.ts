@@ -32,6 +32,7 @@ export const CAPTURING_MODES = [
   'sort',
   'filter',
   'edit',
+  'purge',
 ] as const;
 
 export type CapturingMode = (typeof CAPTURING_MODES)[number];
@@ -59,6 +60,9 @@ export function captures(mode: Mode): mode is CapturingMode {
  * sopravvive: è un tasto diverso che porta lo stesso nome, e il modo se lo
  * gestisce da sé. Sta scritto qui perché è l'eccezione a una regola dichiarata,
  * e un'eccezione che vive solo dentro un `if` annidato è come non averla.
+ *
+ * `purge` (T112) non ne ha e non può averne: è una domanda binaria, e dentro
+ * una domanda non c'è nessun acceleratore da salvare.
  */
 export const CTRL_DEROGATIONS: Partial<Record<CapturingMode, readonly string[]>> = {
   detail: ['f'],

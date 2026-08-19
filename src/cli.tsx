@@ -87,7 +87,9 @@ import {
   type Focus,
   type Mode,
   type Parent,
+  type PurgeDraft,
 } from './model.js';
+import { purgeTargets, splitTargets } from './purge.js';
 import {
   conversationLabel,
   cpLen,
@@ -104,6 +106,7 @@ import {
   commitTaskEdit,
   runLaunch,
   spawnClaudeEmpty,
+  spawnCleanTasks,
   spawnCreateTask,
   spawnDeck,
   spawnDeckFork,
@@ -115,14 +118,21 @@ import {
   type ModelKind,
   type PromptKind,
 } from './spawn.js';
-import { EditModal, FilterModal, SortModal } from './ui/modals.js';
+import { EditModal, FilterModal, PurgeModal, SortModal, idList } from './ui/modals.js';
 import { ReaderScreen, SearchScreen } from './ui/search-screen.js';
 import { DetailScreen } from './ui/detail-screen.js';
 import { AssignScreen } from './ui/assign-screen.js';
 import { SessionsPane, TasksPane } from './ui/panes.js';
 import { PreviewPane, detailMetaOf } from './ui/preview.js';
 import { loadView, saveView, viewFilePath } from './view-store.js';
-import { useArchivable, useSessions, useTaskDetail, useTasks, useTerminalSize } from './hooks.js';
+import {
+  useArchivable,
+  useDirtyFolders,
+  useSessions,
+  useTaskDetail,
+  useTasks,
+  useTerminalSize,
+} from './hooks.js';
 import { useSearchOverlay } from './overlays/search.js';
 import { useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
@@ -183,6 +193,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // T41 — bozza dell'edit (null fuori dal modale) e riga attiva della griglia.
   const [edit, setEdit] = useState<EditDraft | null>(null);
   const [editRow, setEditRow] = useState<EditRow>(0);
+  // T112 — bozza della conferma di eliminazione (null fuori dal modale).
+  const [purge, setPurge] = useState<PurgeDraft | null>(null);
 
   // Dimensioni vive del terminale: sono l'input del budget d'altezza sotto.
   const { rows, columns } = useTerminalSize();
@@ -216,6 +228,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   );
   const archivableDays = useMemo(() => loadArchivableDays(cwd), [cwd]);
   const archivable = useArchivable(doneSig, tasksDir, cwd, archivableDays);
+  // T112 — secondo asse di stato della vista `archiviabili`: quali fra le
+  // eliminabili hanno una folder che `git rm` non svuoterebbe. Si misura solo
+  // su quelle, non su tutta la lista: fuori da quella vista `CANC` agisce su
+  // una task sola e il dato lo ricalcola al momento.
+  const archivableSig = useMemo(() => [...archivable].sort().join(','), [archivable]);
+  const dirtyFolders = useDirtyFolders(archivableSig, tasksDir, cwd);
 
   // T100 — le task effettivamente a schermo: la vista principale coincide con
   // `viewTasks` (nessun ricalcolo sul cammino di default), le altre due passano
@@ -576,6 +594,140 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     );
   }
 
+  // T112 — apertura della conferma di eliminazione. Il tasto è uno, il bersaglio
+  // dipende dalla VISTA attiva: `archiviabili` → l'insieme intero, ogni altra →
+  // la task selezionata. Ciò che discrimina sta in header e non sotto le dita,
+  // quindi il modale deve nominare il bersaglio (quante e quali), non l'azione.
+  //
+  // Il bersaglio del bulk si legge da `paneTasks`, cioè dalla stessa fonte che
+  // disegna le righe e alimenta il contatore in header (D6): mai il `Set` grezzo
+  // di `archivable.ts`, mai un secondo filtro sullo stato. T100 ha fissato che
+  // ciò che si conta e ciò che si mostra siano lo stesso insieme per
+  // costruzione; qui l'invariante si estende a ciò che si pota.
+  function openPurge() {
+    // La guardia di focus sta QUI e non solo dentro `selectedTaskOr`: il ramo
+    // bulk non passa da quella, perché il suo oggetto è la vista e non la
+    // selezione. Senza, `CANC` col focus sulle sessioni potrebbe potare in
+    // blocco senza che nessuna task fosse selezionata.
+    if (focus !== 'tasks') {
+      setNote('CANC → eliminare: seleziona una task (← per il pane)');
+      return;
+    }
+    const bulk = taskViewId === 'archivable';
+    const ids = bulk ? paneTasks.map((t) => t.id) : [];
+    if (!bulk) {
+      const task = selectedTaskOr('CANC', 'eliminare');
+      if (!task) return;
+      ids.push(task.id);
+    }
+    if (ids.length === 0) {
+      setNote('CANC → nessuna task in vista da eliminare');
+      return;
+    }
+    // Ricalcolo al momento dell'AZIONE, non lettura del campionamento in lista:
+    // una folder sporcata dopo l'ultimo scan si presenterebbe come eliminabile.
+    const { clean, dirty } = splitTargets(purgeTargets(ids, tasksDir, cwd));
+    if (bulk) {
+      // Il gate del plugin esce 2 PRIMA di toccare qualsiasi cosa, quindi una
+      // sola folder sporca annullerebbe il purge di tutte le altre: si scartano
+      // a monte e il modale nomina sia le potate sia le scartate.
+      if (clean.length === 0) {
+        setNote(
+          `CANC → ${dirty.length} task con file non tracciati in folder: eliminale una per una`,
+        );
+        return;
+      }
+      setPurge({
+        ids: clean.map((t) => t.id),
+        skipped: dirty.map((t) => t.id),
+        bulk: true,
+        ignored: null,
+        survivors: 0,
+      });
+    } else {
+      // Singola con superstiti → conferma a TRE uscite (D3): la scelta
+      // keep/purge è rara e distruttiva in modo diverso dal purge normale, e
+      // qui è visibile invece di stare davanti a ogni potatura.
+      const one = clean[0] ?? dirty[0]!;
+      setPurge({
+        ids: [one.id],
+        skipped: [],
+        bulk: false,
+        ignored: one.survivors > 0 ? 'keep' : null,
+        survivors: one.survivors,
+      });
+    }
+    setNote('');
+    setMode('purge');
+  }
+
+  function onPurgeKey(_input: string, key: Key) {
+    if (key.escape) {
+      setMode('normal');
+      setPurge(null);
+      setNote('CANC → eliminazione annullata');
+    } else if (key.return) {
+      submitPurge();
+    } else if ((key.leftArrow || key.rightArrow) && purge?.ignored) {
+      setPurge((p) => (p ? { ...p, ignored: p.ignored === 'keep' ? 'purge' : 'keep' } : p));
+    }
+  }
+
+  // ⏎ nella conferma: ordina la potatura a `loom-works:clean-tasks` e la
+  // osserva. Il deck non rimuove niente da sé — nessun `git rm`, nessuna
+  // riscrittura di tasks.md, nessuna `unlink`: quella sequenza è già
+  // implementata una volta, e averne due significherebbe due rimozioni capaci
+  // di divergere.
+  //
+  // La lista si riallinea al primo tick del poll e il set delle archiviabili
+  // allo scan che `doneSig` fa scattare quando la popolazione Done cambia; la
+  // selezione, keyed su id, cade sulla prima riga della vista (effect di
+  // validità) invece che su una posizione residua.
+  function submitPurge() {
+    const draft = purge;
+    setMode('normal');
+    setPurge(null);
+    if (!draft) return;
+    const sid = randomUUID();
+    setNote(`⏳ eliminando ${draft.ids.length} task… ${idList(draft.ids, 6)}`);
+    const child = spawnCleanTasks(draft.ids, cwd, sid, draft.ignored, (ok, detail) => {
+      // L'esito si misura su `tasks.md`, NON sul solo `is_error`. Misurato: col
+      // gate `--ignored-files` che blocca, la skill spiega il blocco e chiude
+      // comunque `is_error: false` — un successo dichiarato su zero rimozioni.
+      // Il segnale robusto è quali degli ID bersaglio non hanno più una riga:
+      // deterministico, e indipendente da come la skill racconta sé stessa.
+      let survived = draft.ids;
+      try {
+        const now = new Set(loadTasks(tasksPath).map((t) => t.id));
+        survived = draft.ids.filter((id) => now.has(id));
+      } catch {
+        // tasks.md illeggibile → nessuna verifica possibile, e allora si dice
+        // che non è stata fatta invece di dedurre un esito.
+        setNote(`⚠ ${draft.ids.length} task: esito non verificabile (tasks.md illeggibile)`);
+        return;
+      }
+      const removed = draft.ids.length - survived.length;
+      if (removed === draft.ids.length) {
+        // Il push non c'è, per scelta della skill: finché nessuno pusha, un
+        // altro worktree continua a vedere le task potate in tasks.md. Non
+        // dirlo lascerebbe leggere l'assenza di push come «fatto».
+        setNote(`✔ ${removed} task eliminate · commit locali, nessun push`);
+      } else {
+        // Il gate `--ignored-files` (exit 2) può scattare lo stesso: la
+        // dirtiness è un dato campionato e una folder può sporcarsi fra il
+        // ricalcolo e l'apply. Il testo del result event è l'unica cosa che dice
+        // PERCHÉ, quindi entra nella riga invece di un ⚠ muto.
+        setNote(
+          `⚠ ${removed}/${draft.ids.length} eliminate · restano ${idList(survived, 4)} · ${cut(
+            detail || (ok ? '' : `${CLAUDE_CMD} -p`),
+            56,
+          )}`,
+        );
+      }
+    });
+    child?.on('error', () => setNote(`⚠ clean-tasks: '${CLAUDE_CMD}' non lanciabile`));
+  }
+
   // Chiusura di un modale di vista: `restore` rimette la fotografia scattata
   // all'apertura (esc = annulla), altrimenti tiene ciò che si è composto (⏎).
   function closeViewModal(restore: boolean) {
@@ -859,6 +1011,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     sort: onSortKey,
     filter: onFilterKey,
     edit: onEditKey,
+    purge: onPurgeKey,
   };
 
   useInput((input, key) => {
@@ -945,6 +1098,15 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           resumeSession(s.sessionId);
         }
       }
+    } else if (key.delete) {
+      // T112/D1 — `CANC` non esiste come tasto distinto in Ink: `\x7f`
+      // (Backspace) e `\x1b[3~` (Canc) collassano entrambi su `key.delete` con
+      // `input` azzerato, quindi a valle non resta niente da cui distinguerli.
+      // Il binding vale per entrambi e si accetta come tale: in `normal` non
+      // c'è nessun campo di testo da cui Backspace possa rubare un significato,
+      // e ogni modo che ne ha uno è capturing e non vede questo ramo. Il modale
+      // di conferma è la rete contro chi usa Backspace come «indietro».
+      openPurge();
     } else if (input === 'C') {
       setNote('');
       setMode('create');
@@ -1119,6 +1281,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const keyLegend = sanitize(
     [
       ...(canSpawn ? ['⏎ detail', '^K/^P/^R spawn'] : canResume ? ['⏎ resume'] : []),
+      // T112 — la voce nomina il BERSAGLIO, che cambia con la vista attiva
+      // senza che cambi il tasto: dire solo «CANC elimina» lascerebbe credere
+      // che sulla vista `archiviabili` agisca sulla riga selezionata.
+      ...(focus === 'tasks'
+        ? [taskViewId === 'archivable' ? 'CANC elimina tutte' : 'CANC elimina']
+        : []),
       ...(canResume ? ['f fork'] : []),
       ...(canPin ? ['p pin', 'N nota', 'A assegna'] : []),
       '^F cerca',
@@ -1386,6 +1554,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           <Text color="yellow">⏎</Text> salva (vuoto = rimuove) ·{' '}
           <Text color="yellow">esc</Text> annulla
         </Text>
+      ) : mode === 'purge' ? (
+        <Text dimColor wrap="truncate-end">
+          elimina task ·{' '}
+          {purge?.ignored ? (
+            <>
+              <Text color="yellow">←→</Text> keep/purge dei file non tracciati ·{' '}
+            </>
+          ) : null}
+          <Text color="yellow">⏎</Text> conferma · <Text color="yellow">esc</Text> annulla
+        </Text>
       ) : mode === 'edit' ? (
         <Text dimColor wrap="truncate-end">
           edit · <Text color="yellow">↑↓</Text> campo · <Text color="yellow">←→</Text> valore, o
@@ -1436,6 +1614,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       {mode === 'edit' && edit && selTask ? (
         <EditModal id={selTask.id} draft={edit} row={editRow} columns={columns} />
       ) : null}
+      {mode === 'purge' && purge ? <PurgeModal draft={purge} columns={columns} /> : null}
       <Box flexDirection="row" marginTop={1}>
         <TasksPane
           tasks={windowTasks}
@@ -1453,6 +1632,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           above={taskWin.start}
           below={paneTasks.length - taskWin.end}
           columns={columns}
+          dirty={dirtyFolders}
         />
         <SessionsPane
           parentLabel={parentLabel}

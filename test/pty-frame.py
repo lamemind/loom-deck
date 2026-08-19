@@ -30,7 +30,18 @@ import signal
 # stdin. Riempie un campo di testo oltre il budget al costo di UN tasto (una
 # `x` per volta costerebbe 60 pump da 0.7s), ed è anche l'unico modo di provare
 # dal gate la strada che `useInput` percorre davvero su un paste.
-KEYS = {'D': b'\x1b[B', 'U': b'\x1b[A', 'R': b'\x1b[C', 'L': b'\x1b[D', 'T': b'\t', 'X': b'x' * 60}
+# 'K' = CANC (`\x1b[3~`), l'apertura della conferma di eliminazione. Serve una
+# voce nella mappa perché la sequenza è di 4 byte: scritta dentro `--keys`
+# arriverebbe come quattro tasti separati.
+KEYS = {
+    'D': b'\x1b[B',
+    'U': b'\x1b[A',
+    'R': b'\x1b[C',
+    'L': b'\x1b[D',
+    'T': b'\t',
+    'X': b'x' * 60,
+    'K': b'\x1b[3~',
+}
 
 argv = sys.argv[1:]
 keys = ''

@@ -118,3 +118,23 @@ export const KIND_LABEL: Record<BodyKind, string> = { ai: 'IA', tool: 'tools', h
 export const EDIT_PRI: readonly PriName[] = ['high', 'med', 'low'];
 
 export const EDIT_PROG: readonly ProgName[] = ['todo', 'wip', 'done', 'locked'];
+
+// T112 — bozza della conferma di eliminazione. UNA sola per i due bersagli
+// (D5): fra `CANC` sulla task selezionata e `CANC` sull'intera vista
+// `archiviabili` cambia il testo, non la meccanica — e un modale che esiste in
+// due copie diverge alla prima modifica.
+export interface PurgeDraft {
+  /** Il bersaglio EFFETTIVO, già depurato dei non conformi al gate. */
+  ids: string[];
+  /** Scartati a monte perché la loro folder ha file che `git rm` non rimuove:
+   *  il gate del plugin esce 2 prima di toccare qualsiasi cosa, quindi in un
+   *  bulk uno solo di questi annullerebbe il purge di tutti gli altri. */
+  skipped: string[];
+  /** `true` = l'intera vista `archiviabili`; `false` = la task selezionata. */
+  bulk: boolean;
+  /** Regime della conferma: `null` = binaria (⏎/esc); un valore = ternaria, la
+   *  singola task ha superstiti e la scelta viaggia come `--ignored-files`. */
+  ignored: 'keep' | 'purge' | null;
+  /** File superstiti della singola task sporca, nominati nella conferma. */
+  survivors: number;
+}

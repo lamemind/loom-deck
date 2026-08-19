@@ -66,6 +66,7 @@ Assegnazioni correnti:
 | modale | `F` | filtri |
 | modale | `^F` | **ricerca full-text** nelle conversazioni del progetto |
 | modale | `⏎` | **detail** della task selezionata: task file scrollabile + barra azioni |
+| modale | `CANC` | **elimina** — la task selezionata, oppure l'intera vista `archiviabili` se è quella attiva |
 | immediata | `^K` | spawna la task selezionata col prompt di **recap** |
 | immediata | `^P` | spawna la task selezionata sul **preflight** |
 | immediata | `^R` | spawna la task selezionata in **esecuzione** |
@@ -92,6 +93,24 @@ L'indice da solo è opaco (le `launch` sono custom per-progetto, senza una lette
 Le emoji sono quelle del menu compass. Per il terminale compass usa 🖥️, che nel frame Ink non sopravvive: `sanitize` lo sostituisce perché VTE lo disegna largo 1 mentre `string-width` ne conta 2 (invariante ① di `src/width.ts`) — 💻 è il gemello concorde.
 
 `t` e `c` sono gemelle: entrambe aprono una surface del cappello nella stessa finestra Ptyxis, senza passare da un modale. `c` (minuscola, azione) e `C` (maiuscola, modale create-task) restano distinte per la regola sopra — così come `f` (fork) e `F` (filtri).
+
+### `CANC` — eliminare task
+
+Il deck **ordina** la potatura, non la esegue: la fa `loom-works:clean-tasks`, invocato da un processo Claude headless. Nessun `git rm` e nessuna riscrittura di `tasks.md` vivono qui — quella sequenza (task file + folder dot-prefixed + riga in `tasks.md`, un commit atomico per task, symlink `current-task.md` rimosso, righe orfane riconciliate) è implementata una volta sola, e averne una seconda darebbe due rimozioni capaci di divergere.
+
+Lo **stesso tasto ha due bersagli di taglia diversa**, e ciò che li discrimina è la vista attiva — un'informazione che sta in header, non sotto le dita:
+
+| Vista attiva | Bersaglio |
+|---|---|
+| `archiviabili` | **tutte** le task che la vista mostra |
+| qualunque altra | la **task selezionata** |
+
+Da qui la forma della conferma: nomina il bersaglio (quante e quali ID, troncando con `+N`) invece dell'azione, e dice l'**effetto sul disco** — mai «archiviare», che prometterebbe uno spostamento in un archivio che non esiste. I commit restano **locali**: `clean-tasks` non pusha, quindi finché nessuno lo fa un altro worktree continua a vedere le task potate.
+
+- **`CANC` è anche Backspace.** Ink battezza `delete` sia `\x7f` sia `\x1b[3~` e azzera `input`: a valle non resta nulla da cui distinguerli. Il binding vive nel modo `normal`, che non ha campi di testo, e ogni modo che ne ha uno cattura l'input e non vede quel ramo — la conferma è la rete contro chi usa Backspace come «indietro».
+- **Le folder con file non tracciati si scartano a monte.** `clean-tasks.sh` esce 2 appena trova una task folder con file che `git rm` non rimuove, e lo fa *prima* di potare qualsiasi cosa: in un bulk su N target, uno solo non conforme annullerebbe il lavoro sugli altri N-1. Il deck replica il predicato del gate (`git ls-files -o`), marca quelle task con `⚠` nella vista `archiviabili` e le esclude dal bulk — nominandole nella conferma, perché promettere 7 e farne 5 sarebbe una bugia invisibile.
+- **Sulla singola task sporca la conferma ha tre uscite**: `⏎` su `keep` (snapshot in git prima del purge), `⏎` su `purge` (file persi), `esc`. La scelta viaggia come `--ignored-files` ed è rara: nasconderla dentro un binario `⏎`/`esc` la mascherebbe.
+- **`CANC` col focus sul pane Sessions è inerte e lo dice**, come `F` fuori dalla vista principale.
 
 ### I cinque modi di entrare in una task
 

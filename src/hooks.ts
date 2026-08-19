@@ -10,6 +10,7 @@ import { discoverProjectSessions, type Session } from './sessions.js';
 import { discoverLiveSessions, liveSig, type LiveSession } from './live-sessions.js';
 import { loadSessionIndex, type SessionIndex } from './task-index.js';
 import { archivableIds, SCAN_INTERVAL_MS } from './archivable.js';
+import { purgeTargets } from './purge.js';
 import { POLL_MS } from './model.js';
 
 // Dimensioni del terminale, live sul resize.
@@ -187,6 +188,42 @@ export function useArchivable(doneSig: string, tasksDir: string, projectRoot: st
     };
   }, [doneSig, tasksDir, projectRoot, days]);
   return ids;
+}
+
+// T112 — quali fra le task passate hanno una folder che `git rm` non
+// svuoterebbe (file ignorati o mai tracciati). È il SECONDO asse di stato della
+// vista `archiviabili`: eliminabile · dirty.
+//
+// Non viene dalla fonte della lista. Le righe arrivano da `tasks.md` (poll
+// 1,5s), la dirtiness dal filesystem via git su questa cadenza — mount, cambio
+// dell'insieme, poi ogni SCAN_INTERVAL_MS, gemella di `useArchivable` e per la
+// stessa ragione: una folder non si sporca al ritmo di un poll.
+//
+// Ne discende che il dato è CAMPIONATO e può essere stale nell'istante in cui
+// si preme il tasto — perciò il momento dell'azione lo ricalcola da sé
+// (`purgeTargets`), e questo hook serve solo a mostrarlo in lista.
+export function useDirtyFolders(idsSig: string, tasksDir: string, projectRoot: string) {
+  const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    const ids = idsSig ? idsSig.split(',') : [];
+    const scan = () => {
+      try {
+        const found = purgeTargets(ids, tasksDir, projectRoot)
+          .filter((t) => t.survivors > 0)
+          .map((t) => t.id);
+        setDirty(new Set(found));
+      } catch {
+        // git muto o task file illeggibili → nessun marker. Il gate del plugin
+        // resta la rete: un marker mancante non autorizza niente, fa solo
+        // arrivare il rifiuto più tardi.
+        setDirty(new Set());
+      }
+    };
+    scan();
+    const id = setInterval(scan, SCAN_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [idsSig, tasksDir, projectRoot]);
+  return dirty;
 }
 
 // Legge il task file della task selezionata (Q1+B T20). On-id-change: navigare

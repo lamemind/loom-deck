@@ -2,10 +2,10 @@
 // schermate sostitutive costano righe al budget d'altezza, quindi ognuno ha un
 // costo dichiarato in `viewport.ts`.
 import { Box, Text } from 'ink';
-import { caretWindow, sanitize } from '../width.js';
+import { caretWindow, cut, cutParts, sanitize } from '../width.js';
 import { cpLen, type EditRow } from '../layout.js';
-import { CARET, CARET_OFF } from '../glyphs.js';
-import { EDIT_PRI, EDIT_PROG, type EditDraft, type FilterCursor } from '../model.js';
+import { CARET, CARET_OFF, WARN } from '../glyphs.js';
+import { EDIT_PRI, EDIT_PROG, type EditDraft, type FilterCursor, type PurgeDraft } from '../model.js';
 import { PRI_ENTRIES, PROG_ENTRIES, type SortEntry, type SortKey, type ViewState } from '../view.js';
 import { progressText, PRI_GLYPH, PRI_LABEL, PROG_GLYPH } from '../task-edit.js';
 
@@ -55,6 +55,98 @@ export function FilterModal({ view, cursor }: { view: ViewState; cursor: FilterC
         </Text>
       ))}
     </Box>
+  );
+}
+
+/**
+ * T112 — conferma di ELIMINAZIONE, in flusso come gli altri modali.
+ *
+ * Quattro righe, e nessuna è decorativa:
+ *
+ * ① il bersaglio per TAGLIA — «7 task» o «T31». Lo stesso tasto pota una task
+ *   sulla vista principale e N sulla vista `archiviabili`, e ciò che discrimina
+ *   è quale vista è attiva, cioè un'informazione che sta in header e non sotto
+ *   le dita di chi preme: la conferma è l'unico punto in cui quella differenza
+ *   torna visibile.
+ * ② gli ID, troncati con `+N`: una conferma che non dice COSA sparisce non è
+ *   informata.
+ * ③ l'EFFETTO sul disco, non il nome della vista. «Archiviare 7 task?»
+ *   prometterebbe uno spostamento in un archivio che non esiste — `clean-tasks`
+ *   rimuove task file, folder e riga, e il recupero da git history è il rimedio,
+ *   non l'operazione.
+ * ④ ciò che il bersaglio dichiarato NON copre: le scartate del bulk (promettere
+ *   7 e farne 5 è una bugia che non compare da nessuna parte, perché le 2
+ *   restano in lista come prima) oppure, sulla singola task sporca, la scelta
+ *   keep/purge che accompagna l'ordine.
+ */
+export function PurgeModal({ draft, columns }: { draft: PurgeDraft; columns: number }) {
+  // Due cornici annidate da scalare — root (bordo 2 + paddingX 2) e modale
+  // (bordo 2 + paddingX 2): il taglio è del chiamante, o la riga esce dal box e
+  // il frame va a capo (invariante ③ di width.ts).
+  const width = Math.max(8, columns - 8);
+  const target = draft.bulk ? `${draft.ids.length} task` : (draft.ids[0] ?? '—');
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="red" paddingX={1} marginTop={1}>
+      <Text color="red">CANC › eliminare {target}?</Text>
+      <Text wrap="truncate-end">{cut(idList(draft.ids), width)}</Text>
+      <Text dimColor wrap="truncate-end">
+        {cut(
+          'via clean-tasks: task file + folder + riga in tasks.md · un commit per task · nessun push',
+          width,
+        )}
+      </Text>
+      {draft.ignored ? (
+        <IgnoredChoice survivors={draft.survivors} mode={draft.ignored} width={width} />
+      ) : (
+        <Text color={draft.skipped.length > 0 ? 'yellow' : undefined} dimColor={draft.skipped.length === 0} wrap="truncate-end">
+          {cut(
+            draft.skipped.length > 0
+              ? `${WARN} ${draft.skipped.length} scartate (folder con file non tracciati): ${idList(draft.skipped)}`
+              : 'nessuna esclusa · ⏎ conferma · esc annulla',
+            width,
+          )}
+        </Text>
+      )}
+    </Box>
+  );
+}
+
+/** Gli ID del bersaglio, troncati con `+N` quando non ci stanno tutti. Il
+ *  troncamento lo fa questa funzione e non `cut`, perché tagliare a metà un id
+ *  (`T1…`) direbbe una cosa falsa invece di dire che manca. */
+export function idList(ids: string[], max = 12): string {
+  if (ids.length <= max) return ids.join(' ');
+  return `${ids.slice(0, max).join(' ')} +${ids.length - max}`;
+}
+
+/** D3 — la sola task con superstiti apre una conferma a TRE uscite: `⏎` su
+ *  KEEP, `⏎` su PURGE, `esc`. La scelta viaggia come `--ignored-files` nel
+ *  comando passato alla skill, ed è rara e distruttiva in modo diverso dal
+ *  purge normale: nasconderla dentro un binario `⏎`/`esc` la mascherebbe. */
+function IgnoredChoice({
+  survivors,
+  mode,
+  width,
+}: {
+  survivors: number;
+  mode: 'keep' | 'purge';
+  width: number;
+}) {
+  const segs = ['[ keep ]', '[ purge ]'];
+  const parts = [`${WARN} ${survivors} file non tracciati · `, segs[0]!, '  ', segs[1]!, ' · ←→'];
+  // `priority` sulla voce SCELTA: è l'unica informazione che la riga esiste per
+  // dare, e su un terminale stretto deve restare a schermo per prima.
+  const shown = cutParts(parts, width, mode === 'keep' ? 1 : 3);
+  return (
+    <Text wrap="truncate-end">
+      {shown.map((s, i) =>
+        s ? (
+          <Text key={i} color="yellow" inverse={(i === 1 && mode === 'keep') || (i === 3 && mode === 'purge')}>
+            {s}
+          </Text>
+        ) : null,
+      )}
+    </Text>
   );
 }
 

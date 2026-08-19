@@ -16,6 +16,7 @@ const ALL_MODES: Mode[] = [
   'note',
   'assign',
   'detail',
+  'purge',
 ];
 
 test('normal è l\'unico modo non capturing', () => {
@@ -42,6 +43,14 @@ test('detail cattura, quindi gli acceleratori globali sono inerti', () => {
 test('la sola deroga ctrl dichiarata è ^F dentro detail', () => {
   assert.deepEqual(Object.keys(CTRL_DEROGATIONS), ['detail']);
   assert.deepEqual(CTRL_DEROGATIONS.detail, ['f']);
+});
+
+// T112 — `purge` è il primo modo capturing SENZA campo di testo. Cattura come
+// gli altri (dentro una conferma nessun acceleratore globale deve restare vivo)
+// e non deroga a niente: una domanda binaria non ha acceleratori da salvare.
+test('purge cattura e non ha deroghe ctrl', () => {
+  assert.equal(captures('purge'), true);
+  assert.equal(CTRL_DEROGATIONS.purge, undefined);
 });
 
 test('un modo fuori catalogo non risulta capturing', () => {

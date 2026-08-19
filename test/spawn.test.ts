@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deckArgs, forkArgs, resumeArgs, terminalArgs, DETAIL_ACTIONS } from '../src/spawn.js';
+import {
+  cleanTasksArgs,
+  cleanTasksPrompt,
+  deckArgs,
+  forkArgs,
+  resumeArgs,
+  spawnCleanTasks,
+  terminalArgs,
+  DETAIL_ACTIONS,
+} from '../src/spawn.js';
 
 // La forma degli argv È il contratto col primitive `deck-run`, e finora non la
 // fissava nulla: un flag rinominato da un lato si scopriva solo aprendo una tab.
@@ -103,6 +112,59 @@ test('terminalArgs non passa mai un comando da eseguire', () => {
   // L'azione È aprire la shell — differenza dalle launch custom, che eseguono un
   // comando dentro `bash -lic`.
   assert.ok(!terminalArgs('/p', 't').includes('--'));
+});
+
+// ── T112 · potatura ordinata a clean-tasks ────────────────────────────────
+
+test('cleanTasksPrompt dichiara la conferma già raccolta ed elenca gli ID', () => {
+  // `yolo` non è una comodità: senza, `clean-tasks` apre un `AskUserQuestion`
+  // sui target non-Done e in `claude -p` non c'è nessuno che risponda — la
+  // sessione resta appesa e per il deck è indistinguibile da un'operazione lenta.
+  assert.equal(cleanTasksPrompt(['T31'], null), '/loom-works:clean-tasks yolo T31');
+  assert.equal(
+    cleanTasksPrompt(['T31', 'T40', 'T52'], null),
+    '/loom-works:clean-tasks yolo T31 T40 T52',
+  );
+});
+
+test('cleanTasksPrompt passa --ignored-files solo quando la scelta è stata fatta', () => {
+  // Passarlo sempre significherebbe decidere di default se dei file si perdono.
+  assert.equal(
+    cleanTasksPrompt(['T31'], 'keep'),
+    '/loom-works:clean-tasks yolo --ignored-files keep T31',
+  );
+  assert.equal(
+    cleanTasksPrompt(['T31'], 'purge'),
+    '/loom-works:clean-tasks yolo --ignored-files purge T31',
+  );
+  assert.ok(!cleanTasksPrompt(['T31'], null).includes('--ignored-files'));
+});
+
+test('cleanTasksArgs porta il prompt come SINGOLO argv', () => {
+  const args = cleanTasksArgs(['T31', 'T40'], 'sid-1', null);
+  assert.deepEqual(args.slice(0, 6), [
+    '-p',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--session-id',
+    'sid-1',
+  ]);
+  // Un argv solo: gli ID non passano mai da una shell, quindi non c'è quoting
+  // da sbagliare né injection possibile dal contenuto della lista.
+  assert.equal(args.length, 7);
+  assert.equal(args[6], '/loom-works:clean-tasks yolo T31 T40');
+});
+
+test('nessuno spawn su bersaglio vuoto', () => {
+  // `clean-tasks` senza SPEC esce 1: spawnarlo comunque farebbe riportare al
+  // deck il fallimento di un'operazione che nessuno ha chiesto.
+  let called = false;
+  const child = spawnCleanTasks([], '/p', 'sid-1', null, () => {
+    called = true;
+  });
+  assert.equal(child, null);
+  assert.equal(called, false);
 });
 
 test('ogni azione del detail è un prompt-kind valido', () => {

@@ -51,7 +51,7 @@ const frameHeight = (i: BudgetInput, b: ReturnType<typeof layoutBudget>) => {
 };
 
 test('layoutBudget: il frame resta sotto stdout.rows su ogni combinazione', () => {
-  const modes: Mode[] = ['normal', 'create', 'sort', 'filter', 'edit'];
+  const modes: Mode[] = ['normal', 'create', 'sort', 'filter', 'edit', 'purge'];
   const kinds: PreviewKind[] = ['none', 'task', 'session'];
   for (let rows = 8; rows <= 80; rows++) {
     for (const mode of modes) {
@@ -275,4 +275,33 @@ test('wrapLines: input vuoto o tetto zero → nessuna riga', () => {
   assert.deepEqual(wrapLines('', 20, 3), []);
   assert.deepEqual(wrapLines('   \n ', 20, 3), []);
   assert.deepEqual(wrapLines('alfa', 20, 0), []);
+});
+
+// T112 — il modale di conferma è IN FLUSSO: spinge giù i pane, quindi il suo
+// costo esce dal budget delle due liste. Un modale non contabilizzato è
+// esattamente ciò che fa sfondare `rows` e manda Ink in `clearTerminal`.
+test('MODAL_HEIGHT.purge toglie righe alle liste, e le toglie a entrambe', () => {
+  const normal = layoutBudget(input({ mode: 'normal' }));
+  const purge = layoutBudget(input({ mode: 'purge' }));
+  assert.equal(normal.taskRows - purge.taskRows, MODAL_HEIGHT.purge);
+  assert.equal(normal.sessionRows - purge.sessionRows, MODAL_HEIGHT.purge);
+});
+
+// Le quattro righe di contenuto sono FISSE: la quarta ospita tanto gli scarti
+// del bulk quanto la scelta keep/purge, e sceglierne l'altezza a runtime
+// obbligherebbe il budget a sapere quale dei due è a schermo.
+test('il costo del modale purge non dipende dal bersaglio', () => {
+  assert.equal(MODAL_HEIGHT.purge, 7);
+});
+
+// Terminale basso: il modale non deve mai far scendere una lista sotto zero né
+// portare il frame oltre `rows` — è lì che il ramo compatto deve subentrare.
+test('purge su terminale basso: frame sotto rows o riga compatta', () => {
+  for (let rows = 8; rows <= 24; rows++) {
+    const i = input({ rows, mode: 'purge', launchLine: false, noteLine: true });
+    const b = layoutBudget(i);
+    if (b.compact) continue;
+    assert.ok(b.taskRows >= 0 && b.sessionRows >= 0, `righe negative a ${rows}`);
+    assert.ok(frameHeight(i, b) + SLACK <= rows, `frame oltre rows a ${rows} righe`);
+  }
 });

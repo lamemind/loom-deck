@@ -51,6 +51,13 @@ export const MODAL_HEIGHT = {
   sort: 5, // marginTop + 2 bordi + titolo + 1 riga catena
   filter: 6, // marginTop + 2 bordi + titolo + 2 righe (pri, stato)
   edit: 9, // marginTop + 2 bordi + titolo + 4 campi (pri, stato, prog, titolo) + riga anteprima
+  // T112 — conferma di eliminazione: marginTop + 2 bordi + 4 righe di contenuto
+  // (titolo, elenco ID, effetto sul disco, riga di stato del bersaglio).
+  // Le quattro righe sono FISSE, non condizionali: la quarta ospita tanto gli
+  // scarti del bulk quanto la scelta keep/purge della singola task sporca, e due
+  // condizionali mutuamente esclusivi obbligherebbero il budget a sapere QUALE
+  // dei due è a schermo (stessa ragione della riga nota in DETAIL_CHROME, T111).
+  purge: 7,
   // T52 — search e reader sono gli unici modali NON in flusso: sostituiscono i
   // due pane invece di spingerli giù (una lista di occorrenze non entra in un
   // box sopra il deck). Costo 0 nel budget dei pane perché quel budget non

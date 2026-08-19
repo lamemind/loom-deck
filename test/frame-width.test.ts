@@ -301,6 +301,13 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // orfano.
   ['viste sessioni · vive attiva', 'RT', [100]],
   ['viste sessioni · più vecchie attiva', 'RTTT', [100, 176]],
+  // T112 — la conferma di eliminazione sulla singola task: box a piena
+  // larghezza in flusso, con dentro la riga dell'effetto (testo fisso, la più
+  // lunga) e l'elenco degli ID. `K` = CANC nella mappa di `pty-frame.py`.
+  ['conferma · singola task', 'DDK', [80, 100, 176]],
+  // Il bulk: l'elenco ID cresce con l'insieme, ed è il pezzo che sfonda se il
+  // troncamento `+N` non lo tiene. La soglia a 1 giorno riempie la vista.
+  ['conferma · bulk archiviabili', 'TTK', [80, 100, 176], ARCHIVABLE_ON],
 ];
 
 for (const [label, keys, widths, extraEnv] of SCENARIOS) {
@@ -330,6 +337,20 @@ for (const rows of [16, 20]) {
   // caso che cade per primo se `DETAIL_CHROME` resta al conteggio di prima.
   test(`altezza · detail con la riga nota @ ${rows} righe`, { skip: !CAN_RUN }, () => {
     const raw = capture(100, rows, 'DD\rX');
+    const frame = lastFrame(raw).filter((l) => l !== '');
+    assert.ok(
+      frame.length <= rows,
+      `frame di ${frame.length} righe in un terminale di ${rows}`,
+    );
+  });
+
+  // T112 — la conferma è un modale IN FLUSSO: spinge giù i pane, quindi le sue
+  // 7 righe vanno scalate dal budget delle liste. Non scalate, il frame supera
+  // `rows` e Ink cade nel ramo `clearTerminal` — su VTE un frame nello
+  // scrollback a ogni tick del poll. Terminale stretto E basso insieme, che è
+  // proprio la condizione in cui quel ramo scatta.
+  test(`altezza · conferma di eliminazione @ ${rows} righe`, { skip: !CAN_RUN }, () => {
+    const raw = capture(80, rows, 'DDK');
     const frame = lastFrame(raw).filter((l) => l !== '');
     assert.ok(
       frame.length <= rows,

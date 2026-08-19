@@ -36,8 +36,15 @@ const CAN_RUN = hasPython() && existsSync(TASKS);
 
 const CTRL_F = '\x06';
 const ESC = '\x1b';
+/** T112 — `CANC` nella mappa di `pty-frame.py`: la sequenza è di 4 byte e
+ *  scritta nuda arriverebbe come quattro tasti separati. */
+const CANC = 'K';
 
-function capture(keys: string, cwd: string = PROJECT): string {
+function capture(
+  keys: string,
+  cwd: string = PROJECT,
+  extraEnv: NodeJS.ProcessEnv = {},
+): string {
   const raw = execFileSync(
     'python3',
     [
@@ -63,6 +70,7 @@ function capture(keys: string, cwd: string = PROJECT): string {
         // cerca `docs/tasks.md`, la lista task è vuota e i modi che richiedono
         // una task selezionata non si aprono affatto.
         LOOM_DECK_DOCS_ROOT: 'runtime',
+        ...extraEnv,
       },
     },
   );
@@ -101,6 +109,9 @@ const MODES: Array<{ name: string; keys: string; expect: RegExp }> = [
   // `DD` prima di `E`: il deck apre su `≡ tutte` (D4), e le righe meta non
   // sono task — `E` lì risponde «nessuna task selezionata», correttamente.
   { name: 'edit', keys: 'DDE', expect: /priorit|progress/i },
+  // T112 — `DD` porta sulla prima task reale, `CANC` apre la conferma. La
+  // conferma NOMINA l'effetto sul disco, non l'etichetta della vista.
+  { name: 'purge', keys: `DD${CANC}`, expect: /eliminare/i },
 ];
 
 for (const m of MODES) {
@@ -190,6 +201,55 @@ test('detail: le cifre sono sparite dalle quadre del selettore modello', { skip:
   const frame = lastFrame(capture('DD\r'));
   assert.match(frame, /\[ opus \]/, `riga modello non renderizzata: ${frame}`);
   assert.doesNotMatch(frame, /\[ [1-4] /, `cifra superstite nella quadra: ${frame}`);
+});
+
+// ── T112 · l'azione distruttiva ───────────────────────────────────────────
+
+test('CANC sul pane sessioni è inerte e lo dice', { skip: !CAN_RUN }, () => {
+  // Inerzia che si annuncia, come `F` fuori dalla vista principale: un tasto
+  // che non fa niente in silenzio si legge come deck bloccato.
+  const frame = lastFrame(capture(`R${CANC}`));
+  // `CANC ›` è il TITOLO del modale, non una parola del vocabolario: la nota di
+  // inerzia contiene anch'essa «eliminare», quindi cercare quella direbbe che
+  // il modale si è aperto ogni volta che il rifiuto è scritto bene.
+  assert.doesNotMatch(frame, /CANC ›/, `la conferma si è aperta dal pane sbagliato: ${frame}`);
+  assert.match(frame, /seleziona una task/i, `nessuna nota di inerzia: ${frame}`);
+});
+
+test('esc sulla conferma annulla e lo dice', { skip: !CAN_RUN }, () => {
+  const frame = lastFrame(capture(`DD${CANC}${ESC}`));
+  assert.match(frame, /annullata/i, `nessuna nota di annullamento: ${frame}`);
+});
+
+test('la conferma nomina la task e l\'effetto, non la parola "archiviare"', {
+  skip: !CAN_RUN,
+}, () => {
+  const frame = lastFrame(capture(`DD${CANC}`));
+  // ② gli ID bersaglio: una conferma che non dice COSA sparisce non è informata.
+  assert.match(frame, /T\d+/, `nessun ID nella conferma: ${frame}`);
+  // ③ l'effetto sul disco, e il fatto che il lavoro resta locale.
+  assert.match(frame, /tasks\.md/, `la conferma non nomina l'effetto: ${frame}`);
+  assert.match(frame, /nessun push/, `la conferma non dice che resta locale: ${frame}`);
+  assert.doesNotMatch(frame, /archiviare/i, `«archiviare» promette un archivio che non esiste`);
+});
+
+test('CANC sulla vista archiviabili prende l\'insieme, non la riga selezionata', {
+  skip: !CAN_RUN,
+}, () => {
+  // `TT` porta il pane task sulla vista `archiviabili`; con soglia a 1 giorno
+  // l'insieme non è vuoto su un progetto giovane. Il bersaglio è quello che la
+  // vista MOSTRA (D6), quindi la conferma parla di N task, non di una.
+  const frame = lastFrame(capture(`TT${CANC}`, PROJECT, { LOOM_DECK_ARCHIVABLE_DAYS: '1' }));
+  assert.match(frame, /eliminare \d+ task\?/i, `bulk non riconosciuto: ${frame}`);
+});
+
+test('il bulk nomina le scartate, non solo le potate', { skip: !CAN_RUN }, () => {
+  // Promettere 7 e farne 5 è una bugia che non compare da nessuna parte: le 2
+  // restano in lista come prima, indistinguibili da un fallimento parziale.
+  // Su questo repo alcune task folder hanno file ignorati/untracked, quindi lo
+  // scarto a monte esiste davvero.
+  const frame = lastFrame(capture(`TT${CANC}`, PROJECT, { LOOM_DECK_ARCHIVABLE_DAYS: '1' }));
+  assert.match(frame, /scartate|nessuna esclusa/i, `nessuna riga di scarto: ${frame}`);
 });
 
 // Chiusura: ogni modale torna alla lista con `esc`, e il deck resta vivo.

@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import type { LaunchEntry } from './config.js';
+import type { IgnoredMode } from './purge.js';
 
 // scripts/deck-run è un sibling della dir del bundle: src/ (dev, tsx) e dist/
 // (build, node) stanno entrambi sotto la package root → risalita di un livello.
@@ -254,38 +255,36 @@ export function spawnTerminal(cwd: string, title: string | null) {
 // Comando claude (override per ambienti dove non è su PATH; loom-deck → NPM).
 export const CLAUDE_CMD = process.env.LOOM_DECK_CLAUDE_CMD ?? 'claude';
 
-// T30: create-task inline. Spawna CC HEADLESS (`-p`) con `--session-id` pinnato
-// che invoca la skill create-task. Differenze da spawnDeck:
+// T30: invocazione di una skill del plugin da CC HEADLESS (`-p`), con
+// `--session-id` pinnato. È la TERZA strada per eseguire uno script del plugin
+// da un consumer che non ha `CLAUDE_PLUGIN_ROOT`: il path version-pinned della
+// cache lo risolve il processo Claude, e il deck non lo nomina mai.
 //  - headless (`-p`), non una tab Ptyxis interattiva → il deck osserva l'esito;
-//  - `yolo` FORZATO: create-task è interattiva di default (AskUserQuestion) e in
-//    `-p` non può ricevere risposte → si impianterebbe. yolo = zero domande.
 //  - `--output-format stream-json` (richiede `--verbose`): l'ultima riga è
-//    `{type:"result", is_error}`, segnale di completamento robusto (> exit code).
-//  - detached (own process-group) → il create sopravvive alla chiusura del deck e
-//    completa commit+push da sé; stdout in pipe SOLO per leggere il result event.
-// Il prompt viaggia come singolo argv (no shell) → nessuna injection dal testo utente.
-export function spawnCreateTask(
-  text: string,
+//    `{type:"result", is_error}`, segnale di completamento robusto (> exit code);
+//  - detached (own process-group) → il lavoro sopravvive alla chiusura del deck
+//    e completa i commit da sé; stdout in pipe SOLO per leggere il result event.
+// Il prompt viaggia come singolo argv (no shell) → nessuna injection dal testo.
+//
+// `detail` è il testo finale del result event, troncato dal chiamante: senza,
+// un fallimento arriva come booleano nudo e la riga di stato può solo dire "non
+// ha funzionato" — che su un'operazione distruttiva non basta a sapere se
+// qualcosa è stato rimosso.
+function spawnSkill(
+  prompt: string,
   cwd: string,
   sessionId: string,
-  onResult: (ok: boolean) => void,
+  onResult: (ok: boolean, detail: string) => void,
 ) {
   const child = spawnOut(
     CLAUDE_CMD,
-    [
-      '-p',
-      '--output-format',
-      'stream-json',
-      '--verbose',
-      '--session-id',
-      sessionId,
-      `/loom-works:create-task yolo ${text}`,
-    ],
+    ['-p', '--output-format', 'stream-json', '--verbose', '--session-id', sessionId, prompt],
     { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
   );
 
   let buf = '';
   let isError: boolean | null = null;
+  let detail = '';
   child.stdout?.on('data', (chunk: Buffer) => {
     buf += chunk.toString();
     let nl: number;
@@ -294,8 +293,11 @@ export function spawnCreateTask(
       buf = buf.slice(nl + 1);
       if (!line) continue;
       try {
-        const obj = JSON.parse(line) as { type?: string; is_error?: boolean };
-        if (obj.type === 'result') isError = obj.is_error ?? false;
+        const obj = JSON.parse(line) as { type?: string; is_error?: boolean; result?: unknown };
+        if (obj.type === 'result') {
+          isError = obj.is_error ?? false;
+          if (typeof obj.result === 'string') detail = obj.result;
+        }
       } catch {
         // riga parziale / non-json → skip
       }
@@ -304,11 +306,71 @@ export function spawnCreateTask(
   // Drena stderr per non riempire il buffer pipe (deadlock del figlio).
   child.stderr?.on('data', () => {});
 
-  child.on('error', () => onResult(false));
+  child.on('error', () => onResult(false, `'${CLAUDE_CMD}' non lanciabile`));
   child.on('close', (code) => {
-    onResult(isError === null ? code === 0 : !isError);
+    onResult(isError === null ? code === 0 : !isError, detail);
   });
   return child;
+}
+
+// T30: create-task inline. `yolo` FORZATO: create-task è interattiva di default
+// (AskUserQuestion) e in `-p` non c'è nessuno che risponda → la sessione
+// resterebbe appesa. yolo = zero domande.
+export function spawnCreateTask(
+  text: string,
+  cwd: string,
+  sessionId: string,
+  onResult: (ok: boolean) => void,
+) {
+  return spawnSkill(`/loom-works:create-task yolo ${text}`, cwd, sessionId, (ok) => onResult(ok));
+}
+
+// T112 — potatura ordinata a `loom-works:clean-tasks`. Modo A della skill (ID
+// espliciti), MAI il modo B (`--days`): passarle una soglia d'età le farebbe
+// ricalcolare il bersaglio con la propria regola, che è già la copia divergibile
+// di quella del deck (D6 preflight). Il bersaglio lo decide il deck e la skill
+// lo esegue.
+//
+// `yolo` come in create-task, e per la stessa ragione con una posta più alta:
+// `clean-tasks` chiede conferma quando fra i target ci sono task non-Done, e in
+// headless quella domanda non ha nessuno che risponda. Il token dichiara che la
+// conferma è già stata raccolta dal chiamante — qui, dal modale del deck.
+//
+// `--ignored-files` viaggia solo quando la scelta keep/purge è stata fatta
+// davvero (una singola task con superstiti): passarlo sempre significherebbe
+// deciderlo di default su un'operazione che perde file.
+export function cleanTasksPrompt(ids: string[], ignored: IgnoredMode | null): string {
+  const flag = ignored ? ` --ignored-files ${ignored}` : '';
+  return `/loom-works:clean-tasks yolo${flag} ${ids.join(' ')}`;
+}
+
+export function cleanTasksArgs(
+  ids: string[],
+  sessionId: string,
+  ignored: IgnoredMode | null,
+): string[] {
+  return [
+    '-p',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--session-id',
+    sessionId,
+    cleanTasksPrompt(ids, ignored),
+  ];
+}
+
+/** Bersaglio vuoto → nessuno spawn e `null`: un `clean-tasks` senza SPEC esce 1
+ *  e il deck riporterebbe un fallimento per un'operazione mai chiesta. */
+export function spawnCleanTasks(
+  ids: string[],
+  cwd: string,
+  sessionId: string,
+  ignored: IgnoredMode | null,
+  onResult: (ok: boolean, detail: string) => void,
+): ChildProcess | null {
+  if (ids.length === 0) return null;
+  return spawnSkill(cleanTasksPrompt(ids, ignored), cwd, sessionId, onResult);
 }
 
 // T41 — Commit dell'edit. `git commit -- <paths>` committa lo stato working-tree

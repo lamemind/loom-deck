@@ -1,9 +1,13 @@
 // T61 — conteggio delle task Done potabili ("archiviabili").
 //
-// Il deck NON pota: mostra solo quante task Done hanno superato la soglia
-// d'età, così la policy di retention — manuale per scelta, nessuna GC
-// automatica — ha almeno un segnale che la renda esercitabile. La potatura
-// resta `loom-works:clean-tasks`, invocata da un umano.
+// Il deck ORDINA la potatura, non la esegue (T112): questo modulo dice quante
+// e quali Done hanno superato la soglia d'età, `CANC` sul pane task apre la
+// conferma, e la rimozione vera resta `loom-works:clean-tasks` — invocata da un
+// umano allora come adesso, con la sola differenza che ora la superficie da cui
+// la ordina è il deck. La sequenza distruttiva (task file + folder + riga in
+// tasks.md, un commit per task) è implementata una volta sola, nello script:
+// averne una seconda qui darebbe due `git rm` capaci di divergere.
+// La policy di retention resta manuale per scelta, nessuna GC automatica.
 //
 // D1 (preflight) — la regola d'età è RICALCOLATA qui, non delegata a
 // `cleanup-done-tasks.sh`: il deck è un binario npm globale spawnato da Ptyxis,

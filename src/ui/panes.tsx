@@ -120,6 +120,7 @@ export function TasksPane({
   above,
   below,
   columns,
+  dirty,
 }: {
   /** Solo la finestra visibile, non la lista completa. */
   tasks: Task[];
@@ -145,6 +146,12 @@ export function TasksPane({
   above: number;
   below: number;
   columns: number;
+  /** T112 — task la cui folder ha file che `git rm` non rimuove: `CANC` in
+   *  bulk le scarta a monte, perché il gate del plugin esce 2 prima di toccare
+   *  qualsiasi cosa e una sola di queste annullerebbe il purge di tutte. Il
+   *  marker sta in coda alla riga, dentro il budget di `tail`: un glifo fuori
+   *  dal conteggio è ciò che mangia il bordo del pane. */
+  dirty: ReadonlySet<string>;
 }) {
   const allSelected = selected === ROW_ALL;
   const spotSelected = selected === ROW_SPOT;
@@ -240,7 +247,7 @@ export function TasksPane({
           // quindi scrive sopra il bordo. Le parti fisse si misurano con
           // `termWidth`: `task.id` è `T9` o `T52`, i due glifi valgono 2 ciascuno.
           const head = `${CARET_OFF}${task.id}  ${sanitize(task.pri)}  ${displayProg(task.prog)}  `;
-          const tail = n > 0 ? ` (${n})` : '';
+          const tail = `${n > 0 ? ` (${n})` : ''}${dirty.has(task.id) ? ` ${WARN}` : ''}`;
           const desc = cut(
             task.desc,
             Math.max(4, paneTextWidth(columns) - termWidth(head) - termWidth(tail)),
