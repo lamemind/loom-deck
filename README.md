@@ -52,7 +52,7 @@ Regola unica, senza eccezioni — pensata per reggere l'aggiunta di nuove azioni
 | minuscola | azione immediata, one-shot | |
 | `CTRL`+lettera | idiomi universali, toggle dentro i modali di testo, varianti di un'azione | `^F` = find, come ovunque · `^K`/`^P`/`^R` = spawn con un altro prompt |
 | `1`…`9` | voce `launch` n-esima del progetto | da `.claude/loom-works.json` |
-| `q` `esc` | esce dal deck | in un modale `esc` annulla soltanto |
+| `esc` | chiude l'overlay aperto | in modalità normale è inerte: **nessun tasto chiude il deck** |
 
 `CTRL` è il terzo livello, aggiunto quando è arrivata la ricerca. Serve perché un modale con **campi di testo** mangia ogni lettera nuda: là dentro nessun comando può essere una lettera semplice. `CTRL+X` e `x` nudo condividono lo stesso `input` e si distinguono solo per `key.ctrl`, quindi in modalità normale il ramo `CTRL` è valutato **per primo** e chiude l'intera classe — senza, `CTRL+F` cadrebbe nel ramo `f` e forkerebbe una sessione invece di cercare.
 
@@ -84,8 +84,8 @@ t 💻 · c 🤖 · 1 📝 codium · 2 ☕ idea
 ```
 
 - **tasti** — cosa puoi fare *qui e ora*. Solo le voci attive: quelle contestuali compaiono quando il pane a fuoco le rende possibili e altrimenti spariscono,
-  invece di mostrarsi inerti. Fuori navigazione (`↑↓` `←→`), uscita (`q`) e
-  indicatore `focus:` — le prime due sono universali in qualunque TUI, il pane a fuoco si vede già dall'evidenziazione.
+  invece di mostrarsi inerti. Fuori navigazione (`↑↓` `←→`) e indicatore `focus:` — la prima è universale in qualunque TUI, il pane a fuoco si vede già dall'evidenziazione.
+  Nessuna voce di uscita, perché non esiste un tasto che chiuda il deck.
 - **surface** — *dove* puoi aprire qualcosa: prima le due built-in (`t`/`c`), poi le voci `launch` del progetto. Stanno insieme perché hanno la stessa natura — fire-once, `cwd` = project root, nessuno stato — e differiscono solo per essere universali invece che custom.
 
 L'indice da solo è opaco (le `launch` sono custom per-progetto, senza una lettera fissa per app), quindi la riga espone la mappa e non il conteggio. Se non entrano in larghezza, si ferma a voci intere e mostra il contatore di quelle fuori riga — mai un troncamento silenzioso; le celle delle due built-in sono riservate a monte, o le voci sfonderebbero il box di quel tanto. Il cap a `9` è imposto dai tasti-cifra, non dallo schema: un progetto può dichiarare più di 9 voci, quelle oltre la nona sono configurate ma non raggiungibili (e la riga lo dice).
@@ -283,7 +283,7 @@ La tab porta anche `PTYXIS_PROFILE` forzata al profilo bindato al progetto nel r
 
 ```bash
 npm install
-npm run dev      # tsx src/cli.tsx — lista tasks.md reale, ↑↓ naviga · ⏎ detail · ^K/^P/^R spawn · q esci
+npm run dev      # tsx src/cli.tsx — lista tasks.md reale, ↑↓ naviga · ⏎ detail · ^K/^P/^R spawn · ^C chiude
 npm run build    # tsc → dist/
 npm test         # node:test sul core vista (src/view.ts), senza Ink né terminale
 ```

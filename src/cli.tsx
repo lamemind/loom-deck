@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { render, Box, Text, useApp, useInput, type Key } from 'ink';
+import { render, Box, Text, useInput, type Key } from 'ink';
 import { useState, useEffect, useMemo } from 'react';
 import { randomUUID } from 'node:crypto';
 import {
@@ -140,7 +140,6 @@ import { captures, type CapturingMode } from './input-modes.js';
 import { VERSION } from './version.js';
 
 function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; tasksDir: string }) {
-  const { exit } = useApp();
   const { tasks, loadError } = useTasks(tasksPath);
   // `notes` esce dall'indice come `sessionNotes`: in questo componente `note` è
   // già la riga di STATO in fondo al frame (il feedback di un'azione). Due
@@ -1246,9 +1245,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         child.on('error', () => setNote(`⚠ ${entry.label}: '${entry.command}' non lanciabile`));
         setNote(`${input} → ${entry.label} su ${projectName}`);
       }
-    } else if (input === 'q' || key.escape) {
-      exit();
     }
+    // Nessun tasto di uscita: il deck non si chiude da dentro. `q` resta libera
+    // per un binding futuro, `esc` in modalità normale è inerte — dentro un
+    // overlay continua a chiuderlo, perché quel ramo esce prima di qui.
+    // Restano le vie di sistema: `^C` (Ink lo intercetta da sé, `exitOnCtrlC`
+    // di default) e la chiusura della tab Ptyxis che ospita il processo.
   });
 
   const canSpawn = focus === 'tasks' && selTask !== null;
@@ -1275,9 +1277,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // Legenda della modalità normale. Elenca SOLO i tasti che fanno qualcosa qui e
   // ora: le voci contestuali compaiono quando il pane a fuoco le rende possibili
   // e altrimenti spariscono, invece di annunciarsi inerti con un `—`.
-  // Fuori: navigazione (`↑↓` `←→`) e uscita (`q`), universali in qualunque TUI, e
+  // Fuori: la navigazione (`↑↓` `←→`), universale in qualunque TUI, e
   // l'indicatore `focus:` — il pane a fuoco si vede già dall'evidenziazione, e
   // ridirlo a parole costava colonne su una riga che tronca in silenzio.
+  // Nessuna voce di uscita: non esiste più un tasto che chiuda il deck.
   const keyLegend = sanitize(
     [
       ...(canSpawn ? ['⏎ detail', '^K/^P/^R spawn'] : canResume ? ['⏎ resume'] : []),
