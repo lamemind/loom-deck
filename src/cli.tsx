@@ -56,7 +56,7 @@ import {
   type Budget,
   type PreviewKind,
 } from './viewport.js';
-import { cut, sanitize, termWidth } from './width.js';
+import { cut, cutMiddle, sanitize, termWidth } from './width.js';
 import {
   applyView,
   cycleSort,
@@ -417,6 +417,30 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     child.on('error', () => setNote(`⚠ create-task: '${CLAUDE_CMD}' non lanciabile`));
   }
 
+  // La riga di stato di OGNI spawn di sessione Claude: il comando esatto, come
+  // lo si scriverebbe in bash, invece di una parafrasi.
+  //
+  // Non è un di più sulla nota descrittiva, la sostituisce: task, sessionId,
+  // prompt-kind, modello e nota del titolo sono già tutti argomenti del comando,
+  // quindi elencarli a parole li direbbe una seconda volta in una grafia che non
+  // si può ricopiare in un terminale. Ciò che va perso è il tasto premuto
+  // (`^K`, `⏎`, `f`), che è ciò che l'utente ha appena fatto e non ciò che il
+  // deck ha fatto per lui.
+  //
+  // Il taglio è al MEZZO (`cutMiddle`, non `cut`): la testa è il path assoluto
+  // di `deck-run`, identico a ogni spawn, e un taglio dalla coda mostrerebbe
+  // solo quello. Si taglia QUI, alla composizione, e non al render: la riga di
+  // stato porta anche messaggi normali, dove è la testa a contare. Ne discende
+  // che un resize successivo non ricalcola l'elisione — la nota è transitoria e
+  // `wrap="truncate-end"` resta come rete.
+  function noteCommand(cmd: string) {
+    // 4 = bordo + padding della cornice esterna, 2 = il prompt `$ `. Sbagliare
+    // il budget non produce un errore visibile: la `truncate-end` di Ink taglia
+    // il resto dalla CODA, e il comando esce col mezzo eliso E la fine persa —
+    // cioè con entrambi i pezzi che l'elisione al mezzo voleva salvare.
+    setNote(`$ ${cutMiddle(cmd, Math.max(8, columns - 6))}`);
+  }
+
   // T56 — apre una sessione bound alla task selezionata. Punto UNICO dei quattro
   // tasti (⏎/^K/^P/^R): fra loro cambia solo il prompt iniziale, tutto il resto
   // è identico — uuid pinnato, binding scritto PRIMA dello spawn (la sessione
@@ -462,32 +486,23 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // il tempo di un tick la riga in lista comparirebbe nuda. Due record separati
   // sullo stesso `sessionId` sono la forma normale di un file append-only
   // last-wins, non una scrittura da fondere.
-  function spawnForTask(
-    id: string,
-    kind: PromptKind,
-    model: ModelKind,
-    keyLabel: string,
-    spawnNote = '',
-  ) {
+  function spawnForTask(id: string, kind: PromptKind, model: ModelKind, spawnNote = '') {
     const sid = randomUUID();
     appendTaskBinding(cwd, sid, id);
     if (spawnNote) appendNote(cwd, sid, spawnNote);
-    const child = spawnDeck(id, cwd, sid, kind, model, spawnNote);
+    const { child, cmd } = spawnDeck(id, cwd, sid, kind, model, spawnNote);
     child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
-    const what = kind === 'none' ? '' : ` · ${kind}`;
-    // Il modello è SEMPRE nominato, anche quando è il default: gli acceleratori
-    // della lista non passano dal selettore del detail e usano il default fisso
-    // (T108 · via a), quindi senza dirlo l'utente crederebbe di aver ereditato
-    // la scelta fatta nell'ultimo detail aperto.
-    const named = spawnNote ? ` · «${cut(spawnNote, 24)}»` : '';
-    setNote(
-      `${keyLabel} spawn ${id}${what} · ${model}${named} → tab CC (sid ${sid.slice(0, 8)})`,
-    );
+    // Il modello resta SEMPRE visibile anche quando è il default, perché è un
+    // argomento esplicito del comando (T108): gli acceleratori della lista non
+    // passano dal selettore del detail e usano il default fisso, quindi senza
+    // vederlo l'utente crederebbe di aver ereditato la scelta dell'ultimo
+    // detail aperto.
+    noteCommand(cmd);
   }
 
   function spawnTaskSession(kind: PromptKind, keyLabel: string) {
     const task = selectedTaskOr(keyLabel, 'spawnare');
-    if (task) spawnForTask(task.id, kind, MODEL_DEFAULT, keyLabel);
+    if (task) spawnForTask(task.id, kind, MODEL_DEFAULT);
   }
 
   // T53 — apertura del modale nota sulla conversazione selezionata. Come
@@ -784,9 +799,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // devono restare la stessa azione.
   function resumeSession(sessionId: string) {
     const bound = bindings.get(sessionId) ?? null;
-    const child = spawnDeckResume(bound, cwd, sessionId, sessionNotes.get(sessionId));
+    const { child, cmd } = spawnDeckResume(bound, cwd, sessionId, sessionNotes.get(sessionId));
     child.on('error', () => setNote(`⚠ resume fallito (${DECK_RUN})`));
-    setNote(`⏎ resume ${sessionId.slice(0, 8)} → tab CC${bound ? ` (${bound})` : ' (spot)'}`);
+    noteCommand(cmd);
   }
 
   // T57 — ⏎ nel modale: riscrive il binding nel sidecar e ricarica subito.
@@ -828,8 +843,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     columns,
     setMode,
     setNote,
-    onAction: (id, kind, model, spawnNote, label) =>
-      spawnForTask(id, kind, model, label, spawnNote),
+    onAction: (id, kind, model, spawnNote) => spawnForTask(id, kind, model, spawnNote),
   });
 
   const search = useSearchOverlay({
@@ -1170,11 +1184,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
             ...(bound ? { taskId: bound } : {}),
             forkOf: s.sessionId,
           });
-          const child = spawnDeckFork(bound, cwd, s.sessionId, newId);
+          const { child, cmd } = spawnDeckFork(bound, cwd, s.sessionId, newId);
           child.on('error', () => setNote(`⚠ fork fallito (${DECK_RUN})`));
-          setNote(
-            `⑂ fork ${s.sessionId.slice(0, 8)} → ${newId.slice(0, 8)}${bound ? ` (${bound})` : ' (spot)'}`,
-          );
+          noteCommand(cmd);
         }
       }
     } else if (input === 'p') {
@@ -1238,9 +1250,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       // Minuscola = azione immediata (convenzione T39), gemella di `t`: entrambe
       // aprono una surface del cappello senza passare da un modale. `C` (create
       // task) resta distinta — stessa lettera, ma la maiuscola è per i modali.
-      const child = spawnClaudeEmpty(cwd);
+      const { child, cmd } = spawnClaudeEmpty(cwd);
       child.on('error', () => setNote(`⚠ c → spawn claude fallito (${DECK_RUN})`));
-      setNote(`c → claude nuda su ${projectName} (nessuna task)`);
+      noteCommand(cmd);
     } else if (input === 'w') {
       // Salvataggio ESPLICITO: comporre una vista non tocca il disco, così
       // sperimentare non sporca lo stato persistito.

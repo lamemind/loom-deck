@@ -40,13 +40,7 @@ export interface SheetOverlayDeps {
   setMode: (m: Mode) => void;
   setNote: (s: string) => void;
   /** Spawn dalla barra azioni: effetto esterno, non nostro. */
-  onAction: (
-    taskId: string,
-    kind: PromptKind,
-    model: ModelKind,
-    spawnNote: string,
-    label: string,
-  ) => void;
+  onAction: (taskId: string, kind: PromptKind, model: ModelKind, spawnNote: string) => void;
 }
 
 export function useSheetOverlay(deps: SheetOverlayDeps) {
@@ -239,7 +233,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       const id = sheet?.id;
       const note = spawnNote.trim();
       close();
-      if (id) onAction(id, act.kind, model, note, `⏎ ${act.label}`);
+      if (id) onAction(id, act.kind, model, note);
     } else if (key.tab) {
       // T108 — `tab` scorre il catalogo dei modelli, e da T111 è il SOLO canale:
       // le cifre `1`-`4` sono passate al campo nota. Libero solo QUI: in vista

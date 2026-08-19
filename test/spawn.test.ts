@@ -6,6 +6,8 @@ import {
   deckArgs,
   forkArgs,
   resumeArgs,
+  shellCommand,
+  shellQuote,
   spawnCleanTasks,
   terminalArgs,
   DETAIL_ACTIONS,
@@ -174,4 +176,35 @@ test('ogni azione del detail è un prompt-kind valido', () => {
   // MECCANISMO e l'etichetta l'INTENZIONE.
   assert.equal(DETAIL_ACTIONS[0]!.label, 'open');
   assert.equal(DETAIL_ACTIONS[3]!.label, 'status');
+});
+
+// ── il comando esatto nella riga di stato ─────────────────────────────────
+
+test('shellQuote lascia nudo ciò che una shell non interpreta', () => {
+  for (const arg of ['T115', '--prompt-kind', 'opus', '/home/tizio/.local/bin/deck-run', 'a-b_c.d']) {
+    assert.equal(shellQuote(arg), arg);
+  }
+});
+
+test('shellQuote chiude in apici tutto il resto', () => {
+  assert.equal(shellQuote('due parole'), "'due parole'");
+  assert.equal(shellQuote(''), "''");
+  assert.equal(shellQuote('$HOME'), "'$HOME'");
+  assert.equal(shellQuote('nota 🔥'), "'nota 🔥'");
+});
+
+test("shellQuote esce dagli apici per l'apice, non lo escapa dentro", () => {
+  // Dentro apici singoli nessun escape esiste: `\'` resterebbe backslash+apice.
+  // L'unica forma corretta è chiudere, mettere l'apice quotato, riaprire.
+  assert.equal(shellQuote("l'apice"), "'l'\\''apice'");
+});
+
+test('shellCommand ricompone eseguibile e argv come si scriverebbero in bash', () => {
+  // È la riga che finisce nella riga di stato a ogni spawn di sessione Claude:
+  // deve poter essere ricopiata in un terminale e fare la stessa cosa.
+  assert.equal(
+    shellCommand('/opt/deck-run', deckArgs('T115', 'sid-1', 'run', 'sonnet', 'due parole')),
+    "/opt/deck-run T115 --session-id sid-1 --prompt-kind run --model sonnet --title-note 'due parole'",
+  );
+  assert.equal(shellCommand('/opt/deck-run', ['--no-task']), '/opt/deck-run --no-task');
 });

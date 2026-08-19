@@ -332,6 +332,56 @@ export function pad(s: string, cols: number, align: 'left' | 'right' = 'left'): 
 }
 
 /**
+ * Taglio a un budget di COLONNE che sacrifica il MEZZO invece della coda.
+ *
+ * Serve dove la testa e la coda portano informazione diversa e la TESTA è quella
+ * costante: il comando di uno spawn è sempre lo stesso path assoluto di
+ * `deck-run`, e quel che cambia da un'invocazione all'altra (task, sessionId,
+ * prompt-kind, modello, nota) sta tutto in fondo. Un `cut()` su quella riga
+ * mostrerebbe l'unica parte che non cambia mai.
+ *
+ * La coda prende due terzi del budget e la testa il resto: basta a riconoscere
+ * l'eseguibile senza mangiare gli argomenti. Testa e coda non possono
+ * sovrapporsi — insieme occupano al più `cols - 1` colonne, cioè meno della
+ * stringa intera (che qui è già più larga del budget).
+ *
+ * Niente collasso del whitespace (a differenza di `cut`): la stringa in ingresso
+ * è un comando, e due spazi dentro un argomento quotato sono suoi. Restano
+ * appiattiti i soli a-capo, che sfonderebbero la riga singola.
+ */
+export function cutMiddle(s: string, cols: number): string {
+  const flat = s.replace(/[\r\n\t]+/g, ' ');
+  if (cols <= 0) return '';
+  if (termWidth(flat) <= cols) return flat;
+  if (cols === 1) return '…';
+
+  const budget = cols - 1; // -1 = la colonna dell'ellissi, che qui c'è di sicuro
+  const headCols = budget - Math.ceil((budget * 2) / 3);
+
+  let head = '';
+  let hw = 0;
+  for (const ch of flat) {
+    const cw = termWidth(ch);
+    if (hw + cw > headCols) break;
+    head += ch;
+    hw += cw;
+  }
+
+  const chars = [...flat];
+  let tail = '';
+  let tw = 0;
+  for (let i = chars.length - 1; i >= 0; i--) {
+    const ch = chars[i]!;
+    const cw = termWidth(ch);
+    if (hw + tw + cw > budget) break;
+    tail = ch + tail;
+    tw += cw;
+  }
+
+  return head + '…' + tail;
+}
+
+/**
  * Larghezza in colonne di UN carattere **dopo** `sanitize`.
  *
  * Misurare il carattere grezzo significa misurare qualcosa che nel frame non

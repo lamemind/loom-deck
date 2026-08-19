@@ -12,6 +12,7 @@ import {
   agrees,
   caretWindow,
   cut,
+  cutMiddle,
   cutParts,
   pad,
   sanitize,
@@ -414,4 +415,52 @@ test('cutParts: la riga non apre con un separatore appeso al nulla', () => {
 test('cutParts: priorità fuori range → comportamento identico a prima', () => {
   assert.deepEqual(cutParts(HEADER_SESSIONI, 30, -1), cutParts(HEADER_SESSIONI, 30));
   assert.deepEqual(cutParts(HEADER_SESSIONI, 30, 99), cutParts(HEADER_SESSIONI, 30));
+});
+
+// ── cutMiddle · la coda sopravvive al taglio ──────────────────────────────
+
+test('cutMiddle: sotto budget la stringa esce intatta', () => {
+  assert.equal(cutMiddle('/bin/deck-run T1', 40), '/bin/deck-run T1');
+});
+
+test('cutMiddle: quel che conta è la CODA, non la testa', () => {
+  // È l'intera ragione per cui non basta `cut`: in un comando di spawn la testa
+  // è il path di `deck-run`, identico a ogni invocazione, e la coda è ciò che
+  // distingue una sessione dall'altra.
+  const cmd = '/home/tizio/.local/lib/node_modules/@lamemind/loom-deck/scripts/deck-run T115 --prompt-kind run --model sonnet';
+  const out = cutMiddle(cmd, 60);
+  assert.ok(out.endsWith('--model sonnet'), `coda persa: ${out}`);
+  assert.ok(out.startsWith('/home/tizio'), `testa persa: ${out}`);
+  assert.ok(out.includes('…'), 'un taglio senza ellissi non si vede');
+});
+
+test('cutMiddle: il risultato non sfonda mai il budget di colonne', () => {
+  const cmd = 'deck-run T115 --session-id 0123456789abcdef --model opus --title-note «prova»';
+  for (const w of [1, 2, 5, 13, 40, 79]) {
+    assert.ok(termWidth(cutMiddle(cmd, w)) <= w, `larghezza ${termWidth(cutMiddle(cmd, w))} > ${w}`);
+  }
+  assert.equal(cutMiddle(cmd, 0), '');
+});
+
+test('cutMiddle: testa e coda non si sovrappongono mai', () => {
+  // Con un budget largo quanto la stringa meno una colonna, testa e coda
+  // arrivano a toccarsi: se si sovrapponessero, il taglio mostrerebbe due volte
+  // gli stessi caratteri spacciandoli per pezzi diversi.
+  const s = 'abcdefghijklmnopqrstuvwxyz';
+  for (let w = 2; w < s.length; w++) {
+    const out = cutMiddle(s, w);
+    const [head, tail] = out.split('…') as [string, string];
+    assert.equal(head + tail, s.slice(0, head.length) + s.slice(s.length - tail.length));
+    assert.ok(head.length + tail.length < s.length, `sovrapposizione a ${w}: ${out}`);
+  }
+});
+
+test('cutMiddle: gli a-capo non spezzano la riga singola', () => {
+  assert.equal(cutMiddle('uno\ndue', 40), 'uno due');
+});
+
+test('cutMiddle: due spazi dentro un argomento restano due', () => {
+  // A differenza di `cut`, che collassa il whitespace: qui la stringa è un
+  // comando, e uno spazio in più dentro un argomento quotato è suo.
+  assert.equal(cutMiddle("git commit -m 'a  b'", 40), "git commit -m 'a  b'");
 });

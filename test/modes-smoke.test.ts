@@ -153,7 +153,9 @@ test('^F dentro il detail apre la ricerca nel testo, non quella conversazioni', 
 // scriverebbe comunque la sua nota di spawn nella riga di stato.
 test('^K dentro il detail non spawna', { skip: !CAN_RUN }, () => {
   const frame = lastFrame(capture('DD\r\x0b'));
-  assert.doesNotMatch(frame, /\^K spawn/);
+  // La riga di stato di uno spawn è il COMANDO: `--prompt-kind` è la sua firma,
+  // e non compare in nessun altro punto del frame.
+  assert.doesNotMatch(frame, /--prompt-kind/);
   assert.match(frame, /preflight|checkpoint/i);
 });
 
@@ -162,11 +164,16 @@ test('^K dentro il detail non spawna', { skip: !CAN_RUN }, () => {
 // esattamente quelli che un merge futuro rimetterebbe senza accorgersene.
 //
 // Lo spawn è l'unico punto in cui il modello scelto e la nota digitata
-// diventano osservabili in testo semplice: la riga di stato li nomina entrambi,
-// mentre nel frame del detail la voce di modello attiva si distingue solo per
-// video inverso, che `stripAnsi` toglie. Con NO_SPAWN il processo non parte, ma
+// diventano osservabili in testo semplice: la riga di stato porta il COMANDO
+// esatto, quindi entrambi come argomenti (`--model`, `--title-note`), mentre nel
+// frame del detail la voce di modello attiva si distingue solo per video
+// inverso, che `stripAnsi` toglie. Con NO_SPAWN il processo non parte, ma
 // il sidecar SÌ — da cui il project root temporaneo: i record orfani di un test
 // non hanno motivo di finire nel file di chi lo lancia.
+//
+// La coda del comando sopravvive al taglio anche su un terminale stretto
+// (`cutMiddle` sacrifica il mezzo): è ciò che rende queste asserzioni stabili
+// nonostante il path assoluto di `deck-run` in testa.
 const spawnProject = mkdtempSync(join(tmpdir(), 'loom-deck-smoke-'));
 if (CAN_RUN) {
   mkdirSync(join(spawnProject, 'runtime', 'tasks'), { recursive: true });
@@ -175,24 +182,27 @@ if (CAN_RUN) {
 
 test('detail: una cifra scrive nel campo nota e NON cambia modello', { skip: !CAN_RUN }, () => {
   const frame = lastFrame(capture('DD\r2\r', spawnProject));
-  assert.match(frame, /«2»/, `la cifra non è finita nella nota: ${frame}`);
-  assert.match(frame, /· opus/, `il modello è cambiato con una cifra: ${frame}`);
+  assert.match(frame, /--title-note 2/, `la cifra non è finita nella nota: ${frame}`);
+  assert.match(frame, /--model opus/, `il modello è cambiato con una cifra: ${frame}`);
 });
 
 test('detail: tab resta il solo canale del modello', { skip: !CAN_RUN }, () => {
   // `T` = tab nel mapping del pty. Da `opus` (default) il giro porta a `sonnet`.
   const frame = lastFrame(capture('DD\rT\r', spawnProject));
-  assert.match(frame, /· sonnet/, `tab non ha cambiato modello: ${frame}`);
+  assert.match(frame, /--model sonnet/, `tab non ha cambiato modello: ${frame}`);
 });
 
 test('detail: g scrive invece di saltare agli estremi', { skip: !CAN_RUN }, () => {
   const frame = lastFrame(capture('DD\rgg\r', spawnProject));
-  assert.match(frame, /«gg»/, `g non è finita nella nota: ${frame}`);
+  assert.match(frame, /--title-note gg/, `g non è finita nella nota: ${frame}`);
 });
 
-test('detail: nota vuota → nessuna maniglia nello spawn', { skip: !CAN_RUN }, () => {
+test('detail: nota vuota → nessun flag di titolo nello spawn', { skip: !CAN_RUN }, () => {
   const frame = lastFrame(capture('DD\r\r', spawnProject));
-  assert.doesNotMatch(frame, /«»/, `maniglia a vuoto: ${frame}`);
+  // `--title-note ''` produrrebbe un `«»` a vuoto nel titolo della tab: il flag
+  // dev'essere proprio assente dal comando, non presente e vuoto.
+  assert.match(frame, /--prompt-kind/, `lo spawn non è avvenuto: ${frame}`);
+  assert.doesNotMatch(frame, /--title-note/, `flag di titolo a vuoto: ${frame}`);
 });
 
 test('detail: le cifre sono sparite dalle quadre del selettore modello', { skip: !CAN_RUN }, () => {

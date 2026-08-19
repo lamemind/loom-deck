@@ -26,6 +26,22 @@ Entrambi i prefissi del contratto loom entrano in lista: **`T`** (code task) e *
 Il deck è **UN processo Node**: spawna ma **non contiene** le sessioni CC — le possiede Ptyxis. Chiudere il deck non uccide le sessioni. La tab nasce nella window *attiva*
 (quella col focus = il deck) → desktop isolation "gratis".
 
+### La riga di stato dice il comando, non una parafrasi
+
+Ogni spawn di una sessione Claude — task (`⏎`/`^K`/`^P`/`^R`), resume, fork, sessione nuda (`c`) — scrive nella riga di stato in fondo al frame il **comando esatto** che è stato eseguito, quotato come lo si scriverebbe in bash:
+
+```
+$ /home/tizio/.local/lib/node_modules/@lamemind/loom-deck/scripts/deck-run T115 --session-id 9f3a… --prompt-kind run --model opus --title-note 'parser'
+```
+
+Task, `sessionId`, prompt-kind, modello e nota del titolo sono già argomenti del comando: una nota che li elencasse a parole li direbbe una seconda volta, in una grafia che non si può ricopiare in un terminale. Quello che si perde è il **tasto premuto**, che è ciò che hai appena fatto tu e non ciò che il deck ha fatto per te.
+
+Il deck non passa mai da una shell (`spawn` senza `shell:true` consegna l'argv a `execve`): il quoting esiste per la sola resa, e serve a rendere la riga ricopiabile senza cambiare di una virgola ciò che è stato eseguito.
+
+Su un terminale stretto il taglio è **al mezzo** (`…`), non dalla coda: la testa è il path assoluto di `deck-run`, identico a ogni invocazione, mentre quel che distingue una sessione dall'altra sta tutto in fondo.
+
+Restano fuori gli spawn che non aprono una sessione Claude interattiva: terminale (`t`), voci `launch` (`1`-`9`) e le skill headless (`C` create-task, `CANC` clean-tasks), dove la riga di stato serve a riportare l'**esito** di un'operazione asincrona.
+
 ## Stato
 
 Bootstrap + spike ① + **TUI ③** funzionante (legge `tasks.md`, `⏎` apre il detail). Roadmap:

@@ -37,6 +37,56 @@ export function spawnOut(cmd: string, args: string[], opts: SpawnOptions): Child
   return fake;
 }
 
+// Caratteri che una shell POSIX passa attraverso senza interpretarli: tutto il
+// resto (spazi, apici, `$`, glob, non-ASCII) va quotato o il comando ricopiato
+// dalla riga di stato non farebbe la stessa cosa di quello eseguito.
+const SHELL_SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
+
+/**
+ * Un argomento come lo si scriverebbe in bash.
+ *
+ * Apici SINGOLI, non doppi: dentro i singoli nessun carattere resta speciale,
+ * quindi non c'è da enumerare cosa sfuggire. L'unico caso da chiudere è l'apice
+ * stesso, che si esce dalla stringa (`'\''`) invece di essere escapato dentro.
+ *
+ * Il deck non passa MAI da una shell — `spawn` senza `shell:true` consegna
+ * l'argv a execve così com'è. Questo quoting esiste per la sola RESA: rende la
+ * riga ricopiabile in un terminale senza cambiare di una virgola ciò che il
+ * deck ha davvero eseguito.
+ */
+export function shellQuote(arg: string): string {
+  if (arg === '') return "''";
+  if (SHELL_SAFE.test(arg)) return arg;
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+export function shellCommand(cmd: string, args: string[]): string {
+  return [cmd, ...args].map(shellQuote).join(' ');
+}
+
+/**
+ * Esito di uno spawn: il figlio (per l'handler d'errore) e il comando ESATTO
+ * che l'ha prodotto.
+ *
+ * Il comando si compone qui e non nel chiamante di proposito: ricostruirlo là
+ * significherebbe scrivere due volte la stessa argv, e la copia mostrata
+ * divergerebbe da quella eseguita al primo flag aggiunto — cioè proprio quando
+ * la riga di stato serve a capire cosa è partito davvero.
+ */
+export interface Spawned {
+  child: ChildProcess;
+  cmd: string;
+}
+
+// I quattro percorsi di spawn di una sessione Claude interattiva differiscono
+// SOLO per l'argv: stesso eseguibile, stesso detached, stesso `unref`. Il corpo
+// sta qui una volta sola, così anche il comando mostrato nasce in un punto solo.
+function launchDeckRun(args: string[], cwd: string): Spawned {
+  const child = spawnOut(DECK_RUN, args, { cwd, detached: true, stdio: 'ignore' });
+  child.unref();
+  return { child, cmd: shellCommand(DECK_RUN, args) };
+}
+
 // T56 — quale prompt iniziale riceve la sessione appena aperta. È un SIMBOLO,
 // non il testo: il catalogo vive in deck-run (primitive UI-agnostico), così il
 // quoting del prompt resta verificato in un posto solo e il deck non conosce le
@@ -115,14 +165,8 @@ export function spawnDeck(
   kind: PromptKind,
   model: ModelKind = MODEL_DEFAULT,
   spawnNote?: string,
-) {
-  const child = spawnOut(DECK_RUN, deckArgs(id, sessionId, kind, model, spawnNote), {
-    cwd,
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
-  return child;
+): Spawned {
+  return launchDeckRun(deckArgs(id, sessionId, kind, model, spawnNote), cwd);
 }
 
 // T49 — resume di una sessione esistente come nuova tab Ptyxis. Scoped (taskId
@@ -151,14 +195,8 @@ export function spawnDeckResume(
   cwd: string,
   sessionId: string,
   note?: string,
-) {
-  const child = spawnOut(DECK_RUN, resumeArgs(taskId, sessionId, note), {
-    cwd,
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
-  return child;
+): Spawned {
+  return launchDeckRun(resumeArgs(taskId, sessionId, note), cwd);
 }
 
 // T28 — FORK: `deck-run <task|--no-task> --resume <origine> --fork --session-id
@@ -184,14 +222,13 @@ export function forkArgs(taskId: string | null, originId: string, newId: string)
   ];
 }
 
-export function spawnDeckFork(taskId: string | null, cwd: string, originId: string, newId: string) {
-  const child = spawnOut(DECK_RUN, forkArgs(taskId, originId, newId), {
-    cwd,
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
-  return child;
+export function spawnDeckFork(
+  taskId: string | null,
+  cwd: string,
+  originId: string,
+  newId: string,
+): Spawned {
+  return launchDeckRun(forkArgs(taskId, originId, newId), cwd);
 }
 
 // T42 — sessione Claude NUDA: nessuna task, nessun prompt iniziale, nessun
@@ -200,14 +237,8 @@ export function spawnDeckFork(taskId: string | null, cwd: string, originId: stri
 // di spawnDeck: i tre argomenti mancano tutti insieme, un `if` per ciascuno
 // sporcherebbe il percorso bound. Il titolo tab resta la label loom — lo mette
 // deck-run, perché il match compass è window-level e non sa nulla di task.
-export function spawnClaudeEmpty(cwd: string) {
-  const child = spawnOut(DECK_RUN, ['--no-task'], {
-    cwd,
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
-  return child;
+export function spawnClaudeEmpty(cwd: string): Spawned {
+  return launchDeckRun(['--no-task'], cwd);
 }
 
 // T39/T32: voce `launch` custom del file config, eseguita con cwd = project root.
