@@ -127,6 +127,7 @@ import { useSearchOverlay } from './overlays/search.js';
 import { useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
 import { captures, type CapturingMode } from './input-modes.js';
+import { VERSION } from './version.js';
 
 function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; tasksDir: string }) {
   const { exit } = useApp();
@@ -1347,8 +1348,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       <Text wrap="truncate-end">
         <Text bold color="cyan">loom-deck</Text>
         <Text dimColor>
-          {' '}· {viewTasks.length} task · sel {selectedTaskId ?? parentLabel} · terminale {rows}×
-          {columns}: troppo basso, allarga
+          {' '}v{VERSION} · {viewTasks.length} task · sel {selectedTaskId ?? parentLabel} ·
+          terminale {rows}×{columns}: troppo basso, allarga
         </Text>
       </Text>
     );
@@ -1356,7 +1357,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-      <Text bold color="cyan">loom-deck</Text>
+      {/* Riga di testata: nome a sinistra, versione ancorata a destra. È una
+          riga full-width come la riga dei pane — `space-between` la riempie
+          fino al bordo, quindi il gate di `frame-width.test.ts` continua a
+          misurare esattamente `columns`. */}
+      <Box flexDirection="row" justifyContent="space-between">
+        <Text bold color="cyan">loom-deck</Text>
+        <Text dimColor>v{VERSION}</Text>
+      </Box>
       {mode === 'create' ? (
         <Text dimColor wrap="truncate-end">
           nuova task · <Text color="yellow">⏎</Text> crea · <Text color="yellow">esc</Text> annulla
