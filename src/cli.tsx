@@ -111,6 +111,8 @@ import {
   spawnTerminal,
   CLAUDE_CMD,
   DECK_RUN,
+  MODEL_DEFAULT,
+  type ModelKind,
   type PromptKind,
 } from './spawn.js';
 import { EditModal, FilterModal, SortModal } from './ui/modals.js';
@@ -421,18 +423,22 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // Lo spawn vero, su una task GIÀ risolta. Separato dalla guardia perché il
   // detail passa l'id fotografato all'apertura e non la selezione corrente: la
   // lista lì sotto non è più a schermo, quindi non è più la fonte dell'oggetto.
-  function spawnForTask(id: string, kind: PromptKind, keyLabel: string) {
+  function spawnForTask(id: string, kind: PromptKind, model: ModelKind, keyLabel: string) {
     const sid = randomUUID();
     appendTaskBinding(cwd, sid, id);
-    const child = spawnDeck(id, cwd, sid, kind);
+    const child = spawnDeck(id, cwd, sid, kind, model);
     child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
     const what = kind === 'none' ? '' : ` · ${kind}`;
-    setNote(`${keyLabel} spawn ${id}${what} → tab CC (sid ${sid.slice(0, 8)})`);
+    // Il modello è SEMPRE nominato, anche quando è il default: gli acceleratori
+    // della lista non passano dal selettore del detail e usano il default fisso
+    // (T108 · via a), quindi senza dirlo l'utente crederebbe di aver ereditato
+    // la scelta fatta nell'ultimo detail aperto.
+    setNote(`${keyLabel} spawn ${id}${what} · ${model} → tab CC (sid ${sid.slice(0, 8)})`);
   }
 
   function spawnTaskSession(kind: PromptKind, keyLabel: string) {
     const task = selectedTaskOr(keyLabel, 'spawnare');
-    if (task) spawnForTask(task.id, kind, keyLabel);
+    if (task) spawnForTask(task.id, kind, MODEL_DEFAULT, keyLabel);
   }
 
   // T53 — apertura del modale nota sulla conversazione selezionata. Come
@@ -638,7 +644,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     columns,
     setMode,
     setNote,
-    onAction: (id, kind, label) => spawnForTask(id, kind, label),
+    onAction: (id, kind, model, label) => spawnForTask(id, kind, model, label),
   });
 
   const search = useSearchOverlay({
@@ -1179,6 +1185,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         total={sheet.lines.length}
         capacity={sheet.capacity}
         action={sheet.action}
+        model={sheet.model}
         columns={columns}
         find={sheet.find}
         occ={sheet.findRes.occ}

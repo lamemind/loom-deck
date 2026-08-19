@@ -4,7 +4,7 @@ import { Box, Text } from 'ink';
 import { caretWindow, cut, cutParts, sanitize, type WrappedLine } from '../width.js';
 import { sliceLine, type Occurrence } from '../text-search.js';
 import { sliceSpans, type Span, type SpanKind } from '../markdown.js';
-import { DETAIL_ACTIONS } from '../spawn.js';
+import { DETAIL_ACTIONS, MODELS, type ModelKind } from '../spawn.js';
 import { WARN } from '../glyphs.js';
 
 /** Resa di ogni costrutto markdown (T75 · D4): un solo livello di enfasi per
@@ -120,6 +120,7 @@ export function DetailScreen({
   total,
   capacity,
   action,
+  model,
   columns,
   find,
   occ,
@@ -139,6 +140,8 @@ export function DetailScreen({
   capacity: number;
   /** Indice dell'azione selezionata in DETAIL_ACTIONS. */
   action: number;
+  /** T108 — modello con cui partirà la sessione. */
+  model: ModelKind;
   columns: number;
   /** T91 — ricerca nel testo: `null` nessuna, `open:false` evidenziazione congelata. */
   find: { q: string; caret: number; open: boolean } | null;
@@ -156,13 +159,39 @@ export function DetailScreen({
     if (i > 0) parts.push('  ');
     parts.push(s);
   });
-  const dropped = (v: string[]) => segs.filter((s, i) => v[i * 2] !== s).length;
+  const dropped = (v: string[], of: string[]) => of.filter((s, i) => v[i * 2] !== s).length;
   // Due passate: la seconda serve SOLO quando qualcosa cade, e riserva le
   // colonne del contatore. Riservarle sempre costerebbe 6 colonne su ogni
   // terminale largo per un avviso che lì non comparirà mai.
   let shown = cutParts(parts, width);
-  if (dropped(shown) > 0) shown = cutParts(parts, Math.max(0, width - 6));
-  const cutCount = dropped(shown);
+  if (dropped(shown, segs) > 0) shown = cutParts(parts, Math.max(0, width - 6));
+  const cutCount = dropped(shown, segs);
+
+  // T108 — riga del selettore modello: bottoni affiancati IDENTICI a quelli
+  // della barra azioni, quadre comprese, e voce attiva in video inverso. Due
+  // enfasi diverse su due righe adiacenti (là `inverse`, qui un grassetto
+  // colorato) obbligano a guardare da vicino per capire quale voce è scelta —
+  // la stessa resa si legge di colpo su entrambe.
+  // La cifra sta DENTRO la quadra: è il tasto che seleziona quella voce, e
+  // sull'unica riga del deck dove le cifre valgono qualcosa toglierla
+  // costringerebbe a contare le posizioni.
+  // `priority` sulla voce SELEZIONATA e non sulla prima: qui il troncamento
+  // cancellerebbe l'unica informazione che la riga esiste per dare — quale
+  // modello sta per essere usato — mentre nella barra azioni la voce attiva è
+  // comunque nota dal tasto appena premuto.
+  const mSegs = MODELS.map((m, i) => `[ ${i + 1} ${m} ]`);
+  const mParts: string[] = [];
+  mSegs.forEach((s, i) => {
+    if (i > 0) mParts.push('  ');
+    mParts.push(s);
+  });
+  const mIdx = Math.max(0, MODELS.indexOf(model));
+  // `- 8` = le colonne del prefisso "modello ", che sta fuori dai parts perché
+  // non è un bottone e non deve mai cadere.
+  const mWidth = Math.max(0, width - 8);
+  let mShown = cutParts(mParts, mWidth, mIdx * 2);
+  if (dropped(mShown, mSegs) > 0) mShown = cutParts(mParts, Math.max(0, mWidth - 6), mIdx * 2);
+  const mCut = dropped(mShown, mSegs);
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
       <Text bold color="cyan">loom-deck</Text>
@@ -184,8 +213,8 @@ export function DetailScreen({
         <Text dimColor wrap="truncate-end">
           <Text color="yellow">↑↓</Text> riga · <Text color="yellow">PgUp/PgDn</Text> pagina ·{' '}
           <Text color="yellow">g/G</Text> estremi · <Text color="yellow">←→</Text> azione ·{' '}
-          <Text color="yellow">^F</Text> cerca · <Text color="yellow">⏎</Text> esegui ·{' '}
-          <Text color="yellow">esc</Text> chiudi
+          <Text color="yellow">1-4/tab</Text> modello · <Text color="yellow">^F</Text> cerca ·{' '}
+          <Text color="yellow">⏎</Text> esegui · <Text color="yellow">esc</Text> chiudi
         </Text>
       )}
       <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
@@ -220,7 +249,20 @@ export function DetailScreen({
           </Text>
         </Box>
       ) : null}
-      <Box marginTop={1}>
+      <Box marginTop={1} flexDirection="column">
+        <Text wrap="truncate-end">
+          <Text dimColor>modello </Text>
+          {mShown.map((part, i) =>
+            i % 2 === 1 ? (
+              <Text key={i}>{part}</Text>
+            ) : (
+              <Text key={i} inverse={i / 2 === mIdx} color={i / 2 === mIdx ? 'green' : 'gray'}>
+                {part}
+              </Text>
+            ),
+          )}
+          {mCut > 0 ? <Text color="yellow"> · +{mCut}</Text> : null}
+        </Text>
         <Text wrap="truncate-end">
           {shown.map((part, i) =>
             i % 2 === 1 ? (

@@ -8,16 +8,19 @@
 # "recap stato task <TaskID>" — no skill, solo recap → più controllo).
 # Riusabile identico da TUI (Ink) e da web.
 #
-# Tre assi ORTOGONALI, da non confondere fra loro:
+# Quattro assi ORTOGONALI, da non confondere fra loro:
 #   binding task   <TaskID> ..... --no-task
 #   continuità     nuova ........ --resume [--fork]
 #   prompt         --prompt-kind none|recap|preflight|run|checkpoint
+#   modello        --model fable|opus|sonnet|haiku
 # Il terzo asse (T56) prima non esisteva: il prompt era una CONSEGUENZA degli
 # altri due (bound ⇒ recap, --no-task ⇒ niente, --resume ⇒ niente), quindi
 # "task-bound SENZA prompt" era inesprimibile e l'unico modo di non avere un
 # prompt era perdere la task. Il catalogo dei prompt vive qui e non nel deck
 # perché questo è il primitive UI-agnostico: il chiamante passa un SIMBOLO, non
 # una stringa — il quoting resta verificato in un posto solo (vedi PROMPT sotto).
+# Il quarto asse (T108) è indipendente dagli altri tre: vale sul ramo bound come
+# su --no-task, su una sessione nuova come su una ripresa.
 #
 # Con --no-task la sessione è NUDA: niente LOOM_TASK, niente prompt iniziale,
 # niente --session-id. Serve al lavoro spot che non appartiene a nessuna task.
@@ -43,6 +46,7 @@
 #   LOOM_DECK_STATE_PROFILE  PTYXIS_PROFILE annunciata a compass (default: bindings/claude
 #                            del progetto, letto da dconf; settata a vuoto = nessun annuncio)
 #   LOOM_DECK_PERMISSION_MODE  override del permissionMode del file config (default: campo file, poi 'manual')
+#   LOOM_DECK_MODEL        modello quando --model non è passato (default: opus)
 #
 set -euo pipefail
 
@@ -56,6 +60,10 @@ TITLE_NOTE=""
 # "kind implicito" da "kind chiesto", perché con --no-task il primo è legittimo
 # (nessun prompt, come sempre) e il secondo è un errore d'uso.
 PROMPT_KIND=""
+# Vuoto = flag non passato: la cascata (env, poi default) si risolve più sotto,
+# insieme alla validazione, così l'ingresso da argomento e quello da env passano
+# per lo stesso enum.
+MODEL=""
 # Positional <TaskID> + flag opzionale --session-id <uuid> (T27): il deck genera
 # l'UUID e lo pinna così il binding sidecar sessionId↔taskId è deterministico.
 # --no-task (T42): modalità NUDA, senza TaskID — nessuna LOOM_TASK, nessun prompt
@@ -84,8 +92,17 @@ PROMPT_KIND=""
 # (emoji/name dal file committato, TaskID) sono controllati — quindi il testo non
 # si quota, si RIDUCE a un alfabeto sicuro (vedi _sane_note): tutto ciò che non
 # ci rientra sparisce, apici inclusi.
+# --model <fable|opus|sonnet|haiku> (T108): modello della sessione. Enum e non
+# stringa libera perché il valore finisce dentro `bash -lc` e un refuso
+# produrrebbe una tab con un comando che il CLI rifiuta. Le voci sono ALIAS e
+# restano tali: espanderle a id versionati (`claude-opus-5`) cablerebbe qui una
+# generazione, che al primo bump diventa un modello inesistente.
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --model)
+      MODEL="${2:-}"; shift 2 ;;
+    --model=*)
+      MODEL="${1#*=}"; shift ;;
     --title-note)
       TITLE_NOTE="${2:-}"; shift 2 ;;
     --title-note=*)
@@ -112,7 +129,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-USAGE="uso: deck-run <TaskID> [--prompt-kind <kind>] [--session-id <uuid>]
+USAGE="uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <kind>] [--session-id <uuid>]
                                                    (es. deck-run T18)
      | deck-run --no-task                          (sessione nuda, senza task)
      | deck-run <TaskID> --resume <uuid>           (riprende sessione scoped)
@@ -126,6 +143,9 @@ USAGE="uso: deck-run <TaskID> [--prompt-kind <kind>] [--session-id <uuid>]
        preflight   /loom-works:preflight-task <TaskID>
        run         /loom-works:run-task <TaskID>
        checkpoint  /loom-works:checkpoint-task <TaskID>
+
+  --model        modello della sessione: fable|opus|sonnet|haiku (default: opus)
+                 valore ignoto → fallback sul default, con avviso su stderr
 
   --title-note   nota della conversazione, appesa al titolo tab come «nota»
                  (ridotta a lettere/cifre/spazi/-/_, cap 60 char)"
@@ -274,6 +294,28 @@ case "${PERM_MODE:-}" in
 esac
 MODE_FLAG="--permission-mode ${PERM_MODE} "
 
+# ── modello (T108) ───────────────────────────────────────────────────────────
+# Precedenza: --model > env LOOM_DECK_MODEL > 'opus'. Nessun campo nel file
+# config: il default è unico per tutta la famiglia, e uno scalare per-progetto
+# aggiungerebbe una chiave allo schema del plugin per un valore che il selettore
+# del deck sovrascrive a ogni spawn.
+# Il flag è passato SEMPRE, anche sul default, per la stessa ragione di
+# permissionMode: lo spawn resta leggibile nel process tree invece di dipendere
+# dal default del CLI, che cambia fra versioni.
+# Valore fuori enum → fallback con avviso, non exit. Regime opposto a
+# --prompt-kind, e il discriminante è dove finisce il valore: un kind ignoto si
+# ferma DENTRO lo script (nessun template da scegliere, l'errore è del deck),
+# un modello ignoto arriverebbe al CLI e produrrebbe una tab con un comando che
+# fallisce all'avvio — cioè il guasto che permissionMode evita degradando.
+MODEL="${MODEL:-${LOOM_DECK_MODEL:-}}"
+case "${MODEL:-}" in
+  fable|opus|sonnet|haiku) ;;
+  '') MODEL="opus" ;;
+  *)  echo "modello ignoto: '${MODEL}' → fallback 'opus' (usa fable|opus|sonnet|haiku)" >&2
+      MODEL="opus" ;;
+esac
+MODEL_FLAG="--model ${MODEL} "
+
 # ── Profilo di stato per compass ─────────────────────────────────────────────
 # Lo stato di una sessione (running/ask/done) viaggia verso compass via D-Bus
 # keyed su $PTYXIS_PROFILE (hook Claude → `compass <stato>`), e compass lo mappa
@@ -388,10 +430,13 @@ PROMPT_ARG=""
 # PROFILE_ENV in testa a entrambi i rami: lo stato è una proprietà della SESSIONE
 # (esiste anche senza task), esattamente come la label del titolo — legarlo al
 # ramo task-bound ripeterebbe l'errore di layer già evitato per la titolazione.
+# MODEL_FLAG in entrambi i rami e prima dei flag di continuità: il modello è la
+# scelta di chi apre la sessione, non una proprietà della task né della ripresa
+# (T108) — stesso layer di MODE_FLAG, che infatti gli sta accanto.
 if [[ $NO_TASK -eq 1 ]]; then
-  _default_intab="${PROFILE_ENV}claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}"
+  _default_intab="${PROFILE_ENV}claude --name '${TITLE}' ${MODE_FLAG}${MODEL_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}"
 else
-  _default_intab="${PROFILE_ENV}LOOM_TASK=${TASK} claude --name '${TITLE}' ${MODE_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}${PROMPT_ARG}"
+  _default_intab="${PROFILE_ENV}LOOM_TASK=${TASK} claude --name '${TITLE}' ${MODE_FLAG}${MODEL_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}${PROMPT_ARG}"
 fi
 IN_TAB_CMD="${LOOM_DECK_INTAB_CMD:-$_default_intab}"
 

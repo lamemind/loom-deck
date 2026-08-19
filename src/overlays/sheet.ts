@@ -19,7 +19,7 @@ import { scanText, topForOffset, type Occurrence } from '../text-search.js';
 import { parseMarkdown } from '../markdown.js';
 import { cpLen, insertAt, removeAt } from '../layout.js';
 import { sanitizeTyped } from '../glyphs.js';
-import { DETAIL_ACTIONS, type PromptKind } from '../spawn.js';
+import { DETAIL_ACTIONS, MODELS, MODEL_DEFAULT, type ModelKind, type PromptKind } from '../spawn.js';
 import type { Mode } from '../model.js';
 
 export interface Sheet {
@@ -40,7 +40,7 @@ export interface SheetOverlayDeps {
   setMode: (m: Mode) => void;
   setNote: (s: string) => void;
   /** Spawn dalla barra azioni: effetto esterno, non nostro. */
-  onAction: (taskId: string, kind: PromptKind, label: string) => void;
+  onAction: (taskId: string, kind: PromptKind, model: ModelKind, label: string) => void;
 }
 
 export function useSheetOverlay(deps: SheetOverlayDeps) {
@@ -49,6 +49,10 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [top, setTop] = useState(0);
   const [action, setAction] = useState(0);
+  // T108 — il modello con cui partirà la sessione. Stato del DETAIL e non del
+  // deck: si azzera a ogni apertura come scroll e azione, quindi non esiste una
+  // selezione invisibile che cambi il comportamento dei tasti della lista.
+  const [model, setModel] = useState<ModelKind>(MODEL_DEFAULT);
 
   // T91 — ricerca dentro il detail. `open` distingue i due modi in cui la si
   // lascia: `esc` butta via ciò che il modale ha prodotto (`find` a null,
@@ -105,11 +109,12 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     setTop(topForOffset(lines, o.start, capacity));
   }, [findRes, occCur, lines, capacity]);
 
-  /** Apre il detail su una task, azzerando scroll, azione e ricerca. */
+  /** Apre il detail su una task, azzerando scroll, azione, modello e ricerca. */
   function open(next: Sheet) {
     setSheet(next);
     setTop(0);
     setAction(0);
+    setModel(MODEL_DEFAULT);
     setFind(null);
     setOccIdx(0);
     setNote('');
@@ -204,7 +209,19 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       const act = DETAIL_ACTIONS[action]!;
       const id = sheet?.id;
       close();
-      if (id) onAction(id, act.kind, `⏎ ${act.label}`);
+      if (id) onAction(id, act.kind, model, `⏎ ${act.label}`);
+    } else if (key.tab) {
+      // T108 — `tab` scorre il catalogo dei modelli. Libero solo QUI: in vista
+      // normale cicla la vista del pane a fuoco, e le cifre `1`-`9` sono della
+      // legenda launch. Il detail cattura l'input per intero, quindi è dove un
+      // alfabeto già speso torna disponibile.
+      setModel((m) => MODELS[(MODELS.indexOf(m) + 1) % MODELS.length]!);
+    } else if (input.length === 1 && input >= '1' && input <= String(MODELS.length)) {
+      // Scelta diretta: chi sa già quale vuole non paga lo scorrimento. Il test
+      // sulla lunghezza non è pleonastico: `useInput` consegna il CHUNK letto da
+      // stdin, quindi un incollato come `12` passerebbe il confronto fra
+      // stringhe e indicizzerebbe il catalogo fuori range.
+      setModel(MODELS[Number(input) - 1]!);
     } else if (key.leftArrow || key.rightArrow) {
       // Scorrimento CICLICO come le righe di scelta del modale edit: cinque
       // voci, arrivare in fondo e ripartire costa meno che invertire direzione.
@@ -233,6 +250,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     doc,
     top,
     action,
+    model,
     find,
     lines,
     capacity,

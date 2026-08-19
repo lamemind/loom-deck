@@ -255,6 +255,10 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // lunga): il bottone selezionato è reso `inverse`, ed è la cella che deve
   // restare dentro il frame anche in coda alla riga.
   ['detail · ultima azione', 'DD\rRRRR', [100, 176]],
+  // T108 — la riga del selettore modello, con selezionata la voce più larga
+  // (`sonnet`): è quella che `cutParts` deve tenere a schermo per prima, quindi
+  // il caso in cui il taglio prioritario può sfondare la riga.
+  ['detail · modello sonnet', 'DD\r3', [100, 176]],
   // T91 — la ricerca dentro il detail: modale dentro modale. Il campo è l'unico
   // testo a lunghezza libera della riga che lo ospita, e la riga stessa è la
   // seconda riga FISSA aggiunta dentro l'overlay.

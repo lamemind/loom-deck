@@ -173,22 +173,22 @@ test('il frame di assegnazione non supera mai le righe del terminale', () => {
   }
 });
 
-// T66 — il detail è la quarta sostitutiva. Cornice di 10 righe: due in più del
-// reader, e sono proprio la riga bottoni col suo marginTop — la riga FISSA
-// aggiunta dentro l'overlay, che va scalata dalla capienza del testo o il frame
-// sfonda `rows` sui terminali bassi.
+// T66 — il detail è la quarta sostitutiva. Cornice di 11 righe: tre in più del
+// reader — la riga bottoni col suo marginTop, più la riga del selettore modello
+// (T108). Sono righe FISSE aggiunte dentro l'overlay, che vanno scalate dalla
+// capienza del testo o il frame sfonda `rows` sui terminali bassi.
 test('il frame del detail non supera mai le righe del terminale', () => {
   for (const rows of [20, 24, 30, 40, 60]) {
-    assert.ok(detailCapacity(rows) + 10 + SLACK <= rows, `sforo a ${rows} righe`);
+    assert.ok(detailCapacity(rows) + 11 + SLACK <= rows, `sforo a ${rows} righe`);
   }
 });
 
-test('detail: la barra azioni costa due righe in più del reader', () => {
+test('detail: barra azioni e selettore modello costano tre righe in più del reader', () => {
   // Gate sul motivo per cui il detail non può riusare READER_CHROME. Se un
-  // domani la riga bottoni sparisse (o ne arrivasse una seconda) questo test
+  // domani una di quelle righe sparisse (o ne arrivasse un'altra) questo test
   // cade, che è esattamente il punto: la cornice è un conteggio, non una stima.
   for (const rows of [24, 40, 60]) {
-    assert.equal(detailCapacity(rows), readerCapacity(rows) - 2, `a ${rows} righe`);
+    assert.equal(detailCapacity(rows), readerCapacity(rows) - 3, `a ${rows} righe`);
   }
 });
 

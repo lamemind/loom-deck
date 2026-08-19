@@ -8,13 +8,19 @@ import { deckArgs, forkArgs, resumeArgs, terminalArgs, DETAIL_ACTIONS } from '..
 test('deckArgs pinna il sessionId e dichiara sempre il kind', () => {
   // Il kind non ha default qui: dal deck ogni tasto dichiara il proprio intento,
   // e un default silenzioso renderebbe indistinguibili `⏎` e `^K`.
+  // Il modello sì (T108): i percorsi che non passano dal selettore del detail
+  // non hanno un intento da dichiarare, e il loro unico valore sensato è quello
+  // che il selettore stesso mostra all'apertura.
   assert.deepEqual(deckArgs('T104', 'sid-1', 'run'), [
     'T104',
     '--session-id',
     'sid-1',
     '--prompt-kind',
     'run',
+    '--model',
+    'opus',
   ]);
+  assert.deepEqual(deckArgs('T104', 'sid-1', 'run', 'sonnet').slice(-2), ['--model', 'sonnet']);
 });
 
 test('resumeArgs scoped porta la task, spot porta --no-task', () => {

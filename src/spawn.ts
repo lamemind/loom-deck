@@ -42,6 +42,27 @@ export function spawnOut(cmd: string, args: string[], opts: SpawnOptions): Child
 // stringhe. Nomi identici ai valori di `--prompt-kind`.
 export type PromptKind = 'none' | 'recap' | 'preflight' | 'run' | 'checkpoint';
 
+// T108 — quale modello riceve la sessione appena aperta. Quarto asse di
+// deck-run, indipendente dagli altri tre: vale su una sessione bound come su una
+// nuda, su una nuova come su una ripresa.
+//
+// Le voci sono gli ALIAS del CLI e restano tali fino dentro `claude --model`:
+// un id versionato (`claude-opus-5`) cablato qui diventerebbe falso al primo
+// cambio di generazione, e fallirebbe come modello inesistente invece che come
+// configurazione da aggiornare.
+export type ModelKind = 'fable' | 'opus' | 'sonnet' | 'haiku';
+
+// L'ordine È il binding dei tasti `1`-`4` nel detail, non una preferenza di
+// lettura: cambiarlo sposta i tasti sotto le dita di chi li ha imparati.
+export const MODELS: readonly ModelKind[] = ['fable', 'opus', 'sonnet', 'haiku'];
+
+// Default del selettore e di ogni percorso di spawn che non passa da lui
+// (`^K`/`^P`/`^R` dalla lista, resume, fork). Duplicato del default di deck-run
+// e non letto da lì: il deck deve poter MOSTRARE la selezione iniziale prima di
+// spawnare alcunché, e un valore che si conosce solo a spawn avvenuto non è
+// mostrabile.
+export const MODEL_DEFAULT: ModelKind = 'opus';
+
 // T66 — le azioni del detail. Non sono un catalogo nuovo: ognuna è un
 // `--prompt-kind` già esistente più `checkpoint`, e tutte passano dallo stesso
 // `spawnForTask` dei CTRL della lista — una superficie in più, zero percorsi di
@@ -64,12 +85,26 @@ export const DETAIL_ACTIONS: ReadonlyArray<{ kind: PromptKind; label: string }> 
 // Il kind è OBBLIGATORIO e non ha default qui: il default vive in deck-run (per
 // le invocazioni a mano), mentre dal deck ogni tasto dichiara il proprio intento
 // — un default silenzioso renderebbe indistinguibili `⏎` e `^K`.
-export function deckArgs(id: string, sessionId: string, kind: PromptKind): string[] {
-  return [id, '--session-id', sessionId, '--prompt-kind', kind];
+// Il modello, al contrario del kind, ha un default (T108): i percorsi che non
+// passano dal selettore del detail non devono nominarlo per forza, e l'unico
+// valore sensato per loro è quello che il selettore stesso mostra all'apertura.
+export function deckArgs(
+  id: string,
+  sessionId: string,
+  kind: PromptKind,
+  model: ModelKind = MODEL_DEFAULT,
+): string[] {
+  return [id, '--session-id', sessionId, '--prompt-kind', kind, '--model', model];
 }
 
-export function spawnDeck(id: string, cwd: string, sessionId: string, kind: PromptKind) {
-  const child = spawnOut(DECK_RUN, deckArgs(id, sessionId, kind), {
+export function spawnDeck(
+  id: string,
+  cwd: string,
+  sessionId: string,
+  kind: PromptKind,
+  model: ModelKind = MODEL_DEFAULT,
+) {
+  const child = spawnOut(DECK_RUN, deckArgs(id, sessionId, kind, model), {
     cwd,
     detached: true,
     stdio: 'ignore',

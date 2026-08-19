@@ -49,6 +49,9 @@ function deckRun(args: string[], env: Record<string, string> = {}): Run {
       // dipenderebbe dai progetti registrati lì. I test che vogliono il
       // prefisso lo passano esplicito via `env`.
       LOOM_DECK_STATE_PROFILE: '',
+      // Vuota per la stessa ragione del profilo di stato: senza, il comando
+      // atteso dipenderebbe dall'ambiente di chi lancia la suite.
+      LOOM_DECK_MODEL: '',
       ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -246,4 +249,45 @@ test('profilo di stato con caratteri non ammessi: scartato, non quotato', () => 
   const cmd = r.out.trimEnd().split('\n').pop() ?? '';
   assert.ok(!cmd.includes('PTYXIS_PROFILE'), `valore ostile passato in-tab: ${cmd}`);
   assert.match(r.err, /profilo di stato ignorato/);
+});
+
+// T108 — quarto asse: il modello. Ortogonale agli altri tre, quindi il gate lo
+// verifica su TUTTI i rami che avviano `claude`, non solo su quello bound.
+const MODELS = ['fable', 'opus', 'sonnet', 'haiku'] as const;
+
+for (const m of MODELS) {
+  test(`--model ${m}: il flag arriva al CLI sul ramo task-bound`, () => {
+    const cmd = inTabCmd(['T108', '--session-id', SID, '--model', m]);
+    assert.match(cmd, new RegExp(`--model ${m}\\b`), `flag assente: ${cmd}`);
+  });
+}
+
+test('--model senza flag: default opus, passato comunque', () => {
+  // Passato SEMPRE, anche sul default: lo spawn resta leggibile nel process tree
+  // invece di dipendere dal default del CLI, che cambia fra versioni.
+  assert.match(inTabCmd(['T108']), /--model opus\b/);
+});
+
+test('--model viaggia anche su --no-task e su --resume', () => {
+  assert.match(inTabCmd(['--no-task', '--model', 'haiku']), /--model haiku\b/);
+  assert.match(inTabCmd(['T108', '--resume', SID, '--model', 'sonnet']), /--model sonnet\b/);
+});
+
+test('--model ignoto: fallback opus con avviso, mai una tab rotta', () => {
+  // Regime opposto a --prompt-kind: quel valore si ferma dentro lo script, il
+  // modello arriverebbe al CLI e produrrebbe un comando che fallisce all'avvio.
+  const r = deckRun(['T108', '--model', 'bogus']);
+  assert.equal(r.ok, true);
+  const cmd = r.out.trimEnd().split('\n').pop() ?? '';
+  assert.match(cmd, /--model opus\b/, `fallback non applicato: ${cmd}`);
+  assert.ok(!cmd.includes('bogus'), `valore ignoto passato in-tab: ${cmd}`);
+  assert.match(r.err, /modello ignoto: 'bogus'/);
+});
+
+test('LOOM_DECK_MODEL: default d’ambiente, il flag esplicito vince', () => {
+  assert.match(inTabCmd(['T108'], { LOOM_DECK_MODEL: 'haiku' }), /--model haiku\b/);
+  assert.match(
+    inTabCmd(['T108', '--model', 'fable'], { LOOM_DECK_MODEL: 'haiku' }),
+    /--model fable\b/,
+  );
 });
