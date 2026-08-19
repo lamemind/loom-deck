@@ -347,7 +347,13 @@ export function parseTranscript(
     // testo, sanificare a valle sposterebbe l'a-capo già calcolato.
     firstPrompt: sanitize(firstUserText),
     lastReply: sanitize(lastAssistantText),
-    model,
+    // Sanificato come il titolo e le due preview, e per lo stesso motivo: è una
+    // stringa di sorgente esterna che finisce NEL FRAME (riga meta del blocco
+    // preview). Il confine di sanificazione è per SORGENTE, non per campo — un
+    // valore che lo attraversa nudo perché «oggi è ASCII» riapre l'invariante ①
+    // il giorno che lo store scrive qualcos'altro. Non tocca `modelShort`: il
+    // match è sui token di famiglia, tutti ASCII.
+    model: sanitize(model),
     bodies,
   };
 }
