@@ -66,7 +66,7 @@ Assegnazioni correnti:
 | modale | `F` | filtri |
 | modale | `^F` | **ricerca full-text** nelle conversazioni del progetto |
 | modale | `⏎` | **detail** della task selezionata: task file scrollabile + barra azioni |
-| modale | `CANC` | **elimina** — la task selezionata, oppure l'intera vista `archiviabili` se è quella attiva |
+| modale | `CANC` | **elimina** — la task selezionata; su una riga meta della vista `archiviabili`, l'intero insieme |
 | immediata | `^K` | spawna la task selezionata col prompt di **recap** |
 | immediata | `^P` | spawna la task selezionata sul **preflight** |
 | immediata | `^R` | spawna la task selezionata in **esecuzione** |
@@ -98,12 +98,14 @@ Le emoji sono quelle del menu compass. Per il terminale compass usa 🖥️, che
 
 Il deck **ordina** la potatura, non la esegue: la fa `loom-works:clean-tasks`, invocato da un processo Claude headless. Nessun `git rm` e nessuna riscrittura di `tasks.md` vivono qui — quella sequenza (task file + folder dot-prefixed + riga in `tasks.md`, un commit atomico per task, symlink `current-task.md` rimosso, righe orfane riconciliate) è implementata una volta sola, e averne una seconda darebbe due rimozioni capaci di divergere.
 
-Lo **stesso tasto ha due bersagli di taglia diversa**, e ciò che li discrimina è la vista attiva — un'informazione che sta in header, non sotto le dita:
+Lo **stesso tasto ha due bersagli di taglia diversa**, e a discriminarli è la **selezione prima della vista**:
 
-| Vista attiva | Bersaglio |
-|---|---|
-| `archiviabili` | **tutte** le task che la vista mostra |
-| qualunque altra | la **task selezionata** |
+|  | riga meta (`≡ tutte` / `○ spot`) | riga task |
+|---|---|---|
+| vista `archiviabili` | **tutte** le task che la vista mostra | quella task |
+| qualunque altra vista | rifiuto, con la nota che dice quale riga meta è | quella task |
+
+Con una riga task sotto il caret il tasto tocca **sempre e solo quella task**. Il bulk richiede quindi di essere usciti da ogni riga task, cioè un movimento in più: l'azione di massa non è mai a un tasto di distanza da quella singola, e non la si preme guardando una task evidenziata credendo che il bersaglio sia lei. Il costo è che la regola non si legge dallo schermo — la legenda la dice (`CANC elimina` contro `CANC elimina tutte`), ed è il solo canale che la rende visibile prima della conferma.
 
 Da qui la forma della conferma: nomina il bersaglio (quante e quali ID, troncando con `+N`) invece dell'azione, e dice l'**effetto sul disco** — mai «archiviare», che prometterebbe uno spostamento in un archivio che non esiste. I commit restano **locali**: `clean-tasks` non pusha, quindi finché nessuno lo fa un altro worktree continua a vedere le task potate.
 

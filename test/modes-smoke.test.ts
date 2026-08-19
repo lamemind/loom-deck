@@ -233,14 +233,28 @@ test('la conferma nomina la task e l\'effetto, non la parola "archiviare"', {
   assert.doesNotMatch(frame, /archiviare/i, `«archiviare» promette un archivio che non esiste`);
 });
 
-test('CANC sulla vista archiviabili prende l\'insieme, non la riga selezionata', {
+test('CANC su una riga meta della vista archiviabili prende l\'insieme', {
   skip: !CAN_RUN,
 }, () => {
-  // `TT` porta il pane task sulla vista `archiviabili`; con soglia a 1 giorno
-  // l'insieme non è vuoto su un progetto giovane. Il bersaglio è quello che la
-  // vista MOSTRA (D6), quindi la conferma parla di N task, non di una.
+  // `TT` porta il pane task sulla vista `archiviabili` e riporta la selezione su
+  // `≡ tutte` (il reset di `cycleView`), cioè una riga meta: è la condizione del
+  // bulk. Con soglia a 1 giorno l'insieme non è vuoto su un progetto giovane, e
+  // il bersaglio è quello che la vista MOSTRA (D6) — la conferma parla di N
+  // task, non di una.
   const frame = lastFrame(capture(`TT${CANC}`, PROJECT, { LOOM_DECK_ARCHIVABLE_DAYS: '1' }));
   assert.match(frame, /eliminare \d+ task\?/i, `bulk non riconosciuto: ${frame}`);
+});
+
+test('con una task selezionata CANC resta sulla singola, anche su archiviabili', {
+  skip: !CAN_RUN,
+}, () => {
+  // La SELEZIONE batte la vista: scesi su una riga task (`DD` dopo il cambio
+  // vista), il tasto tocca quella task e basta. È la regola che tiene l'azione
+  // di massa lontana un movimento dalle righe task, invece che a zero tasti di
+  // distanza — nessuno preme guardando `T91` evidenziata e ne pota altre 25.
+  const frame = lastFrame(capture(`TTDD${CANC}`, PROJECT, { LOOM_DECK_ARCHIVABLE_DAYS: '1' }));
+  assert.match(frame, /eliminare T\d+\?/i, `il bulk ha scavalcato la selezione: ${frame}`);
+  assert.doesNotMatch(frame, /eliminare \d+ task\?/i, `bersaglio di massa su riga task: ${frame}`);
 });
 
 test('il bulk nomina le scartate, non solo le potate', { skip: !CAN_RUN }, () => {

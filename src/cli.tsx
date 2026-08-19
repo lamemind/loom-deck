@@ -254,6 +254,19 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
 
   const isSpot = sel === SPOT;
   const isAll = sel === ALL;
+  // T112 — quando `CANC` pota in BLOCCO invece della sola task selezionata.
+  //
+  // La SELEZIONE batte la vista, non il contrario: con una riga task sotto il
+  // caret il tasto tocca quella task e basta, in ogni vista. Il bulk vive solo
+  // sulle righe meta della vista `archiviabili`, cioè richiede di essere usciti
+  // da ogni riga task — così l'azione di massa non è mai a un tasto di distanza
+  // da quella singola, e non si preme guardando una task evidenziata credendo
+  // che il bersaglio sia lei.
+  //
+  // Derivato una volta e letto sia dal ramo di apertura sia dalla legenda: due
+  // condizioni scritte due volte direbbero due cose diverse sullo stesso tasto
+  // alla prima modifica.
+  const purgeBulk = taskViewId === 'archivable' && (isAll || isSpot);
   const projectName = cwd.split('/').pop() || cwd;
   // Unica fonte della selezione: si legge SEMPRE dalla vista, mai dall'array
   // grezzo — è l'invariante che tiene allineati dettaglio mostrato e spawn.
@@ -593,10 +606,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     );
   }
 
-  // T112 — apertura della conferma di eliminazione. Il tasto è uno, il bersaglio
-  // dipende dalla VISTA attiva: `archiviabili` → l'insieme intero, ogni altra →
-  // la task selezionata. Ciò che discrimina sta in header e non sotto le dita,
-  // quindi il modale deve nominare il bersaglio (quante e quali), non l'azione.
+  // T112 — apertura della conferma di eliminazione. Il tasto è uno e il
+  // bersaglio ha due taglie: la task selezionata, o l'insieme intero della vista
+  // `archiviabili`. A discriminare è `purgeBulk` — la selezione prima della
+  // vista. Il modale nomina comunque il bersaglio (quante e quali) e non
+  // l'azione: è l'unico punto in cui la differenza fra i due gesti è leggibile.
   //
   // Il bersaglio del bulk si legge da `paneTasks`, cioè dalla stessa fonte che
   // disegna le righe e alimenta il contatore in header (D6): mai il `Set` grezzo
@@ -612,7 +626,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       setNote('CANC → eliminare: seleziona una task (← per il pane)');
       return;
     }
-    const bulk = taskViewId === 'archivable';
+    const bulk = purgeBulk;
     const ids = bulk ? paneTasks.map((t) => t.id) : [];
     if (!bulk) {
       const task = selectedTaskOr('CANC', 'eliminare');
@@ -1284,11 +1298,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const keyLegend = sanitize(
     [
       ...(canSpawn ? ['⏎ detail', '^K/^P/^R spawn'] : canResume ? ['⏎ resume'] : []),
-      // T112 — la voce nomina il BERSAGLIO, che cambia con la vista attiva
-      // senza che cambi il tasto: dire solo «CANC elimina» lascerebbe credere
-      // che sulla vista `archiviabili` agisca sulla riga selezionata.
+      // T112 — la voce nomina il BERSAGLIO, che cambia di taglia senza che
+      // cambi il tasto. Legge `purgeBulk`, la stessa condizione del ramo di
+      // apertura: una legenda che annunciasse «tutte» dove il tasto ne pota una
+      // sola sarebbe peggio di nessuna legenda.
       ...(focus === 'tasks'
-        ? [taskViewId === 'archivable' ? 'CANC elimina tutte' : 'CANC elimina']
+        ? [purgeBulk ? 'CANC elimina tutte' : 'CANC elimina']
         : []),
       ...(canResume ? ['f fork'] : []),
       ...(canPin ? ['p pin', 'N nota', 'A assegna'] : []),
