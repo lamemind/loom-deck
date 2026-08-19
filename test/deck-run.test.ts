@@ -205,6 +205,24 @@ test('--title-note: cap a 60 caratteri, taglio non a metà di un multibyte', () 
   assert.equal(nota, 'à'.repeat(60));
 });
 
+// T111 — la nota alla NASCITA. Fino a qui ogni caso `--title-note` passava da
+// `--resume`, cioè dal ramo dove il prompt iniziale non c'è: il flag sembrava
+// appartenere alla ripresa. Nello script il suffisso è appeso a `TITLE` prima
+// che i rami si separino, e questo è il gate che lo fissa — titolo annotato E
+// prompt della task nello stesso comando.
+test('--title-note su sessione nuova: titolo annotato e prompt della task intatto', () => {
+  const cmd = inTabCmd(
+    ['T111', '--session-id', SID, '--prompt-kind', 'preflight', '--title-note', 'baluba'],
+    { LOOM_DECK_WORKDIR: labeledWd },
+  );
+  assert.ok(cmd.includes("--name '🧵 demo · T111 «baluba»'"), `titolo inatteso: ${cmd}`);
+  // La label resta in TESTA: il match compass è un `.includes` sulla chiave, e
+  // una nota che si infilasse prima la spezzerebbe.
+  assert.ok(cmd.includes("--name '🧵 demo · "), `label spostata: ${cmd}`);
+  assert.ok(cmd.endsWith("'/loom-works:preflight-task T111'"), `prompt perso: ${cmd}`);
+  assert.match(cmd, /^LOOM_TASK=T111 claude /);
+});
+
 test('--title-note con --fork: il suffisso fork resta in coda', () => {
   const cmd = inTabCmd(
     ['T64', '--resume', SID, '--fork', '--title-note', 'ramo'],

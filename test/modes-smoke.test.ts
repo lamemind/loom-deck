@@ -13,7 +13,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -36,14 +37,14 @@ const CAN_RUN = hasPython() && existsSync(TASKS);
 const CTRL_F = '\x06';
 const ESC = '\x1b';
 
-function capture(keys: string): string {
+function capture(keys: string, cwd: string = PROJECT): string {
   const raw = execFileSync(
     'python3',
     [
       join(HERE, 'pty-frame.py'),
       '120',
       '44',
-      PROJECT,
+      cwd,
       join(PKG, 'node_modules', '.bin', 'tsx'),
       '--tsconfig',
       join(PKG, 'tsconfig.json'),
@@ -143,6 +144,52 @@ test('^K dentro il detail non spawna', { skip: !CAN_RUN }, () => {
   const frame = lastFrame(capture('DD\r\x0b'));
   assert.doesNotMatch(frame, /\^K spawn/);
   assert.match(frame, /preflight|checkpoint/i);
+});
+
+// T111 — l'ALFABETO del detail dopo l'arrivo del campo nota sempre attivo. I
+// tre rami che questa task rimuove (cifre → modello, `g`/`G` → estremi) sono
+// esattamente quelli che un merge futuro rimetterebbe senza accorgersene.
+//
+// Lo spawn è l'unico punto in cui il modello scelto e la nota digitata
+// diventano osservabili in testo semplice: la riga di stato li nomina entrambi,
+// mentre nel frame del detail la voce di modello attiva si distingue solo per
+// video inverso, che `stripAnsi` toglie. Con NO_SPAWN il processo non parte, ma
+// il sidecar SÌ — da cui il project root temporaneo: i record orfani di un test
+// non hanno motivo di finire nel file di chi lo lancia.
+const spawnProject = mkdtempSync(join(tmpdir(), 'loom-deck-smoke-'));
+if (CAN_RUN) {
+  mkdirSync(join(spawnProject, 'runtime', 'tasks'), { recursive: true });
+  copyFileSync(TASKS, join(spawnProject, 'runtime', 'tasks.md'));
+}
+
+test('detail: una cifra scrive nel campo nota e NON cambia modello', { skip: !CAN_RUN }, () => {
+  const frame = lastFrame(capture('DD\r2\r', spawnProject));
+  assert.match(frame, /«2»/, `la cifra non è finita nella nota: ${frame}`);
+  assert.match(frame, /· opus/, `il modello è cambiato con una cifra: ${frame}`);
+});
+
+test('detail: tab resta il solo canale del modello', { skip: !CAN_RUN }, () => {
+  // `T` = tab nel mapping del pty. Da `opus` (default) il giro porta a `sonnet`.
+  const frame = lastFrame(capture('DD\rT\r', spawnProject));
+  assert.match(frame, /· sonnet/, `tab non ha cambiato modello: ${frame}`);
+});
+
+test('detail: g scrive invece di saltare agli estremi', { skip: !CAN_RUN }, () => {
+  const frame = lastFrame(capture('DD\rgg\r', spawnProject));
+  assert.match(frame, /«gg»/, `g non è finita nella nota: ${frame}`);
+});
+
+test('detail: nota vuota → nessuna maniglia nello spawn', { skip: !CAN_RUN }, () => {
+  const frame = lastFrame(capture('DD\r\r', spawnProject));
+  assert.doesNotMatch(frame, /«»/, `maniglia a vuoto: ${frame}`);
+});
+
+test('detail: le cifre sono sparite dalle quadre del selettore modello', { skip: !CAN_RUN }, () => {
+  // Un'etichetta che nomina un tasto è accoppiata al binding: `[ 1 fable ]`
+  // dopo che `1` scrive nella nota dichiara un tasto che non fa più quella cosa.
+  const frame = lastFrame(capture('DD\r'));
+  assert.match(frame, /\[ opus \]/, `riga modello non renderizzata: ${frame}`);
+  assert.doesNotMatch(frame, /\[ [1-4] /, `cifra superstite nella quadra: ${frame}`);
 });
 
 // Chiusura: ogni modale torna alla lista con `esc`, e il deck resta vivo.

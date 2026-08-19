@@ -23,6 +23,27 @@ test('deckArgs pinna il sessionId e dichiara sempre il kind', () => {
   assert.deepEqual(deckArgs('T104', 'sid-1', 'run', 'sonnet').slice(-2), ['--model', 'sonnet']);
 });
 
+// T111 — la nota data alla nascita viaggia sullo STESSO flag del resume, perché
+// deck-run appende il suffisso al titolo prima che i rami si separino: il flag
+// non appartiene alla ripresa, vale su ogni spawn.
+test('deckArgs porta la nota nel titolo solo quando c\'è', () => {
+  assert.deepEqual(deckArgs('T111', 'sid-1', 'preflight', 'opus', 'baluba'), [
+    'T111',
+    '--session-id',
+    'sid-1',
+    '--prompt-kind',
+    'preflight',
+    '--model',
+    'opus',
+    '--title-note',
+    'baluba',
+  ]);
+  // Nota vuota = nessun flag, non `--title-note ''`: quello produrrebbe un `«»`
+  // a vuoto nel titolo. Stesso regime già fissato per `resumeArgs`.
+  assert.ok(!deckArgs('T111', 'sid-1', 'preflight', 'opus', '').includes('--title-note'));
+  assert.ok(!deckArgs('T111', 'sid-1', 'preflight').includes('--title-note'));
+});
+
 test('resumeArgs scoped porta la task, spot porta --no-task', () => {
   assert.deepEqual(resumeArgs('T81', 'sid-1'), ['T81', '--resume', 'sid-1']);
   assert.deepEqual(resumeArgs(null, 'sid-1'), ['--no-task', '--resume', 'sid-1']);

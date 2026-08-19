@@ -291,13 +291,21 @@ export function readerCapacity(rows: number): number {
 //   2  bordi del box testo
 //   1  marginTop della riga azioni
 //   1  riga modello (T108)
+//   1  riga nota (T111)
 //   1  riga azioni
 //
-// Le ultime tre sono il motivo per cui il detail non può riusare READER_CHROME:
-// barra bottoni e selettore modello sono righe FISSE in più dentro l'overlay, e
-// ogni riga fissa aggiunta va scalata dalla capienza del contenuto o il frame
-// sfonda `rows` (stessa invariante di TASKS_PANE_CHROME).
-const DETAIL_CHROME = 11;
+// Le ultime quattro sono il motivo per cui il detail non può riusare
+// READER_CHROME: barra bottoni, selettore modello e campo nota sono righe FISSE
+// in più dentro l'overlay, e ogni riga fissa aggiunta va scalata dalla capienza
+// del contenuto o il frame sfonda `rows` (stessa invariante di
+// TASKS_PANE_CHROME).
+//
+// La nota è una riga fissa e non un secondo `extra` di `detailCapacity` (T111 ·
+// D1): due condizionali mutuamente esclusivi obbligherebbero il parametro a dire
+// QUALE è aperto — un solo booleano per entrambi sottostima quando quello aperto
+// è il più alto, e sommarli toglie righe al testo per un campo che non è a
+// schermo.
+const DETAIL_CHROME = 12;
 
 // T91 — la ricerca dentro il detail: marginTop + riga del campo.
 //

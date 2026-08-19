@@ -423,17 +423,35 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // Lo spawn vero, su una task GIÀ risolta. Separato dalla guardia perché il
   // detail passa l'id fotografato all'apertura e non la selezione corrente: la
   // lista lì sotto non è più a schermo, quindi non è più la fonte dell'oggetto.
-  function spawnForTask(id: string, kind: PromptKind, model: ModelKind, keyLabel: string) {
+  // T111 — `spawnNote` arriva dal campo sempre attivo del detail ed è vuota per
+  // ogni altro percorso (`^K`/`^P`/`^R` non passano di lì, quindi non hanno da
+  // dove prenderla). Si scrive nel sidecar PRIMA dello spawn, accanto al
+  // binding e per la stessa ragione: la conversazione deve risultare figlia
+  // della task e portare la propria maniglia appena il suo JSONL compare, o per
+  // il tempo di un tick la riga in lista comparirebbe nuda. Due record separati
+  // sullo stesso `sessionId` sono la forma normale di un file append-only
+  // last-wins, non una scrittura da fondere.
+  function spawnForTask(
+    id: string,
+    kind: PromptKind,
+    model: ModelKind,
+    keyLabel: string,
+    spawnNote = '',
+  ) {
     const sid = randomUUID();
     appendTaskBinding(cwd, sid, id);
-    const child = spawnDeck(id, cwd, sid, kind, model);
+    if (spawnNote) appendNote(cwd, sid, spawnNote);
+    const child = spawnDeck(id, cwd, sid, kind, model, spawnNote);
     child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
     const what = kind === 'none' ? '' : ` · ${kind}`;
     // Il modello è SEMPRE nominato, anche quando è il default: gli acceleratori
     // della lista non passano dal selettore del detail e usano il default fisso
     // (T108 · via a), quindi senza dirlo l'utente crederebbe di aver ereditato
     // la scelta fatta nell'ultimo detail aperto.
-    setNote(`${keyLabel} spawn ${id}${what} · ${model} → tab CC (sid ${sid.slice(0, 8)})`);
+    const named = spawnNote ? ` · «${cut(spawnNote, 24)}»` : '';
+    setNote(
+      `${keyLabel} spawn ${id}${what} · ${model}${named} → tab CC (sid ${sid.slice(0, 8)})`,
+    );
   }
 
   function spawnTaskSession(kind: PromptKind, keyLabel: string) {
@@ -644,7 +662,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     columns,
     setMode,
     setNote,
-    onAction: (id, kind, model, label) => spawnForTask(id, kind, model, label),
+    onAction: (id, kind, model, spawnNote, label) =>
+      spawnForTask(id, kind, model, label, spawnNote),
   });
 
   const search = useSearchOverlay({
@@ -1186,6 +1205,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         capacity={sheet.capacity}
         action={sheet.action}
         model={sheet.model}
+        spawnNote={sheet.spawnNote}
         columns={columns}
         find={sheet.find}
         occ={sheet.findRes.occ}

@@ -52,8 +52,9 @@ export type PromptKind = 'none' | 'recap' | 'preflight' | 'run' | 'checkpoint';
 // configurazione da aggiornare.
 export type ModelKind = 'fable' | 'opus' | 'sonnet' | 'haiku';
 
-// L'ordine È il binding dei tasti `1`-`4` nel detail, non una preferenza di
-// lettura: cambiarlo sposta i tasti sotto le dita di chi li ha imparati.
+// L'ordine È il giro di `tab` nel detail, non una preferenza di lettura:
+// cambiarlo sposta le voci sotto le dita di chi le ha imparate. Fino a T111 era
+// anche il binding delle cifre `1`-`4`, passate poi al campo nota.
 export const MODELS: readonly ModelKind[] = ['fable', 'opus', 'sonnet', 'haiku'];
 
 // Default del selettore e di ogni percorso di spawn che non passa da lui
@@ -88,13 +89,22 @@ export const DETAIL_ACTIONS: ReadonlyArray<{ kind: PromptKind; label: string }> 
 // Il modello, al contrario del kind, ha un default (T108): i percorsi che non
 // passano dal selettore del detail non devono nominarlo per forza, e l'unico
 // valore sensato per loro è quello che il selettore stesso mostra all'apertura.
+// T111 — `spawnNote` è la nota data alla NASCITA della conversazione, dal campo
+// sempre attivo del detail. Stesso flag `--title-note` del resume (T64): il
+// suffisso `«nota»` viene appeso a `TITLE` dentro deck-run PRIMA che i rami si
+// separino, quindi il flag non appartiene alla ripresa — vale su ogni spawn.
+// Assente quando la nota è vuota, e non passato vuoto: `--title-note ''`
+// produrrebbe un `«»` a vuoto nel titolo.
 export function deckArgs(
   id: string,
   sessionId: string,
   kind: PromptKind,
   model: ModelKind = MODEL_DEFAULT,
+  spawnNote?: string,
 ): string[] {
-  return [id, '--session-id', sessionId, '--prompt-kind', kind, '--model', model];
+  const args = [id, '--session-id', sessionId, '--prompt-kind', kind, '--model', model];
+  if (spawnNote) args.push('--title-note', spawnNote);
+  return args;
 }
 
 export function spawnDeck(
@@ -103,8 +113,9 @@ export function spawnDeck(
   sessionId: string,
   kind: PromptKind,
   model: ModelKind = MODEL_DEFAULT,
+  spawnNote?: string,
 ) {
-  const child = spawnOut(DECK_RUN, deckArgs(id, sessionId, kind, model), {
+  const child = spawnOut(DECK_RUN, deckArgs(id, sessionId, kind, model, spawnNote), {
     cwd,
     detached: true,
     stdio: 'ignore',

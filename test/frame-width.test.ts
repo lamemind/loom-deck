@@ -261,8 +261,13 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   ['detail · ultima azione', 'DD\rRRRR', [100, 176]],
   // T108 — la riga del selettore modello, con selezionata la voce più larga
   // (`sonnet`): è quella che `cutParts` deve tenere a schermo per prima, quindi
-  // il caso in cui il taglio prioritario può sfondare la riga.
-  ['detail · modello sonnet', 'DD\r3', [100, 176]],
+  // il caso in cui il taglio prioritario può sfondare la riga. `T` = tab, il
+  // solo canale del modello da T111 — le cifre ora scrivono nella nota.
+  ['detail · modello sonnet', 'DD\rT', [100, 176]],
+  // T111 — la riga nota piena: `X` incolla 60 caratteri in un chunk solo, cioè
+  // una nota più larga della riga che la ospita. Lo stato vuoto (segnaposto, più
+  // largo del campo) lo copre già `detail task`, che apre l'overlay e basta.
+  ['detail · nota lunga', 'DD\rX', [100, 176]],
   // T91 — la ricerca dentro il detail: modale dentro modale. Il campo è l'unico
   // testo a lunghezza libera della riga che lo ospita, e la riga stessa è la
   // seconda riga FISSA aggiunta dentro l'overlay.
@@ -314,6 +319,17 @@ for (const [label, keys, widths, extraEnv] of SCENARIOS) {
 for (const rows of [16, 20]) {
   test(`altezza · detail con ricerca @ ${rows} righe`, { skip: !CAN_RUN }, () => {
     const raw = capture(100, rows, `DD\r${CTRL_F}task`);
+    const frame = lastFrame(raw).filter((l) => l !== '');
+    assert.ok(
+      frame.length <= rows,
+      `frame di ${frame.length} righe in un terminale di ${rows}`,
+    );
+  });
+
+  // T111 — la riga nota è FISSA, quindi si paga anche senza ricerca aperta: è il
+  // caso che cade per primo se `DETAIL_CHROME` resta al conteggio di prima.
+  test(`altezza · detail con la riga nota @ ${rows} righe`, { skip: !CAN_RUN }, () => {
+    const raw = capture(100, rows, 'DD\rX');
     const frame = lastFrame(raw).filter((l) => l !== '');
     assert.ok(
       frame.length <= rows,

@@ -4,6 +4,7 @@ import { Box, Text } from 'ink';
 import { caretWindow, cut, cutParts, sanitize, type WrappedLine } from '../width.js';
 import { sliceLine, type Occurrence } from '../text-search.js';
 import { sliceSpans, type Span, type SpanKind } from '../markdown.js';
+import { cpLen } from '../layout.js';
 import { DETAIL_ACTIONS, MODELS, type ModelKind } from '../spawn.js';
 import { WARN } from '../glyphs.js';
 
@@ -82,11 +83,13 @@ export function DetailLine({
   );
 }
 
-/** Campo della ricerca nel detail: finestra ancorata al caret, cursore inverso
- *  sulla cella reale. Gemello di `EditTextField` senza la label, che qui sta
- *  fuori perché il campo vive in FLUSSO su una riga condivisa col contatore —
- *  non su una riga propria. */
-export function DetailFindField({ value, caret, cols }: { value: string; caret: number; cols: number }) {
+/** Campo di testo del detail: finestra ancorata al caret, cursore inverso sulla
+ *  cella reale. Gemello di `EditTextField` senza la label, che qui sta fuori
+ *  perché il campo vive in FLUSSO su una riga condivisa con altro (il contatore
+ *  di occorrenze per la ricerca, il segnaposto per la nota) — non su una riga
+ *  propria. Lo usano i due campi del detail: la ricerca `^F`, dove il caret si
+ *  muove, e la nota (T111), dove il caret sta sempre in coda. */
+export function DetailTextField({ value, caret, cols }: { value: string; caret: number; cols: number }) {
   const win = caretWindow(value, caret, cols);
   return (
     <>
@@ -96,6 +99,10 @@ export function DetailFindField({ value, caret, cols }: { value: string; caret: 
     </>
   );
 }
+
+/** Segnaposto della riga nota quando il campo è vuoto. Costante e non letterale
+ *  inline perché la sua larghezza entra nel budget del campo accanto. */
+const NOTE_HINT = ' · nome della conversazione';
 
 /**
  * Detail della task (T66): il task file scrollabile più la barra azioni.
@@ -121,6 +128,7 @@ export function DetailScreen({
   capacity,
   action,
   model,
+  spawnNote,
   columns,
   find,
   occ,
@@ -142,6 +150,8 @@ export function DetailScreen({
   action: number;
   /** T108 — modello con cui partirà la sessione. */
   model: ModelKind;
+  /** T111 — nota con cui nascerà la conversazione; campo sempre attivo. */
+  spawnNote: string;
   columns: number;
   /** T91 — ricerca nel testo: `null` nessuna, `open:false` evidenziazione congelata. */
   find: { q: string; caret: number; open: boolean } | null;
@@ -172,14 +182,16 @@ export function DetailScreen({
   // enfasi diverse su due righe adiacenti (là `inverse`, qui un grassetto
   // colorato) obbligano a guardare da vicino per capire quale voce è scelta —
   // la stessa resa si legge di colpo su entrambe.
-  // La cifra sta DENTRO la quadra: è il tasto che seleziona quella voce, e
-  // sull'unica riga del deck dove le cifre valgono qualcosa toglierla
-  // costringerebbe a contare le posizioni.
+  // T111 — la cifra è USCITA dalla quadra: `1`-`4` sono passate al campo nota e
+  // il modello si scorre col solo `tab`. Un'etichetta che nomina un tasto è
+  // accoppiata al binding, e tenerla dopo che il binding è morto non è
+  // un'informazione parziale — è una resa che dichiara un tasto che non fa più
+  // quella cosa, cioè peggio di nessuna indicazione.
   // `priority` sulla voce SELEZIONATA e non sulla prima: qui il troncamento
   // cancellerebbe l'unica informazione che la riga esiste per dare — quale
   // modello sta per essere usato — mentre nella barra azioni la voce attiva è
   // comunque nota dal tasto appena premuto.
-  const mSegs = MODELS.map((m, i) => `[ ${i + 1} ${m} ]`);
+  const mSegs = MODELS.map((m) => `[ ${m} ]`);
   const mParts: string[] = [];
   mSegs.forEach((s, i) => {
     if (i > 0) mParts.push('  ');
@@ -192,6 +204,16 @@ export function DetailScreen({
   let mShown = cutParts(mParts, mWidth, mIdx * 2);
   if (dropped(mShown, mSegs) > 0) mShown = cutParts(mParts, Math.max(0, mWidth - 6), mIdx * 2);
   const mCut = dropped(mShown, mSegs);
+
+  // T111 — riga della nota. FISSA (D1): il valore armato si vede sempre, e il
+  // suo costo sta in `DETAIL_CHROME` invece che in un secondo `extra`
+  // condizionale di `detailCapacity`. Prefisso largo 8 come `modello `, così i
+  // due parametri dello spawn si leggono incolonnati.
+  // Il campo non ha nessun tasto che lo apra: il cursore è l'unica cosa che lo
+  // dichiara attivo, e il segnaposto dice cosa ci si scrive. Le colonne del
+  // segnaposto si riservano SOLO quando c'è (cioè a nota vuota): riservarle
+  // sempre toglierebbe testo visibile a una nota lunga per un avviso assente.
+  const nWidth = Math.max(10, width - 8 - (spawnNote ? 0 : NOTE_HINT.length));
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
       <Text bold color="cyan">loom-deck</Text>
@@ -211,10 +233,15 @@ export function DetailScreen({
         </Text>
       ) : (
         <Text dimColor wrap="truncate-end">
-          <Text color="yellow">↑↓</Text> riga · <Text color="yellow">PgUp/PgDn</Text> pagina ·{' '}
-          <Text color="yellow">g/G</Text> estremi · <Text color="yellow">←→</Text> azione ·{' '}
-          <Text color="yellow">1-4/tab</Text> modello · <Text color="yellow">^F</Text> cerca ·{' '}
-          <Text color="yellow">⏎</Text> esegui · <Text color="yellow">esc</Text> chiudi
+          {/* Le due voci di scroll fuse in una: la riga porta due tasti in più
+              di prima (`scrivi`, `^U`) e a 110 colonne perdeva `esc chiudi` in
+              coda — la granularità riga/pagina si indovina, un tasto tagliato
+              via no. */}
+          <Text color="yellow">↑↓/PgUp/PgDn</Text> testo · <Text color="yellow">←→</Text> azione ·{' '}
+          <Text color="yellow">tab</Text> modello ·{' '}
+          <Text color="yellow">scrivi</Text> nota · <Text color="yellow">^U</Text> svuota ·{' '}
+          <Text color="yellow">^F</Text> cerca · <Text color="yellow">⏎</Text> esegui ·{' '}
+          <Text color="yellow">esc</Text> chiudi
         </Text>
       )}
       <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
@@ -232,7 +259,7 @@ export function DetailScreen({
         <Box marginTop={1}>
           <Text wrap="truncate-end">
             <Text dimColor>cerca </Text>
-            <DetailFindField value={find.q} caret={find.caret} cols={Math.max(10, width - 28)} />
+            <DetailTextField value={find.q} caret={find.caret} cols={Math.max(10, width - 28)} />
             {/* Zero occorrenze si dice, non si lascia dedurre da un campo che
                 non evidenzia niente — sotto il minimo di query non c'è ancora
                 nulla da dire. */}
@@ -262,6 +289,11 @@ export function DetailScreen({
             ),
           )}
           {mCut > 0 ? <Text color="yellow"> · +{mCut}</Text> : null}
+        </Text>
+        <Text wrap="truncate-end">
+          <Text dimColor>nota    </Text>
+          <DetailTextField value={spawnNote} caret={cpLen(spawnNote)} cols={nWidth} />
+          {spawnNote ? null : <Text dimColor>{NOTE_HINT}</Text>}
         </Text>
         <Text wrap="truncate-end">
           {shown.map((part, i) =>

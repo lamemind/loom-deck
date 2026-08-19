@@ -40,7 +40,13 @@ export interface SheetOverlayDeps {
   setMode: (m: Mode) => void;
   setNote: (s: string) => void;
   /** Spawn dalla barra azioni: effetto esterno, non nostro. */
-  onAction: (taskId: string, kind: PromptKind, model: ModelKind, label: string) => void;
+  onAction: (
+    taskId: string,
+    kind: PromptKind,
+    model: ModelKind,
+    spawnNote: string,
+    label: string,
+  ) => void;
 }
 
 export function useSheetOverlay(deps: SheetOverlayDeps) {
@@ -53,6 +59,13 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
   // deck: si azzera a ogni apertura come scroll e azione, quindi non esiste una
   // selezione invisibile che cambi il comportamento dei tasti della lista.
   const [model, setModel] = useState<ModelKind>(MODEL_DEFAULT);
+  // T111 — la nota con cui nascerà la conversazione. Campo SEMPRE ATTIVO: riceve
+  // la scrittura appena il detail si apre, senza nessun tasto che lo apra, e per
+  // questo si prende l'alfabeto nudo del modo (le cifre del selettore modello,
+  // `g`/`G` degli estremi del testo). Si azzera a ogni apertura come scroll,
+  // azione e modello: una nota armata che sopravvive alla chiusura sarebbe uno
+  // stato invisibile che cambia il titolo dello spawn successivo.
+  const [spawnNote, setSpawnNote] = useState('');
 
   // T91 — ricerca dentro il detail. `open` distingue i due modi in cui la si
   // lascia: `esc` butta via ciò che il modale ha prodotto (`find` a null,
@@ -109,12 +122,13 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     setTop(topForOffset(lines, o.start, capacity));
   }, [findRes, occCur, lines, capacity]);
 
-  /** Apre il detail su una task, azzerando scroll, azione, modello e ricerca. */
+  /** Apre il detail su una task, azzerando scroll, azione, modello, nota e ricerca. */
   function open(next: Sheet) {
     setSheet(next);
     setTop(0);
     setAction(0);
     setModel(MODEL_DEFAULT);
+    setSpawnNote('');
     setFind(null);
     setOccIdx(0);
     setNote('');
@@ -181,17 +195,32 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
   // selezione per ognuna. Il modo cattura TUTTO, acceleratori `^K`/`^P`/`^R`
   // compresi: chi è già nel detail ha i bottoni. L'unica deroga è `^F`, che qui
   // apre la ricerca nel testo invece di quella sulle conversazioni.
+  //
+  // T111 — con il campo nota sempre attivo l'ultimo ramo è la SCRITTURA, quindi
+  // ogni funzione che resta viva deve stare su un tasto che un campo di testo
+  // non contende: `tab`, frecce, `PgUp`/`PgDn`, CTRL, `⏎`, `esc`.
   function onKey(input: string, key: Key) {
     if (find?.open) {
       onFindKey(input, key);
       return;
     }
 
-    if (key.ctrl && input === 'f') {
-      // Fuori dal detail `^F` è la ricerca conversazioni; qui è la ricerca nel
-      // testo. La query sopravvive a una chiusura con `⏎`, quindi riaprire
-      // riprende da dov'era invece di ricominciare.
-      setFind((f) => (f ? { ...f, open: true } : { q: '', caret: 0, open: true }));
+    if (key.ctrl) {
+      // Ramo CTRL chiuso in testa, e non più il solo `if` su `^F`: sotto c'è la
+      // scrittura nel campo nota, e senza questo ramo `^K` ci finirebbe come
+      // lettera `k` — la combo non arriva come tasto proprio, `key.ctrl` è
+      // l'unico discriminante fra `^X` e `x`.
+      //
+      // `^F` è la deroga dichiarata (`CTRL_DEROGATIONS.detail`): fuori dal
+      // detail è la ricerca conversazioni, qui è la ricerca nel testo. La query
+      // sopravvive a una chiusura con `⏎`, quindi riaprire riprende da dov'era.
+      // `^U` svuota la nota — non è una deroga ma una combo che il modo gestisce
+      // da sé, come il filtro del modale assegnazione. Ogni altro CTRL è inerte.
+      if (input === 'f') {
+        setFind((f) => (f ? { ...f, open: true } : { q: '', caret: 0, open: true }));
+      } else if (input === 'u') {
+        setSpawnNote('');
+      }
       return;
     }
 
@@ -208,20 +237,15 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       // competizione sul tasto.
       const act = DETAIL_ACTIONS[action]!;
       const id = sheet?.id;
+      const note = spawnNote.trim();
       close();
-      if (id) onAction(id, act.kind, model, `⏎ ${act.label}`);
+      if (id) onAction(id, act.kind, model, note, `⏎ ${act.label}`);
     } else if (key.tab) {
-      // T108 — `tab` scorre il catalogo dei modelli. Libero solo QUI: in vista
-      // normale cicla la vista del pane a fuoco, e le cifre `1`-`9` sono della
-      // legenda launch. Il detail cattura l'input per intero, quindi è dove un
-      // alfabeto già speso torna disponibile.
+      // T108 — `tab` scorre il catalogo dei modelli, e da T111 è il SOLO canale:
+      // le cifre `1`-`4` sono passate al campo nota. Libero solo QUI: in vista
+      // normale cicla la vista del pane a fuoco. Il detail cattura l'input per
+      // intero, quindi è dove un alfabeto già speso torna disponibile.
       setModel((m) => MODELS[(MODELS.indexOf(m) + 1) % MODELS.length]!);
-    } else if (input.length === 1 && input >= '1' && input <= String(MODELS.length)) {
-      // Scelta diretta: chi sa già quale vuole non paga lo scorrimento. Il test
-      // sulla lunghezza non è pleonastico: `useInput` consegna il CHUNK letto da
-      // stdin, quindi un incollato come `12` passerebbe il confronto fra
-      // stringhe e indicizzerebbe il catalogo fuori range.
-      setModel(MODELS[Number(input) - 1]!);
     } else if (key.leftArrow || key.rightArrow) {
       // Scorrimento CICLICO come le righe di scelta del modale edit: cinque
       // voci, arrivare in fondo e ripartire costa meno che invertire direzione.
@@ -235,13 +259,18 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       scroll(-capacity);
     } else if (key.pageDown) {
       scroll(capacity);
-    } else if (input === 'g') {
-      // Estremi su lettera per lo stesso motivo del reader: Ink riconosce
-      // `Home`/`End` ma non le espone, e qui non c'è input di testo che
-      // contenda le lettere.
-      setTop(0);
-    } else if (input === 'G') {
-      setTop(maxTop);
+    } else if (key.backspace || key.delete) {
+      // Nessun movimento di caret nel campo (D3): `←→` sono già delle azioni e
+      // riprenderle costerebbe la barra. Si cancella quindi in coda — e
+      // `key.delete` è ANCHE Backspace in Ink, come nel campo di ricerca.
+      setSpawnNote((s) => removeAt(s, cpLen(s) - 1));
+    } else if (input && !key.meta) {
+      // Ultimo ramo: tutto ciò che nessun tasto vivo ha reclamato è testo. Ci
+      // cadono le cifre `1`-`4` (prima il selettore modello) e `g`/`G` (prima
+      // gli estremi del testo, che nel detail si raggiungono con
+      // `PgUp`/`PgDn`); nel reader fullscreen restano, perché lì nessun campo
+      // contende le lettere.
+      setSpawnNote((s) => s + sanitizeTyped(input));
     }
   }
 
@@ -251,6 +280,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     top,
     action,
     model,
+    spawnNote,
     find,
     lines,
     capacity,
