@@ -204,3 +204,52 @@ test('le preview: il discorde a presentazione-testo diventa il gemello concorde'
   assert.equal(s.lastReply.includes('✔'), false);
   assert.match(s.lastReply, /✅️/);
 });
+
+// ── T110 · modello della conversazione ──────────────────────────────────────
+
+/** Record assistant con un modello dichiarato. */
+const assistantWith = (model: string, text = 'ok') => ({
+  type: 'assistant',
+  message: { model, content: [{ type: 'text', text }] },
+});
+
+test('modello: last-wins, come customTitle e ultima risposta', () => {
+  // Un `/model` a metà conversazione è documentato sui transcript reali: il
+  // campo non è unico per file, e la lista deve dire con cosa gira ADESSO.
+  const s = parse([assistantWith('claude-fable-5'), assistantWith('claude-opus-5')]);
+  assert.equal(s.model, 'claude-opus-5');
+});
+
+test('modello: <synthetic> non concorre, nemmeno in coda', () => {
+  // I record che il CLI fabbrica da sé restano type:assistant: senza esclusione
+  // sarebbero loro a vincere il last-wins e la conversazione si leggerebbe come
+  // modello inesistente.
+  const s = parse([
+    assistantWith('claude-sonnet-5'),
+    { type: 'assistant', message: { model: '<synthetic>', content: [{ type: 'text', text: 'No response requested.' }] } },
+  ]);
+  assert.equal(s.model, 'claude-sonnet-5');
+});
+
+test('modello: zero record assistant → stringa vuota, nessun valore inventato', () => {
+  const s = parse([{ type: 'user', message: { content: 'mai risposto' } }]);
+  assert.equal(s.model, '');
+});
+
+test('modello: un record di solo tool_use lo porta comunque', () => {
+  // Il testo è vuoto (non sovrascrive lastReply) ma il modello c'è: i due
+  // last-wins corrono su assi diversi.
+  const s = parse([
+    assistantWith('claude-opus-5'),
+    { type: 'assistant', message: { model: 'claude-haiku-4-5-20251001', content: [{ type: 'tool_use', name: 'Read', input: {} }] } },
+  ]);
+  assert.equal(s.model, 'claude-haiku-4-5-20251001');
+  assert.equal(s.lastReply, 'ok');
+});
+
+test('modello: l\'id resta GREZZO, la normalizzazione è della resa', () => {
+  // Il blocco preview mostra la generazione, che una famiglia normalizzata a
+  // monte avrebbe già buttato via.
+  const s = parse([assistantWith('claude-opus-5')]);
+  assert.equal(s.model, 'claude-opus-5');
+});

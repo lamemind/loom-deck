@@ -10,11 +10,13 @@ import {
   LIVE_BUSY,
   LIVE_IDLE,
   LIVE_NONE,
+  MODEL_W,
   SESSION_SEP,
   SID_CHARS,
   TASK_EMPTY,
   WARN,
   displayProg,
+  modelShort,
   relTime,
 } from '../glyphs.js';
 import { META_ROWS, ROW_ALL, ROW_SPOT } from '../model.js';
@@ -525,6 +527,8 @@ export function SessionsPane({
                 1 /* T62 · colonna liveness */ +
                 SID_CHARS +
                 1 /* gutter */ +
+                MODEL_W /* T110 · colonna modello */ +
+                1 /* gutter */ +
                 (taskW > 0 ? taskW + 1 : 0) +
                 1 /* gutter prima della data */ +
                 ageW),
@@ -563,6 +567,13 @@ export function SessionsPane({
               <Text color={liveEntry ? (liveEntry.status === 'busy' ? 'yellow' : 'green') : 'cyan'} bold={Boolean(liveEntry)}>
                 {s.sessionId.slice(0, SID_CHARS)}
               </Text>{' '}
+              {/* T110 — sempre accesa, in ogni vista: il modello non è scritto
+                  da nessun'altra parte dello schermo, quindi non ha una vista
+                  in cui sarebbe ridondante (la colonna task invece si spegne
+                  dove l'header del pane dice già l'appartenenza). Larghezza
+                  costante e cella riempita anche quando vuota, o le righe senza
+                  valore sposterebbero a sinistra tutto ciò che segue. */}
+              <Text dimColor={!s.model}>{pad(modelShort(s.model), MODEL_W)}</Text>{' '}
               {taskW > 0 ? (
                 <>
                   <Text color={bound && taskCell ? 'green' : undefined} dimColor={!bound}>

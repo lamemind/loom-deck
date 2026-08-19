@@ -28,6 +28,7 @@ const sess = (sessionId: string, ts = 0): Session => ({
   customTitle: '',
   firstPrompt: '',
   lastReply: '',
+  model: '',
   bodies: [],
 });
 

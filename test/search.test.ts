@@ -34,6 +34,7 @@ function sess(sessionId: string, bodies: [BodyKind, string][], ts = ++seq): Sess
     customTitle: '',
     firstPrompt: '',
     lastReply: '',
+    model: '',
     bodies: bodies.map(([kind, text], idx): MessageBody => ({ idx, kind, text })),
   };
 }

@@ -23,6 +23,44 @@ export const SID_CHARS = 8;
  *  e la riga tornerebbe a sembrare disallineata pur non essendolo. */
 export const TASK_EMPTY = '·';
 
+/** T110 — colonna modello della lista sessioni. Larghezza COSTANTE e non
+ *  misurata come `taskW`/`ageW`: il dominio è chiuso e le short sono tutte
+ *  larghe 3, quindi farla passare per `sessionCols` ricalcolerebbe a ogni
+ *  render un numero già noto. */
+export const MODEL_W = 3;
+
+/** Le short sono CHIESTE, non derivate: `slice(0,3)` darebbe `opu` e `hai`, e
+ *  sbaglierebbe proprio le due voci su quattro che a occhio non si controllano
+ *  (`fab` e `son` coincidono col troncamento e coprono l'errore). La chiave è
+ *  il token di FAMIGLIA, non l'id intero: `claude-opus-5 → ops` sarebbe un
+ *  calco della generazione corrente, falso al primo bump e col sintomo del
+ *  fallback «ignoto» proprio sul modello più usato. */
+export const MODEL_SHORT: Record<string, string> = {
+  fable: 'fab',
+  opus: 'ops',
+  sonnet: 'son',
+  haiku: 'hak',
+};
+
+/** Nessun record assistant: la conversazione non ha ancora girato. Stesso
+ *  glifo della cella task vuota accanto — il vocabolario non cresce. */
+export const MODEL_EMPTY = TASK_EMPTY;
+
+/** Id presente ma fuori dalle famiglie note: gira su qualcosa che la lista non
+ *  sa nominare. Distinto dall'assenza, o un'estensione mancata del catalogo si
+ *  legge come una riga normale e si scorre senza notarla; l'id per intero sta
+ *  nel blocco preview. */
+export const MODEL_UNKNOWN = '?';
+
+export function modelShort(id: string): string {
+  if (!id) return MODEL_EMPTY;
+  const lower = id.toLowerCase();
+  for (const [family, short] of Object.entries(MODEL_SHORT)) {
+    if (lower.includes(family)) return short;
+  }
+  return MODEL_UNKNOWN;
+}
+
 // T62 — colonna liveness, larga 1, incollata al sessionId senza gutter proprio:
 // il glifo qualifica QUELL'id, e uno spazio in mezzo lo farebbe leggere come una
 // colonna a sé. Entrambi Ambiguous (EAW) → 1 colonna per il terminale e 1 cella

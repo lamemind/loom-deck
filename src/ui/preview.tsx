@@ -108,6 +108,14 @@ export function SessionPreview({
           SESSION_DETAIL_FIXED) e resta consultabile dove serve davvero. */}
       <Text dimColor wrap="truncate-end">
         {fmtSize(s.sizeBytes)} · {s.turns} turni · {fmtDateTime(s.ts)} · {s.gitBranch || '-'}
+        {/* T110 — l'id VERSIONATO, non la short della lista: è l'unica
+            superficie che può dire la generazione (`opus 5` contro `opus 6`),
+            che i 3 caratteri cancellano per costruzione, ed è dove un id fuori
+            catalogo si legge per intero invece che come `?`. In coda alla riga
+            meta e non su una riga propria, come la provenienza e il pid: le
+            righe fisse del blocco sono contate da SESSION_DETAIL_FIXED, e una
+            riga in più sfora il budget d'altezza senza passare da lì. */}
+        {s.model ? ` · ${s.model}` : ''}
         {origin ? ` · ⑂ da ${origin.slice(0, 8)}` : ''}
         {/* T62 — il pid va IN CODA alla riga meta, come la provenienza e per lo
             stesso motivo (le righe fisse del blocco sono contate dal budget

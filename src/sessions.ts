@@ -54,6 +54,20 @@ export interface Session {
   /** Ultima risposta del modello, già ripulita, last-wins (preview nel detail
    *  pane accanto al primo prompt: "da dove parte, dove è arrivata"). */
   lastReply: string;
+  /** T110 — id VERSIONATO del modello (`claude-opus-5`), come sta sul
+   *  transcript; '' se la conversazione non ha ancora un record assistant.
+   *
+   *  Non normalizzato qui: la lista ne mostra la famiglia in 3 caratteri, il
+   *  blocco preview l'id per intero, e solo il secondo distingue una
+   *  generazione dall'altra — normalizzare al parse la butterebbe via senza
+   *  modo di recuperarla a valle. La tabella famiglia → short sta in
+   *  `glyphs.ts`, col resto delle costanti di resa.
+   *
+   *  Last-wins come `customTitle` e `lastReply`: un `/model` a metà
+   *  conversazione è documentato, quindi il modello di una sessione è una
+   *  storia e non un campo — e la domanda che si fa guardando la lista è «con
+   *  cosa sta girando adesso». */
+  model: string;
   /** T52 — corpi cercabili, TRATTENUTI dal parse invece di essere buttati.
    *
    *  Vivono dentro la Session, quindi dentro la cache mtime-keyed già esistente:
@@ -127,6 +141,22 @@ const INTERRUPT_MARKER = '[Request interrupted by user';
 
 function isInterrupt(text: string): boolean {
   return text.trimStart().startsWith(INTERRUPT_MARKER);
+}
+
+// T110 — valore che il CLI scrive nel campo modello dei record che fabbrica da
+// sé (osservato su `{"type":"text","text":"No response requested."}`). Restano
+// `type:assistant` a tutti gli effetti: chi si fida del campo etichetta la
+// conversazione con un modello che non esiste. Terza istanza dello stesso
+// pattern dei `tool_result` fra i turni e dell'interruzione fra i prompt — un
+// record col tipo giusto che non è la cosa che quel tipo promette.
+const SYNTHETIC_MODEL = '<synthetic>';
+
+// Id del modello di UN record assistant, '' se assente o sintetico.
+function extractModel(message: unknown): string {
+  if (!message || typeof message !== 'object') return '';
+  const model = (message as { model?: unknown }).model;
+  if (typeof model !== 'string' || !model || model === SYNTHETIC_MODEL) return '';
+  return model;
 }
 
 // T52 — estrae i corpi cercabili di UN record, uno per `kind` presente.
@@ -244,6 +274,7 @@ export function parseTranscript(
   let customTitle = '';
   let firstUserText = '';
   let lastAssistantText = '';
+  let model = '';
   let turns = 0;
   const bodies: MessageBody[] = [];
   let recordIdx = -1;
@@ -286,6 +317,11 @@ export function parseTranscript(
       // record assistant di solo tool_use danno '' e non sovrascrivono.
       const t = extractText(d.message);
       if (t) lastAssistantText = t;
+      // T110 — stesso regime last-wins, ma su un asse suo: un record di solo
+      // tool_use porta comunque il modello, e va contato. Nessun costo di I/O:
+      // la riga è già parsata per turni, primo prompt e ultima risposta.
+      const m = extractModel(d.message);
+      if (m) model = m;
     }
   }
 
@@ -311,6 +347,7 @@ export function parseTranscript(
     // testo, sanificare a valle sposterebbe l'a-capo già calcolato.
     firstPrompt: sanitize(firstUserText),
     lastReply: sanitize(lastAssistantText),
+    model,
     bodies,
   };
 }

@@ -225,6 +225,10 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // sulla riga: colonne sottratte al titolo che le altre non pagano, cioè
   // esattamente il tipo di taglio che sfonda il pane se sbagliato.
   ['pane sessioni · vista tutte', 'RDD', [100, 176]],
+  // T110 — la stessa vista su un pane STRETTO: è dove la colonna modello (3 +
+  // gutter) compete davvero con la cella titolo, l'unica elastica. Se il termine
+  // manca nella sottrazione di `titleW`, la riga esce dal pane proprio qui.
+  ['pane sessioni · colonna modello', 'RDD', [80]],
   ['task done in vista (filtri)', 'DDDDDDDD', [100, 176]],
   ['ricerca full-text', `${CTRL_F}deck`, [176]],
   ['reader fullscreen', `${CTRL_F}deckD\r`, [176]],
