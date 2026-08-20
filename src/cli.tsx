@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { render, Box, Text, useInput, type Key } from 'ink';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { randomUUID } from 'node:crypto';
 import {
   resolveTasksPath,
@@ -112,11 +112,13 @@ import {
   spawnDeckFork,
   spawnDeckResume,
   spawnTerminal,
+  onInTabCommand,
   CLAUDE_CMD,
   DECK_RUN,
   MODEL_DEFAULT,
   type ModelKind,
   type PromptKind,
+  type Spawned,
 } from './spawn.js';
 import { EditModal, FilterModal, PurgeModal, SortModal, idList } from './ui/modals.js';
 import { ReaderScreen, SearchScreen } from './ui/search-screen.js';
@@ -427,18 +429,41 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // (`^K`, `⏎`, `f`), che è ciò che l'utente ha appena fatto e non ciò che il
   // deck ha fatto per lui.
   //
-  // Il taglio è al MEZZO (`cutMiddle`, non `cut`): la testa è il path assoluto
-  // di `deck-run`, identico a ogni spawn, e un taglio dalla coda mostrerebbe
-  // solo quello. Si taglia QUI, alla composizione, e non al render: la riga di
-  // stato porta anche messaggi normali, dove è la testa a contare. Ne discende
-  // che un resize successivo non ricalcola l'elisione — la nota è transitoria e
-  // `wrap="truncate-end"` resta come rete.
+  // Il taglio è al MEZZO (`cutMiddle`, non `cut`): in un comando di spawn è la
+  // coda a distinguere un'invocazione dall'altra, e un taglio dalla coda la
+  // butterebbe via per intero. Si taglia QUI, alla composizione, e non al
+  // render: la riga di stato porta anche messaggi normali, dove è la testa a
+  // contare. Ne discende che un resize successivo non ricalcola l'elisione — la
+  // nota è transitoria e `wrap="truncate-end"` resta come rete.
   function noteCommand(cmd: string) {
     // 4 = bordo + padding della cornice esterna, 2 = il prompt `$ `. Sbagliare
     // il budget non produce un errore visibile: la `truncate-end` di Ink taglia
     // il resto dalla CODA, e il comando esce col mezzo eliso E la fine persa —
     // cioè con entrambi i pezzi che l'elisione al mezzo voleva salvare.
     setNote(`$ ${cutMiddle(cmd, Math.max(8, columns - 6))}`);
+  }
+
+  // Le due note di uno spawn, in quest'ordine: il comando di `deck-run` subito,
+  // e appena arriva l'annuncio quello della sessione `claude` che gira DENTRO
+  // la tab — che è ciò che si vuole vedere davvero (`deck-run` è l'involucro,
+  // l'invocazione vera la compone lui).
+  //
+  // La prima non è un ripiego di stile: è l'unica che esiste quando l'annuncio
+  // non arriva (spawn inerte nei test, argomenti rifiutati, `deck-run` morto
+  // prima dell'exec), ed è anche il comando da ripetere a mano per vedere
+  // l'errore. Il salto fra le due dura i millisecondi che `deck-run` impiega a
+  // comporre.
+  const spawnSeq = useRef(0);
+  function noteSpawn(spawned: Spawned) {
+    noteCommand(spawned.cmd);
+    const mine = ++spawnSeq.current;
+    onInTabCommand(spawned.child, (inTab) => {
+      // Due spawn ravvicinati: gli annunci sono asincroni e possono tornare
+      // fuori ordine, e senza guardia il più vecchio scriverebbe sopra il più
+      // recente — la riga di stato mostrerebbe un comando che non è l'ultimo
+      // partito.
+      if (spawnSeq.current === mine) noteCommand(inTab);
+    });
   }
 
   // T56 — apre una sessione bound alla task selezionata. Punto UNICO dei quattro
@@ -490,14 +515,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     const sid = randomUUID();
     appendTaskBinding(cwd, sid, id);
     if (spawnNote) appendNote(cwd, sid, spawnNote);
-    const { child, cmd } = spawnDeck(id, cwd, sid, kind, model, spawnNote);
-    child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
+    const spawned = spawnDeck(id, cwd, sid, kind, model, spawnNote);
+    spawned.child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
     // Il modello resta SEMPRE visibile anche quando è il default, perché è un
     // argomento esplicito del comando (T108): gli acceleratori della lista non
     // passano dal selettore del detail e usano il default fisso, quindi senza
     // vederlo l'utente crederebbe di aver ereditato la scelta dell'ultimo
     // detail aperto.
-    noteCommand(cmd);
+    noteSpawn(spawned);
   }
 
   function spawnTaskSession(kind: PromptKind, keyLabel: string) {
@@ -799,9 +824,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // devono restare la stessa azione.
   function resumeSession(sessionId: string) {
     const bound = bindings.get(sessionId) ?? null;
-    const { child, cmd } = spawnDeckResume(bound, cwd, sessionId, sessionNotes.get(sessionId));
-    child.on('error', () => setNote(`⚠ resume fallito (${DECK_RUN})`));
-    noteCommand(cmd);
+    const spawned = spawnDeckResume(bound, cwd, sessionId, sessionNotes.get(sessionId));
+    spawned.child.on('error', () => setNote(`⚠ resume fallito (${DECK_RUN})`));
+    noteSpawn(spawned);
   }
 
   // T57 — ⏎ nel modale: riscrive il binding nel sidecar e ricarica subito.
@@ -1184,9 +1209,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
             ...(bound ? { taskId: bound } : {}),
             forkOf: s.sessionId,
           });
-          const { child, cmd } = spawnDeckFork(bound, cwd, s.sessionId, newId);
-          child.on('error', () => setNote(`⚠ fork fallito (${DECK_RUN})`));
-          noteCommand(cmd);
+          const spawned = spawnDeckFork(bound, cwd, s.sessionId, newId);
+          spawned.child.on('error', () => setNote(`⚠ fork fallito (${DECK_RUN})`));
+          noteSpawn(spawned);
         }
       }
     } else if (input === 'p') {
@@ -1250,9 +1275,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       // Minuscola = azione immediata (convenzione T39), gemella di `t`: entrambe
       // aprono una surface del cappello senza passare da un modale. `C` (create
       // task) resta distinta — stessa lettera, ma la maiuscola è per i modali.
-      const { child, cmd } = spawnClaudeEmpty(cwd);
-      child.on('error', () => setNote(`⚠ c → spawn claude fallito (${DECK_RUN})`));
-      noteCommand(cmd);
+      const spawned = spawnClaudeEmpty(cwd);
+      spawned.child.on('error', () => setNote(`⚠ c → spawn claude fallito (${DECK_RUN})`));
+      noteSpawn(spawned);
     } else if (input === 'w') {
       // Salvataggio ESPLICITO: comporre una vista non tocca il disco, così
       // sperimentare non sporca lo stato persistito.

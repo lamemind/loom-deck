@@ -28,17 +28,25 @@ Il deck è **UN processo Node**: spawna ma **non contiene** le sessioni CC — l
 
 ### La riga di stato dice il comando, non una parafrasi
 
-Ogni spawn di una sessione Claude — task (`⏎`/`^K`/`^P`/`^R`), resume, fork, sessione nuda (`c`) — scrive nella riga di stato in fondo al frame il **comando esatto** che è stato eseguito, quotato come lo si scriverebbe in bash:
+Ogni spawn di una sessione Claude — task (`⏎`/`^K`/`^P`/`^R`), resume, fork, sessione nuda (`c`) — scrive nella riga di stato in fondo al frame il **comando esatto** che gira dentro la tab, cioè l'invocazione `claude` vera con le env che la legano a task e progetto:
 
 ```
-$ /home/tizio/.local/lib/node_modules/@lamemind/loom-deck/scripts/deck-run T115 --session-id 9f3a… --prompt-kind run --model opus --title-note 'parser'
+$ LOOM_TASK=T115 claude --name '🧵 loom-works · T115 «parser»' --permission-mode auto --model opus --session-id 9f3a… '/loom-works:run-task T115'
 ```
 
-Task, `sessionId`, prompt-kind, modello e nota del titolo sono già argomenti del comando: una nota che li elencasse a parole li direbbe una seconda volta, in una grafia che non si può ricopiare in un terminale. Quello che si perde è il **tasto premuto**, che è ciò che hai appena fatto tu e non ciò che il deck ha fatto per te.
+Task, `sessionId`, modello, titolo e prompt iniziale sono già lì dentro: una nota che li elencasse a parole li direbbe una seconda volta, in una grafia che non si può ricopiare in un terminale. Quello che si perde è il **tasto premuto**, che è ciò che hai appena fatto tu e non ciò che il deck ha fatto per te.
 
-Il deck non passa mai da una shell (`spawn` senza `shell:true` consegna l'argv a `execve`): il quoting esiste per la sola resa, e serve a rendere la riga ricopiabile senza cambiare di una virgola ciò che è stato eseguito.
+**Il comando non lo compone il deck**, e non potrebbe senza riscrivere le stesse regole due volte: catalogo dei prompt, quoting, permission mode, profilo di stato e titolo vivono in `deck-run`. Il primitive lo **annuncia** su stdout prima di `exec`, con una riga
 
-Su un terminale stretto il taglio è **al mezzo** (`…`), non dalla coda: la testa è il path assoluto di `deck-run`, identico a ogni invocazione, mentre quel che distingue una sessione dall'altra sta tutto in fondo.
+```
+LOOM_DECK_INTAB <comando>
+```
+
+e il deck la legge da lì. L'annuncio è utile anche a chi lancia `deck-run` a mano: dice cosa sta per partire, mentre le diagnostiche restano su stderr.
+
+Ne discende che il comando in-tab arriva **asincrono**, qualche millisecondo dopo lo spawn. Nel frattempo la riga mostra il comando `deck-run` — che resta l'unica cosa visibile quando l'annuncio non arriva affatto (argomenti rifiutati, `deck-run` morto prima dell'exec), ed è anche il comando da ripetere a mano per vedere l'errore.
+
+Su un terminale stretto il taglio è **al mezzo** (`…`), non dalla coda: in un comando di spawn è la coda a distinguere un'invocazione dall'altra, e tagliare da lì la butterebbe via per intero.
 
 Restano fuori gli spawn che non aprono una sessione Claude interattiva: terminale (`t`), voci `launch` (`1`-`9`) e le skill headless (`C` create-task, `CANC` clean-tasks), dove la riga di stato serve a riportare l'**esito** di un'operazione asincrona.
 

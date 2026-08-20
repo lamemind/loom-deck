@@ -81,10 +81,61 @@ export interface Spawned {
 // I quattro percorsi di spawn di una sessione Claude interattiva differiscono
 // SOLO per l'argv: stesso eseguibile, stesso detached, stesso `unref`. Il corpo
 // sta qui una volta sola, così anche il comando mostrato nasce in un punto solo.
+//
+// stdout in PIPE e non `ignore`: è il canale su cui `deck-run` annuncia il
+// comando in-tab (vedi `onInTabCommand`). Il figlio resta detached — la pipe
+// serve a leggere una riga, non a possedere il processo.
 function launchDeckRun(args: string[], cwd: string): Spawned {
-  const child = spawnOut(DECK_RUN, args, { cwd, detached: true, stdio: 'ignore' });
+  const child = spawnOut(DECK_RUN, args, {
+    cwd,
+    detached: true,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
   child.unref();
   return { child, cmd: shellCommand(DECK_RUN, args) };
+}
+
+/** Prefisso della riga con cui `deck-run` annuncia il comando in-tab. */
+export const INTAB_MARKER = 'LOOM_DECK_INTAB ';
+
+/**
+ * Il comando che gira DENTRO la tab: la sessione `claude` vera, con le env che
+ * la legano a task e progetto (`LOOM_TASK`, `PTYXIS_PROFILE`), il titolo, il
+ * permission mode e il prompt iniziale già quotato.
+ *
+ * Non si compone qui e non si può: lo compone `deck-run`, che è il primitive
+ * dove vivono catalogo dei prompt, quoting, permission mode, profilo di stato e
+ * titolo. Ricostruirlo nel deck sarebbe una seconda scrittura delle stesse
+ * regole, che diverge al primo flag aggiunto da una parte sola — quindi
+ * `deck-run` lo annuncia su stdout prima di `exec` e qui lo si legge.
+ *
+ * Arriva ASINCRONO, millisecondi dopo lo spawn: chi mostra il comando deve
+ * avere già scritto qualcosa (il comando di `deck-run`), perché l'annuncio può
+ * non arrivare affatto — spawn inerte (`LOOM_DECK_NO_SPAWN`, che non ha nemmeno
+ * uno stdout), validazione degli argomenti fallita, `deck-run` morto prima
+ * dell'exec.
+ *
+ * Dopo la riga attesa lo stdout si drena e basta: da lì in poi appartiene a
+ * `ptyxis`, che ha preso il posto del processo.
+ */
+export function onInTabCommand(child: ChildProcess, cb: (cmd: string) => void): void {
+  if (!child.stdout) return;
+  let buf = '';
+  let seen = false;
+  child.stdout.on('data', (chunk: Buffer) => {
+    if (seen) return;
+    buf += chunk.toString();
+    let nl: number;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl);
+      buf = buf.slice(nl + 1);
+      if (line.startsWith(INTAB_MARKER)) {
+        seen = true;
+        cb(line.slice(INTAB_MARKER.length));
+        return;
+      }
+    }
+  });
 }
 
 // T56 — quale prompt iniziale riceve la sessione appena aperta. È un SIMBOLO,

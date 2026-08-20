@@ -309,3 +309,38 @@ test('LOOM_DECK_MODEL: default d’ambiente, il flag esplicito vince', () => {
     /--model fable\b/,
   );
 });
+
+// ── annuncio del comando in-tab ───────────────────────────────────────────
+
+test('deck-run annuncia su stdout il comando che eseguirà nella tab', () => {
+  // È il canale con cui il deck mostra l'invocazione `claude` vera senza
+  // ricomporla per conto proprio. L'asserzione lega l'annuncio all'ULTIMO argv
+  // dello shim, cioè al comando davvero passato a `bash -lc`: se un giorno la
+  // riga finisse prima di un'assegnazione di IN_TAB_CMD, annuncerebbe qualcosa
+  // di diverso da quello eseguito e questo test cadrebbe.
+  const r = deckRun(['T56', '--session-id', SID, '--prompt-kind', 'run']);
+  assert.ok(r.ok, `deck-run è fallito: ${r.err}`);
+  const lines = r.out.trimEnd().split('\n');
+  const announced = lines.find((l) => l.startsWith('LOOM_DECK_INTAB '));
+  assert.ok(announced, `nessun annuncio in stdout: ${JSON.stringify(lines)}`);
+  assert.equal(announced.slice('LOOM_DECK_INTAB '.length), lines[lines.length - 1]);
+  assert.match(announced, /claude --name/);
+});
+
+test("l'annuncio esce su stdout anche nella forma nuda (--no-task)", () => {
+  const r = deckRun(['--no-task', '--resume', SID]);
+  assert.ok(r.ok, `deck-run è fallito: ${r.err}`);
+  const announced = r.out.trimEnd().split('\n').find((l) => l.startsWith('LOOM_DECK_INTAB '));
+  assert.ok(announced, 'annuncio assente nel ramo --no-task');
+  assert.match(announced, new RegExp(`claude --name .* --resume ${SID}`));
+  // Nessuna LOOM_TASK: è il ramo nudo, e l'annuncio deve mostrarlo com'è.
+  assert.doesNotMatch(announced, /LOOM_TASK=/);
+});
+
+test('un errore di validazione non annuncia niente', () => {
+  // L'annuncio significa «sto per eseguire questo»: su un rifiuto non c'è
+  // nessun comando, e stamparlo lo farebbe sembrare partito.
+  const r = deckRun(['T56', '--prompt-kind', 'bogus']);
+  assert.equal(r.ok, false);
+  assert.doesNotMatch(r.out, /LOOM_DECK_INTAB/);
+});

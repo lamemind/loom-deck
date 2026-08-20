@@ -1,16 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import type { ChildProcess } from 'node:child_process';
 import {
   cleanTasksArgs,
   cleanTasksPrompt,
   deckArgs,
   forkArgs,
+  onInTabCommand,
   resumeArgs,
   shellCommand,
   shellQuote,
   spawnCleanTasks,
   terminalArgs,
   DETAIL_ACTIONS,
+  INTAB_MARKER,
 } from '../src/spawn.js';
 
 // La forma degli argv È il contratto col primitive `deck-run`, e finora non la
@@ -207,4 +212,54 @@ test('shellCommand ricompone eseguibile e argv come si scriverebbero in bash', (
     "/opt/deck-run T115 --session-id sid-1 --prompt-kind run --model sonnet --title-note 'due parole'",
   );
   assert.equal(shellCommand('/opt/deck-run', ['--no-task']), '/opt/deck-run --no-task');
+});
+
+// ── l'annuncio del comando in-tab, letto dallo stdout di deck-run ─────────
+
+/** Figlio finto col solo stdout: è tutto ciò che `onInTabCommand` guarda. */
+function fakeChild(): { child: ChildProcess; out: PassThrough } {
+  const out = new PassThrough();
+  const child = new EventEmitter() as ChildProcess;
+  (child as { stdout: PassThrough }).stdout = out;
+  return { child, out };
+}
+
+test('onInTabCommand consegna la riga annunciata, senza il marker', () => {
+  const { child, out } = fakeChild();
+  const seen: string[] = [];
+  onInTabCommand(child, (c) => seen.push(c));
+  out.write(`${INTAB_MARKER}LOOM_TASK=T115 claude --name 'x' --model opus\n`);
+  assert.deepEqual(seen, ["LOOM_TASK=T115 claude --name 'x' --model opus"]);
+});
+
+test('onInTabCommand regge la riga spezzata fra due chunk', () => {
+  // Una pipe non consegna righe, consegna byte: l'annuncio può arrivare a metà.
+  const { child, out } = fakeChild();
+  const seen: string[] = [];
+  onInTabCommand(child, (c) => seen.push(c));
+  out.write(`${INTAB_MARKER}claude --na`);
+  assert.deepEqual(seen, [], 'consegnato prima dell’a-capo');
+  out.write("me 'x'\n");
+  assert.deepEqual(seen, ["claude --name 'x'"]);
+});
+
+test('onInTabCommand ignora quel che precede e quel che segue', () => {
+  // Prima dell'annuncio può uscire altro; dopo l'exec lo stdout è di ptyxis,
+  // e una sua riga non deve sostituire il comando mostrato.
+  const { child, out } = fakeChild();
+  const seen: string[] = [];
+  onInTabCommand(child, (c) => seen.push(c));
+  out.write(`rumore\n${INTAB_MARKER}claude\naltro rumore\n${INTAB_MARKER}secondo\n`);
+  assert.deepEqual(seen, ['claude']);
+});
+
+test('onInTabCommand su un figlio senza stdout non chiama nessuno', () => {
+  // È il caso `LOOM_DECK_NO_SPAWN`: il figlio è inerte e non annuncia mai.
+  // Il chiamante resta con la nota che ha già scritto.
+  const child = new EventEmitter() as ChildProcess;
+  let called = false;
+  onInTabCommand(child, () => {
+    called = true;
+  });
+  assert.equal(called, false);
 });
