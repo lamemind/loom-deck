@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { render, Box, Text, useInput, type Key } from 'ink';
+import { render, Box, Text, useApp, useInput, type Key } from 'ink';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { randomUUID } from 'node:crypto';
 import {
@@ -78,6 +78,7 @@ import {
   MAX_SESSIONS,
   MAX_SESSIONS_ALL,
   META_ROWS,
+  QUIT_WINDOW_MS,
   ROW_ALL,
   ROW_SPOT,
   SORT_TASTI,
@@ -141,6 +142,13 @@ import { useAssignOverlay } from './overlays/assign.js';
 import { captures, type CapturingMode } from './input-modes.js';
 import { VERSION } from './version.js';
 
+// T116 — l'avviso della prima pressione di `^C`. La durata è INTERPOLATA dalla
+// finestra, non ricopiata: un numero scritto a mano in un testo che promette un
+// comportamento diventa falso il giorno che la costante cambia, e nessuno strumento
+// lo segnala. Vive a livello di modulo perché ha due lettori — il ramo che la
+// scrive e il timer che la ritira, e quest'ultimo deve poterla riconoscere.
+const QUIT_NOTE = `⚠ ^C di nuovo entro ${QUIT_WINDOW_MS / 1000}s per chiudere il deck`;
+
 function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; tasksDir: string }) {
   const { tasks, loadError } = useTasks(tasksPath);
   // `notes` esce dall'indice come `sessionNotes`: in questo componente `note` è
@@ -196,6 +204,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const [editRow, setEditRow] = useState<EditRow>(0);
   // T112 — bozza della conferma di eliminazione (null fuori dal modale).
   const [purge, setPurge] = useState<PurgeDraft | null>(null);
+
+  // T116 — uscita a doppio `^C`. Il timer È lo stato dell'armamento: finché il
+  // handle esiste la finestra è aperta, e non serve un secondo stato da tenere
+  // in fase con lui. In un `useRef` e non in `useState` perché il ramo di uscita
+  // lo legge NELLO STESSO tasto in cui potrebbe averlo scritto — un valore di
+  // stato React arriverebbe al render dopo, cioè troppo tardi per decidere.
+  const { exit } = useApp();
+  const quitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Dimensioni vive del terminale: sono l'input del budget d'altezza sotto.
   const { rows, columns } = useTerminalSize();
@@ -1050,6 +1066,49 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     }
   }
 
+  /**
+   * T116 — `^C`: la prima pressione ARMA, la seconda entro la finestra chiude.
+   *
+   * Prima di questa task `^C` usciva subito, e a chiuderlo era Ink stesso
+   * (`exitOnCtrlC`, di default vero) PRIMA che il tasto raggiungesse
+   * `useInput`. Spegnere quell'opzione è la condizione perché il ramo esista —
+   * ma spegnerla e basta lascerebbe il deck senza NESSUNA uscita da tastiera:
+   * il ramo qui sotto è ciò che restituisce quella via, e i due cambi non si
+   * possono separare.
+   *
+   * La prima pressione RIPORTA IN `normal` quando si è dentro un modo
+   * capturing. L'avviso vive nella riga di stato, e le tre schermate
+   * sostitutive (detail, ricerca, reader) prendono l'intero frame senza
+   * renderizzarla: armare restando lì dentro darebbe un deck che sembra
+   * ignorare il tasto e che alla pressione successiva sparisce senza aver mai
+   * avvertito. Chiudere lo strato è anche coerente con `esc` — `^C` dice
+   * «voglio uscire», e il primo passo fuori è la lista.
+   */
+  function onQuitKey() {
+    if (quitTimer.current) {
+      clearTimeout(quitTimer.current);
+      quitTimer.current = null;
+      exit();
+      return;
+    }
+    if (captures(mode)) setMode('normal');
+    setNote(QUIT_NOTE);
+    quitTimer.current = setTimeout(() => {
+      quitTimer.current = null;
+      // Solo se l'avviso è ANCORA il proprio: nei 5 secondi una qualunque altra
+      // azione può aver scritto in riga di stato, e cancellare quella nota
+      // significherebbe far sparire il feedback di un'azione che non c'entra.
+      setNote((n) => (n === QUIT_NOTE ? '' : n));
+    }, QUIT_WINDOW_MS);
+  }
+
+  // Il timer pendente è un handle vivo del loop di Node: lasciarlo appeso allo
+  // smontaggio terrebbe il processo in piedi fino allo scadere della finestra,
+  // con lo schermo già restituito al terminale.
+  useEffect(() => () => {
+    if (quitTimer.current) clearTimeout(quitTimer.current);
+  }, []);
+
   // Il dispatch consulta il CATALOGO (`input-modes.ts`), non l'ordine di una
   // catena di `if`. `MODE_KEYS` è il custode: essendo un `Record` su
   // `CapturingMode`, un modo nuovo senza handler non compila.
@@ -1067,6 +1126,18 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   };
 
   useInput((input, key) => {
+    // T116 — `^C` sta SOPRA il dispatch dei modi, unico tasto a scavalcarlo.
+    // Ogni altra combo `ctrl` è un acceleratore, e un acceleratore dentro un
+    // modo capturing dev'essere inerte (`input-modes.ts`); questo non è un
+    // acceleratore ma la via d'uscita dal processo, e una via d'uscita che
+    // funziona solo in una schermata su undici non è una via d'uscita. Non è
+    // quindi una deroga di `CTRL_DEROGATIONS` — quelle vivono DENTRO un modo e
+    // le gestisce il modo, questa li precede tutti.
+    if (key.ctrl && input === 'c') {
+      onQuitKey();
+      return;
+    }
+
     // Un modo capturing consuma TUTTO — acceleratori globali compresi — e le
     // deroghe se le gestisce da sé (`CTRL_DEROGATIONS`). Da qui in giù si è
     // quindi in `normal`, l'unico modo che cede ai `key.ctrl`.
@@ -1297,11 +1368,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         setNote(`${input} → ${entry.label} su ${projectName}`);
       }
     }
-    // Nessun tasto di uscita: il deck non si chiude da dentro. `q` resta libera
-    // per un binding futuro, `esc` in modalità normale è inerte — dentro un
-    // overlay continua a chiuderlo, perché quel ramo esce prima di qui.
-    // Restano le vie di sistema: `^C` (Ink lo intercetta da sé, `exitOnCtrlC`
-    // di default) e la chiusura della tab Ptyxis che ospita il processo.
+    // Nessun tasto NUDO di uscita: `q` resta libera per un binding futuro, e
+    // `esc` in modalità normale è inerte — dentro un overlay continua a
+    // chiuderlo, perché quel ramo esce prima di qui. L'unica uscita da tastiera
+    // è `^C` battuto due volte (T116, in testa a questo handler); resta poi la
+    // chiusura della tab Ptyxis che ospita il processo.
   });
 
   const canSpawn = focus === 'tasks' && selTask !== null;
@@ -1739,4 +1810,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
 }
 
 const cwd = process.cwd();
-render(<Deck cwd={cwd} tasksPath={resolveTasksPath(cwd)} tasksDir={resolveTasksDir(cwd)} />);
+// T116 — `exitOnCtrlC: false` toglie a Ink l'uscita immediata su `^C`: senza,
+// il tasto non arriverebbe mai a `useInput` e il doppio colpo non sarebbe
+// osservabile. In raw mode `^C` non è un SIGINT — è il byte `\x03` nello
+// stream di input, e chi lo consuma per primo decide. Da qui in poi lo consuma
+// il deck, quindi l'uscita è tutta a carico del suo handler.
+render(<Deck cwd={cwd} tasksPath={resolveTasksPath(cwd)} tasksDir={resolveTasksDir(cwd)} />, {
+  exitOnCtrlC: false,
+});

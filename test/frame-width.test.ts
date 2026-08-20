@@ -42,6 +42,13 @@ function hasPython(): boolean {
 
 const CAN_RUN = hasPython() && existsSync(TASKS);
 
+/** Il verdetto di vitalità che `pty-frame.py` appende (`<<PROC …>>`): qui va
+ *  POTATO. Questo gate misura ogni riga catturata contro la larghezza del
+ *  terminale, e una riga di servizio larga quindici colonne farebbe fallire
+ *  ogni scenario per un difetto che non esiste. Lo legge invece il gate dei
+ *  modi, dove l'uscita del processo è l'esito sotto misura. */
+const PROC_VERDICT = /\n<<PROC [^>]*>>\n?$/;
+
 function capture(cols: number, rows: number, keys: string, extraEnv: NodeJS.ProcessEnv = {}): string {
   return execFileSync(
     'python3',
@@ -71,7 +78,7 @@ function capture(cols: number, rows: number, keys: string, extraEnv: NodeJS.Proc
         ...extraEnv,
       },
     },
-  );
+  ).replace(PROC_VERDICT, '');
 }
 
 const ESC = String.fromCharCode(27);

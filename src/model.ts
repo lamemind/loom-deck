@@ -8,6 +8,14 @@ import type { PriName, ProgName, SortKey } from './view.js';
 
 export const POLL_MS = 1500;
 
+// Finestra entro cui la SECONDA pressione di `^C` chiude il deck. Scaduta, la
+// prima pressione è dimenticata e la successiva riparte dall'avviso: un `^C`
+// battuto per abitudine mezzo minuto prima non deve poter uscire a insaputa di
+// chi preme. Il valore è anche il tempo per cui l'avviso resta in riga di stato
+// — armamento e messaggio scadono insieme, o la riga prometterebbe un'uscita
+// che il tasto non fa più.
+export const QUIT_WINDOW_MS = 5000;
+
 // Cap del pane sessioni: le più recenti (ts desc), le altre restano nell'indice
 // ma fuori vista. Non-silenzioso → l'header mostra quante sono nascoste.
 export const MAX_SESSIONS = 30;

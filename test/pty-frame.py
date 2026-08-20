@@ -9,7 +9,11 @@ non basta. `script(1)` non è utilizzabile (mangia la geometria), da cui
 Uso: pty-frame.py <cols> <rows> <cwd> <cmd...> [--keys <sequenza>]
      dove <sequenza> usa D/U/R/L per le frecce, X per un incollaggio, e ogni
      altro carattere è digitato.
-Stampa su stdout i byte grezzi letti dal pty.
+Stampa su stdout i byte grezzi letti dal pty, seguiti da una riga
+`<<PROC alive>>` o `<<PROC exit=N>>`: se il processo sia sopravvissuto alla
+sequenza è un ESITO come il frame, e senza questa riga uno scenario che verifica
+un'uscita non ha niente da leggere — il buffer di un deck morto e quello di un
+deck vivo finiscono uguali.
 """
 import os
 import pty
@@ -33,6 +37,12 @@ import signal
 # 'K' = CANC (`\x1b[3~`), l'apertura della conferma di eliminazione. Serve una
 # voce nella mappa perché la sequenza è di 4 byte: scritta dentro `--keys`
 # arriverebbe come quattro tasti separati.
+# 'W' = ATTESA: nessun byte scritto, ma il pump fra un tasto e l'altro avviene
+# lo stesso (0.7s). È l'unico modo di far passare TEMPO dentro uno scenario, e
+# serve a chi verifica una finestra che scade — es. i 5s del doppio `^C`, che
+# otto 'W' superano. Un tasto vero non andrebbe bene: sposterebbe lo stato.
+# I tasti CTRL non hanno voce qui: `\x03`, `\x06` … si scrivono nudi dentro
+# `--keys`, perché ogni carattere fuori mappa viene digitato tale e quale.
 KEYS = {
     'D': b'\x1b[B',
     'U': b'\x1b[A',
@@ -41,6 +51,7 @@ KEYS = {
     'T': b'\t',
     'X': b'x' * 60,
     'K': b'\x1b[3~',
+    'W': b'',
 }
 
 argv = sys.argv[1:]
@@ -82,5 +93,13 @@ for k in keys:
     pump(0.7)
 pump(1.0)
 
-os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+# Il verdetto di vitalità si prende PRIMA del kill, o lo cancellerebbe.
+rc = proc.poll()
+if rc is None:
+    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    verdict = b'<<PROC alive>>'
+else:
+    verdict = b'<<PROC exit=%d>>' % rc
+
 sys.stdout.buffer.write(buf)
+sys.stdout.buffer.write(b'\n' + verdict + b'\n')

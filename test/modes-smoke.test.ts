@@ -276,6 +276,50 @@ test('il bulk nomina le scartate, non solo le potate', { skip: !CAN_RUN }, () =>
   assert.match(frame, /scartate|nessuna esclusa/i, `nessuna riga di scarto: ${frame}`);
 });
 
+// ── T116 · uscita a doppio ^C ─────────────────────────────────────────────
+//
+// L'esito qui non è solo il frame: è se il PROCESSO sia sopravvissuto alla
+// sequenza, che `pty-frame.py` dichiara in coda (`<<PROC alive|exit=N>>`). Il
+// buffer di un deck vivo e quello di un deck appena morto sono indistinguibili
+// senza quella riga — l'ultimo frame disegnato è lo stesso.
+const CTRL_C = '\x03';
+/** Attesa senza tasti: ogni `W` vale il pump fra due tasti (0.7s), otto
+ *  superano la finestra di 5s. */
+const WAIT_OVER_WINDOW = 'W'.repeat(8);
+
+const alive = (captured: string) => /<<PROC alive>>/.test(captured);
+
+test('un ^C solo avverte e NON chiude', { skip: !CAN_RUN }, () => {
+  const captured = capture(CTRL_C);
+  assert.ok(alive(captured), 'il deck si è chiuso alla prima pressione');
+  assert.match(lastFrame(captured), /\^C di nuovo entro/i, 'nessun avviso in riga di stato');
+});
+
+test('due ^C ravvicinati chiudono il deck', { skip: !CAN_RUN }, () => {
+  const captured = capture(CTRL_C + CTRL_C);
+  assert.match(captured, /<<PROC exit=0>>/, `il deck non si è chiuso: ${lastFrame(captured)}`);
+});
+
+test('oltre la finestra il secondo ^C riarma invece di chiudere', { skip: !CAN_RUN }, () => {
+  // Il cuore della feature: il primo colpo SCADE. Senza questo scenario, un
+  // armamento che non si disarma mai passerebbe entrambi i test sopra.
+  const captured = capture(CTRL_C + WAIT_OVER_WINDOW + CTRL_C);
+  assert.ok(alive(captured), 'la finestra non è scaduta: il secondo ^C ha chiuso');
+  assert.match(lastFrame(captured), /\^C di nuovo entro/i, 'il secondo ^C non ha riarmato');
+});
+
+test('^C dentro un modale lo chiude e avverte, invece di restare muto', {
+  skip: !CAN_RUN,
+}, () => {
+  // Nel detail la riga di stato non è renderizzata: armare restando lì dentro
+  // darebbe un deck che sembra ignorare il tasto e poi sparisce senza avviso.
+  const captured = capture(`DD\r${CTRL_C}`);
+  assert.ok(alive(captured), 'il deck si è chiuso dal detail alla prima pressione');
+  const frame = lastFrame(captured);
+  assert.match(frame, /\^C di nuovo entro/i, `nessun avviso dopo ^C nel detail: ${frame}`);
+  assert.match(frame, /t 💻/, `il detail non si è chiuso: ${frame}`);
+});
+
 // Chiusura: ogni modale torna alla lista con `esc`, e il deck resta vivo.
 for (const m of MODES.filter((x) => x.name !== 'normal')) {
   test(`modo ${m.name}: esc riporta alla lista`, { skip: !CAN_RUN }, () => {

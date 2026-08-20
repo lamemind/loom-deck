@@ -76,9 +76,12 @@ Regola unica, senza eccezioni — pensata per reggere l'aggiunta di nuove azioni
 | minuscola | azione immediata, one-shot | |
 | `CTRL`+lettera | idiomi universali, toggle dentro i modali di testo, varianti di un'azione | `^F` = find, come ovunque · `^K`/`^P`/`^R` = spawn con un altro prompt |
 | `1`…`9` | voce `launch` n-esima del progetto | da `.claude/loom-works.json` |
-| `esc` | chiude l'overlay aperto | in modalità normale è inerte: **nessun tasto chiude il deck** |
+| `esc` | chiude l'overlay aperto | in modalità normale è inerte: **nessuna lettera chiude il deck** |
+| `^C` `^C` | chiude il deck | la prima pressione avverte in riga di stato, la seconda entro **5 secondi** esce; passata la finestra si riparte dall'avviso. Da dentro un modale il primo `^C` riporta alla lista — l'avviso vive nella riga di stato, che le schermate a pieno frame non disegnano |
 
 `CTRL` è il terzo livello, aggiunto quando è arrivata la ricerca. Serve perché un modale con **campi di testo** mangia ogni lettera nuda: là dentro nessun comando può essere una lettera semplice. `CTRL+X` e `x` nudo condividono lo stesso `input` e si distinguono solo per `key.ctrl`, quindi in modalità normale il ramo `CTRL` è valutato **per primo** e chiude l'intera classe — senza, `CTRL+F` cadrebbe nel ramo `f` e forkerebbe una sessione invece di cercare.
+
+`^C` è l'unica combo fuori da questo schema: non sta nel ramo `CTRL` di `normal` ma **sopra** il dispatch dei modi, perché non è un acceleratore — è la via d'uscita dal processo, e una via d'uscita che funziona in una schermata su undici non è una via d'uscita.
 
 Assegnazioni correnti:
 
@@ -109,7 +112,7 @@ t 💻 · c 🤖 · 1 📝 codium · 2 ☕ idea
 
 - **tasti** — cosa puoi fare *qui e ora*. Solo le voci attive: quelle contestuali compaiono quando il pane a fuoco le rende possibili e altrimenti spariscono,
   invece di mostrarsi inerti. Fuori navigazione (`↑↓` `←→`) e indicatore `focus:` — la prima è universale in qualunque TUI, il pane a fuoco si vede già dall'evidenziazione.
-  Nessuna voce di uscita, perché non esiste un tasto che chiuda il deck.
+  Nessuna voce di uscita: `^C` non ha bisogno di essere annunciato — è il tasto che si prova per primo, e la prima pressione risponde da sé con l'avviso.
 - **surface** — *dove* puoi aprire qualcosa: prima le due built-in (`t`/`c`), poi le voci `launch` del progetto. Stanno insieme perché hanno la stessa natura — fire-once, `cwd` = project root, nessuno stato — e differiscono solo per essere universali invece che custom.
 
 L'indice da solo è opaco (le `launch` sono custom per-progetto, senza una lettera fissa per app), quindi la riga espone la mappa e non il conteggio. Se non entrano in larghezza, si ferma a voci intere e mostra il contatore di quelle fuori riga — mai un troncamento silenzioso; le celle delle due built-in sono riservate a monte, o le voci sfonderebbero il box di quel tanto. Il cap a `9` è imposto dai tasti-cifra, non dallo schema: un progetto può dichiarare più di 9 voci, quelle oltre la nona sono configurate ma non raggiungibili (e la riga lo dice).
