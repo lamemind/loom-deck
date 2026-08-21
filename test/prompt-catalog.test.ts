@@ -37,6 +37,17 @@ test('ogni azione del detail trova il proprio testo, tranne open', () => {
   }
 });
 
+// I due specializzati non stanno in DETAIL_ACTIONS — il catalogo delle azioni
+// resta a cinque voci con `status` sola — quindi il test sopra non li vede: la
+// specializzazione avviene DOPO, su un kind che l'azione non nomina.
+test('i recap specializzati hanno un testo, e nomina la sotto-skill giusta', () => {
+  const catalog = loadPromptCatalog();
+  assert.equal(promptFor(catalog, 'recap-task', 'T42'), '/loom-works:recap-status-task T42');
+  assert.equal(promptFor(catalog, 'recap-epic', 'T42'), '/loom-works:recap-status-epic T42');
+  // Il dispatcher resta: è la voce di chi non sa se la task è un cappello.
+  assert.equal(promptFor(catalog, 'recap', 'T42'), '/loom-works:recap-status T42');
+});
+
 test('parse: commenti e righe vuote non entrano nella mappa', () => {
   const dir = mkdtempSync(join(tmpdir(), 'catalog-'));
   const f = join(dir, 'cat');

@@ -24,9 +24,11 @@ import {
   DETAIL_ACTIONS,
   MODELS,
   MODEL_DEFAULT,
+  specializeRecap,
   type ModelKind,
   type PromptKind,
 } from '../spawn.js';
+import { taskIsEpic } from '../tasks.js';
 import { fieldsKey, type FieldSpec, type FieldsCursor, type FieldsIO } from '../fields.js';
 import { loadPromptCatalog, promptFor } from '../prompt-catalog.js';
 import type { Mode } from '../model.js';
@@ -92,6 +94,10 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
   // T117 — il prompt iniziale, EDITABILE. Quello che si legge nel campo è quello
   // che parte: non un'anteprima di qualcos'altro.
   const [prompt, setPrompt] = useState('');
+  /** La task aperta è un cappello (`Size: Epic`)? Deciso UNA VOLTA all'apertura,
+   *  dal testo che il detail ha già in mano: rifarlo a ogni cambio di azione
+   *  riparserebbe l'intero task file per un campo dell'header. */
+  const [epic, setEpic] = useState(false);
   const [cursor, setCursor] = useState<FieldsCursor>({ row: DROW.action, caret: 0 });
 
   // Il catalogo si legge una volta per vita del deck: è un file di quattro righe
@@ -155,12 +161,16 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
 
   /** Apre il detail su una task, azzerando scroll, area di compilazione e ricerca. */
   function open(next: Sheet) {
+    // Calcolato qui e usato subito: `setEpic` non ha ancora aggiornato lo stato
+    // quando `setPrompt` gira, quindi il valore locale è l'unico leggibile ora.
+    const isEpic = taskIsEpic(next.id, next.text);
     setSheet(next);
     setTop(0);
     setAction(0);
+    setEpic(isEpic);
     setModel(MODEL_DEFAULT);
     setSpawnNote('');
-    setPrompt(promptFor(catalog, DETAIL_ACTIONS[0]!.kind, next.id));
+    setPrompt(promptFor(catalog, specializeRecap(DETAIL_ACTIONS[0]!.kind, isEpic), next.id));
     setCursor({ row: DROW.action, caret: 0 });
     setFind(null);
     setOccIdx(0);
@@ -179,7 +189,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
   function selectAction(index: number) {
     setAction(index);
     const id = sheet?.id;
-    if (id) setPrompt(promptFor(catalog, DETAIL_ACTIONS[index]!.kind, id));
+    if (id) setPrompt(promptFor(catalog, specializeRecap(DETAIL_ACTIONS[index]!.kind, epic), id));
   }
 
   // Il ponte fra le quattro righe e i quattro stati. Le righe restano
@@ -285,12 +295,15 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     if (key.return) {
       // `⏎` esegue SEMPRE l'azione selezionata, da qualunque riga: i campi sono
       // di una riga sola, quindi nessuno di loro ha da farci un a-capo.
+      // Il kind viaggia specializzato quanto il prompt che lo accompagna: se il
+      // campo è stato svuotato a mano il testo non parte e resta lui a dire cosa
+      // ricevera' la sessione, quindi i due non possono divergere.
       const act = DETAIL_ACTIONS[action]!;
       const id = sheet?.id;
       const note = spawnNote.trim();
       const text = prompt.trim();
       close();
-      if (id) onAction(id, act.kind, model, note, text);
+      if (id) onAction(id, specializeRecap(act.kind, epic), model, note, text);
       return;
     }
     if (key.pageUp) {

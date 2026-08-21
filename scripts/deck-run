@@ -103,7 +103,7 @@ MODEL=""
 # Sotto --fork il --session-id torna AMMESSO (anzi: è il punto) — la mutua
 # esclusione con --resume esiste perché una ripresa nuda riscrive il transcript
 # dell'id ripreso, mentre il fork ne apre uno NUOVO, che possiamo quindi pinnare.
-# --prompt-kind <none|recap|preflight|run|checkpoint> (T56, T66): sceglie il prompt iniziale fra
+# --prompt-kind <none|recap|recap-task|recap-epic|preflight|run|checkpoint>: sceglie il prompt iniziale fra
 # quelli del catalogo qui sotto. Enum e non stringa libera: il prompt viaggia
 # dentro apici singoli in `bash -lc`, quindi il testo va tenuto in un posto solo
 # e verificato una volta, invece di spostare il rischio di quoting su ogni
@@ -164,7 +164,9 @@ USAGE="uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <kind>] [--sessio
 
   --prompt-kind  prompt iniziale della sessione bound (default: recap)
        none        nessun prompt — sessione aperta sulla task, a mani nude
-       recap       /loom-works:recap-status <TaskID>
+       recap       /loom-works:recap-status <TaskID>       (dispatcher)
+       recap-task  /loom-works:recap-status-task <TaskID>  (task non cappello)
+       recap-epic  /loom-works:recap-status-epic <TaskID>  (Size: Epic)
        preflight   /loom-works:preflight-task <TaskID>
        run         /loom-works:run-task <TaskID>
        checkpoint  /loom-works:checkpoint-task <TaskID>
@@ -203,8 +205,8 @@ fi
 # lì il valore arriva da un file editabile a mano, qui da un argomento nostro.
 if [[ -n "$PROMPT_KIND" ]]; then
   case "$PROMPT_KIND" in
-    none|recap|preflight|run|checkpoint) ;;
-    *) echo "--prompt-kind ignoto: '${PROMPT_KIND}' (usa none|recap|preflight|run|checkpoint)" >&2
+    none|recap|recap-task|recap-epic|preflight|run|checkpoint) ;;
+    *) echo "--prompt-kind ignoto: '${PROMPT_KIND}' (usa none|recap|recap-task|recap-epic|preflight|run|checkpoint)" >&2
        echo "$USAGE" >&2
        exit 2 ;;
   esac
@@ -427,6 +429,15 @@ FORK_FLAG=""
 #                ("recap stato task <id>"), scelto perché non esisteva una skill
 #                di recap tarata sulla singola task e quella di progetto avrebbe
 #                risposto largo — vincolo caduto col dispatcher.
+#   recap-task → la sotto-skill diretta, senza il giro del dispatcher
+#   recap-epic → idem per un cappello (`Size: Epic`)
+#                I due specializzati li sceglie chi SA già come è fatta la task:
+#                il detail del deck, che il task file l'ha aperto. Chi non lo sa
+#                — gli acceleratori della lista, che leggono solo `tasks.md`, e
+#                quindi non vedono il `Size` — resta su `recap` e lascia
+#                classificare al dispatcher. Il criterio non è duplicato: sta in
+#                `taskIsEpic` (src/tasks.ts) e legge lo stesso campo che leggerebbe
+#                il dispatcher; quello che cambia è solo QUANDO viene letto.
 #   preflight  → skill di preflight sulla task
 #   run        → skill di esecuzione sulla task
 #   checkpoint → skill di checkpoint sulla task

@@ -15,6 +15,7 @@ import {
   spawnCleanTasks,
   terminalArgs,
   DETAIL_ACTIONS,
+  specializeRecap,
   INTAB_MARKER,
 } from '../src/spawn.js';
 
@@ -209,6 +210,20 @@ test('ogni azione del detail è un prompt-kind valido', () => {
   // MECCANISMO e l'etichetta l'INTENZIONE.
   assert.equal(DETAIL_ACTIONS[0]!.label, 'open');
   assert.equal(DETAIL_ACTIONS[3]!.label, 'status');
+});
+
+test('specializeRecap: solo `recap` si sdoppia, gli altri kind passano intatti', () => {
+  assert.equal(specializeRecap('recap', false), 'recap-task');
+  assert.equal(specializeRecap('recap', true), 'recap-epic');
+  // Il flag epic non deve poter deviare un kind che non lo riguarda: un `run` su
+  // un cappello resta un `run` (che poi run-task rifiuta, ed è un altro strato).
+  for (const k of ['none', 'preflight', 'run', 'checkpoint'] as const) {
+    assert.equal(specializeRecap(k, true), k);
+    assert.equal(specializeRecap(k, false), k);
+  }
+  // Idempotente: un kind già specializzato non si ri-specializza.
+  assert.equal(specializeRecap('recap-epic', false), 'recap-epic');
+  assert.equal(specializeRecap('recap-task', true), 'recap-task');
 });
 
 // ── il comando esatto nella riga di stato ─────────────────────────────────

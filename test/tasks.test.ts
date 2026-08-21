@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTasks, parseTaskDetail, headerColumns } from '../src/tasks.js';
+import { parseTasks, parseTaskDetail, headerColumns, taskIsEpic } from '../src/tasks.js';
 import { sanitize } from '../src/width.js';
 
 const TASKS_MD = `# Tasks
@@ -81,6 +81,49 @@ test('parseTasks tiene la desc GREZZA accanto a quella sanificata', () => {
 });
 
 // Il cappello `Task:` del template va via: resta la descrizione.
+const EPIC_MD = `# Task: Asfaltamento del sistema documentale
+
+- **ID**: T74
+- **Size**: Epic
+- **Progress**: 🟡 In Progress
+
+## Description
+Cappello.
+`;
+
+test('taskIsEpic: `Size: Epic` marca il cappello', () => {
+  assert.equal(taskIsEpic('T74', EPIC_MD), true);
+  assert.equal(taskIsEpic('T74', EPIC_MD.replace('Epic', 'L')), false);
+  // Il valore lo scrive un umano nel file: il confronto non può essere sensibile
+  // alla cassa, o `epic` in minuscolo aprirebbe la sotto-skill sbagliata.
+  assert.equal(taskIsEpic('T74', EPIC_MD.replace('Epic', 'epic')), true);
+  assert.equal(taskIsEpic('T74', EPIC_MD.replace('Epic', 'EPIC')), true);
+});
+
+test('taskIsEpic: senza testo o senza campo Size degrada a non-cappello', () => {
+  // `null` = task file non ancora letto. La mancanza di prova non è prova di
+  // cappello, e il caso comune (task normale) è l'esito benigno su cui cadere.
+  assert.equal(taskIsEpic('T74', null), false);
+  assert.equal(taskIsEpic('T74', ''), false);
+  assert.equal(taskIsEpic('T99', '# Task: Senza size\n\n- **ID**: T99\n'), false);
+});
+
+test('taskIsEpic: legge il Size dell’HEADER, non un’occorrenza nel corpo', () => {
+  // First-match-wins di parseTaskDetail: una riga `- **Size**: Epic` citata
+  // dentro la Description (es. la task che DOCUMENTA il marker) non deve
+  // trasformare quella task in un cappello.
+  const citante = `# Task: Contratto epica
+
+- **ID**: T113
+- **Size**: M
+
+## Description
+Il marker si scrive cosi:
+- **Size**: Epic
+`;
+  assert.equal(taskIsEpic('T113', citante), false);
+});
+
 test('parseTaskDetail strippa il cappello H1', () => {
   assert.equal(parseTaskDetail('T40', '# Task: Budget iniezione').title, 'Budget iniezione');
   assert.equal(parseTaskDetail('T01', '# Importare la doc').title, 'Importare la doc');

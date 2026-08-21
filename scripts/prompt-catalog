@@ -15,7 +15,14 @@
 # Vincolo sui template: nessun apice singolo. Il testo finisce dentro `'...'`
 # nel comando passato a `bash -lc`, e questo file è committato — un apice qui
 # sarebbe un errore di scrittura, non un input da quotare.
+# `recap` è il DISPATCHER: risolve la task, ne legge il Size e passa da sé alla
+# sotto-skill. Lo usa chi non sa se la task è un cappello — gli acceleratori
+# della lista, dove il deck ha in mano solo tasks.md, che il Size non ce l'ha.
+# Le due voci `recap-task`/`recap-epic` saltano quel giro: le sceglie il DETAIL,
+# che il task file l'ha già aperto e quindi il Size lo conosce.
 recap	/loom-works:recap-status {TASK}
+recap-task	/loom-works:recap-status-task {TASK}
+recap-epic	/loom-works:recap-status-epic {TASK}
 preflight	/loom-works:preflight-task {TASK}
 run	/loom-works:run-task {TASK}
 checkpoint	/loom-works:checkpoint-task {TASK}

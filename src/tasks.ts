@@ -186,6 +186,30 @@ export function parseTaskDetail(id: string, content: string): TaskDetail {
 }
 
 /**
+ * La task è un cappello (epica)?
+ *
+ * Il marker è `Size: Epic`, e sta sul CAPPELLO perché la parentela la dichiara
+ * la figlia (`**Parent Task**`): un padre non sa di averne senza scandagliare
+ * tutti gli altri task file, cosa che il deck non può fare nel loop di poll.
+ *
+ * Legge dal testo INTEGRALE del task file, l'unico posto dove il `Size` esiste:
+ * in `tasks.md` quella colonna non c'è, quindi la lista non può rispondere e la
+ * domanda ha senso solo dove il file è già stato aperto (il detail).
+ *
+ * Riusa `parseTaskDetail` invece di una regex propria: la grammatica dei bullet
+ * header (`- **Campo**: valore`) è già scritta lì, e una seconda copia
+ * divergerebbe al primo campo che cambia forma. Confronto case-insensitive — il
+ * valore lo scrive un umano nel file, non uno script.
+ *
+ * Testo assente (`null`, task file non ancora letto) → `false`: la mancanza di
+ * prova non è prova di cappello, e degradare sul caso comune è l'esito benigno.
+ */
+export function taskIsEpic(id: string, text: string | null): boolean {
+  if (!text) return false;
+  return (parseTaskDetail(id, text).fields['Size'] ?? '').trim().toLowerCase() === 'epic';
+}
+
+/**
  * Testo INTEGRALE del task file (T66 · detail).
  *
  * Distinto da `loadTaskDetail`, che estrae header e Description per il blocco

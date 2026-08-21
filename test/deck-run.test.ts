@@ -70,6 +70,8 @@ function inTabCmd(args: string[], env: Record<string, string> = {}): string {
 const PROMPTS: Array<[string, string | null]> = [
   ['none', null],
   ['recap', '/loom-works:recap-status T56'],
+  ['recap-task', '/loom-works:recap-status-task T56'],
+  ['recap-epic', '/loom-works:recap-status-epic T56'],
   ['preflight', '/loom-works:preflight-task T56'],
   ['run', '/loom-works:run-task T56'],
   ['checkpoint', '/loom-works:checkpoint-task T56'],

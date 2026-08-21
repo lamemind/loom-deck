@@ -142,7 +142,35 @@ export function onInTabCommand(child: ChildProcess, cb: (cmd: string) => void): 
 // non il testo: il catalogo vive in deck-run (primitive UI-agnostico), così il
 // quoting del prompt resta verificato in un posto solo e il deck non conosce le
 // stringhe. Nomi identici ai valori di `--prompt-kind`.
-export type PromptKind = 'none' | 'recap' | 'preflight' | 'run' | 'checkpoint';
+export type PromptKind =
+  | 'none'
+  | 'recap'
+  | 'recap-task'
+  | 'recap-epic'
+  | 'preflight'
+  | 'run'
+  | 'checkpoint';
+
+/**
+ * `recap` → la sotto-skill giusta, quando chi spawna SA se la task è un cappello.
+ *
+ * `recap` resta il kind onesto per chi non lo sa: punta al dispatcher, che
+ * risolve la task e classifica da sé. È il caso degli acceleratori della lista,
+ * dove il deck ha in mano solo `tasks.md` — e lì il `Size` non c'è. Il DETAIL
+ * invece il task file l'ha già letto, quindi può saltare il giro e pagare un
+ * turno di modello in meno.
+ *
+ * Non è una classificazione duplicata: il criterio (`Size: Epic`) resta uno solo
+ * e sta in `taskIsEpic`, che legge lo stesso campo che leggerebbe il dispatcher.
+ * Quello che si evita è il RITARDO, non il giudizio.
+ *
+ * Ogni kind diverso da `recap` passa intatto: la specializzazione è un caso, non
+ * una trasformazione da applicare a tutti.
+ */
+export function specializeRecap(kind: PromptKind, epic: boolean): PromptKind {
+  if (kind !== 'recap') return kind;
+  return epic ? 'recap-epic' : 'recap-task';
+}
 
 // T108 — quale modello riceve la sessione appena aperta. Quarto asse di
 // deck-run, indipendente dagli altri tre: vale su una sessione bound come su una
