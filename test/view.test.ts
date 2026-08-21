@@ -8,7 +8,9 @@ import {
   compareTasks,
   cycleSort,
   describeSort,
+  idColumnWidth,
   idNum,
+  padId,
   priRank,
   progRank,
   toggleHidden,
@@ -64,6 +66,54 @@ test('id: forma ignota in coda, ordine comunque deterministico', () => {
     ]),
     ['T9', 'T10', 'D01'],
   );
+});
+
+// T118 — la colonna id è larga quanto l'id più lungo della POPOLAZIONE, e con
+// una popolazione tutta a due cifre non c'è nessun padding da aggiungere: il
+// rendering resta identico a quello di prima della colonna.
+test('larghezza colonna id: massimo della lista, nessun padding se omogenea', () => {
+  const list = [t('T9', '⚡', '🔵'), t('T90', '⚡', '🔵')];
+  assert.equal(idColumnWidth(list), 3);
+  assert.equal(idColumnWidth([]), 0);
+  assert.equal(idColumnWidth([t('T90', '⚡', '🔵'), t('T12', '⚡', '🔵')]), 3);
+  assert.equal(padId('T90', 3), 'T90');
+  assert.equal(padId('T12', 3), 'T12');
+});
+
+// Il padding sta FRA la lettera e le cifre, non prima della lettera: la `T` è
+// l'ancora con cui si riconosce la colonna e deve restare ferma.
+test('padId: spazi dentro il prefisso, cifre allineate a destra', () => {
+  const mixed = [t('T9', '⚡', '🔵'), t('T90', '⚡', '🔵'), t('T102', '⚡', '🔵')];
+  const w = idColumnWidth(mixed);
+  assert.equal(w, 4);
+  assert.equal(padId('T9', w), 'T  9');
+  assert.equal(padId('T90', w), 'T 90');
+  assert.equal(padId('T102', w), 'T102');
+  // Ogni cella è larga esattamente quanto la colonna dichiara, o Pri e Prog
+  // tornano a cadere in colonne diverse riga per riga.
+  for (const task of mixed) assert.equal(padId(task.id, w).length, w);
+});
+
+test('padId: tre livelli di padding con un id a quattro cifre in lista', () => {
+  const w = idColumnWidth([t('T9', '⚡', '🔵'), t('T1024', '⚡', '🔵')]);
+  assert.equal(w, 5);
+  assert.equal(padId('T9', w), 'T   9');
+  assert.equal(padId('T102', w), 'T 102');
+  assert.equal(padId('T1024', w), 'T1024');
+});
+
+// La regola è su `<lettere><cifre>`, non sulla `T`: un prefisso diverso si
+// allinea allo stesso modo, senza che nessuno debba estendere una tabella.
+test('padId: la regola è sul prefisso, non sulla lettera T', () => {
+  assert.equal(padId('D01', 5), 'D  01');
+});
+
+// Un id fuori forma non deve far collassare la colonna: occupa la sua cella e
+// basta, come già fa nel comparator (`idNum` lo manda in coda invece di
+// esplodere).
+test('padId: forma ignota riempita a destra, cella comunque piena', () => {
+  assert.equal(padId('spot', 6), 'spot  ');
+  assert.equal(padId('spot', 6).length, 6);
 });
 
 test('parità piena su tutte le chiavi → decide id ascendente', () => {

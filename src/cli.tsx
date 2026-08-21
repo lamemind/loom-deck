@@ -61,6 +61,7 @@ import {
   applyView,
   cycleSort,
   describeSort,
+  idColumnWidth,
   priName,
   progName,
   toggleHidden,
@@ -102,7 +103,7 @@ import {
   EDIT_ROWS,
   type EditRow,
 } from './layout.js';
-import { TASK_EMPTY, relTime, sanitizeTyped } from './glyphs.js';
+import { TASK_EMPTY, relTime, sanitizeTyped, taskTail } from './glyphs.js';
 import {
   commitTaskEdit,
   runLaunch,
@@ -304,6 +305,20 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     if (bound) childCount.set(bound, (childCount.get(bound) ?? 0) + 1);
     else spotCount++;
   }
+
+  // T118 — colonne fisse della lista task, misurate su `paneTasks` (la vista
+  // attiva INTERA) e non sulla finestra visibile: gemelle di `sessionCols` e
+  // per la stessa ragione, che una larghezza derivata dallo schermo si muove a
+  // ogni scroll. La coda porta dentro il proprio gutter, così l'allineamento a
+  // destra lo produce `pad` da sé; nessuna riga con qualcosa da scrivere →
+  // colonna spenta a `0`, e le descrizioni si riprendono lo spazio.
+  const taskCols = (() => {
+    let tail = 0;
+    for (const t of paneTasks) {
+      tail = Math.max(tail, termWidth(taskTail(childCount.get(t.id) ?? 0, dirtyFolders.has(t.id))));
+    }
+    return { id: idColumnWidth(paneTasks), tail: tail > 0 ? tail + 1 : 0 };
+  })();
 
   // Figli della selezione: tutte le conversazioni del progetto (`≡ tutte`), le
   // sessioni bound alla task selezionata, oppure (spot) quelle senza binding.
@@ -1752,6 +1767,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           spotCount={spotCount}
           allCount={sessions.length}
           childCount={childCount}
+          idW={taskCols.id}
+          tailW={taskCols.tail}
           focused={focus === 'tasks'}
           loadError={loadError}
           windowStart={taskWin.start}

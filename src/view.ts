@@ -91,6 +91,37 @@ export function idNum(id: string): number {
   return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
 }
 
+/**
+ * T118 — larghezza della colonna id, DERIVATA dalla popolazione.
+ *
+ * La popolazione è la vista attiva COMPLETA, non la finestra visibile: una
+ * larghezza misurata sulle sole righe renderizzate sposta le colonne mentre si
+ * scorre, cioè una tabella corretta a ogni frame e illeggibile nel movimento.
+ * Il chiamante deve quindi passare `paneTasks`, non l'array che finisce nel
+ * pane (`tasks` in `TaskPane` è già la finestra).
+ *
+ * Gli id sono `T` + cifre (`TASK_ID_RE`), cioè ASCII: `.length` conta colonne.
+ */
+export function idColumnWidth(tasks: ReadonlyArray<Task>): number {
+  let w = 0;
+  for (const t of tasks) w = Math.max(w, t.id.length);
+  return w;
+}
+
+/**
+ * T118 — id allineato a destra DENTRO il prefisso: `T102` in lista rende `T90`
+ * come `T 90`, non come ` T90`.
+ *
+ * Il prefisso di tipo è l'ancora con cui l'occhio riconosce la colonna:
+ * spostarlo riga per riga toglie proprio ciò che l'allineamento dava. Sono le
+ * cifre ad allinearsi fra loro, la `T` resta ferma.
+ */
+export function padId(id: string, cols: number): string {
+  const m = /^([A-Za-z]+)(\d+)$/.exec(id);
+  if (!m) return id.padEnd(cols);
+  return m[1]! + ' '.repeat(Math.max(0, cols - id.length)) + m[2]!;
+}
+
 function rankOf(task: Task, key: SortKey): number {
   if (key === 'pri') return priRank(task.pri);
   if (key === 'prog') return progRank(task.prog);

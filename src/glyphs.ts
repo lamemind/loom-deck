@@ -82,6 +82,28 @@ export function displayProg(prog: string): string {
   return sanitize(prog);
 }
 
+/**
+ * T118 — coda della riga task: marker dirty e contatore di conversazioni, nella
+ * colonna ancorata al bordo destro del pane.
+ *
+ * Il contatore va per ULTIMO perché è lui ad allinearsi al bordo — la colonna è
+ * resa `pad(…, 'right')`, quindi ciò che sta in fondo alla stringa cade sempre
+ * nella stessa colonna. Il marker gli sta a sinistra, dentro la stessa cella
+ * invece che in una colonna propria: è raro, e una colonna dedicata costerebbe
+ * 3 spazi vuoti su ogni riga di un pane largo la metà del terminale.
+ *
+ * Vive qui e non nel sito di render perché la STESSA stringa serve due volte —
+ * a misurare la larghezza della colonna (sulla vista completa, in `cli.tsx`) e
+ * a disegnarla (sulla finestra, in `panes.tsx`). Due formattazioni gemelle
+ * divergerebbero alla prima modifica, e la colonna risulterebbe larga quanto
+ * una stringa che nessuno scrive.
+ */
+export function taskTail(childCount: number, dirty: boolean): string {
+  const count = childCount > 0 ? `(${childCount})` : '';
+  if (!dirty) return count;
+  return count ? `${WARN} ${count}` : WARN;
+}
+
 // T49 — size umana compatta per il detail pane sessione.
 export function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

@@ -18,6 +18,7 @@ import {
   displayProg,
   modelShort,
   relTime,
+  taskTail,
 } from '../glyphs.js';
 import { META_ROWS, ROW_ALL, ROW_SPOT } from '../model.js';
 import { rowLabel, sessionTitle, type SessionRow } from '../session-list.js';
@@ -31,7 +32,7 @@ import {
   type TaskViewCounts,
   type TaskViewId,
 } from '../pane-views.js';
-import { describeSort, PRI_ENTRIES, PROG_ENTRIES, type ViewState } from '../view.js';
+import { describeSort, padId, PRI_ENTRIES, PROG_ENTRIES, type ViewState } from '../view.js';
 import type { Task } from '../tasks.js';
 import type { Session } from '../sessions.js';
 import type { LiveSession } from '../live-sessions.js';
@@ -114,6 +115,8 @@ export function TasksPane({
   spotCount,
   allCount,
   childCount,
+  idW,
+  tailW,
   focused,
   loadError,
   windowStart,
@@ -138,6 +141,13 @@ export function TasksPane({
   /** T59 — conversazioni totali del progetto (badge della riga "tutte"). */
   allCount: number;
   childCount: Map<string, number>;
+  /** T118 — larghezza della colonna id e di quella della coda (marker + numero
+   *  di conversazioni), misurate sulla vista ATTIVA COMPLETA: `tasks` qui è la
+   *  sola finestra, e derivarle da lei sposterebbe le colonne a ogni scroll.
+   *  `tailW` include già il proprio gutter, così l'allineamento a destra lo
+   *  produce da sé; `0` = colonna spenta. */
+  idW: number;
+  tailW: number;
   focused: boolean;
   loadError: string;
   /** Offset della finestra nella lista completa. */
@@ -239,19 +249,30 @@ export function TasksPane({
           // completa, su cui è keyata la selezione. +META_ROWS: le prime due
           // righe sono le meta.
           const sel = windowStart + i + META_ROWS === selected;
-          const n = childCount.get(task.id) ?? 0;
+          const tail = taskTail(childCount.get(task.id) ?? 0, dirty.has(task.id));
+          // T118 — l'id è paddato a `idW`, quindi `head` ha la stessa larghezza
+          // su ogni riga e Pri/Prog cadono sempre nella stessa colonna.
+          const id = padId(task.id, idW);
           // Invariante ③: la descrizione è l'unico pezzo a lunghezza libera, e
           // si taglia QUI sul budget che resta dopo le colonne fisse. Lasciarlo
           // fare a `truncate-end` significa passare da `cli-truncate`, che
           // restituisce una riga più larga del pane (una colonna per emoji) e
           // quindi scrive sopra il bordo. Le parti fisse si misurano con
-          // `termWidth`: `task.id` è `T9` o `T52`, i due glifi valgono 2 ciascuno.
-          const head = `${CARET_OFF}${task.id}  ${sanitize(task.pri)}  ${displayProg(task.prog)}  `;
-          const tail = `${n > 0 ? ` (${n})` : ''}${dirty.has(task.id) ? ` ${WARN}` : ''}`;
-          const desc = cut(
-            task.desc,
-            Math.max(4, paneTextWidth(columns) - termWidth(head) - termWidth(tail)),
-          );
+          // `termWidth`: i due glifi Pri/Prog valgono 2 ciascuno.
+          const head = `${CARET_OFF}${id}  ${sanitize(task.pri)}  ${displayProg(task.prog)}  `;
+          // T118 — la colonna della coda si riserva PRIMA di tagliare la
+          // descrizione, e per la stessa larghezza su ogni riga: appesa dopo,
+          // entrava nel budget solo dove c'era qualcosa da scrivere, e la
+          // descrizione si tagliava a una colonna diversa riga per riga.
+          //
+          // Pavimento `0` su tutte e tre le misure e non un minimo di cortesia:
+          // il budget è un TETTO. Un pavimento sopra lo spazio reale fa uscire
+          // la riga dal pane e le mangia il bordo. `reserve` si clampa su ciò
+          // che avanza, così `head + desc + coda` sta sempre dentro il pane.
+          const avail = Math.max(0, paneTextWidth(columns) - termWidth(head));
+          const reserve = Math.min(tailW, avail);
+          const descW = avail - reserve;
+          const desc = cut(task.desc, descW);
           return (
             <Text
               key={task.id}
@@ -261,8 +282,9 @@ export function TasksPane({
               wrap="truncate-end"
             >
               {sel ? CARET : CARET_OFF}
-              {task.id}  {sanitize(task.pri)}  {displayProg(task.prog)}  {desc}
-              {tail}
+              {id}  {sanitize(task.pri)}  {displayProg(task.prog)}  {desc}
+              {' '.repeat(Math.max(0, descW - termWidth(desc)))}
+              {pad(tail, reserve, 'right')}
             </Text>
           );
         })

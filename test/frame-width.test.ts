@@ -19,7 +19,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import stringWidth from 'string-width';
@@ -49,14 +50,20 @@ const CAN_RUN = hasPython() && existsSync(TASKS);
  *  modi, dove l'uscita del processo è l'esito sotto misura. */
 const PROC_VERDICT = /\n<<PROC [^>]*>>\n?$/;
 
-function capture(cols: number, rows: number, keys: string, extraEnv: NodeJS.ProcessEnv = {}): string {
+function capture(
+  cols: number,
+  rows: number,
+  keys: string,
+  extraEnv: NodeJS.ProcessEnv = {},
+  cwd: string = PROJECT,
+): string {
   return execFileSync(
     'python3',
     [
       join(HERE, 'pty-frame.py'),
       String(cols),
       String(rows),
-      PROJECT,
+      cwd,
       join(PKG, 'node_modules', '.bin', 'tsx'),
       '--tsconfig',
       join(PKG, 'tsconfig.json'),
@@ -323,6 +330,86 @@ for (const [label, keys, widths, extraEnv] of SCENARIOS) {
       assertFrameFits(capture(cols, 38, keys, extraEnv), cols, `${label}@${cols}`);
     });
   }
+}
+
+/**
+ * T118 — progetto SINTETICO su cui provare la lista task a id di larghezza
+ * mista, con le colonne piene.
+ *
+ * Il cappello vero non serve allo scopo e non basterebbe: i suoi id sono quelli
+ * che ha oggi, quindi uno scenario tarato su di loro è un calco che scade al
+ * primo `create-task`. Qui la popolazione è scritta dal test — `T9` accanto a
+ * `T1024` sono i tre livelli di padding insieme, cioè il caso che il cappello
+ * non produrrà mai.
+ *
+ * `HOME` è dirottato con la cwd: la lista sessioni si legge da
+ * `~/.claude/projects/<hash della cwd>`, quindi un HOME finto è ciò che rende
+ * il contatore `(N)` un dato del test invece che di chi lo lancia.
+ */
+function mixedIdProject(): string {
+  const root = mkdtempSync(join(tmpdir(), 'deck-mixed-'));
+  const proj = join(root, 'proj');
+  mkdirSync(join(proj, 'runtime', 'tasks'), { recursive: true });
+  mkdirSync(join(proj, '.claude', 'loom'), { recursive: true });
+
+  const rows = [
+    // Una descrizione più larga del pane e una molto corta: la prima prova il
+    // taglio contro la colonna riservata, la seconda il riempimento fra la fine
+    // del testo e il bordo destro.
+    ['T9', '🔥', '🟡', 'descrizione lunghissima che deve tagliarsi ben prima del contatore ' + 'x'.repeat(80)],
+    ['T90', '⚡', '🔵', 'corta'],
+    ['T102', '🔹', '✔️', 'media, con un glifo largo 🧵 in mezzo al testo'],
+    ['T1024', '⚡', '🔵', 'la task con l’id più largo della lista'],
+  ];
+  writeFileSync(
+    join(proj, 'runtime', 'tasks.md'),
+    ['# Tasks', '', '## Tasks Overview', '', '| ID | Pri | Prog | Task |', '| --- | --- | --- | --- |']
+      .concat(rows.map((r) => `| ${r.join(' | ')} |`))
+      .join('\n') + '\n',
+  );
+
+  const projects = join(root, 'home', '.claude', 'projects', proj.replace(/[^a-zA-Z0-9]/g, '-'));
+  mkdirSync(projects, { recursive: true });
+  // Contatori a una e a due cifre nella stessa lista: è la coppia che sposta il
+  // bordo sinistro della colonna e lascia fermo quello destro.
+  const bind: Array<[string, string | null]> = [
+    ['1111', 'T9'],
+    ['2222', 'T102'],
+    ['3333', 'T102'],
+    ['4444', null],
+  ];
+  const sidecar: string[] = [];
+  bind.forEach(([sid, taskId], i) => {
+    writeFileSync(
+      join(projects, `${sid}.jsonl`),
+      JSON.stringify({
+        type: 'user',
+        sessionId: sid,
+        cwd: proj,
+        message: { role: 'user', content: `prompt della conversazione ${i}` },
+      }) + '\n',
+    );
+    if (taskId) sidecar.push(JSON.stringify({ sessionId: sid, taskId }));
+  });
+  writeFileSync(join(proj, '.claude', 'loom', 'session-tasks.jsonl'), sidecar.join('\n') + '\n');
+
+  return proj;
+}
+
+// Il pane STRETTO è il caso che conta: è lì che la colonna riservata compete
+// davvero con la descrizione, l'unica cella elastica della riga.
+for (const cols of [80, 100, 176]) {
+  test(`gate larghezza · lista task a id misti @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+    const proj = mixedIdProject();
+    const raw = capture(cols, 38, 'DD', { HOME: join(dirname(proj), 'home') }, proj);
+    assertFrameFits(raw, cols, `id misti@${cols}`);
+    // La riga deve portare l'id PADDATO: senza, `T9` resterebbe nudo e le
+    // colonne a valle slitterebbero — cioè il gate passerebbe la larghezza e
+    // mancherebbe proprio ciò che T118 ha cambiato.
+    const frame = lastFrame(raw).join('\n');
+    assert.ok(frame.includes('T   9'), 'id a una cifra non paddato a cinque colonne');
+    assert.ok(frame.includes('T 102'), 'id a tre cifre non paddato a cinque colonne');
+  });
 }
 
 // T91 — il budget d'ALTEZZA, che gli scenari sopra non provano: girano tutti a
