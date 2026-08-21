@@ -74,8 +74,10 @@ import {
 import { initialDetail, writeTaskEdit, PRI_GLYPH, PRI_LABEL } from './task-edit.js';
 import {
   ALL,
+  EDIT_FIELDS,
   EDIT_PRI,
   EDIT_PROG,
+  editTextField,
   MAX_SESSIONS,
   MAX_SESSIONS_ALL,
   META_ROWS,
@@ -92,17 +94,8 @@ import {
   type PurgeDraft,
 } from './model.js';
 import { purgeTargets, splitTargets } from './purge.js';
-import {
-  conversationLabel,
-  cpLen,
-  editField,
-  insertAt,
-  isDone,
-  isTextRow,
-  removeAt,
-  EDIT_ROWS,
-  type EditRow,
-} from './layout.js';
+import { conversationLabel, cpLen, isDone } from './layout.js';
+import { caretAtEnd, fieldsKey, type FieldsCursor, type FieldsIO } from './fields.js';
 import { TASK_EMPTY, relTime, sanitizeTyped, taskTail } from './glyphs.js';
 import {
   commitTaskEdit,
@@ -200,9 +193,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const [taskViewId, setTaskViewId] = useState<TaskViewId>('tasks');
   const [sessionViewId, setSessionViewId] = useState<SessionViewId>('context');
   const [filterCursor, setFilterCursor] = useState<FilterCursor>({ row: 0, col: 0 });
-  // T41 — bozza dell'edit (null fuori dal modale) e riga attiva della griglia.
+  // T41 — bozza dell'edit (null fuori dal modale) e posizione nell'area di
+  // compilazione: riga in fuoco + caret dentro la riga di testo attiva.
   const [edit, setEdit] = useState<EditDraft | null>(null);
-  const [editRow, setEditRow] = useState<EditRow>(0);
+  const [editCursor, setEditCursor] = useState<FieldsCursor>({ row: 0, caret: 0 });
   // T112 — bozza della conferma di eliminazione (null fuori dal modale).
   const [purge, setPurge] = useState<PurgeDraft | null>(null);
 
@@ -542,11 +536,21 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // il tempo di un tick la riga in lista comparirebbe nuda. Due record separati
   // sullo stesso `sessionId` sono la forma normale di un file append-only
   // last-wins, non una scrittura da fondere.
-  function spawnForTask(id: string, kind: PromptKind, model: ModelKind, spawnNote = '') {
+  // T117 — `prompt` è il testo LETTERALE quando lo spawn arriva dal detail, dove
+  // il campo è editabile: quello che l'utente legge è quello che parte. Assente
+  // per gli acceleratori della lista, che non hanno un campo da cui prenderlo e
+  // viaggiano col simbolo.
+  function spawnForTask(
+    id: string,
+    kind: PromptKind,
+    model: ModelKind,
+    spawnNote = '',
+    prompt?: string,
+  ) {
     const sid = randomUUID();
     appendTaskBinding(cwd, sid, id);
     if (spawnNote) appendNote(cwd, sid, spawnNote);
-    const spawned = spawnDeck(id, cwd, sid, kind, model, spawnNote);
+    const spawned = spawnDeck(id, cwd, sid, kind, model, spawnNote, prompt);
     spawned.child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
     // Il modello resta SEMPRE visibile anche quando è il default, perché è un
     // argomento esplicito del comando (T108): gli acceleratori della lista non
@@ -590,8 +594,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     reloadSessions();
     setNote(
       text
-        ? `✎ nota su ${sid.slice(0, 8)}: "${cut(text, 40)}"`
-        : `✎ nota rimossa da ${sid.slice(0, 8)}`,
+        ? `✎ titolo su ${sid.slice(0, 8)}: "${cut(text, 40)}"`
+        : `✎ titolo rimosso da ${sid.slice(0, 8)}`,
     );
   }
 
@@ -613,11 +617,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       prog,
       detail: initialDetail(detail?.fields['Progress'] ?? '', prog),
       title: selTask.rawDesc,
-      // Si apre sulla riga 0 (priorità), che non è un campo di testo: il caret
-      // prende la sua posizione entrando in una riga di testo con ↑↓.
-      caret: 0,
     });
-    setEditRow(0);
+    // Si apre sulla riga 0 (priorità), che non è un campo di testo: il caret
+    // prende la sua posizione entrando in una riga di testo con ↑↓.
+    setEditCursor({ row: 0, caret: 0 });
     setNote('');
     setMode('edit');
   }
@@ -899,7 +902,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     columns,
     setMode,
     setNote,
-    onAction: (id, kind, model, spawnNote) => spawnForTask(id, kind, model, spawnNote),
+    onAction: (id, kind, model, spawnNote, prompt) =>
+      spawnForTask(id, kind, model, spawnNote, prompt),
   });
 
   const search = useSearchOverlay({
@@ -930,7 +934,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     if (key.escape) {
       setMode('normal');
       setNoteDraft('');
-      setNote('N → nota annullata');
+      setNote('N → titolo annullato');
     } else if (key.return) {
       submitNote();
     } else if (key.ctrl && input === 'u') {
@@ -1002,83 +1006,36 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     }
   }
 
+  // Il ponte fra le quattro righe del modale e la bozza. I valori restano
+  // tipizzati (`PriName`, `ProgName`) invece di finire in un record generico:
+  // `fields.ts` governa la grammatica dei tasti, non il modello dati.
+  const editIO: FieldsIO = {
+    text: (row) => edit?.[editTextField(row)] ?? '',
+    setText: (row, next) => setEdit((e) => (e ? { ...e, [editTextField(row)]: next } : e)),
+    choice: (row) =>
+      row === 0
+        ? Math.max(0, EDIT_PRI.indexOf(edit?.pri ?? 'med'))
+        : Math.max(0, EDIT_PROG.indexOf(edit?.prog ?? 'todo')),
+    setChoice: (row, index) =>
+      setEdit((e) =>
+        e ? (row === 0 ? { ...e, pri: EDIT_PRI[index]! } : { ...e, prog: EDIT_PROG[index]! }) : e,
+      ),
+  };
+
   function onEditKey(input: string, key: Key) {
     if (key.escape) {
       setMode('normal');
       setEdit(null);
       setNote('E → edit annullato');
-    } else if (key.return) {
-      submitEdit();
-    } else if (key.upArrow || key.downArrow) {
-      const next = ((editRow + EDIT_ROWS + (key.upArrow ? -1 : 1)) % EDIT_ROWS) as EditRow;
-      setEditRow(next);
-      // Il caret segue la riga attiva e atterra in CODA al nuovo campo: è la
-      // posizione da cui si continua a scrivere, ed è anche l'unica che non
-      // dipende da dove stava il cursore nel campo precedente.
-      setEdit((e) => (e && isTextRow(next) ? { ...e, caret: cpLen(e[editField(next)]) } : e));
-    } else if ((key.leftArrow || key.rightArrow) && !isTextRow(editRow)) {
-      const d = key.leftArrow ? -1 : 1;
-      // Scorrimento CICLICO (wrap) e non clampato: le liste sono di 3-4 voci,
-      // arrivare in fondo e ripartire costa meno di invertire direzione.
-      if (editRow === 0) {
-        setEdit((e) =>
-          e ? { ...e, pri: EDIT_PRI[(EDIT_PRI.indexOf(e.pri) + d + EDIT_PRI.length) % EDIT_PRI.length] } : e,
-        );
-      } else if (editRow === 1) {
-        setEdit((e) =>
-          e
-            ? { ...e, prog: EDIT_PROG[(EDIT_PROG.indexOf(e.prog) + d + EDIT_PROG.length) % EDIT_PROG.length] }
-            : e,
-        );
-      }
-    } else if (isTextRow(editRow)) {
-      // Un solo ramo per i due campi di testo, la riga sceglie la chiave:
-      // duplicarlo significherebbe tenere allineate a mano due copie della
-      // stessa grammatica di input a ogni tasto aggiunto.
-      const field = editField(editRow);
-      if (key.ctrl) {
-        // T54 — ramo CTRL ANTEPOSTO a quelli su carattere, come in modalità
-        // normale: `^A` e `a` arrivano con lo stesso `input`, quindi senza
-        // questa precedenza il `^A` finirebbe dentro il testo.
-        //
-        // `^A`/`^E` (convenzione readline) perché `Home`/`End` NON sono
-        // esposte da `useInput`: arrivano come input vuoto, indistinguibili
-        // da qualunque altro tasto senza nome.
-        //
-        // `^D` è il delete-forward, e anche qui il motivo è un limite di Ink:
-        // il tasto Backspace fisico manda `\x7f` e il tasto Canc manda
-        // `\x1b[3~`, ma `parseKeypress` li battezza ENTRAMBI `delete` e
-        // svuota `input` — a valle sono lo stesso evento. `key.delete` va
-        // quindi al backspace (il tasto che si usa davvero) e la
-        // cancellazione in avanti prende il suo tasto readline.
-        if (input === 'a') setEdit((e) => (e ? { ...e, caret: 0 } : e));
-        else if (input === 'e') setEdit((e) => (e ? { ...e, caret: cpLen(e[field]) } : e));
-        else if (input === 'd') setEdit((e) => (e ? { ...e, [field]: removeAt(e[field], e.caret) } : e));
-      } else if (key.leftArrow || key.rightArrow) {
-        // CLAMP agli estremi, non wrap: a inizio campo `←` non deve saltare in
-        // fondo. Le liste di valori (righe 0/1) ciclano perché sono 3-4 voci;
-        // un testo no — il salto sarebbe indistinguibile da uno sfarfallio.
-        const d = key.leftArrow ? -1 : 1;
-        setEdit((e) =>
-          e ? { ...e, caret: Math.max(0, Math.min(cpLen(e[field]), e.caret + d)) } : e,
-        );
-      } else if (key.backspace || key.delete) {
-        setEdit((e) =>
-          e ? { ...e, [field]: removeAt(e[field], e.caret - 1), caret: Math.max(0, e.caret - 1) } : e,
-        );
-      } else if (input && !key.meta) {
-        // `sanitizeTyped`: `useInput` consegna il CHUNK di stdin, quindi un
-        // incollaggio porta dentro newline e byte di controllo — invisibili
-        // nel campo ma contati da Ink nella larghezza della riga, e destinati
-        // a finire tali e quali dentro tasks.md. Ed è per lo stesso motivo che
-        // il caret avanza della LUNGHEZZA del chunk, non di uno: un incollaggio
-        // entra tutto insieme.
-        const ins = sanitizeTyped(input);
-        setEdit((e) =>
-          e ? { ...e, [field]: insertAt(e[field], e.caret, ins), caret: e.caret + cpLen(ins) } : e,
-        );
-      }
+      return;
     }
+    if (key.return) {
+      submitEdit();
+      return;
+    }
+    // Tutto il resto è dell'area di compilazione, che è la STESSA del detail
+    // (T117): una grammatica sola, non due copie da tenere allineate a mano.
+    fieldsKey(input, key, EDIT_FIELDS, editCursor, setEditCursor, editIO);
   }
 
   /**
@@ -1331,7 +1288,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       // su una pinnata STALE, perché annotare «questa non c'è più, era X» è
       // proprio il caso in cui una nota serve.
       if (focus !== 'sessions') {
-        setNote('N → nota: seleziona una sessione (→ per il pane)');
+        setNote('N → titolo: seleziona una sessione (→ per il pane)');
       } else if (!selSessionId) {
         setNote('N → nessuna sessione da annotare');
       } else {
@@ -1429,7 +1386,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         ? [purgeBulk ? 'CANC elimina tutte' : 'CANC elimina']
         : []),
       ...(canResume ? ['f fork'] : []),
-      ...(canPin ? ['p pin', 'N nota', 'A assegna'] : []),
+      // T117 · D3 — «titolo» anche qui: è lo stesso valore che il detail chiede
+      // allo spawn, e due nomi per una cosa sola li paga chi legge le due
+      // schermate. Rename di sola ETICHETTA: il dato resta `note` nel sidecar e
+      // `--title-note` in deck-run, dove rinominarlo sarebbe un breaking.
+      ...(canPin ? ['p pin', 'N titolo', 'A assegna'] : []),
       '^F cerca',
       'C nuova',
       'E edit',
@@ -1516,6 +1477,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         action={sheet.action}
         model={sheet.model}
         spawnNote={sheet.spawnNote}
+        prompt={sheet.prompt}
+        cursor={sheet.cursor}
         columns={columns}
         find={sheet.find}
         occ={sheet.findRes.occ}
@@ -1691,7 +1654,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         </Text>
       ) : mode === 'note' ? (
         <Text dimColor wrap="truncate-end">
-          nota conversazione · <Text color="yellow">^U</Text> svuota ·{' '}
+          titolo conversazione · <Text color="yellow">^U</Text> svuota ·{' '}
           <Text color="yellow">⏎</Text> salva (vuoto = rimuove) ·{' '}
           <Text color="yellow">esc</Text> annulla
         </Text>
@@ -1753,7 +1716,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       {mode === 'sort' ? <SortModal sort={view.sort} /> : null}
       {mode === 'filter' ? <FilterModal view={view} cursor={filterCursor} /> : null}
       {mode === 'edit' && edit && selTask ? (
-        <EditModal id={selTask.id} draft={edit} row={editRow} columns={columns} />
+        <EditModal
+          id={selTask.id}
+          draft={edit}
+          row={editCursor.row}
+          caret={editCursor.caret}
+          columns={columns}
+        />
       ) : null}
       {mode === 'purge' && purge ? <PurgeModal draft={purge} columns={columns} /> : null}
       <Box flexDirection="row" marginTop={1}>

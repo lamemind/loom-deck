@@ -2,6 +2,7 @@
 // rappresenta — la selezione a tre casi, i modi, le griglie dei modali. Sta a
 // monte della vista: i componenti di `ui/` li importano da qui, mai da
 // `cli.tsx`, così la dipendenza resta in un verso solo.
+import type { FieldSpec } from './fields.js';
 import type { BodyKind } from './sessions.js';
 import type { Mode as ViewportMode } from './viewport.js';
 import type { PriName, ProgName, SortKey } from './view.js';
@@ -76,17 +77,16 @@ export interface FilterCursor {
 // Il titolo sta IN CODA e non in testa apposta: le righe 0-2 conservano la
 // posizione che avevano, quindi `E ←→` continua a cambiare la priorità come
 // prima invece di finire su un campo di testo.
-// T54 — `caret` è la posizione del cursore DENTRO la riga di testo attiva,
-// contata per CODE POINT: uno solo per tutto il modale, perché una riga di testo
-// alla volta è editabile e portarne uno per campo vorrebbe dire tenerli
-// allineati a mano a ogni modifica. Cambiando riga si riposiziona in coda al
-// nuovo campo (vedi il ramo ↑↓).
+// T54/T117 — il caret NON sta più qui: vive nel `FieldsCursor` dell'area di
+// compilazione, insieme alla riga in fuoco. Sono due facce della stessa
+// posizione (quale campo, e dove dentro) e tenerle in due stati separati
+// significa allinearle a mano a ogni cambio riga. La bozza porta i VALORI, il
+// cursore la posizione.
 export interface EditDraft {
   pri: PriName;
   prog: ProgName;
   detail: string;
   title: string;
-  caret: number;
 }
 
 // Modale sort a grammatica libera: un tasto per chiave, pressioni successive
@@ -126,6 +126,22 @@ export const KIND_LABEL: Record<BodyKind, string> = { ai: 'IA', tool: 'tools', h
 export const EDIT_PRI: readonly PriName[] = ['high', 'med', 'low'];
 
 export const EDIT_PROG: readonly ProgName[] = ['todo', 'wip', 'done', 'locked'];
+
+// T117 — le righe del modale edit come DATO, nella forma che `fields.ts`
+// consuma: 0 priorità · 1 stato · 2 progresso libero · 3 titolo. Il modale non
+// dà lettere di selezione alle due righe a scelta, dove i valori sono glifi e
+// non hanno un'iniziale da premere.
+export const EDIT_FIELDS: readonly FieldSpec[] = [
+  { kind: 'choice', count: EDIT_PRI.length },
+  { kind: 'choice', count: EDIT_PROG.length },
+  { kind: 'text' },
+  { kind: 'text' },
+];
+
+/** Chiave della bozza scritta dalla riga di testo `r` (2 = progresso, 3 = titolo). */
+export function editTextField(r: number): 'detail' | 'title' {
+  return r === 2 ? 'detail' : 'title';
+}
 
 // T112 — bozza della conferma di eliminazione. UNA sola per i due bersagli
 // (D5): fra `CANC` sulla task selezionata e `CANC` sull'intera vista

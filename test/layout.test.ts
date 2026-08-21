@@ -4,10 +4,8 @@ import {
   assignTextWidth,
   conversationLabel,
   cpLen,
-  editField,
   insertAt,
   isDone,
-  isTextRow,
   paneTextWidth,
   previewTextWidth,
   removeAt,
@@ -36,15 +34,6 @@ test('removeAt toglie un code point; fuori range lascia invariato', () => {
   assert.equal(removeAt('🎴x', 0), 'x');
   assert.equal(removeAt('ab', -1), 'ab');
   assert.equal(removeAt('ab', 2), 'ab');
-});
-
-test('le righe di testo del modale edit sono la 2 e la 3', () => {
-  assert.equal(isTextRow(0), false);
-  assert.equal(isTextRow(1), false);
-  assert.equal(isTextRow(2), true);
-  assert.equal(isTextRow(3), true);
-  assert.equal(editField(2), 'detail');
-  assert.equal(editField(3), 'title');
 });
 
 test('isDone riconosce il glifo di tasks.md, non la parola', () => {

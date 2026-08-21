@@ -182,6 +182,17 @@ export const DETAIL_ACTIONS: ReadonlyArray<{ kind: PromptKind; label: string }> 
   { kind: 'checkpoint', label: 'checkpoint' },
 ];
 
+// T117 — selezione DIRETTA di un'azione con la sua iniziale (`o p r s c`),
+// accanto allo scorrimento `←→`. Derivate dalle label e non cablate: una voce
+// aggiunta al catalogo porta con sé la propria lettera, invece di lasciare
+// indietro una seconda lista.
+// Il vincolo che la derivazione impone al catalogo: le iniziali devono restare
+// DISTINTE fra loro. Due label con la stessa lettera renderebbero la seconda
+// irraggiungibile, e in silenzio — chi aggiunge una voce lo controlla qui.
+export const ACTION_HOTKEYS: Readonly<Record<string, number>> = Object.fromEntries(
+  DETAIL_ACTIONS.map((a, i) => [a.label[0]!, i]),
+);
+
 // Spawn detached: il deck spawna ma NON contiene la sessione (la possiede
 // ptyxis-agent). unref + stdio ignore → ritorna subito, la TUI resta viva.
 // sessionId pinnato (T27) → il binding sidecar è deterministico allo spawn.
@@ -197,14 +208,30 @@ export const DETAIL_ACTIONS: ReadonlyArray<{ kind: PromptKind; label: string }> 
 // separino, quindi il flag non appartiene alla ripresa — vale su ogni spawn.
 // Assente quando la nota è vuota, e non passato vuoto: `--title-note ''`
 // produrrebbe un `«»` a vuoto nel titolo.
+// T117 — `prompt` è il TESTO letterale, e quando c'è sostituisce il kind:
+// `--prompt` e `--prompt-kind` sono mutuamente esclusivi in deck-run. Serve al
+// detail, dove il prompt è un campo editabile e quello che l'utente legge è
+// quello che parte — dopo una modifica nessun kind lo descrive più.
+// `undefined` = questo percorso non ha un campo prompt (gli acceleratori della
+// lista) e viaggia col simbolo, come prima. Stringa VUOTA ≠ undefined: è la
+// richiesta esplicita di nessun prompt (azione `open`, o un campo svuotato a
+// mano) e si esprime col kind `none`, perché senza flag deck-run cadrebbe sul
+// proprio default `recap`.
 export function deckArgs(
   id: string,
   sessionId: string,
   kind: PromptKind,
   model: ModelKind = MODEL_DEFAULT,
   spawnNote?: string,
+  prompt?: string,
 ): string[] {
-  const args = [id, '--session-id', sessionId, '--prompt-kind', kind, '--model', model];
+  const promptArgs =
+    prompt === undefined
+      ? ['--prompt-kind', kind]
+      : prompt
+        ? ['--prompt', prompt]
+        : ['--prompt-kind', 'none'];
+  const args = [id, '--session-id', sessionId, ...promptArgs, '--model', model];
   if (spawnNote) args.push('--title-note', spawnNote);
   return args;
 }
@@ -216,8 +243,9 @@ export function spawnDeck(
   kind: PromptKind,
   model: ModelKind = MODEL_DEFAULT,
   spawnNote?: string,
+  prompt?: string,
 ): Spawned {
-  return launchDeckRun(deckArgs(id, sessionId, kind, model, spawnNote), cwd);
+  return launchDeckRun(deckArgs(id, sessionId, kind, model, spawnNote, prompt), cwd);
 }
 
 // T49 — resume di una sessione esistente come nuova tab Ptyxis. Scoped (taskId

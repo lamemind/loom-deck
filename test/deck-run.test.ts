@@ -123,6 +123,73 @@ test('LOOM_DECK_ENTER_PROMPT vince sul kind, ma non su none', () => {
   assert.ok(!inTabCmd(['T56', '--prompt-kind', 'none'], env).includes("'x T56 y'"));
 });
 
+// ── T117 · il prompt letterale ─────────────────────────────────────────────
+
+test('--prompt passa il testo verbatim, senza toccare il catalogo', () => {
+  const cmd = inTabCmd(['T56', '--session-id', SID, '--prompt', 'fai la cosa']);
+  assert.ok(cmd.endsWith("'fai la cosa'"), `prompt letterale non arrivato: ${cmd}`);
+  assert.match(cmd, /^LOOM_TASK=T56 claude /);
+});
+
+// SICUREZZA — il prompt è l'unico ingresso di testo LIBERO che finisce in una
+// riga che una shell parsa (`bash -lc "$IN_TAB_CMD"`). Un apice singolo non
+// quotato chiuderebbe la stringa e consegnerebbe alla shell tutto ciò che segue
+// come comando: `'; rm -rf ~; echo '` diventerebbe eseguibile. La forma canonica
+// (`'\''`) lo rende un carattere letterale come gli altri.
+test('--prompt: un apice singolo non evade dalla stringa', () => {
+  const cmd = inTabCmd(['T56', '--prompt', "non e' finita; echo PWNED"]);
+  assert.ok(cmd.endsWith(`'non e'\\'' finita; echo PWNED'`), `quoting rotto: ${cmd}`);
+  // Prova sul campo: dato lo stesso comando a una shell vera, il prompt deve
+  // arrivare come UN argomento. Se l'apice evadesse, `echo PWNED` girerebbe come
+  // comando a sé e l'output sarebbe di DUE righe — da cui l'asserzione sul
+  // numero di righe e non sulla presenza della parola, che compare comunque
+  // dentro il prompt legittimo.
+  const probe = spawnSync('bash', ['-c', `claude() { printf '%s\\n' "\${@: -1}"; }; ${cmd}`], {
+    encoding: 'utf8',
+  });
+  assert.deepEqual(probe.stdout.trimEnd().split('\n'), ["non e' finita; echo PWNED"]);
+});
+
+test('--prompt vuoto = nessun prompt, non un posizionale vuoto', () => {
+  // `--prompt ''` è una richiesta legittima (campo svuotato a mano), distinta
+  // dal flag assente — che cadrebbe sul default `recap`.
+  const cmd = inTabCmd(['T56', '--prompt', '']);
+  assert.ok(!cmd.trimEnd().endsWith("'"), `atteso nessun prompt, trovato: ${cmd}`);
+});
+
+test('--prompt e --prompt-kind sono mutuamente esclusivi', () => {
+  const r = deckRun(['T56', '--prompt', 'x', '--prompt-kind', 'run']);
+  assert.equal(r.ok, false);
+  assert.match(r.err, /mutuamente esclusivi/);
+});
+
+test('--prompt richiede una task, come il kind', () => {
+  const r = deckRun(['--no-task', '--prompt', 'x']);
+  assert.equal(r.ok, false);
+  assert.match(r.err, /--prompt richiede una task/);
+});
+
+test('LOOM_DECK_ENTER_PROMPT non scavalca un --prompt esplicito', () => {
+  // L'override d'ambiente esiste per la retro-compat sul KIND; scavalcare un
+  // testo già composto a mano butterebbe via proprio la modifica che il flag
+  // esiste per portare.
+  const cmd = inTabCmd(['T56', '--prompt', 'mio testo'], { LOOM_DECK_ENTER_PROMPT: 'x {TASK} y' });
+  assert.ok(cmd.endsWith("'mio testo'"), `l'env ha scavalcato --prompt: ${cmd}`);
+});
+
+// Il catalogo è un file DATI letto a runtime, non più un `case` dentro lo
+// script: se sparisce, deck-run lo dice e apre una sessione senza prompt invece
+// di inventarne uno.
+test('catalogo assente: avviso su stderr e nessun prompt', () => {
+  const r = deckRun(['T56', '--prompt-kind', 'run'], {
+    LOOM_DECK_PROMPT_CATALOG: '/non/esiste/affatto',
+  });
+  assert.equal(r.ok, true);
+  assert.match(r.err, /catalogo prompt non leggibile/);
+  const cmd = r.out.trimEnd().split('\n').pop() ?? '';
+  assert.ok(!cmd.trimEnd().endsWith("'"), `prompt inventato senza catalogo: ${cmd}`);
+});
+
 test('--prompt-kind ignoto: errore d’uso, non fallback silenzioso', () => {
   const r = deckRun(['T56', '--prompt-kind', 'bogus']);
   assert.equal(r.ok, false);

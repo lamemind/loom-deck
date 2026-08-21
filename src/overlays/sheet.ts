@@ -19,7 +19,16 @@ import { scanText, topForOffset, type Occurrence } from '../text-search.js';
 import { parseMarkdown } from '../markdown.js';
 import { cpLen, insertAt, removeAt } from '../layout.js';
 import { sanitizeTyped } from '../glyphs.js';
-import { DETAIL_ACTIONS, MODELS, MODEL_DEFAULT, type ModelKind, type PromptKind } from '../spawn.js';
+import {
+  ACTION_HOTKEYS,
+  DETAIL_ACTIONS,
+  MODELS,
+  MODEL_DEFAULT,
+  type ModelKind,
+  type PromptKind,
+} from '../spawn.js';
+import { fieldsKey, type FieldSpec, type FieldsCursor, type FieldsIO } from '../fields.js';
+import { loadPromptCatalog, promptFor } from '../prompt-catalog.js';
 import type { Mode } from '../model.js';
 
 export interface Sheet {
@@ -39,9 +48,30 @@ export interface SheetOverlayDeps {
   columns: number;
   setMode: (m: Mode) => void;
   setNote: (s: string) => void;
-  /** Spawn dalla barra azioni: effetto esterno, non nostro. */
-  onAction: (taskId: string, kind: PromptKind, model: ModelKind, spawnNote: string) => void;
+  /** Spawn dall'area di compilazione: effetto esterno, non nostro. Il `prompt`
+   *  è il TESTO che parte davvero — dopo una modifica a mano nessun kind lo
+   *  descrive più, quindi il kind non basta a dire cosa riceverà la sessione. */
+  onAction: (
+    taskId: string,
+    kind: PromptKind,
+    model: ModelKind,
+    spawnNote: string,
+    prompt: string,
+  ) => void;
 }
+
+// T117 — le quattro righe dell'area di compilazione del detail, nell'ordine in
+// cui si leggono dall'alto. Gli indici sono nominati perché li usano insieme
+// l'handler dei tasti e la resa, e un `2` nudo in due file diversi è la
+// coordinata che scade appena una riga si sposta.
+export const DROW = { action: 0, prompt: 1, model: 2, title: 3 } as const;
+
+export const DETAIL_FIELDS: readonly FieldSpec[] = [
+  { kind: 'choice', count: DETAIL_ACTIONS.length, hotkeys: ACTION_HOTKEYS },
+  { kind: 'text' },
+  { kind: 'choice', count: MODELS.length },
+  { kind: 'text' },
+];
 
 export function useSheetOverlay(deps: SheetOverlayDeps) {
   const { rows, columns, setMode, setNote, onAction } = deps;
@@ -53,13 +83,20 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
   // deck: si azzera a ogni apertura come scroll e azione, quindi non esiste una
   // selezione invisibile che cambi il comportamento dei tasti della lista.
   const [model, setModel] = useState<ModelKind>(MODEL_DEFAULT);
-  // T111 — la nota con cui nascerà la conversazione. Campo SEMPRE ATTIVO: riceve
-  // la scrittura appena il detail si apre, senza nessun tasto che lo apra, e per
-  // questo si prende l'alfabeto nudo del modo (le cifre del selettore modello,
-  // `g`/`G` degli estremi del testo). Si azzera a ogni apertura come scroll,
-  // azione e modello: una nota armata che sopravvive alla chiusura sarebbe uno
-  // stato invisibile che cambia il titolo dello spawn successivo.
+  // T111 — il titolo con cui nascerà la conversazione (nel sidecar e in
+  // `deck-run` il dato si chiama ancora `note`: il rename è di sola etichetta).
+  // Si azzera a ogni apertura come scroll, azione e modello: un titolo armato
+  // che sopravvive alla chiusura sarebbe uno stato invisibile che cambia il
+  // titolo dello spawn successivo.
   const [spawnNote, setSpawnNote] = useState('');
+  // T117 — il prompt iniziale, EDITABILE. Quello che si legge nel campo è quello
+  // che parte: non un'anteprima di qualcos'altro.
+  const [prompt, setPrompt] = useState('');
+  const [cursor, setCursor] = useState<FieldsCursor>({ row: DROW.action, caret: 0 });
+
+  // Il catalogo si legge una volta per vita del deck: è un file di quattro righe
+  // accanto al codice, non un dato che cambia sotto i piedi.
+  const catalog = useMemo(() => loadPromptCatalog(), []);
 
   // T91 — ricerca dentro il detail. `open` distingue i due modi in cui la si
   // lascia: `esc` butta via ciò che il modale ha prodotto (`find` a null,
@@ -116,18 +153,45 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     setTop(topForOffset(lines, o.start, capacity));
   }, [findRes, occCur, lines, capacity]);
 
-  /** Apre il detail su una task, azzerando scroll, azione, modello, nota e ricerca. */
+  /** Apre il detail su una task, azzerando scroll, area di compilazione e ricerca. */
   function open(next: Sheet) {
     setSheet(next);
     setTop(0);
     setAction(0);
     setModel(MODEL_DEFAULT);
     setSpawnNote('');
+    setPrompt(promptFor(catalog, DETAIL_ACTIONS[0]!.kind, next.id));
+    setCursor({ row: DROW.action, caret: 0 });
     setFind(null);
     setOccIdx(0);
     setNote('');
     setMode('detail');
   }
+
+  /** Cambia l'azione e RISCRIVE il prompt col default del nuovo kind (D2).
+   *
+   *  Nessuna preservazione del testo modificato a mano, e non è una svista: la
+   *  regola `initialDetail` del modale edit protegge da un cambio di sorgente
+   *  ACCIDENTALE, e col fuoco per riga quel caso non esiste — `←→` cambiano
+   *  azione solo dalla riga azione, mentre sul campo prompt muovono il caret.
+   *  Senza il cambio accidentale la preservazione difenderebbe da nulla, e
+   *  costerebbe un campo che non torna più al default. */
+  function selectAction(index: number) {
+    setAction(index);
+    const id = sheet?.id;
+    if (id) setPrompt(promptFor(catalog, DETAIL_ACTIONS[index]!.kind, id));
+  }
+
+  // Il ponte fra le quattro righe e i quattro stati. Le righe restano
+  // TIPIZZATE dove vivono (`ModelKind`, indice dell'azione) invece di finire in
+  // un record generico: `fields.ts` governa la grammatica, non il modello dati.
+  const fieldsIO: FieldsIO = {
+    text: (row) => (row === DROW.prompt ? prompt : spawnNote),
+    setText: (row, next) => (row === DROW.prompt ? setPrompt(next) : setSpawnNote(next)),
+    choice: (row) => (row === DROW.action ? action : Math.max(0, MODELS.indexOf(model))),
+    setChoice: (row, index) =>
+      row === DROW.action ? selectAction(index) : setModel(MODELS[index]!),
+  };
 
   function close() {
     setMode('normal');
@@ -185,36 +249,27 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     }
   }
 
-  // T66 — detail della task: due zone (testo scrollabile + barra azioni) e una
-  // selezione per ognuna. Il modo cattura TUTTO, acceleratori `^K`/`^P`/`^R`
-  // compresi: chi è già nel detail ha i bottoni. L'unica deroga è `^F`, che qui
-  // apre la ricerca nel testo invece di quella sulle conversazioni.
+  // T66 — detail della task: due zone (testo scrollabile + area di compilazione)
+  // e una posizione per ognuna. Il modo cattura TUTTO, acceleratori
+  // `^K`/`^P`/`^R` compresi: chi è già nel detail ha i bottoni. L'unica deroga è
+  // `^F`, che qui apre la ricerca nel testo invece di quella sulle conversazioni.
   //
-  // T111 — con il campo nota sempre attivo l'ultimo ramo è la SCRITTURA, quindi
-  // ogni funzione che resta viva deve stare su un tasto che un campo di testo
-  // non contende: `tab`, frecce, `PgUp`/`PgDn`, CTRL, `⏎`, `esc`.
+  // T117 — le quattro righe si scorrono con `↑↓`, che quindi NON scrollano più il
+  // testo: la lettura del task file resta su `PgUp`/`PgDn`, cioè una granularità
+  // sola invece di due. È un costo reale su un task file lungo, ed è il prezzo di
+  // avere `↑↓` nel loro significato di sempre (muovere il fuoco) su una schermata
+  // che ospita insieme un documento e dei campi.
   function onKey(input: string, key: Key) {
     if (find?.open) {
       onFindKey(input, key);
       return;
     }
 
-    if (key.ctrl) {
-      // Ramo CTRL chiuso in testa, e non più il solo `if` su `^F`: sotto c'è la
-      // scrittura nel campo nota, e senza questo ramo `^K` ci finirebbe come
-      // lettera `k` — la combo non arriva come tasto proprio, `key.ctrl` è
-      // l'unico discriminante fra `^X` e `x`.
-      //
-      // `^F` è la deroga dichiarata (`CTRL_DEROGATIONS.detail`): fuori dal
-      // detail è la ricerca conversazioni, qui è la ricerca nel testo. La query
-      // sopravvive a una chiusura con `⏎`, quindi riaprire riprende da dov'era.
-      // `^U` svuota la nota — non è una deroga ma una combo che il modo gestisce
-      // da sé, come il filtro del modale assegnazione. Ogni altro CTRL è inerte.
-      if (input === 'f') {
-        setFind((f) => (f ? { ...f, open: true } : { q: '', caret: 0, open: true }));
-      } else if (input === 'u') {
-        setSpawnNote('');
-      }
+    if (key.ctrl && input === 'f') {
+      // Deroga dichiarata (`CTRL_DEROGATIONS.detail`): fuori dal detail `^F` è
+      // la ricerca conversazioni, qui la ricerca nel testo. La query sopravvive
+      // a una chiusura con `⏎`, quindi riaprire riprende da dov'era.
+      setFind((f) => (f ? { ...f, open: true } : { q: '', caret: 0, open: true }));
       return;
     }
 
@@ -225,47 +280,33 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       // toccata, quindi si ritrova esattamente dov'era.
       if (find) setFind(null);
       else close();
-    } else if (key.return) {
-      // `⏎` esegue SEMPRE l'azione selezionata, mai "scrolla" o "chiudi": il
-      // testo non è un campo attivo (si scorre, non si edita), quindi nessuna
-      // competizione sul tasto.
+      return;
+    }
+    if (key.return) {
+      // `⏎` esegue SEMPRE l'azione selezionata, da qualunque riga: i campi sono
+      // di una riga sola, quindi nessuno di loro ha da farci un a-capo.
       const act = DETAIL_ACTIONS[action]!;
       const id = sheet?.id;
       const note = spawnNote.trim();
+      const text = prompt.trim();
       close();
-      if (id) onAction(id, act.kind, model, note);
-    } else if (key.tab) {
-      // T108 — `tab` scorre il catalogo dei modelli, e da T111 è il SOLO canale:
-      // le cifre `1`-`4` sono passate al campo nota. Libero solo QUI: in vista
-      // normale cicla la vista del pane a fuoco. Il detail cattura l'input per
-      // intero, quindi è dove un alfabeto già speso torna disponibile.
-      setModel((m) => MODELS[(MODELS.indexOf(m) + 1) % MODELS.length]!);
-    } else if (key.leftArrow || key.rightArrow) {
-      // Scorrimento CICLICO come le righe di scelta del modale edit: cinque
-      // voci, arrivare in fondo e ripartire costa meno che invertire direzione.
-      const d = key.leftArrow ? -1 : 1;
-      setAction((i) => (i + d + DETAIL_ACTIONS.length) % DETAIL_ACTIONS.length);
-    } else if (key.upArrow) {
-      scroll(-1);
-    } else if (key.downArrow) {
-      scroll(1);
-    } else if (key.pageUp) {
-      scroll(-capacity);
-    } else if (key.pageDown) {
-      scroll(capacity);
-    } else if (key.backspace || key.delete) {
-      // Nessun movimento di caret nel campo (D3): `←→` sono già delle azioni e
-      // riprenderle costerebbe la barra. Si cancella quindi in coda — e
-      // `key.delete` è ANCHE Backspace in Ink, come nel campo di ricerca.
-      setSpawnNote((s) => removeAt(s, cpLen(s) - 1));
-    } else if (input && !key.meta) {
-      // Ultimo ramo: tutto ciò che nessun tasto vivo ha reclamato è testo. Ci
-      // cadono le cifre `1`-`4` (prima il selettore modello) e `g`/`G` (prima
-      // gli estremi del testo, che nel detail si raggiungono con
-      // `PgUp`/`PgDn`); nel reader fullscreen restano, perché lì nessun campo
-      // contende le lettere.
-      setSpawnNote((s) => s + sanitizeTyped(input));
+      if (id) onAction(id, act.kind, model, note, text);
+      return;
     }
+    if (key.pageUp) {
+      scroll(-capacity);
+      return;
+    }
+    if (key.pageDown) {
+      scroll(capacity);
+      return;
+    }
+
+    // Tutto il resto è dell'area di compilazione. Ciò che non consuma resta
+    // inerte — dentro un modo capturing è la scelta giusta: gli acceleratori
+    // globali non devono riattivarsi, e su una riga a scelta una lettera che
+    // non è la sua non deve finire in nessun campo.
+    fieldsKey(input, key, DETAIL_FIELDS, cursor, setCursor, fieldsIO);
   }
 
   return {
@@ -275,6 +316,8 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     action,
     model,
     spawnNote,
+    prompt,
+    cursor,
     find,
     lines,
     capacity,

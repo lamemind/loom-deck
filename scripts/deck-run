@@ -11,14 +11,18 @@
 # Quattro assi ORTOGONALI, da non confondere fra loro:
 #   binding task   <TaskID> ..... --no-task
 #   continuità     nuova ........ --resume [--fork]
-#   prompt         --prompt-kind none|recap|preflight|run|checkpoint
+#   prompt         --prompt-kind none|recap|preflight|run|checkpoint | --prompt <testo>
 #   modello        --model fable|opus|sonnet|haiku
 # Il terzo asse (T56) prima non esisteva: il prompt era una CONSEGUENZA degli
 # altri due (bound ⇒ recap, --no-task ⇒ niente, --resume ⇒ niente), quindi
 # "task-bound SENZA prompt" era inesprimibile e l'unico modo di non avere un
-# prompt era perdere la task. Il catalogo dei prompt vive qui e non nel deck
-# perché questo è il primitive UI-agnostico: il chiamante passa un SIMBOLO, non
-# una stringa — il quoting resta verificato in un posto solo (vedi PROMPT sotto).
+# prompt era perdere la task. Il kind è un SIMBOLO e il suo testo sta nel
+# catalogo condiviso `prompt-catalog` (sibling di questo script).
+# T117 — accanto al kind c'è ora `--prompt <testo>`, che passa il prompt
+# LETTERALE. I due sono mutuamente esclusivi: sono due modi di dire la stessa
+# cosa, e accettarli insieme costringerebbe a stabilire quale vince. Serve a chi
+# mostra il prompt all'utente prima dello spawn e glielo lascia modificare —
+# dopo una modifica nessun kind descrive più quel testo.
 # Il quarto asse (T108) è indipendente dagli altri tre: vale sul ramo bound come
 # su --no-task, su una sessione nuova come su una ripresa.
 #
@@ -56,6 +60,12 @@
 #
 set -euo pipefail
 
+# Il catalogo dei prompt è un file DATI sibling di questo script, non un `case`
+# qui dentro: lo legge anche il deck TUI, che con la stessa risoluzione sibling
+# arriva allo stesso file della stessa installazione.
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROMPT_CATALOG="${LOOM_DECK_PROMPT_CATALOG:-${_SCRIPT_DIR}/prompt-catalog}"
+
 TASK=""
 SESSION_ID=""
 RESUME_ID=""
@@ -66,6 +76,11 @@ TITLE_NOTE=""
 # "kind implicito" da "kind chiesto", perché con --no-task il primo è legittimo
 # (nessun prompt, come sempre) e il secondo è un errore d'uso.
 PROMPT_KIND=""
+# T117 — prompt letterale. Vuoto NON basta a dire "non passato": `--prompt ''`
+# è una richiesta legittima (nessun prompt, deciso da chi ha svuotato il campo),
+# quindi la presenza del flag si tiene in un booleano a parte.
+PROMPT_TEXT=""
+PROMPT_GIVEN=0
 # Vuoto = flag non passato: la cascata (env, poi default) si risolve più sotto,
 # insieme alla validazione, così l'ingresso da argomento e quello da env passano
 # per lo stesso enum.
@@ -117,6 +132,10 @@ while [[ $# -gt 0 ]]; do
       PROMPT_KIND="${2:-}"; shift 2 ;;
     --prompt-kind=*)
       PROMPT_KIND="${1#*=}"; shift ;;
+    --prompt)
+      PROMPT_TEXT="${2:-}"; PROMPT_GIVEN=1; shift 2 ;;
+    --prompt=*)
+      PROMPT_TEXT="${1#*=}"; PROMPT_GIVEN=1; shift ;;
     --session-id)
       SESSION_ID="${2:-}"; shift 2 ;;
     --session-id=*)
@@ -149,6 +168,9 @@ USAGE="uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <kind>] [--sessio
        preflight   /loom-works:preflight-task <TaskID>
        run         /loom-works:run-task <TaskID>
        checkpoint  /loom-works:checkpoint-task <TaskID>
+
+  --prompt       prompt LETTERALE, per chi lo ha già composto (o fatto
+                 modificare). Esclusivo con --prompt-kind; vuoto = nessun prompt
 
   --model        modello della sessione: fable|opus|sonnet|haiku (default: opus)
                  valore ignoto → fallback sul default, con avviso su stderr
@@ -192,6 +214,18 @@ fi
 # non una da degradare in silenzio.
 if [[ $NO_TASK -eq 1 && -n "$PROMPT_KIND" ]]; then
   echo "--prompt-kind richiede una task: una sessione --no-task non ha prompt iniziale" >&2
+  echo "$USAGE" >&2
+  exit 2
+fi
+if [[ $NO_TASK -eq 1 && $PROMPT_GIVEN -eq 1 ]]; then
+  echo "--prompt richiede una task: una sessione --no-task non ha prompt iniziale" >&2
+  echo "$USAGE" >&2
+  exit 2
+fi
+# Due modi di dire la stessa cosa: accettarli insieme obbligherebbe a stabilire
+# quale vince, cioè a scrivere una precedenza che nessun chiamante ha chiesto.
+if [[ $PROMPT_GIVEN -eq 1 && -n "$PROMPT_KIND" ]]; then
+  echo "--prompt e --prompt-kind sono mutuamente esclusivi (il testo o il simbolo, non entrambi)" >&2
   echo "$USAGE" >&2
   exit 2
 fi
@@ -381,7 +415,7 @@ RES_FLAG=""
 FORK_FLAG=""
 [[ $FORK -eq 1 ]] && FORK_FLAG="--fork-session "
 
-# ── Catalogo dei prompt iniziali (T56) ───────────────────────────────────────
+# ── Catalogo dei prompt iniziali (T56 · T117) ────────────────────────────────
 # Il prompt iniziale è la scelta di CHI APRE la sessione, non una proprietà della
 # task: lo stesso task file si apre per leggerne lo stato, per un preflight, per
 # eseguirlo o a mani nude. Il kind è quell'intento.
@@ -391,28 +425,53 @@ FORK_FLAG=""
 #   preflight  → skill di preflight sulla task
 #   run        → skill di esecuzione sulla task
 #   checkpoint → skill di checkpoint sulla task
-# Vincolo di quoting: nessun template deve contenere apici singoli (viaggia
-# dentro '...' nel comando in-tab). `/loom-works:...` passa intero proprio perché
-# è single-quoted — lo slash e i due punti non sono metacaratteri lì dentro.
+#
+# T117 — i testi non stanno più qui ma nel file dati `prompt-catalog`, sibling di
+# questo script. Il deck TUI li mostra nel campo prompt del detail prima dello
+# spawn, e per farlo deve leggerli: come `case` bash sarebbe una seconda scrittura
+# delle stesse regole. Il file resta l'unica copia, letta da entrambi i lati.
+# Formato a righe e non JSON perché `jq` è dipendenza OPZIONALE di questo script
+# (con fallback) e leggere il catalogo lo renderebbe dura.
 #
 # Precedenza con l'env: LOOM_DECK_ENTER_PROMPT VINCE sul kind (retro-compat: chi
 # lo usa oggi non si accorge del cambio), tranne su `none` — chiedere
 # esplicitamente nessun prompt non è una richiesta che un default d'ambiente
-# possa scavalcare. Il placeholder {TASK} vale solo per il valore dell'override;
-# i template del catalogo interpolano ${TASK} diretto (nel `${VAR:-...}` la `}`
-# di `{TASK}` chiuderebbe in anticipo l'espansione).
-# Ogni kind è un template diretto sull'id: la lista del deck è monofamiglia
+# possa scavalcare. Non vince invece su `--prompt`, che è una richiesta esplicita
+# e già risolta: un override d'ambiente che scavalca un testo composto a mano
+# butterebbe via proprio la modifica che il flag esiste per portare.
+# Ogni template nomina il TaskID via `{TASK}`: la lista del deck è monofamiglia
 # (`T`, unico prefisso del contratto loom), quindi nessun prompt discrimina sulla
 # forma dell'id.
-case "${PROMPT_KIND:-recap}" in
-  none)       PROMPT="" ;;
-  recap)      PROMPT="recap stato task ${TASK}" ;;
-  preflight)  PROMPT="/loom-works:preflight-task ${TASK}" ;;
-  checkpoint) PROMPT="/loom-works:checkpoint-task ${TASK}" ;;
-  run)        PROMPT="/loom-works:run-task ${TASK}" ;;
-esac
-if [[ "${PROMPT_KIND:-}" != "none" && -n "${LOOM_DECK_ENTER_PROMPT:-}" ]]; then
-  PROMPT="${LOOM_DECK_ENTER_PROMPT//\{TASK\}/${TASK}}"
+_prompt_template() {  # <kind> → template col placeholder {TASK}, o niente
+  local want="$1" k t
+  [[ -f "$PROMPT_CATALOG" ]] || return 1
+  while IFS=$'\t' read -r k t || [[ -n "$k" ]]; do
+    [[ -z "$k" || "$k" == \#* ]] && continue
+    [[ "$k" == "$want" ]] && { printf '%s' "$t"; return 0; }
+  done < "$PROMPT_CATALOG"
+  return 1
+}
+
+if [[ $PROMPT_GIVEN -eq 1 ]]; then
+  PROMPT="$PROMPT_TEXT"
+else
+  _kind="${PROMPT_KIND:-recap}"
+  if [[ "$_kind" == "none" ]]; then
+    PROMPT=""
+  else
+    # Catalogo assente o voce mancante: il kind è già passato dall'enum sopra,
+    # quindi qui manca il FILE — un'installazione mutila, non un errore d'uso.
+    # Si degrada a nessun prompt dicendolo, invece di aprire una sessione con un
+    # prompt inventato al volo (che sarebbe la copia del catalogo).
+    if ! PROMPT="$(_prompt_template "$_kind")"; then
+      echo "catalogo prompt non leggibile ('${PROMPT_CATALOG}'): sessione senza prompt iniziale" >&2
+      PROMPT=""
+    fi
+    PROMPT="${PROMPT//\{TASK\}/${TASK}}"
+  fi
+  if [[ "$_kind" != "none" && -n "${LOOM_DECK_ENTER_PROMPT:-}" ]]; then
+    PROMPT="${LOOM_DECK_ENTER_PROMPT//\{TASK\}/${TASK}}"
+  fi
 fi
 
 # Comando eseguito dentro la tab: bind LOOM_TASK per la sessione, avvia CC sul PROMPT.
@@ -427,8 +486,21 @@ fi
 # fork (T28) ricade nello stesso ramo — è una ripresa, con id nuovo.
 # Il kind `none` (T56) atterra sulla stessa assenza per una ragione diversa: lì
 # la sessione è nuova e bound, ma l'utente ha chiesto di entrarci a mani nude.
+#
+# QUOTING DEL PROMPT — il testo entra in `bash -lc "$IN_TAB_CMD"`, cioè in una
+# riga che una shell PARSA. Finché i template erano scritti qui dentro bastava il
+# vincolo "nessun apice singolo nel catalogo"; da T117 il testo può arrivare da
+# `--prompt`, cioè digitato a mano dall'utente nel campo del detail — e lì un
+# apice singolo chiuderebbe la stringa, consegnando alla shell tutto ciò che
+# segue come comando. Si passa quindi per la stessa forma canonica di
+# `shellQuote` in spawn.ts: apice chiuso, apice letterale escapato, apice
+# riaperto (`'\''`). Dentro apici singoli nessun altro carattere resta speciale,
+# quindi non c'è nient'altro da enumerare — newline compresi.
+_shell_quote() {  # <testo> → il testo come argomento singolo per una shell POSIX
+  printf "'%s'" "${1//\'/\'\\\'\'}"
+}
 PROMPT_ARG=""
-[[ -n "$PROMPT" && -z "$RESUME_ID" ]] && PROMPT_ARG="'${PROMPT}'"
+[[ -n "$PROMPT" && -z "$RESUME_ID" ]] && PROMPT_ARG="$(_shell_quote "$PROMPT")"
 # Il SID_FLAG entra anche nel ramo --no-task, che altrimenti lo scarta insieme
 # agli altri elementi task-bound: nel fork di una sessione SPOT il sessionId
 # pinnato non serve a legare una task (non c'è) ma a rendere noto in anticipo

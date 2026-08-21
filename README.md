@@ -92,7 +92,7 @@ Assegnazioni correnti:
 | modale | `S` | sort chain |
 | modale | `F` | filtri |
 | modale | `^F` | **ricerca full-text** nelle conversazioni del progetto |
-| modale | `⏎` | **detail** della task selezionata: task file scrollabile + barra azioni |
+| modale | `⏎` | **detail** della task selezionata: task file scrollabile + area di compilazione a quattro righe |
 | modale | `CANC` | **elimina** — la task selezionata; su una riga meta della vista `archiviabili`, l'intero insieme |
 | immediata | `^K` | spawna la task selezionata col prompt di **recap** |
 | immediata | `^P` | spawna la task selezionata sul **preflight** |
@@ -161,19 +161,26 @@ Col focus sul pane Sessions né `⏎` né i `CTRL` spawnano: l'oggetto dell'azio
 
 ### `⏎` — il detail della task
 
-Overlay fullscreen a due zone: il **task file per intero**, scrollabile
-(`↑↓` riga, `PgUp`/`PgDn` pagina, `g`/`G` estremi), e una riga di **bottoni**
-navigabile con `←→`, con `open` a fuoco all'apertura. `⏎` esegue l'azione
-selezionata e chiude; `esc` chiude lasciando la lista con la stessa selezione.
+Overlay fullscreen a due zone: il **task file per intero**, scrollabile con `PgUp`/`PgDn`, e sotto un'**area di compilazione** a quattro righe — i quattro parametri con cui la sessione sta per nascere.
 
-Le azioni non sono un catalogo nuovo: chiamano lo **stesso** percorso di spawn dei tasti diretti. Una superficie in più, zero percorsi di spawn in più.
+| Riga | Cosa | Come si cambia |
+|---|---|---|
+| `azione` | `open` `preflight` `run` `status` `checkpoint` | `←→`, oppure l'iniziale: `o` `p` `r` `s` `c` |
+| `prompt` | il testo che riceverà la sessione | si scrive; parte pre-riempito dall'azione scelta |
+| `modello` | `fable` `opus` `sonnet` `haiku` | `←→` |
+| `titolo` | il nome della conversazione, in lista e nella tab | si scrive |
 
-Sono bottoni affiancati e non voci di un menu verticale perché è la forma che sopravvive all'arrivo del mouse: un rettangolo ha già coordinate e area cliccabile, una lista di voci andrebbe rifatta.
+`↑↓` spostano il fuoco fra le righe, `⏎` spawna coi quattro valori correnti, `esc` chiude lasciando la lista con la stessa selezione. Le righe di testo ricevono i caratteri **solo quando sono in fuoco**: su `azione` una lettera che non è un'iniziale resta inerte invece di finire in un campo.
 
-Dentro il detail `←→` cicla i bottoni invece di cambiare pane, e `tab` non cambia la vista — il
-ramo `useInput` della modalità chiude prima di arrivare a quello di default. Ink non ha focus-trap: la cattura **è** l'ordine dei rami, e cambiare cosa fa un tasto fuori dal detail non tocca cosa fa dentro.
+`↑↓` sono quindi una risorsa contesa, e vanno al fuoco: la lettura del task file resta su `PgUp`/`PgDn`, cioè una granularità sola invece di due. È il prezzo di avere `↑↓` nel loro significato di sempre su una schermata che ospita insieme un documento e dei campi.
 
-Il catalogo dei prompt vive in `scripts/deck-run`, non nella TUI: è il primitive UI-agnostico, il deck gli passa un **simbolo** (`--prompt-kind`) e non una stringa. Così il testo sta in un posto solo, e con lui il suo vincolo di quoting — il prompt viaggia dentro apici singoli in `bash -lc`, quindi non può contenerne.
+**Il campo `prompt` è quello che parte davvero**, non un'anteprima: modificarlo cambia il messaggio che la sessione riceve. Cambiare azione lo riscrive col default della nuova — col fuoco per riga il cambio accidentale non esiste (`←→` toccano l'azione solo dalla sua riga), quindi non c'è nessuna modifica da proteggere.
+
+La grammatica delle righe è la **stessa** del modale edit (`SHIFT+E`) e sta in `src/fields.ts`: descrittore delle righe, fuoco, caret, `^A`/`^E`/`^D`/`^U`. Finché era scritta due volte andava tenuta allineata a mano a ogni tasto aggiunto. `Home`/`End` non ci sono e non possono esserci: `useInput` non le espone — verificato su otto sequenze diverse, arrivano tutte come input vuoto senza flag — da cui `^A`/`^E`.
+
+Le azioni non sono un catalogo nuovo: chiamano lo **stesso** percorso di spawn dei tasti diretti. Una superficie in più, zero percorsi di spawn in più. Sono bottoni affiancati e non voci di un menu verticale perché è la forma che sopravvive all'arrivo del mouse: un rettangolo ha già coordinate e area cliccabile, una lista di voci andrebbe rifatta.
+
+Il **testo** dei prompt vive in `scripts/prompt-catalog`, un file dati sibling di `deck-run` che entrambi leggono a runtime: il deck per pre-riempire il campo, `deck-run` per comporre il comando in-tab. Come codice posseduto da un lato solo il deck avrebbe dovuto riscriverlo per mostrarlo, e le due copie divergerebbero alla prima voce aggiunta da una parte sola. Un prompt modificato a mano viaggia poi letterale (`--prompt`), perché a quel punto nessun `--prompt-kind` lo descrive più.
 
 ### `f` — forkare una conversazione
 
@@ -301,9 +308,12 @@ npx @lamemind/loom-deck
 # dalla project dir con un tasks.md
 scripts/deck-run T18
 scripts/deck-run T18 --prompt-kind none|recap|preflight|run|checkpoint
+scripts/deck-run T18 --prompt 'testo letterale del prompt'
 ```
 
 Apre una tab Ptyxis nella window attiva con `LOOM_TASK=T18 claude 'recap stato task T18'`. Il prompt iniziale è il terzo asse dello spawn, ortogonale al binding task (`<TaskID>` vs `--no-task`) e alla continuità (nuova vs `--resume`/`--fork`): senza flag resta `recap`, `none` apre la sessione bound **senza** alcun prompt. `LOOM_DECK_ENTER_PROMPT` (placeholder `{TASK}`) resta un override che vince sul kind — tranne su `none`, che è una richiesta esplicita di non averne.
+
+I testi del catalogo stanno in `scripts/prompt-catalog` (formato `kind<TAB>template`, `{TASK}` interpolato), non dentro lo script: li legge anche il deck, per mostrare nel detail il prompt prima dello spawn. `--prompt` passa invece un testo **letterale** ed è esclusivo con `--prompt-kind` — sono due modi di dire la stessa cosa, e accettarli insieme costringerebbe a stabilire quale vince. Il testo viene quotato per la shell in-tab, apici singoli compresi: è l'unico ingresso di testo libero in una riga che una shell parsa.
 
 La tab porta anche `PTYXIS_PROFILE` forzata al profilo bindato al progetto nel registry (`bindings/claude`), letto da dconf: è la chiave con cui loom-compass associa a un progetto lo stato annunciato dagli hook (running/ask/done). Una tab `ptyxis --tab` nuda erediterebbe il profilo di default, e l'annuncio finirebbe keyed su un UUID che nessun progetto dichiara — pallino fermo su idle, senza alcun errore visibile. Override o disattivazione via `LOOM_DECK_STATE_PROFILE`
 (settata a vuoto → nessun annuncio); progetto non registrato → nessun prefisso.

@@ -275,13 +275,18 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   ['detail · ultima azione', 'DD\rRRRR', [100, 176]],
   // T108 — la riga del selettore modello, con selezionata la voce più larga
   // (`sonnet`): è quella che `cutParts` deve tenere a schermo per prima, quindi
-  // il caso in cui il taglio prioritario può sfondare la riga. `T` = tab, il
-  // solo canale del modello da T111 — le cifre ora scrivono nella nota.
-  ['detail · modello sonnet', 'DD\rT', [100, 176]],
-  // T111 — la riga nota piena: `X` incolla 60 caratteri in un chunk solo, cioè
-  // una nota più larga della riga che la ospita. Lo stato vuoto (segnaposto, più
+  // il caso in cui il taglio prioritario può sfondare la riga. T117 — due `D`
+  // portano il fuoco sulla riga modello, `R` avanza da `opus` a `sonnet`.
+  ['detail · modello sonnet', 'DD\rDDR', [100, 176]],
+  // T117 — il campo PROMPT pieno: è pre-riempito da un template (`checkpoint`,
+  // il più lungo) e per giunta editabile, quindi l'unica riga dell'area che
+  // porta due sorgenti di lunghezza libera insieme. `c` sceglie checkpoint, `D`
+  // scende sul campo, `X` incolla 60 caratteri in coda al template.
+  ['detail · prompt lungo', 'DD\rcDX', [100, 176]],
+  // T111 — la riga titolo piena: `X` incolla 60 caratteri in un chunk solo, cioè
+  // un titolo più largo della riga che lo ospita. Lo stato vuoto (segnaposto, più
   // largo del campo) lo copre già `detail task`, che apre l'overlay e basta.
-  ['detail · nota lunga', 'DD\rX', [100, 176]],
+  ['detail · titolo lungo', 'DD\rDDDX', [100, 176]],
   // T91 — la ricerca dentro il detail: modale dentro modale. Il campo è l'unico
   // testo a lunghezza libera della riga che lo ospita, e la riga stessa è la
   // seconda riga FISSA aggiunta dentro l'overlay.
@@ -427,10 +432,11 @@ for (const rows of [16, 20]) {
     );
   });
 
-  // T111 — la riga nota è FISSA, quindi si paga anche senza ricerca aperta: è il
-  // caso che cade per primo se `DETAIL_CHROME` resta al conteggio di prima.
-  test(`altezza · detail con la riga nota @ ${rows} righe`, { skip: !CAN_RUN }, () => {
-    const raw = capture(100, rows, 'DD\rX');
+  // T111/T117 — le quattro righe dell'area di compilazione sono FISSE, quindi si
+  // pagano anche senza ricerca aperta: è il caso che cade per primo se
+  // `DETAIL_CHROME` resta al conteggio di prima.
+  test(`altezza · detail con l'area di compilazione @ ${rows} righe`, { skip: !CAN_RUN }, () => {
+    const raw = capture(100, rows, 'DD\rDDDX');
     const frame = lastFrame(raw).filter((l) => l !== '');
     assert.ok(
       frame.length <= rows,

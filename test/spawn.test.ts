@@ -60,6 +60,34 @@ test('deckArgs porta la nota nel titolo solo quando c\'è', () => {
   assert.ok(!deckArgs('T111', 'sid-1', 'preflight').includes('--title-note'));
 });
 
+// T117 — dal detail il prompt è un TESTO, non un simbolo: dopo una modifica a
+// mano nessun kind lo descrive più. I due flag sono mutuamente esclusivi in
+// deck-run, quindi qui l'uno sostituisce l'altro invece di affiancarlo.
+test('deckArgs: un prompt letterale sostituisce il kind', () => {
+  assert.deepEqual(deckArgs('T117', 'sid-1', 'run', 'opus', '', 'fai la cosa'), [
+    'T117',
+    '--session-id',
+    'sid-1',
+    '--prompt',
+    'fai la cosa',
+    '--model',
+    'opus',
+  ]);
+});
+
+test('deckArgs: prompt VUOTO → kind none, non un --prompt a vuoto', () => {
+  // Senza flag deck-run cadrebbe sul proprio default `recap`, cioè su un prompt
+  // che nessuno ha chiesto: «nessun prompt» va detto, non omesso. È il caso
+  // dell'azione `open` e di un campo svuotato a mano.
+  assert.deepEqual(deckArgs('T117', 'sid-1', 'none', 'opus', '', '').slice(3, 5), [
+    '--prompt-kind',
+    'none',
+  ]);
+  // `undefined` ≠ stringa vuota: chi non ha un campo prompt (gli acceleratori
+  // della lista) continua a viaggiare col simbolo.
+  assert.deepEqual(deckArgs('T117', 'sid-1', 'run').slice(3, 5), ['--prompt-kind', 'run']);
+});
+
 test('resumeArgs scoped porta la task, spot porta --no-task', () => {
   assert.deepEqual(resumeArgs('T81', 'sid-1'), ['T81', '--resume', 'sid-1']);
   assert.deepEqual(resumeArgs(null, 'sid-1'), ['--no-task', '--resume', 'sid-1']);

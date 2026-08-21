@@ -159,17 +159,19 @@ test('^K dentro il detail non spawna', { skip: !CAN_RUN }, () => {
   assert.match(frame, /preflight|checkpoint/i);
 });
 
-// T111 — l'ALFABETO del detail dopo l'arrivo del campo nota sempre attivo. I
-// tre rami che questa task rimuove (cifre → modello, `g`/`G` → estremi) sono
-// esattamente quelli che un merge futuro rimetterebbe senza accorgersene.
+// T117 — l'ALFABETO del detail dopo il passaggio all'area di compilazione a
+// righe. Cosa un tasto faccia dipende ora dalla RIGA IN FUOCO, ed è precisamente
+// l'informazione che un merge futuro può perdere senza che nulla smetta di
+// compilare: una lettera che finisce nel campo sbagliato è un comportamento, non
+// un tipo.
 //
-// Lo spawn è l'unico punto in cui il modello scelto e la nota digitata
-// diventano osservabili in testo semplice: la riga di stato porta il COMANDO
-// esatto, quindi entrambi come argomenti (`--model`, `--title-note`), mentre nel
-// frame del detail la voce di modello attiva si distingue solo per video
-// inverso, che `stripAnsi` toglie. Con NO_SPAWN il processo non parte, ma
-// il sidecar SÌ — da cui il project root temporaneo: i record orfani di un test
-// non hanno motivo di finire nel file di chi lo lancia.
+// Lo spawn è l'unico punto in cui i quattro valori diventano osservabili in
+// testo semplice: la riga di stato porta il COMANDO esatto, quindi tutti come
+// argomenti (`--prompt`, `--model`, `--title-note`), mentre nel frame del detail
+// la voce attiva si distingue solo per video inverso, che `stripAnsi` toglie.
+// Con NO_SPAWN il processo non parte, ma il sidecar SÌ — da cui il project root
+// temporaneo: i record orfani di un test non hanno motivo di finire nel file di
+// chi lo lancia.
 //
 // La coda del comando sopravvive al taglio anche su un terminale stretto
 // (`cutMiddle` sacrifica il mezzo): è ciò che rende queste asserzioni stabili
@@ -180,37 +182,77 @@ if (CAN_RUN) {
   copyFileSync(TASKS, join(spawnProject, 'runtime', 'tasks.md'));
 }
 
-test('detail: una cifra scrive nel campo nota e NON cambia modello', { skip: !CAN_RUN }, () => {
+/** Il detail si apre sulla riga azione; `D` (↓) scende di una riga. */
+const DETAIL_TITLE_ROW = '\rDDD';
+
+test('detail: la riga azione risponde alle lettere e riscrive il prompt', { skip: !CAN_RUN }, () => {
+  const frame = lastFrame(capture(`DD\rr\r`, spawnProject));
+  assert.match(frame, /--prompt .\/loom-works:run-task/, `r non ha selezionato run: ${frame}`);
+});
+
+test('detail: una cifra sulla riga azione è inerte, non finisce in un campo', {
+  skip: !CAN_RUN,
+}, () => {
+  // Nessuna azione ha `2` per iniziale → il tasto non ha nulla da fare, e con il
+  // fuoco su una riga a scelta non esiste un campo dove ricadere.
   const frame = lastFrame(capture('DD\r2\r', spawnProject));
-  assert.match(frame, /--title-note 2/, `la cifra non è finita nella nota: ${frame}`);
+  assert.doesNotMatch(frame, /--title-note/, `la cifra è finita nel titolo: ${frame}`);
   assert.match(frame, /--model opus/, `il modello è cambiato con una cifra: ${frame}`);
 });
 
-test('detail: tab resta il solo canale del modello', { skip: !CAN_RUN }, () => {
-  // `T` = tab nel mapping del pty. Da `opus` (default) il giro porta a `sonnet`.
-  const frame = lastFrame(capture('DD\rT\r', spawnProject));
-  assert.match(frame, /--model sonnet/, `tab non ha cambiato modello: ${frame}`);
+test('detail: le lettere entrano nel campo solo quando la sua riga è in fuoco', {
+  skip: !CAN_RUN,
+}, () => {
+  // `o` è l'iniziale di `open`: sulla riga azione seleziona, sulla riga titolo
+  // dev'essere testo. È il caso che distingue il focus-gating da un catch-all.
+  const frame = lastFrame(capture(`DD${DETAIL_TITLE_ROW}oro\r`, spawnProject));
+  assert.match(frame, /--title-note oro/, `il testo non è finito nel titolo: ${frame}`);
 });
 
-test('detail: g scrive invece di saltare agli estremi', { skip: !CAN_RUN }, () => {
-  const frame = lastFrame(capture('DD\rgg\r', spawnProject));
-  assert.match(frame, /--title-note gg/, `g non è finita nella nota: ${frame}`);
+test('detail: il prompt modificato a mano è quello che parte', { skip: !CAN_RUN }, () => {
+  // `r` sceglie run (prompt pre-riempito col template), poi si scende sul campo
+  // e si scrive in coda: quello che parte dev'essere il testo MODIFICATO, che
+  // nessun `--prompt-kind` saprebbe più descrivere.
+  const frame = lastFrame(capture('DD\rrDzz\r', spawnProject));
+  assert.match(frame, /--prompt .\/loom-works:run-task T\d+zz./, `prompt non modificato: ${frame}`);
+  assert.doesNotMatch(frame, /--prompt-kind/, `kind e prompt insieme: ${frame}`);
 });
 
-test('detail: nota vuota → nessun flag di titolo nello spawn', { skip: !CAN_RUN }, () => {
+test('detail: azione open → nessun prompt iniziale allo spawn', { skip: !CAN_RUN }, () => {
+  // `open` è l'azione di default e il suo campo prompt è vuoto: lo spawn passa
+  // `--prompt-kind none`, non un `--prompt ''` — deck-run cadrebbe altrimenti sul
+  // proprio default `recap`, cioè su un prompt che nessuno ha chiesto.
   const frame = lastFrame(capture('DD\r\r', spawnProject));
-  // `--title-note ''` produrrebbe un `«»` a vuoto nel titolo della tab: il flag
-  // dev'essere proprio assente dal comando, non presente e vuoto.
-  assert.match(frame, /--prompt-kind/, `lo spawn non è avvenuto: ${frame}`);
+  assert.match(frame, /--prompt-kind none/, `open non ha spawnato a mani nude: ${frame}`);
   assert.doesNotMatch(frame, /--title-note/, `flag di titolo a vuoto: ${frame}`);
 });
 
-test('detail: le cifre sono sparite dalle quadre del selettore modello', { skip: !CAN_RUN }, () => {
-  // Un'etichetta che nomina un tasto è accoppiata al binding: `[ 1 fable ]`
-  // dopo che `1` scrive nella nota dichiara un tasto che non fa più quella cosa.
+test('detail: tab non è più il canale del modello', { skip: !CAN_RUN }, () => {
+  // `T` = tab nel mapping del pty. Il modello si cambia con `←→` dalla sua riga;
+  // `tab` resta senza binding e non deve muovere nulla di nascosto.
+  const frame = lastFrame(capture('DD\rT\r', spawnProject));
+  assert.match(frame, /--model opus/, `tab ha cambiato modello: ${frame}`);
+});
+
+test('detail: la riga modello risponde a ←→ quando è in fuoco', { skip: !CAN_RUN }, () => {
+  // Due `D` portano dalla riga azione a quella modello; `R` (→) avanza da `opus`
+  // a `sonnet`.
+  const frame = lastFrame(capture('DD\rDDR\r', spawnProject));
+  assert.match(frame, /--model sonnet/, `←→ non ha cambiato modello: ${frame}`);
+});
+
+test('detail: la riga hint non nomina i tasti standard', { skip: !CAN_RUN }, () => {
   const frame = lastFrame(capture('DD\r'));
   assert.match(frame, /\[ opus \]/, `riga modello non renderizzata: ${frame}`);
-  assert.doesNotMatch(frame, /\[ [1-4] /, `cifra superstite nella quadra: ${frame}`);
+  // L'asserzione negativa vive sulla SOLA riga hint, non sul frame: sotto c'è il
+  // testo del task file, che di quei glifi può parlare quanto vuole.
+  const hint = frame.split('\n').find((l) => l.includes('PgUp/PgDn'));
+  assert.ok(hint, `riga hint non renderizzata: ${frame}`);
+  // `↑↓`, `←→`, `⏎` ed `esc` dentro un'area a righe fanno la cosa attesa: la
+  // riga hint esiste per ciò che NON si deduce.
+  for (const std of ['↑↓', '←→', '⏎', 'esc']) {
+    assert.ok(!hint.includes(std), `la hint nomina ancora ${std}: ${hint}`);
+  }
 });
 
 // ── T112 · l'azione distruttiva ───────────────────────────────────────────

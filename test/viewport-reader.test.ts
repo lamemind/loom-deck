@@ -173,34 +173,34 @@ test('il frame di assegnazione non supera mai le righe del terminale', () => {
   }
 });
 
-// T66 — il detail è la quarta sostitutiva. Cornice di 12 righe: quattro in più
-// del reader — la riga bottoni col suo marginTop, la riga del selettore modello
-// (T108) e la riga della nota (T111). Sono righe FISSE aggiunte dentro
+// T66 — il detail è la quarta sostitutiva. Cornice di 13 righe: cinque in più
+// del reader — il marginTop dell'area di compilazione più le sue quattro righe
+// (azione, prompt, modello, titolo). Sono righe FISSE aggiunte dentro
 // l'overlay, che vanno scalate dalla capienza del testo o il frame sfonda `rows`
 // sui terminali bassi.
 test('il frame del detail non supera mai le righe del terminale', () => {
   for (const rows of [20, 24, 30, 40, 60]) {
-    assert.ok(detailCapacity(rows) + 12 + SLACK <= rows, `sforo a ${rows} righe`);
+    assert.ok(detailCapacity(rows) + 13 + SLACK <= rows, `sforo a ${rows} righe`);
   }
 });
 
-test('detail: azioni, modello e nota costano quattro righe in più del reader', () => {
+test("detail: l'area di compilazione costa cinque righe in più del reader", () => {
   // Gate sul motivo per cui il detail non può riusare READER_CHROME. Se un
   // domani una di quelle righe sparisse (o ne arrivasse un'altra) questo test
   // cade, che è esattamente il punto: la cornice è un conteggio, non una stima.
   for (const rows of [24, 40, 60]) {
-    assert.equal(detailCapacity(rows), readerCapacity(rows) - 4, `a ${rows} righe`);
+    assert.equal(detailCapacity(rows), readerCapacity(rows) - 5, `a ${rows} righe`);
   }
 });
 
 // T91 — il campo di ricerca è l'unica riga CONDIZIONALE dentro l'overlay: le
-// altre (azioni, modello, nota) sono fisse e stanno in DETAIL_CHROME. Gemello
-// del gate qui sopra: se un domani il campo si prendesse una riga in più senza
-// dirlo alla cornice, il frame sfonderebbe `rows` a terminale basso e Ink
+// quattro dell'area di compilazione sono fisse e stanno in DETAIL_CHROME.
+// Gemello del gate qui sopra: se un domani il campo si prendesse una riga in più
+// senza dirlo alla cornice, il frame sfonderebbe `rows` a terminale basso e Ink
 // cadrebbe nel ramo `clearTerminal`.
 test('detail con ricerca aperta: il frame non supera le righe del terminale', () => {
   for (const rows of [20, 24, 30, 40, 60]) {
-    assert.ok(detailCapacity(rows, true) + 13 + SLACK <= rows, `sforo a ${rows} righe`);
+    assert.ok(detailCapacity(rows, true) + 14 + SLACK <= rows, `sforo a ${rows} righe`);
     assert.equal(detailCapacity(rows, true), detailCapacity(rows) - 2, `a ${rows} righe`);
   }
 });

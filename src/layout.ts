@@ -5,19 +5,6 @@
 import { stripProjectCore } from './session-list.js';
 import type { Session } from './sessions.js';
 
-export type EditRow = 0 | 1 | 2 | 3;
-export const EDIT_ROWS = 4;
-
-/** Le righe del modale edit che sono campi di TESTO (il resto è scelta ←→). */
-export function isTextRow(r: EditRow): r is 2 | 3 {
-  return r === 2 || r === 3;
-}
-
-/** Chiave della bozza scritta dalla riga di testo `r`. */
-export function editField(r: 2 | 3): 'detail' | 'title' {
-  return r === 2 ? 'detail' : 'title';
-}
-
 /**
  * Lunghezza in CODE POINT. Il caret ci indicizza sopra: `.length` conterebbe le
  * code unit UTF-16 e un'emoji nel titolo varrebbe 2 posizioni, cioè un cursore

@@ -1,0 +1,21 @@
+# Catalogo dei prompt iniziali di una sessione Claude aperta dal deck.
+#
+# Formato a righe: <kind><TAB><template>, con `{TASK}` interpolato col TaskID.
+# Righe vuote e righe che iniziano con `#` sono commenti.
+#
+# Perché un file dati e non un `case` dentro deck-run: due lati hanno bisogno
+# dello stesso testo — deck-run per comporre il comando in-tab, il deck TUI per
+# pre-riempire il campo prompt del detail con ciò che sta per essere eseguito.
+# Come codice, il secondo lato dovrebbe riscriverlo, e le due copie divergono
+# alla prima voce aggiunta da una parte sola.
+#
+# `none` non compare: nessun prompt non è un template vuoto, è l'assenza della
+# voce. Chi chiede un kind fuori da questo file riceve un prompt vuoto.
+#
+# Vincolo sui template: nessun apice singolo. Il testo finisce dentro `'...'`
+# nel comando passato a `bash -lc`, e questo file è committato — un apice qui
+# sarebbe un errore di scrittura, non un input da quotare.
+recap	recap stato task {TASK}
+preflight	/loom-works:preflight-task {TASK}
+run	/loom-works:run-task {TASK}
+checkpoint	/loom-works:checkpoint-task {TASK}

@@ -2,8 +2,8 @@
 // schermate sostitutive costano righe al budget d'altezza, quindi ognuno ha un
 // costo dichiarato in `viewport.ts`.
 import { Box, Text } from 'ink';
-import { caretWindow, cut, cutParts, sanitize } from '../width.js';
-import { cpLen, type EditRow } from '../layout.js';
+import { cut, cutParts, sanitize } from '../width.js';
+import { FieldText } from './fields.js';
 import { CARET, CARET_OFF, WARN } from '../glyphs.js';
 import { EDIT_PRI, EDIT_PROG, type EditDraft, type FilterCursor, type PurgeDraft } from '../model.js';
 import { PRI_ENTRIES, PROG_ENTRIES, type SortEntry, type SortKey, type ViewState } from '../view.js';
@@ -150,16 +150,10 @@ function IgnoredChoice({
   );
 }
 
-/**
- * Campo di testo del modale edit: finestra ancorata al caret + cursore inverso
- * nella posizione REALE.
- *
- * Il cursore non è più uno spazio inverso appiccicato in coda ma la cella `at`
- * della finestra — cioè il carattere su cui il caret sta davvero. Fuori fuoco
- * (`focused` falso) il caret non si disegna e la finestra si ancora in fondo,
- * che è la vista utile per un campo che non si sta scrivendo.
- */
-export function EditTextField({
+/** Campo di testo con la sua etichetta, nel layout dell'edit: label, due spazi,
+ *  campo. La label sta qui e non dentro `FieldText` perché è del LAYOUT, non del
+ *  campo — il detail la mette in un prefisso incolonnato di larghezza diversa. */
+function LabelledField({
   label,
   value,
   caret,
@@ -172,18 +166,11 @@ export function EditTextField({
   focused: boolean;
   cols: number;
 }) {
-  const win = caretWindow(value, focused ? caret : cpLen(value), cols);
   return (
     <>
       <Text dimColor>{label}</Text>
-      <Text>
-        {'  '}
-        {sanitize(win.head)}
-      </Text>
-      {/* Fuori fuoco `at` è solo la cella virtuale di fine campo: disegnarla
-          aggiungerebbe al testo uno spazio che non gli appartiene. */}
-      {focused ? <Text inverse>{sanitize(win.at)}</Text> : null}
-      <Text>{sanitize(win.tail)}</Text>
+      <Text>{'  '}</Text>
+      <FieldText value={value} caret={caret} focused={focused} cols={cols} />
     </>
   );
 }
@@ -196,14 +183,16 @@ export function EditModal({
   id,
   draft,
   row,
+  caret,
   columns,
 }: {
   id: string;
   draft: EditDraft;
-  row: EditRow;
+  row: number;
+  caret: number;
   columns: number;
 }) {
-  const mark = (r: EditRow) => (row === r ? CARET : CARET_OFF);
+  const mark = (r: number) => (row === r ? CARET : CARET_OFF);
   // Budget dei campi di testo, DERIVATO da `columns` (mai una costante): il box
   // del modale è ANNIDATO nella cornice del deck, quindi le cornici da scalare
   // sono due — root (bordo 2 + paddingX 2) e modale (bordo 2 + paddingX 2) — più
@@ -236,10 +225,10 @@ export function EditModal({
       </Text>
       <Text>
         {mark(2)}
-        <EditTextField
+        <LabelledField
           label="prog  "
           value={draft.detail}
-          caret={draft.caret}
+          caret={caret}
           focused={row === 2}
           cols={fieldBudget}
         />
@@ -250,10 +239,10 @@ export function EditModal({
           informazione — tenerli separati sarebbe l'invito a farli divergere. */}
       <Text>
         {mark(3)}
-        <EditTextField
+        <LabelledField
           label="titolo"
           value={draft.title}
-          caret={draft.caret}
+          caret={caret}
           focused={row === 3}
           cols={fieldBudget}
         />
