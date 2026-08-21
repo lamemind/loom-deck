@@ -15,7 +15,7 @@
 # Vincolo sui template: nessun apice singolo. Il testo finisce dentro `'...'`
 # nel comando passato a `bash -lc`, e questo file è committato — un apice qui
 # sarebbe un errore di scrittura, non un input da quotare.
-recap	recap stato task {TASK}
+recap	/loom-works:recap-status {TASK}
 preflight	/loom-works:preflight-task {TASK}
 run	/loom-works:run-task {TASK}
 checkpoint	/loom-works:checkpoint-task {TASK}

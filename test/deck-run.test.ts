@@ -69,7 +69,7 @@ function inTabCmd(args: string[], env: Record<string, string> = {}): string {
 
 const PROMPTS: Array<[string, string | null]> = [
   ['none', null],
-  ['recap', 'recap stato task T56'],
+  ['recap', '/loom-works:recap-status T56'],
   ['preflight', '/loom-works:preflight-task T56'],
   ['run', '/loom-works:run-task T56'],
   ['checkpoint', '/loom-works:checkpoint-task T56'],
@@ -99,6 +99,9 @@ for (const [kind, prompt] of PROMPTS) {
 // Lista monofamiglia: ogni kind è un template diretto sull'id, nessuno
 // discrimina sulla forma dell'id.
 test('ogni kind interpola l’id senza dispacciare', () => {
+  assert.ok(
+    inTabCmd(['T02', '--prompt-kind', 'recap']).endsWith("'/loom-works:recap-status T02'"),
+  );
   assert.ok(inTabCmd(['T02', '--prompt-kind', 'run']).endsWith("'/loom-works:run-task T02'"));
   assert.ok(
     inTabCmd(['T02', '--prompt-kind', 'preflight']).endsWith("'/loom-works:preflight-task T02'"),
@@ -108,11 +111,14 @@ test('ogni kind interpola l’id senza dispacciare', () => {
   );
 });
 
-test('retro-compat: senza flag il prompt resta il recap di prima', () => {
+// Il flag assente vale `recap`, e ci vale ancora dopo che il TESTO del kind è
+// cambiato: l'invariante è il default, non la stringa. Asserirli entrambi separa
+// una regressione del default da un edit del catalogo.
+test('senza flag il prompt è quello del kind recap', () => {
   const nudo = inTabCmd(['T56', '--session-id', SID]);
   const esplicito = inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'recap']);
   assert.equal(nudo, esplicito);
-  assert.ok(nudo.endsWith("'recap stato task T56'"));
+  assert.ok(nudo.endsWith("'/loom-works:recap-status T56'"));
 });
 
 test('LOOM_DECK_ENTER_PROMPT vince sul kind, ma non su none', () => {

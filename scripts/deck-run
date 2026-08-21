@@ -4,8 +4,8 @@
 #
 # Apre una tab Ptyxis nella window ATTIVA (quella col focus = il deck) e vi
 # avvia una sessione Claude Code già bound alla task via LOOM_TASK, dritta sul
-# prompt iniziale scelto con --prompt-kind (default: `recap`, prompt diretto
-# "recap stato task <TaskID>" — no skill, solo recap → più controllo).
+# prompt iniziale scelto con --prompt-kind (default: `recap`, cioè la skill
+# `/loom-works:recap-status` sulla task).
 # Riusabile identico da TUI (Ink) e da web.
 #
 # Quattro assi ORTOGONALI, da non confondere fra loro:
@@ -164,7 +164,7 @@ USAGE="uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <kind>] [--sessio
 
   --prompt-kind  prompt iniziale della sessione bound (default: recap)
        none        nessun prompt — sessione aperta sulla task, a mani nude
-       recap       recap stato task <TaskID>
+       recap       /loom-works:recap-status <TaskID>
        preflight   /loom-works:preflight-task <TaskID>
        run         /loom-works:run-task <TaskID>
        checkpoint  /loom-works:checkpoint-task <TaskID>
@@ -421,7 +421,12 @@ FORK_FLAG=""
 # eseguirlo o a mani nude. Il kind è quell'intento.
 #   none       → nessun prompt (≠ stringa vuota: PROMPT_ARG sparisce del tutto,
 #                come sul ramo --resume, altrimenti CC riceve un posizionale vuoto)
-#   recap      → prompt DIRETTO, no skill: l'utente rivede/steera prima di lanciare
+#   recap      → skill di recap sulla task. È un DISPATCHER: `recap-status`
+#                risolve la task, classifica (progetto / task / epica) e passa a
+#                una sotto-skill. Fino a v0.45 era invece un prompt diretto
+#                ("recap stato task <id>"), scelto perché non esisteva una skill
+#                di recap tarata sulla singola task e quella di progetto avrebbe
+#                risposto largo — vincolo caduto col dispatcher.
 #   preflight  → skill di preflight sulla task
 #   run        → skill di esecuzione sulla task
 #   checkpoint → skill di checkpoint sulla task
