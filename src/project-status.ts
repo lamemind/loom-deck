@@ -57,9 +57,26 @@ export function readStatusCache(path: string): StatusCache | null {
   }
 }
 
+/**
+ * Riporta a markdown gli heading scritti per la chat di Claude Code.
+ *
+ * L'output style del progetto impone lì un `#` in PIÙ (`# ## Sezione` per un
+ * H2), perché quel terminale stila solo l'H1 e senza il trucco la gerarchia si
+ * appiattirebbe. Il deck però rende markdown vero: lasciato com'è, ogni titolo
+ * del recap comparirebbe come un H1 col testo letterale `## Sezione`.
+ *
+ * Il deck è il consumatore, quindi la traduzione la paga lui: la skill produce
+ * per la chat, che resta il suo canale principale. La sostituzione è sicura
+ * anche se la convenzione sparisse — richiede altri `#` dopo il primo, quindi
+ * un heading markdown normale non la incontra mai.
+ */
+export function normalizeChatHeadings(text: string): string {
+  return text.replace(/^# (#+ )/gm, '$1');
+}
+
 export function writeStatusCache(path: string, text: string): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(path, text, { mode: 0o600 });
+  writeFileSync(path, normalizeChatHeadings(text), { mode: 0o600 });
 }
 
 export const STATUS_MISSING = 'missing';

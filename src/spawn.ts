@@ -543,6 +543,12 @@ export function spawnProjectStatus(
   ]);
 }
 
+// Comando della notifica desktop. L'override esiste per il collaudo del ramo
+// «binario assente»: su una macchina dove `notify-send` c'è, quel ramo non è
+// altrimenti raggiungibile — e non provarlo significherebbe scoprire su una
+// macchina altrui che un ENOENT non agganciato porta via la TUI.
+export const NOTIFY_CMD = process.env.LOOM_DECK_NOTIFY_CMD ?? 'notify-send';
+
 // T121 — notifica desktop di fine generazione. La generazione dura minuti e chi
 // l'ha chiesta nel frattempo guarda altrove; la notifica di GNOME persiste nel
 // cassetto, quindi raggiunge anche chi torna dieci minuti dopo — cosa che un
@@ -555,7 +561,7 @@ export function spawnProjectStatus(
 // stabile della macchina, e dirlo a ogni generazione sarebbe lo stesso messaggio
 // a ogni giro su una funzione che non è il deliverable.
 export function notifyDone(title: string, body: string) {
-  const child = spawnOut('notify-send', ['--app-name=loom-deck', title, body], {
+  const child = spawnOut(NOTIFY_CMD, ['--app-name=loom-deck', title, body], {
     detached: true,
     stdio: 'ignore',
   });

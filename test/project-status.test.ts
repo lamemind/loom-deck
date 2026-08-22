@@ -69,6 +69,26 @@ test('scrittura e rilettura conservano il testo, e il tempo è l\'mtime', () => 
   assert.equal(readFileSync(path, 'utf8'), text, 'il file non è markdown nudo');
 });
 
+test('gli heading scritti per la chat tornano markdown', () => {
+  // La skill produce per la chat di Claude Code, dove l'output style impone un
+  // `#` in più: senza traduzione il viewer mostrerebbe `## Sezione` come TESTO
+  // dentro un H1.
+  const dir = mkdtempSync(join(tmpdir(), 'deck-status-'));
+  const path = join(dir, 'recap.md');
+  writeStatusCache(
+    path,
+    ['# ## Task aperte', '', '# ### Dettaglio', '', '# Titolo vero', '', 'testo # non heading'].join(
+      '\n',
+    ),
+  );
+  const text = readStatusCache(path)?.text ?? '';
+  assert.match(text, /^## Task aperte$/m);
+  assert.match(text, /^### Dettaglio$/m);
+  // Un H1 legittimo non va toccato, e nemmeno un cancelletto in mezzo al testo.
+  assert.match(text, /^# Titolo vero$/m);
+  assert.match(text, /^testo # non heading$/m);
+});
+
 test('la riscrittura sostituisce, non accoda', () => {
   const dir = mkdtempSync(join(tmpdir(), 'deck-status-'));
   const path = join(dir, 'recap.md');

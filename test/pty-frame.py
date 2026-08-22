@@ -37,6 +37,10 @@ import signal
 # 'K' = CANC (`\x1b[3~`), l'apertura della conferma di eliminazione. Serve una
 # voce nella mappa perché la sequenza è di 4 byte: scritta dentro `--keys`
 # arriverebbe come quattro tasti separati.
+# '<' e '>' = PagUp e PagDn (`\x1b[5~` / `\x1b[6~`), lo scorrimento a pagina dei
+# viewer. Servono una voce come 'K' perché la sequenza è di 4 byte; i due segni
+# sono scelti fra i caratteri che il deck NON lega a nessuna azione, così una
+# lettera resta libera per un binding futuro.
 # 'W' = ATTESA: nessun byte scritto, ma il pump fra un tasto e l'altro avviene
 # lo stesso (0.7s). È l'unico modo di far passare TEMPO dentro uno scenario, e
 # serve a chi verifica una finestra che scade — es. i 5s del doppio `^C`, che
@@ -51,6 +55,8 @@ KEYS = {
     'T': b'\t',
     'X': b'x' * 60,
     'K': b'\x1b[3~',
+    '<': b'\x1b[5~',
+    '>': b'\x1b[6~',
     'W': b'',
 }
 

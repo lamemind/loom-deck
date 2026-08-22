@@ -440,6 +440,29 @@ test('un secondo ^G non spawna una seconda generazione', { skip: !CAN_RUN }, () 
   assert.match(frame, /generazione già in corso/i, `il secondo ^G non è stato rifiutato: ${frame}`);
 });
 
+test('il viewer scorre a riga e a pagina', { skip: !CAN_RUN }, () => {
+  // Una cache più alta del terminale: con un recap corto la posizione non si
+  // muove e lo scenario passerebbe senza provare niente.
+  const long = join(mkdtempSync(join(tmpdir(), 'loom-deck-status-')), 'lungo.md');
+  writeFileSync(
+    long,
+    Array.from({ length: 200 }, (_, i) => `riga numero ${i} del recap`).join('\n'),
+  );
+  const env = { LOOM_DECK_STATUS_FILE: long };
+
+  const start = lastFrame(capture(CTRL_O, PROJECT, env));
+  assert.match(start, /righe 1-\d+ di 200/, `posizione iniziale assente: ${start}`);
+
+  const oneDown = lastFrame(capture(`${CTRL_O}D`, PROJECT, env));
+  assert.match(oneDown, /righe 2-\d+ di 200/, `↑↓ non scorre di una riga: ${oneDown}`);
+
+  // `>` = PagDn nella mappa di `pty-frame.py`: una pagina intera, quindi la
+  // prima riga salta di quanto è alta la finestra invece che di uno.
+  const onePage = lastFrame(capture(`${CTRL_O}>`, PROJECT, env));
+  const at = onePage.match(/righe (\d+)-/);
+  assert.ok(at && Number(at[1]) > 2, `PagDn non ha scorso una pagina: ${onePage}`);
+});
+
 test('^O durante una generazione apre la cache vecchia e lo dichiara', {
   skip: !CAN_RUN,
 }, () => {
