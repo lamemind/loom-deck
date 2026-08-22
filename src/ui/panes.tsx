@@ -3,7 +3,7 @@
 // larghezze già calcolate, non li derivano.
 import { Box, Text } from 'ink';
 import { cut, cutParts, pad, sanitize, termWidth } from '../width.js';
-import { isDone, paneTextWidth } from '../layout.js';
+import { paneTextWidth } from '../layout.js';
 import {
   CARET,
   CARET_OFF,
@@ -15,11 +15,11 @@ import {
   SID_CHARS,
   TASK_EMPTY,
   WARN,
-  displayProg,
+  metaCount,
   modelShort,
   relTime,
-  taskTail,
 } from '../glyphs.js';
+import { TaskRow } from './task-row.js';
 import { META_ROWS, ROW_ALL, ROW_SPOT } from '../model.js';
 import { rowLabel, sessionTitle, type SessionRow } from '../session-list.js';
 import {
@@ -32,7 +32,13 @@ import {
   type TaskViewCounts,
   type TaskViewId,
 } from '../pane-views.js';
-import { describeSort, padId, PRI_ENTRIES, PROG_ENTRIES, type ViewState } from '../view.js';
+import {
+  describeSort,
+  PRI_ENTRIES,
+  PROG_ENTRIES,
+  type TaskRowData,
+  type ViewState,
+} from '../view.js';
 import type { Task } from '../tasks.js';
 import type { Session } from '../sessions.js';
 import type { LiveSession } from '../live-sessions.js';
@@ -114,7 +120,6 @@ export function TasksPane({
   selected,
   spotCount,
   allCount,
-  childCount,
   idW,
   tailW,
   focused,
@@ -123,7 +128,7 @@ export function TasksPane({
   above,
   below,
   columns,
-  dirty,
+  data,
 }: {
   /** Solo la finestra visibile, non la lista completa. */
   tasks: Task[];
@@ -140,7 +145,6 @@ export function TasksPane({
   spotCount: number;
   /** T59 — conversazioni totali del progetto (badge della riga "tutte"). */
   allCount: number;
-  childCount: Map<string, number>;
   /** T118 — larghezza della colonna id e di quella della coda (marker + numero
    *  di conversazioni), misurate sulla vista ATTIVA COMPLETA: `tasks` qui è la
    *  sola finestra, e derivarle da lei sposterebbe le colonne a ogni scroll.
@@ -156,12 +160,10 @@ export function TasksPane({
   above: number;
   below: number;
   columns: number;
-  /** T112 — task la cui folder ha file che `git rm` non rimuove: `CANC` in
-   *  bulk le scarta a monte, perché il gate del plugin esce 2 prima di toccare
-   *  qualsiasi cosa e una sola di queste annullerebbe il purge di tutte. Il
-   *  marker sta in coda alla riga, dentro il budget di `tail`: un glifo fuori
-   *  dal conteggio è ciò che mangia il bordo del pane. */
-  dirty: ReadonlySet<string>;
+  /** T124 — i tre lookup per-task della riga: conversazioni totali, rollup delle
+   *  vive, folder che `git rm` non svuoterebbe. Viaggiano insieme perché insieme
+   *  li misura `taskColumns` e insieme li consuma `TaskRow`. */
+  data: TaskRowData;
 }) {
   const allSelected = selected === ROW_ALL;
   const spotSelected = selected === ROW_SPOT;
@@ -226,12 +228,12 @@ export function TasksPane({
           legata a una task è raggiungibile senza sapere a quale. */}
       <Text inverse={allSelected && focused} bold={allSelected && !focused} wrap="truncate-end">
         {allSelected ? CARET : CARET_OFF}
-        ≡ tutte le sessioni{allCount > 0 ? ` (${allCount})` : ''}
+        ≡ tutte le sessioni{metaCount(allCount)}
       </Text>
       {/* riga meta "spot": sessioni non legate ad alcuna task */}
       <Text inverse={spotSelected && focused} bold={spotSelected && !focused} wrap="truncate-end">
         {spotSelected ? CARET : CARET_OFF}
-        ○ spot  sessioni libere{spotCount > 0 ? ` (${spotCount})` : ''}
+        ○ spot  sessioni libere{metaCount(spotCount)}
       </Text>
       {loadError ? (
         <Text color="red" wrap="truncate-end">{loadError}</Text>
@@ -244,50 +246,21 @@ export function TasksPane({
           {cut(taskView(activeView).empty, paneTextWidth(columns))}
         </Text>
       ) : (
-        tasks.map((task, i) => {
-          // windowStart riporta l'indice di finestra a quello della lista
-          // completa, su cui è keyata la selezione. +META_ROWS: le prime due
-          // righe sono le meta.
-          const sel = windowStart + i + META_ROWS === selected;
-          const tail = taskTail(childCount.get(task.id) ?? 0, dirty.has(task.id));
-          // T118 — l'id è paddato a `idW`, quindi `head` ha la stessa larghezza
-          // su ogni riga e Pri/Prog cadono sempre nella stessa colonna.
-          const id = padId(task.id, idW);
-          // Invariante ③: la descrizione è l'unico pezzo a lunghezza libera, e
-          // si taglia QUI sul budget che resta dopo le colonne fisse. Lasciarlo
-          // fare a `truncate-end` significa passare da `cli-truncate`, che
-          // restituisce una riga più larga del pane (una colonna per emoji) e
-          // quindi scrive sopra il bordo. Le parti fisse si misurano con
-          // `termWidth`: i due glifi Pri/Prog valgono 2 ciascuno.
-          const head = `${CARET_OFF}${id}  ${sanitize(task.pri)}  ${displayProg(task.prog)}  `;
-          // T118 — la colonna della coda si riserva PRIMA di tagliare la
-          // descrizione, e per la stessa larghezza su ogni riga: appesa dopo,
-          // entrava nel budget solo dove c'era qualcosa da scrivere, e la
-          // descrizione si tagliava a una colonna diversa riga per riga.
-          //
-          // Pavimento `0` su tutte e tre le misure e non un minimo di cortesia:
-          // il budget è un TETTO. Un pavimento sopra lo spazio reale fa uscire
-          // la riga dal pane e le mangia il bordo. `reserve` si clampa su ciò
-          // che avanza, così `head + desc + coda` sta sempre dentro il pane.
-          const avail = Math.max(0, paneTextWidth(columns) - termWidth(head));
-          const reserve = Math.min(tailW, avail);
-          const descW = avail - reserve;
-          const desc = cut(task.desc, descW);
-          return (
-            <Text
-              key={task.id}
-              inverse={sel && focused}
-              bold={sel && !focused}
-              dimColor={!sel && isDone(task.prog)}
-              wrap="truncate-end"
-            >
-              {sel ? CARET : CARET_OFF}
-              {id}  {sanitize(task.pri)}  {displayProg(task.prog)}  {desc}
-              {' '.repeat(Math.max(0, descW - termWidth(desc)))}
-              {pad(tail, reserve, 'right')}
-            </Text>
-          );
-        })
+        tasks.map((task, i) => (
+          <TaskRow
+            key={task.id}
+            task={task}
+            // windowStart riporta l'indice di finestra a quello della lista
+            // completa, su cui è keyata la selezione. +META_ROWS: le prime due
+            // righe sono le meta.
+            sel={windowStart + i + META_ROWS === selected}
+            focused={focused}
+            width={paneTextWidth(columns)}
+            idW={idW}
+            tailW={tailW}
+            data={data}
+          />
+        ))
       )}
     </Box>
   );

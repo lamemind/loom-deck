@@ -121,11 +121,15 @@ export const KIND_LABEL: Record<BodyKind, string> = { ai: 'IA', tool: 'tools', h
 // T41 — ordine dei valori nel modale edit. Deliberatamente DIVERSO da
 // PRI_ENTRIES/PROG_ENTRIES (che seguono il rango di sort): qui si sceglie un
 // valore, non si ordina, quindi vince l'ordine del CICLO DI VITA — da fare →
-// in corso → chiusa → bloccata. La priorità resta alta→bassa, che è già
-// l'ordine naturale di lettura.
+// preflight fatto → in corso → chiusa → bloccata. La priorità resta alta→bassa,
+// che è già l'ordine naturale di lettura.
+//
+// L'elenco deve coprire OGNI valore di ProgName: il cursore del modale nasce da
+// `Math.max(0, EDIT_PROG.indexOf(prog))` (cli.tsx), quindi un valore assente
+// torna -1, viene schiacciato a 0 e salvare retrocede la task alla prima voce.
 export const EDIT_PRI: readonly PriName[] = ['high', 'med', 'low'];
 
-export const EDIT_PROG: readonly ProgName[] = ['todo', 'wip', 'done', 'locked'];
+export const EDIT_PROG: readonly ProgName[] = ['todo', 'ready', 'wip', 'done', 'locked'];
 
 // T117 — le righe del modale edit come DATO, nella forma che `fields.ts`
 // consuma: 0 priorità · 1 stato · 2 progresso libero · 3 titolo. Il modale non

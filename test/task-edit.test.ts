@@ -8,6 +8,8 @@ import {
   updateTaskFileFields,
   updateTasksMdRow,
 } from '../src/task-edit.js';
+import { EDIT_PROG } from '../src/model.js';
+import { PROG_ENTRIES } from '../src/view.js';
 
 const TASKS_MD = `# Tasks
 
@@ -138,9 +140,18 @@ test('progressText: detail arbitrario vince sul default', () => {
 
 test('progressText: default per stato, done data-stampato', () => {
   assert.equal(progressText('todo', ''), '🔵 Todo');
+  assert.equal(progressText('ready', ''), '🟢 Ready');
   assert.equal(progressText('wip', '  '), '🟡 In Progress');
   assert.equal(progressText('locked', ''), '🔒 Locked');
   assert.equal(progressText('done', '', '2026-07-20'), '✔️ Done at 2026-07-20');
+});
+
+// Un valore di ProgName assente da EDIT_PROG lo retrocede a `todo` al salvataggio
+// del modale: il cursore nasce da Math.max(0, indexOf(prog)), e -1 → 0.
+test('EDIT_PROG copre ogni valore di ProgName', () => {
+  for (const name of PROG_ENTRIES.map((e) => e.name)) {
+    assert.ok(EDIT_PROG.includes(name), `${name} manca da EDIT_PROG`);
+  }
 });
 
 test('stripProgGlyph toglie il glifo di testa e lascia il resto', () => {

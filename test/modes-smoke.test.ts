@@ -104,7 +104,9 @@ const MODES: Array<{ name: string; keys: string; expect: RegExp }> = [
   { name: 'filter', keys: 'F', expect: /filtr/i },
   { name: 'search', keys: CTRL_F, expect: /ricerca|hash/i },
   { name: 'detail', keys: 'DD\r', expect: /preflight|checkpoint/i },
-  { name: 'note', keys: 'RN', expect: /nota/i },
+  // T111 ha rinominato il concetto in «titolo della conversazione»: l'attesa
+  // deve citare ciò che la barra disegna oggi, non il nome di prima.
+  { name: 'note', keys: 'RN', expect: /titolo conversazione/i },
   { name: 'assign', keys: 'RA', expect: /assegn|detach/i },
   // `DD` prima di `E`: il deck apre su `≡ tutte` (D4), e le righe meta non
   // sono task — `E` lì risponde «nessuna task selezionata», correttamente.

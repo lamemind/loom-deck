@@ -1,6 +1,9 @@
 // T39 — Core della vista: ordinali, sort chain multi-chiave, filtri.
 // Modulo PURO: nessun import da ink/react, nessun I/O → testabile senza terminale.
 
+import { taskTail } from './glyphs.js';
+import { termWidth } from './width.js';
+import type { TaskLive } from './live-sessions.js';
 import type { Task } from './tasks.js';
 
 export type SortKey = 'pri' | 'prog' | 'id';
@@ -12,7 +15,7 @@ export interface SortEntry {
 }
 
 export type PriName = 'high' | 'med' | 'low';
-export type ProgName = 'wip' | 'todo' | 'locked' | 'done';
+export type ProgName = 'wip' | 'ready' | 'todo' | 'locked' | 'done';
 
 export interface ViewState {
   /** Chain ordinata: valutata in cascata, prima chiave = più significativa. */
@@ -43,10 +46,15 @@ const PRI_TABLE: ReadonlyArray<{ name: PriName; glyph: string; rank: number }> =
 ];
 
 // Ordine per "attivabilità" (desc = prima ciò su cui puoi agire): in corso →
-// da fare → bloccata → chiusa. Non è l'ordine del ciclo di vita: il deck serve
-// a scegliere su cosa lavorare, quindi le Done stanno in fondo sotto `desc`.
+// preflight fatto → da fare → bloccata → chiusa. Non è l'ordine del ciclo di
+// vita: il deck serve a scegliere su cosa lavorare, quindi le Done stanno in
+// fondo sotto `desc`. `ready` sta sopra `todo` perché il design è già congelato
+// (run-task parte senza Q&A), e sotto `wip` perché il lavoro già aperto viene
+// prima. Il rango governa anche l'ordine delle colonne della barra SHIFT+F,
+// derivata da PROG_ENTRIES.
 const PROG_TABLE: ReadonlyArray<{ name: ProgName; glyph: string; rank: number }> = [
-  { name: 'wip', glyph: '🟡', rank: 4 },
+  { name: 'wip', glyph: '🟡', rank: 5 },
+  { name: 'ready', glyph: '🟢', rank: 4 },
   { name: 'todo', glyph: '🔵', rank: 3 },
   { name: 'locked', glyph: '🔒', rank: 2 },
   { name: 'done', glyph: '✔', rank: 1 },
@@ -120,6 +128,47 @@ export function padId(id: string, cols: number): string {
   const m = /^([A-Za-z]+)(\d+)$/.exec(id);
   if (!m) return id.padEnd(cols);
   return m[1]! + ' '.repeat(Math.max(0, cols - id.length)) + m[2]!;
+}
+
+/**
+ * T124 — i tre lookup per-task che una riga di lista consuma insieme. Viaggiano
+ * come un blocco perché hanno due consumatori (il pane task e la schermata di
+ * assegnazione) e perché la larghezza della colonna coda si misura sugli stessi
+ * tre: passarli sciolti significa poterne dimenticare uno su un lato solo, che
+ * è esattamente come la schermata di assegnazione era divergita.
+ */
+export interface TaskRowData {
+  childCount: ReadonlyMap<string, number>;
+  live: ReadonlyMap<string, TaskLive>;
+  dirty: ReadonlySet<string>;
+}
+
+/**
+ * T118/T124 — le due colonne fisse della lista task, misurate sulla popolazione
+ * COMPLETA della vista e non sulla finestra visibile.
+ *
+ * `tail` porta dentro il proprio gutter (`+1`), così l'allineamento a destra lo
+ * produce `pad` da sé; nessuna riga con qualcosa da scrivere → `0`, colonna
+ * spenta, e le descrizioni si riprendono lo spazio.
+ *
+ * La stringa misurata qui è la STESSA che il render disegna (`taskTail`): due
+ * formattazioni gemelle divergerebbero alla prima modifica, e la colonna
+ * risulterebbe larga quanto una stringa che nessuno scrive.
+ */
+export function taskColumns(
+  tasks: ReadonlyArray<Task>,
+  data: TaskRowData,
+): { id: number; tail: number } {
+  let tail = 0;
+  for (const t of tasks) {
+    tail = Math.max(
+      tail,
+      termWidth(
+        taskTail(data.live.get(t.id)?.count ?? 0, data.childCount.get(t.id) ?? 0, data.dirty.has(t.id)),
+      ),
+    );
+  }
+  return { id: idColumnWidth(tasks), tail: tail > 0 ? tail + 1 : 0 };
 }
 
 function rankOf(task: Task, key: SortKey): number {

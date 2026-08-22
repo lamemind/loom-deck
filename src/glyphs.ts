@@ -70,6 +70,14 @@ export function modelShort(id: string): string {
 // Sulla riga CHIUSA c'è uno spazio e non un terzo glifo: le chiuse sono la
 // maggioranza di ogni lista, e marcarle vorrebbe dire disegnare N volte «niente
 // da dire» — la colonna diventerebbe rumore invece di un segnale.
+//
+// T124 — non sono più il vocabolario di una superficie sola: la riga del pane
+// task adotta la stessa coppia, nella stessa forma (glifo attaccato all'id che
+// qualifica, colore e grassetto sull'id) e con lo stesso significato. L'unica
+// differenza ammessa è la POPOLAZIONE su cui il glifo si pronuncia — una
+// conversazione di là, le N conversazioni di una task di qua, con un rollup che
+// fa vincere `busy`. Riusarli con un significato spostato sarebbe un falso
+// amico, peggio di un glifo nuovo.
 export const LIVE_IDLE = '●';
 export const LIVE_BUSY = '◍';
 export const LIVE_NONE = ' ';
@@ -97,11 +105,32 @@ export function displayProg(prog: string): string {
  * a disegnarla (sulla finestra, in `panes.tsx`). Due formattazioni gemelle
  * divergerebbero alla prima modifica, e la colonna risulterebbe larga quanto
  * una stringa che nessuno scrive.
+ *
+ * T124 — il contatore spezza vive e totali (`(1/5`) invece di sommarle: un
+ * numero solo cresce e non torna più indietro, quindi dice quanta storia ha la
+ * task e non se lì sta succedendo qualcosa adesso. A zero vive resta il solo
+ * totale (`(5`): scrivere `(0/5` metterebbe uno zero su quasi tutte le righe di
+ * ogni lista, e il segnale sparirebbe nel rumore.
+ *
+ * La parentesi di CHIUSURA cade sempre. La colonna è ancorata a destra, quindi
+ * la `)` costerebbe una cella per spostare verso l'interno l'unica cosa che si
+ * legge davvero; il bordo del pane chiude già il gruppo. Quella di apertura
+ * serve invece a staccare il contatore dalla descrizione a lunghezza libera che
+ * gli sta a sinistra — l'asimmetria è voluta.
  */
-export function taskTail(childCount: number, dirty: boolean): string {
-  const count = childCount > 0 ? `(${childCount})` : '';
+export function taskTail(live: number, total: number, dirty: boolean): string {
+  const count = total > 0 ? (live > 0 ? `(${live}/${total}` : `(${total}`) : '';
   if (!dirty) return count;
   return count ? `${WARN} ${count}` : WARN;
+}
+
+/** T124 — contatore di una riga META del pane task (`≡ tutte`, `○ spot`), che
+ *  non è una colonna ancorata a niente. Prende comunque la grafia senza chiusa:
+ *  due forme dello stesso oggetto a due righe di distanza si leggono come un
+ *  errore, mentre una forma sola applicata anche dove la sua ragione non serve
+ *  si legge come una convenzione. */
+export function metaCount(n: number): string {
+  return n > 0 ? ` (${n}` : '';
 }
 
 // T49 — size umana compatta per il detail pane sessione.

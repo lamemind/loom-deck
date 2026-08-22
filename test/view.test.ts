@@ -12,12 +12,17 @@ import {
   idNum,
   padId,
   priRank,
+  progName,
   progRank,
+  taskColumns,
   toggleHidden,
   DEFAULT_VIEW,
   type SortEntry,
+  type TaskRowData,
   type ViewState,
 } from '../src/view.js';
+import { taskTail } from '../src/glyphs.js';
+import { termWidth } from '../src/width.js';
 import { loadView, saveView, parseView } from '../src/view-store.js';
 import { cellWidth, launchLegend, parseIdentity, parseLaunch } from '../src/config.js';
 import type { Task } from '../src/tasks.js';
@@ -45,6 +50,12 @@ test('VS16: ✔️ e ✔ hanno lo stesso rango', () => {
   assert.ok(progRank('✔') > progRank('glifo-ignoto'));
   assert.ok(progRank('🟡') > progRank('🔵'));
   assert.ok(progRank('🔵') > progRank('🔒'));
+});
+
+test('🟢 ready: fra 🟡 e 🔵 per attivabilità', () => {
+  assert.equal(progName('🟢'), 'ready');
+  assert.ok(progRank('🟡') > progRank('🟢'));
+  assert.ok(progRank('🟢') > progRank('🔵'));
 });
 
 test('id numerico: T9 precede T10 (non lessicografico)', () => {
@@ -94,6 +105,52 @@ test('padId: spazi dentro il prefisso, cifre allineate a destra', () => {
   for (const task of mixed) assert.equal(padId(task.id, w).length, w);
 });
 
+// T124 — la colonna coda si misura sulla STESSA stringa che il render disegna,
+// e il chiamante non ha modo di comporne una gemella: `taskColumns` prende i tre
+// lookup e chiama `taskTail` per conto suo.
+test('taskColumns: la coda è il massimo della popolazione, più il proprio gutter', () => {
+  const list = [t('T9', '⚡', '🔵'), t('T90', '⚡', '🔵')];
+  const data: TaskRowData = {
+    childCount: new Map([['T9', 3], ['T90', 12]]),
+    live: new Map([['T90', { count: 2, status: 'busy' }]]),
+    dirty: new Set<string>(),
+  };
+  // `(2/12` è la più larga: 5 colonne, più 1 di gutter.
+  assert.equal(taskColumns(list, data).tail, termWidth(taskTail(2, 12, false)) + 1);
+  assert.equal(taskColumns(list, data).id, 3);
+});
+
+// Nessuna riga con qualcosa da scrivere → colonna SPENTA, non larga 1: è quello
+// che restituisce alle descrizioni lo spazio quando la lista non ha né
+// conversazioni né marker.
+test('taskColumns: coda a zero quando nessuna riga scrive niente', () => {
+  const list = [t('T9', '⚡', '🔵')];
+  const empty: TaskRowData = {
+    childCount: new Map(),
+    live: new Map(),
+    dirty: new Set<string>(),
+  };
+  assert.equal(taskColumns(list, empty).tail, 0);
+  // Basta però una sola folder sporca ad accenderla, senza nessun contatore.
+  const dirty: TaskRowData = { ...empty, dirty: new Set(['T9']) };
+  assert.ok(taskColumns(list, dirty).tail > 0);
+});
+
+// La liveness si rilegge a ogni poll, quindi la colonna è un elemento ANIMATO:
+// una conversazione che si apre allarga di 2 celle la coda di tutta la lista, e
+// il costo lo pagano le descrizioni. È il prezzo accettato per non riservare
+// stabilmente la larghezza del caso più largo.
+test('taskColumns: accendere una viva qualsiasi allarga la colonna di 2 celle', () => {
+  const list = [t('T9', '⚡', '🔵'), t('T90', '⚡', '🔵')];
+  const base = { childCount: new Map([['T9', 5], ['T90', 5]]), dirty: new Set<string>() };
+  const spenta = taskColumns(list, { ...base, live: new Map() }).tail;
+  const accesa = taskColumns(list, {
+    ...base,
+    live: new Map([['T9', { count: 1, status: 'idle' as const }]]),
+  }).tail;
+  assert.equal(accesa - spenta, 2);
+});
+
 test('padId: tre livelli di padding con un id a quattro cifre in lista', () => {
   const w = idColumnWidth([t('T9', '⚡', '🔵'), t('T1024', '⚡', '🔵')]);
   assert.equal(w, 5);
@@ -133,7 +190,7 @@ test('chain a più chiavi con direzioni miste', () => {
     t('T3', '⚡', '🟡'),
     t('T4', '🔥', '🟡'),
   ];
-  // pri desc (🔥 prima), poi stato asc (rango basso prima: ✔️ < 🔒 < 🔵 < 🟡)
+  // pri desc (🔥 prima), poi stato asc (rango basso prima: ✔️ < 🔒 < 🔵 < 🟢 < 🟡)
   assert.deepEqual(
     sortOf(tasks, [
       { key: 'pri', dir: 'desc' },

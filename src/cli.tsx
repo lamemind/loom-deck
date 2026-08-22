@@ -61,14 +61,15 @@ import {
   applyView,
   cycleSort,
   describeSort,
-  idColumnWidth,
   priName,
   progName,
+  taskColumns,
   toggleHidden,
   PRI_ENTRIES,
   PROG_ENTRIES,
   type PriName,
   type ProgName,
+  type TaskRowData,
   type ViewState,
 } from './view.js';
 import { initialDetail, writeTaskEdit, PRI_GLYPH, PRI_LABEL } from './task-edit.js';
@@ -96,7 +97,8 @@ import {
 import { purgeTargets, splitTargets } from './purge.js';
 import { conversationLabel, cpLen, isDone } from './layout.js';
 import { caretAtEnd, fieldsKey, type FieldsCursor, type FieldsIO } from './fields.js';
-import { TASK_EMPTY, relTime, sanitizeTyped, taskTail } from './glyphs.js';
+import { TASK_EMPTY, relTime, sanitizeTyped } from './glyphs.js';
+import type { TaskLive } from './live-sessions.js';
 import {
   commitTaskEdit,
   runLaunch,
@@ -292,27 +294,43 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const parentLabel = isAll ? 'tutte' : isSpot ? 'spot' : selectedTaskId ?? '—';
 
   // Conteggio figli per task + spot (badge nel Tasks pane).
+  //
+  // T124 — il rollup delle VIVE si deriva nello stesso ciclo, non da un secondo
+  // passaggio sul registry dei processi: quel registry conosce una conversazione
+  // PRIMA che abbia scritto il suo primo record di transcript, quindi due
+  // derivazioni indipendenti renderebbero producibile `1/0` — una viva senza
+  // totale — che non è un caso limite teorico ma la finestra normale fra lo
+  // spawn e il primo turno. Intersecando qui, `vive ≤ totali` è garantito per
+  // costruzione: la conversazione appena nata resta invisibile a entrambi i
+  // numeri finché non scrive, e il segnale arriva in ritardo di un turno invece
+  // che sbagliato.
   const childCount = new Map<string, number>();
+  const taskLive = new Map<string, TaskLive>();
   let spotCount = 0;
   for (const s of sessions) {
     const bound = bindings.get(s.sessionId);
-    if (bound) childCount.set(bound, (childCount.get(bound) ?? 0) + 1);
-    else spotCount++;
+    if (!bound) {
+      spotCount++;
+      continue;
+    }
+    childCount.set(bound, (childCount.get(bound) ?? 0) + 1);
+    const entry = live.get(s.sessionId);
+    if (!entry) continue;
+    const prev = taskLive.get(bound);
+    // Rollup a stato misto: vince `busy`. Fra N vive, quella che sta lavorando è
+    // la ragione per cui si guarda la riga.
+    taskLive.set(bound, {
+      count: (prev?.count ?? 0) + 1,
+      status: prev?.status === 'busy' || entry.status === 'busy' ? 'busy' : 'idle',
+    });
   }
+  const taskRowData: TaskRowData = { childCount, live: taskLive, dirty: dirtyFolders };
 
   // T118 — colonne fisse della lista task, misurate su `paneTasks` (la vista
   // attiva INTERA) e non sulla finestra visibile: gemelle di `sessionCols` e
   // per la stessa ragione, che una larghezza derivata dallo schermo si muove a
-  // ogni scroll. La coda porta dentro il proprio gutter, così l'allineamento a
-  // destra lo produce `pad` da sé; nessuna riga con qualcosa da scrivere →
-  // colonna spenta a `0`, e le descrizioni si riprendono lo spazio.
-  const taskCols = (() => {
-    let tail = 0;
-    for (const t of paneTasks) {
-      tail = Math.max(tail, termWidth(taskTail(childCount.get(t.id) ?? 0, dirtyFolders.has(t.id))));
-    }
-    return { id: idColumnWidth(paneTasks), tail: tail > 0 ? tail + 1 : 0 };
-  })();
+  // ogni scroll.
+  const taskCols = taskColumns(paneTasks, taskRowData);
 
   // Figli della selezione: tutte le conversazioni del progetto (`≡ tutte`), le
   // sessioni bound alla task selezionata, oppure (spot) quelle senza binding.
@@ -1426,6 +1444,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     const label =
       (assign.sid ? sessionNotes.get(assign.sid) : '') ||
       (s ? conversationLabel(s, projectCore, assign.sid ? bindings.get(assign.sid) : undefined) : '');
+    // T124 — le colonne si misurano sulla lista FILTRATA di questa schermata,
+    // non su `paneTasks`: la popolazione è un'altra, e riusare le larghezze del
+    // pane darebbe una colonna dimensionata su righe che qui non ci sono.
+    // `assign.list` porta in testa la riga `detach` (`null`), che non è una task.
+    const assignCols = taskColumns(
+      assign.list.filter((t): t is Task => t !== null),
+      taskRowData,
+    );
     return (
       <AssignScreen
         sessionId={assign.sid ?? ''}
@@ -1438,7 +1464,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         hidden={hiddenTasks}
         above={win.start}
         below={assign.list.length - win.end}
-        childCount={childCount}
+        idW={assignCols.id}
+        tailW={assignCols.tail}
+        data={taskRowData}
         columns={columns}
         note={note}
       />
@@ -1735,7 +1763,6 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           selected={selIndex}
           spotCount={spotCount}
           allCount={sessions.length}
-          childCount={childCount}
           idW={taskCols.id}
           tailW={taskCols.tail}
           focused={focus === 'tasks'}
@@ -1744,7 +1771,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           above={taskWin.start}
           below={paneTasks.length - taskWin.end}
           columns={columns}
-          dirty={dirtyFolders}
+          data={taskRowData}
         />
         <SessionsPane
           parentLabel={parentLabel}

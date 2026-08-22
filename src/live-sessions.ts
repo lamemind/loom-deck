@@ -26,6 +26,20 @@ import { basename, join } from 'node:path';
  *  poter significare «viva» senza che nessuno lo decida qui. */
 export type LiveStatus = 'idle' | 'busy';
 
+/**
+ * T124 — rollup della liveness sulle N conversazioni di UNA task, per la riga
+ * del pane task.
+ *
+ * `status` vince su `busy`: fra più vive a stato misto, quella che sta
+ * lavorando è la ragione per cui si guarda la riga. Assente dalla mappa =
+ * nessuna conversazione viva, che è diverso da `count: 0` — l'assenza è il
+ * predicato unico da cui dipendono tutte e tre le evidenze della riga.
+ */
+export interface TaskLive {
+  count: number;
+  status: LiveStatus;
+}
+
 export interface LiveSession {
   sessionId: string;
   pid: number;

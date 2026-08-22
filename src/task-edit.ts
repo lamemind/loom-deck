@@ -18,6 +18,7 @@ export const PRI_GLYPH: Record<PriName, string> = { high: '🔥', med: '⚡', lo
 // lunga resta riconosciuto da priName/progName/isDone.
 export const PROG_GLYPH: Record<ProgName, string> = {
   todo: '🔵',
+  ready: '🟢',
   wip: '🟡',
   done: '✔️',
   locked: '🔒',
@@ -28,6 +29,7 @@ export const PROG_GLYPH: Record<ProgName, string> = {
 // `🔵 Todo`, `✔️ Done at 2026-07-20`) → il glifo è il prefisso, il resto è prosa.
 const PROG_DEFAULT: Record<ProgName, string> = {
   todo: 'Todo',
+  ready: 'Ready',
   wip: 'In Progress',
   done: 'Done',
   locked: 'Locked',

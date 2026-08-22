@@ -1,8 +1,10 @@
 // Schermata di assegnazione conversazione → task (T57).
 import { Box, Text } from 'ink';
-import { cut, sanitize, termWidth } from '../width.js';
-import { assignTextWidth, isDone } from '../layout.js';
-import { CARET, CARET_OFF, displayProg } from '../glyphs.js';
+import { cut, sanitize } from '../width.js';
+import { assignTextWidth } from '../layout.js';
+import { CARET, CARET_OFF } from '../glyphs.js';
+import { TaskRow } from './task-row.js';
+import type { TaskRowData } from '../view.js';
 import type { Task } from '../tasks.js';
 
 /**
@@ -28,7 +30,9 @@ export function AssignScreen({
   hidden,
   above,
   below,
-  childCount,
+  idW,
+  tailW,
+  data,
   columns,
   note,
 }: {
@@ -48,7 +52,11 @@ export function AssignScreen({
   hidden: number;
   above: number;
   below: number;
-  childCount: Map<string, number>;
+  /** T124 — le stesse due colonne del pane task, misurate sulla lista filtrata
+   *  di QUESTA schermata: la popolazione è un'altra, il criterio no. */
+  idW: number;
+  tailW: number;
+  data: TaskRowData;
   columns: number;
   note: string;
 }) {
@@ -97,17 +105,22 @@ export function AssignScreen({
               </Text>
             );
           }
-          const sel = selected === task.id;
-          const n = childCount.get(task.id) ?? 0;
-          const head = `${CARET_OFF}${task.id}  ${sanitize(task.pri)}  ${displayProg(task.prog)}  `;
-          const tail = n > 0 ? ` (${n})` : '';
-          const desc = cut(task.desc, Math.max(4, width - termWidth(head) - termWidth(tail)));
+          // T124 — la riga è la STESSA del pane task, non più una copia
+          // ricomposta qui: id paddato alla colonna, coda ancorata al bordo
+          // destro, marker dirty ed evidenze della liveness arrivano tutti dal
+          // componente condiviso. `focused` è sempre vero — una schermata
+          // sostitutiva non cede il fuoco a nessun altro pane.
           return (
-            <Text key={task.id} inverse={sel} dimColor={!sel && isDone(task.prog)} wrap="truncate-end">
-              {sel ? CARET : CARET_OFF}
-              {task.id}  {sanitize(task.pri)}  {displayProg(task.prog)}  {desc}
-              {tail}
-            </Text>
+            <TaskRow
+              key={task.id}
+              task={task}
+              sel={selected === task.id}
+              focused
+              width={width}
+              idW={idW}
+              tailW={tailW}
+              data={data}
+            />
           );
         })}
       </Box>
