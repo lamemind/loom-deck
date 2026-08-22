@@ -98,15 +98,24 @@ function strip(line: string): string {
 }
 
 /**
- * Ultimo frame emesso: parte dall'ultima riga che INIZIA con l'angolo del box
- * esterno. Cercare l'ultimo `╭` nel buffer non basta — la schermata di ricerca
- * ha box annidati con lo stesso angolo, e il frame partirebbe da metà.
+ * Ultimo frame INTERO emesso: dall'ultima riga che apre il box esterno alla sua
+ * chiusura. Le righe si riconoscono dall'inizio — i box annidati (schermata di
+ * ricerca, modali in flusso) portano gli stessi angoli ma preceduti da `│ `,
+ * quindi un `lastIndexOf` sul carattere farebbe partire il frame da metà.
+ *
+ * La chiusura non è un dettaglio: il deck ridisegna anche mentre la cattura si
+ * sta chiudendo (il poll, e durante una generazione il tick da 1s del
+ * contatore), quindi l'ultima apertura nel buffer può appartenere a un redraw
+ * scritto a metà. Misurare quello fa fallire il gate su righe che il terminale
+ * non ha ancora finito di ricevere — un guasto della CATTURA che si presenta
+ * come un difetto di larghezza, e che compare solo quando la macchina è carica.
  */
 function lastFrame(raw: string): string[] {
   const rows = raw.split(/\r?\n/).map(strip);
-  const start = rows.findLastIndex((l) => l.startsWith('╭'));
-  assert.ok(start >= 0, 'nessun frame catturato: il deck non ha renderizzato');
-  return rows.slice(start);
+  const end = rows.findLastIndex((l) => l.startsWith('╰'));
+  const start = end >= 0 ? rows.slice(0, end).findLastIndex((l) => l.startsWith('╭')) : -1;
+  assert.ok(start >= 0, 'nessun frame intero catturato: il deck non ha renderizzato');
+  return rows.slice(start, end + 1);
 }
 
 /** Colonne in cui cade un bordo verticale su questa riga. */
@@ -215,6 +224,31 @@ function assertBordersHold(region: Array<{ line: string; i: number }>, label: st
 
 const CTRL_F = String.fromCharCode(6);
 const CTRL_A = String.fromCharCode(1);
+/** T121 — genera e apri il project status. */
+const CTRL_G = String.fromCharCode(7);
+const CTRL_O = String.fromCharCode(15);
+
+/** T121 — cache del recap a coordinata nota: senza, `^O` risponderebbe «nessun
+ *  recap in cache» e lo scenario misurerebbe la lista invece del viewer. Le
+ *  righe portano markdown reso e una riga più larga del box, che è ciò che il
+ *  viewer deve tagliare. */
+function statusCacheFile(): string {
+  const path = join(mkdtempSync(join(tmpdir(), 'deck-status-')), 'recap.md');
+  writeFileSync(
+    path,
+    [
+      '# Stato del progetto',
+      '',
+      '## Task aperte',
+      '',
+      `- **T121** — ${'una riga di recap lunga abbastanza da eccedere il box '.repeat(4)}`,
+      '- `T109` — asfaltatura v2',
+      '',
+      'Chiusura con un paragrafo normale.',
+    ].join('\n'),
+  );
+  return path;
+}
 
 /** Modale edit aperto sulla riga titolo (3 `D` dopo `E`), con due incollaggi da
  *  60 caratteri in coda: è il campo che porta dentro il box un testo di lunghezza
@@ -329,6 +363,24 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   ['conferma · bulk archiviabili', 'TTK', [80, 100, 176], ARCHIVABLE_ON],
 ];
 
+// T121 — il viewer del project status e i due stati «rumorosi» della testata.
+// Vivono fuori da `SCENARIOS` perché la cache va scritta prima, e un file
+// temporaneo creato al modulo sarebbe condiviso da scenari che non lo usano.
+for (const cols of [80, 100, 176]) {
+  test(`gate larghezza · viewer project status @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+    const raw = capture(cols, 38, CTRL_O, { LOOM_DECK_STATUS_FILE: statusCacheFile() });
+    assertFrameFits(raw, cols, `project status@${cols}`);
+  });
+
+  // La testata durante una generazione porta il glifo di liveness più il
+  // contatore: è la sua forma più larga, e su un terminale stretto compete con
+  // `v<VERSION>` ancorata a destra.
+  test(`gate larghezza · testata in building @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+    const raw = capture(cols, 38, CTRL_G, { LOOM_DECK_STATUS_FILE: statusCacheFile() });
+    assertFrameFits(raw, cols, `testata building@${cols}`);
+  });
+}
+
 for (const [label, keys, widths, extraEnv] of SCENARIOS) {
   for (const cols of widths) {
     test(`gate larghezza · ${label} @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
@@ -356,6 +408,19 @@ function mixedIdProject(): string {
   const proj = join(root, 'proj');
   mkdirSync(join(proj, 'runtime', 'tasks'), { recursive: true });
   mkdirSync(join(proj, '.claude', 'loom'), { recursive: true });
+
+  // T121 — un `name` più largo del budget della testata: è l'unico pezzo di
+  // lunghezza libera di quella riga, quindi l'unico che può spingerla dentro la
+  // versione ancorata a destra. Su un progetto vero il nome è corto per caso, e
+  // uno scenario tarato su quello non proverebbe il taglio.
+  writeFileSync(
+    join(proj, '.claude', 'loom-works.json'),
+    JSON.stringify({
+      id: 'proj',
+      emoji: '🧵',
+      name: 'progetto-dal-nome-molto-lungo-che-non-entra-in-una-testata-stretta',
+    }),
+  );
 
   const rows = [
     // Una descrizione più larga del pane e una molto corta: la prima prova il

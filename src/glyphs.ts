@@ -148,6 +148,15 @@ export function fmtDateTime(ts: number): string {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// T121 — sola ora del giorno, per l'indicatore di project status in testata. Il
+// giorno non ci sta e non servirebbe: un recap del giorno prima è comunque
+// stale, e la cache muore col reboot.
+export function fmtTime(ts: number): string {
+  const d = new Date(ts);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 // Età relativa compatta (ms epoch → "2m"/"3h"/"5d") per il preview sessioni.
 export function relTime(ts: number): string {
   const sec = Math.max(0, Math.floor((Date.now() - ts) / 1000));

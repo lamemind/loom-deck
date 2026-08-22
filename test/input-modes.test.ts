@@ -17,6 +17,7 @@ const ALL_MODES: Mode[] = [
   'assign',
   'detail',
   'purge',
+  'status',
 ];
 
 test('normal è l\'unico modo non capturing', () => {

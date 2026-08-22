@@ -75,6 +75,10 @@ export const MODAL_HEIGHT = {
   // entra in un box sopra i pane. La sua altezza la distribuisce
   // `detailCapacity`.
   detail: 0,
+  // T121 — il viewer del project status: quinta sostitutiva. Un recap di
+  // progetto è un documento lungo quanto un task file, quindi vale la stessa
+  // ragione delle altre quattro. La sua altezza la distribuisce `statusCapacity`.
+  status: 0,
 } as const;
 
 export type Mode = keyof typeof MODAL_HEIGHT;
@@ -328,6 +332,22 @@ const DETAIL_SEARCH_CHROME = 2;
 export function detailCapacity(rows: number, searching = false): number {
   const extra = searching ? DETAIL_SEARCH_CHROME : 0;
   return Math.max(0, (rows || 24) - SLACK - DETAIL_CHROME - extra);
+}
+
+// T121 — cornice del viewer del project status. Gemella di READER_CHROME: il
+// viewer scorre testo e basta, senza l'area di compilazione che rende caro il
+// detail.
+//   2  bordi del box esterno
+//   1  riga di testata (progetto :: PROJECT STATUS)
+//   1  riga meta (ora della generazione · posizione nel testo)
+//   1  riga hint
+//   1  marginTop del box corpo
+//   2  bordi del box corpo
+const STATUS_CHROME = 8;
+
+/** Righe di recap che entrano nel terminale. */
+export function statusCapacity(rows: number): number {
+  return Math.max(0, (rows || 24) - SLACK - STATUS_CHROME);
 }
 
 // T52 — cornice del pannello di anteprima sotto la lista occorrenze:

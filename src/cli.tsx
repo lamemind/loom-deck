@@ -120,6 +120,7 @@ import {
 import { EditModal, FilterModal, PurgeModal, SortModal, idList } from './ui/modals.js';
 import { ReaderScreen, SearchScreen } from './ui/search-screen.js';
 import { DetailScreen } from './ui/detail-screen.js';
+import { StatusHeadline, StatusScreen } from './ui/status-screen.js';
 import { AssignScreen } from './ui/assign-screen.js';
 import { SessionsPane, TasksPane } from './ui/panes.js';
 import { PreviewPane, detailMetaOf } from './ui/preview.js';
@@ -135,6 +136,7 @@ import {
 import { useSearchOverlay } from './overlays/search.js';
 import { useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
+import { useProjectStatus } from './overlays/status.js';
 import { captures, type CapturingMode } from './input-modes.js';
 import { VERSION } from './version.js';
 
@@ -934,6 +936,21 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     onResume: (row) => resumeSession(row.session.sessionId),
   });
 
+  // T121 — il project status. Non è solo un overlay come i tre sopra: il suo
+  // stato si legge in TESTATA a schermata chiusa, e il viewer è una delle sue
+  // superfici invece che il suo contenuto.
+  // Il nome è quello del file config quando c'è, la cartella altrimenti: la
+  // testata deve dire di quale progetto parla anche su un checkout non ancora
+  // registrato.
+  const status = useProjectStatus({
+    cwd,
+    name: projectCore ?? projectName,
+    rows,
+    columns,
+    setMode,
+    setNote,
+  });
+
   function onCreateKey(input: string, key: Key) {
     if (key.escape) {
       setMode('normal');
@@ -1104,6 +1121,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // `CapturingMode`, un modo nuovo senza handler non compila.
   const MODE_KEYS: Record<CapturingMode, (input: string, key: Key) => void> = {
     detail: sheet.onKey,
+    status: status.onKey,
     reader: search.onReaderKey,
     search: search.onSearchKey,
     assign: assign.onKey,
@@ -1154,6 +1172,15 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         spawnTaskSession('preflight', '^P');
       } else if (input === 'r') {
         spawnTaskSession('run', '^R');
+      } else if (input === 'g') {
+        // T121 — GENERA e APRI su due tasti distinti (D2): aprire un recap
+        // vecchio deve costare zero, e generare non deve essere un effetto
+        // collaterale del guardare. Nessuno dei due è preso né bruciato da Ink,
+        // e `^S`/`^Q` sono evitati perché il terminale li intercetta come flow
+        // control.
+        status.generate();
+      } else if (input === 'o') {
+        status.open();
       }
       return;
     }
@@ -1409,6 +1436,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       // schermate. Rename di sola ETICHETTA: il dato resta `note` nel sidecar e
       // `--title-note` in deck-run, dove rinominarlo sarebbe un breaking.
       ...(canPin ? ['p pin', 'N titolo', 'A assegna'] : []),
+      // T121 — le due voci nominano il GESTO e non l'oggetto: «status» da solo
+      // sarebbe indistinguibile dal recap della task su `^K`, che è un'altra
+      // cosa e sta a due voci di distanza.
+      '^G genera status',
+      '^O apri status',
       '^F cerca',
       'C nuova',
       'E edit',
@@ -1511,6 +1543,40 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         find={sheet.find}
         occ={sheet.findRes.occ}
         occCur={sheet.occCur}
+      />
+    );
+  }
+
+  // ── T121 · viewer del project status ────────────────────────────────────
+  // Quinta schermata sostitutiva, stessa ragione delle altre quattro: un recap
+  // di progetto è lungo quanto un task file e non entra in un box sopra i pane.
+  if (mode === 'status' && status.view) {
+    if (isCompact(status.capacity)) {
+      return (
+        <Text wrap="truncate-end">
+          <Text bold color="cyan">loom-deck</Text>
+          <Text dimColor>
+            {' '}· project status · terminale {rows}×{columns}: troppo basso, allarga · esc chiude
+          </Text>
+        </Text>
+      );
+    }
+    // Il clamp serve anche qui: un resize può accorciare il testo sotto uno
+    // scroll già dato.
+    const start = Math.min(status.top, status.maxTop);
+    return (
+      <StatusScreen
+        name={projectCore ?? projectName}
+        label={status.label}
+        building={status.building}
+        failed={status.failed}
+        view={status.view}
+        lines={status.lines.slice(start, start + status.capacity)}
+        spans={status.doc?.spans ?? []}
+        top={start}
+        total={status.lines.length}
+        capacity={status.capacity}
+        columns={columns}
       />
     );
   }
@@ -1657,12 +1723,23 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-      {/* Riga di testata: nome a sinistra, versione ancorata a destra. È una
-          riga full-width come la riga dei pane — `space-between` la riempie
-          fino al bordo, quindi il gate di `frame-width.test.ts` continua a
-          misurare esattamente `columns`. */}
+      {/* Riga di testata: project status a sinistra, versione ancorata a
+          destra. È una riga full-width come la riga dei pane — `space-between`
+          la riempie fino al bordo, quindi il gate di `frame-width.test.ts`
+          continua a misurare esattamente `columns`.
+          T121/D1 — il nome del programma esce dalla cornice: resta nel fallback
+          compatto e nel titolo della tab Ptyxis, che sono i due posti dove
+          serve davvero a identificare cosa si sta guardando. Il blocco status
+          riceve il budget già scalato della versione a destra, o
+          `space-between` lo lascerebbe crescere fin dentro di lei. */}
       <Box flexDirection="row" justifyContent="space-between">
-        <Text bold color="cyan">loom-deck</Text>
+        <StatusHeadline
+          name={projectCore ?? projectName}
+          label={status.label}
+          building={status.building}
+          failed={status.failed}
+          cols={Math.max(4, columns - 4 - `v${VERSION}`.length - 1)}
+        />
         <Text dimColor>v{VERSION}</Text>
       </Box>
       {mode === 'create' ? (

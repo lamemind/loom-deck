@@ -24,6 +24,7 @@ import type { Mode } from './model.js';
  */
 export const CAPTURING_MODES = [
   'detail',
+  'status',
   'reader',
   'search',
   'assign',

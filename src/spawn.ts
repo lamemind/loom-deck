@@ -413,10 +413,20 @@ function spawnSkill(
   cwd: string,
   sessionId: string,
   onResult: (ok: boolean, detail: string) => void,
+  extraArgs: string[] = [],
 ) {
   const child = spawnOut(
     CLAUDE_CMD,
-    ['-p', '--output-format', 'stream-json', '--verbose', '--session-id', sessionId, prompt],
+    [
+      '-p',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--session-id',
+      sessionId,
+      ...extraArgs,
+      prompt,
+    ],
     { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
   );
 
@@ -509,6 +519,49 @@ export function spawnCleanTasks(
 ): ChildProcess | null {
   if (ids.length === 0) return null;
   return spawnSkill(cleanTasksPrompt(ids, ignored), cwd, sessionId, onResult);
+}
+
+// T121 — recap di progetto in headless. Qui il `detail` del result event NON è
+// un messaggio d'errore da troncare come per `create-task`/`clean-tasks`: è il
+// DELIVERABLE, cioè il testo intero della skill, e chi chiama lo scrive su
+// disco. Una skill read-only invocata in `-p` è una funzione che ritorna testo.
+//
+// `--permission-mode auto` e nessun token `yolo` (D4): le due cautele coprono
+// cause di stallo diverse e non sono intercambiabili. `yolo` toglie le domande
+// che la skill pone da sé, e `recap-status-project` non ne ha; il modo
+// permissivo toglie le richieste di permesso che il CLI pone su un tool, e
+// quelle in `-p` non hanno nessuno che risponda — il processo resterebbe appeso
+// senza emettere niente, cioè con l'indicatore che conta all'infinito.
+export function spawnProjectStatus(
+  cwd: string,
+  sessionId: string,
+  onResult: (ok: boolean, detail: string) => void,
+) {
+  return spawnSkill('/loom-works:recap-status-project', cwd, sessionId, onResult, [
+    '--permission-mode',
+    'auto',
+  ]);
+}
+
+// T121 — notifica desktop di fine generazione. La generazione dura minuti e chi
+// l'ha chiesta nel frattempo guarda altrove; la notifica di GNOME persiste nel
+// cassetto, quindi raggiunge anche chi torna dieci minuti dopo — cosa che un
+// suono non fa.
+//
+// Il listener su `error` è OBBLIGATORIO e non difensivo: un `error` non
+// agganciato su un `ChildProcess` diventa un'eccezione non catturata e abbatte
+// il deck, quindi senza di lui l'assenza di `notify-send` ucciderebbe la TUI.
+// Agganciato, la degradazione è MUTA (D6): un binario assente è una proprietà
+// stabile della macchina, e dirlo a ogni generazione sarebbe lo stesso messaggio
+// a ogni giro su una funzione che non è il deliverable.
+export function notifyDone(title: string, body: string) {
+  const child = spawnOut('notify-send', ['--app-name=loom-deck', title, body], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.on('error', () => {});
+  child.unref?.();
+  return child;
 }
 
 // T41 — Commit dell'edit. `git commit -- <paths>` committa lo stato working-tree

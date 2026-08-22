@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +39,9 @@ const ESC = '\x1b';
 /** T112 — `CANC` nella mappa di `pty-frame.py`: la sequenza è di 4 byte e
  *  scritta nuda arriverebbe come quattro tasti separati. */
 const CANC = 'K';
+/** T121 — le due attivazioni del project status: genera e apri. */
+const CTRL_G = '\x07';
+const CTRL_O = '\x0f';
 
 function capture(
   keys: string,
@@ -78,27 +81,55 @@ function capture(
 }
 
 /**
- * L'ULTIMO frame disegnato, cioè lo stato in cui il deck è rimasto.
+ * L'ULTIMO frame INTERO disegnato, cioè lo stato in cui il deck è rimasto.
  *
  * Il pty accumula ogni redraw e Ink NON emette un clear-screen fra l'uno e
  * l'altro (aggiorna per differenza finché il frame sta sotto `rows`): splittare
  * su `\x1b[2J` restituisce quindi un pezzo arbitrario, non l'ultimo stato.
- * L'ancora affidabile è l'angolo superiore della cornice, che ogni frame
- * completo disegna una volta.
+ * L'ancora sono i due angoli della cornice, che ogni frame completo disegna una
+ * volta ciascuno.
+ *
+ * Si prende l'ultima APERTURA che ha una chiusura dopo di sé, non l'ultima in
+ * assoluto: il deck ridisegna anche mentre la cattura si sta chiudendo, quindi
+ * l'ultima apertura può appartenere a un redraw scritto a metà — e un frammento
+ * si legge come «il modo non ha disegnato la sua riga».
  */
 function lastFrame(captured: string): string {
-  const at = captured.lastIndexOf('╭');
-  return at >= 0 ? captured.slice(at) : captured;
+  const end = captured.lastIndexOf('╰');
+  if (end < 0) return captured;
+  const at = captured.lastIndexOf('╭', end);
+  return at >= 0 ? captured.slice(at, end + 1) : captured;
 }
 
 function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '');
 }
 
+/**
+ * T121 — cache del project status a coordinata NOTA, così il viewer si apre
+ * senza spendere una generazione vera (che dura minuti e passa da una sessione
+ * Claude). L'env override è il canale previsto per questo: l'unica alternativa
+ * sarebbe uno scenario che non prova nulla, perché su un deck appena avviato
+ * `^O` risponde «nessun recap in cache».
+ */
+const statusCache = join(mkdtempSync(join(tmpdir(), 'loom-deck-status-')), 'recap.md');
+if (CAN_RUN) {
+  writeFileSync(
+    statusCache,
+    '# Stato del progetto\n\nDue **task** aperte, una in `preflight`.\n',
+  );
+}
+const STATUS_ENV = { LOOM_DECK_STATUS_FILE: statusCache };
+
 // Ogni voce: i tasti da battere e un frammento che DEVE comparire nel frame
 // finale. Il frammento è scelto fra ciò che solo quel modo disegna.
-const MODES: Array<{ name: string; keys: string; expect: RegExp }> = [
-  { name: 'normal', keys: '', expect: /loom-deck/ },
+const MODES: Array<{ name: string; keys: string; expect: RegExp; env?: NodeJS.ProcessEnv }> = [
+  // T121/D1 — `loom-deck` non è più nella cornice: la testata porta il project
+  // status, e questo è ciò che dice «il deck ha disegnato il suo frame».
+  { name: 'normal', keys: '', expect: /PROJECT STATUS/ },
+  // Il viewer del recap: la sua riga hint è l'unica che nomina insieme pagina ed
+  // estremi.
+  { name: 'status', keys: CTRL_O, expect: /g\/G estremi/i, env: STATUS_ENV },
   { name: 'create', keys: 'C', expect: /nuova task|create/i },
   { name: 'sort', keys: 'S', expect: /sort|ordina/i },
   { name: 'filter', keys: 'F', expect: /filtr/i },
@@ -118,7 +149,7 @@ const MODES: Array<{ name: string; keys: string; expect: RegExp }> = [
 
 for (const m of MODES) {
   test(`modo ${m.name}: si apre`, { skip: !CAN_RUN }, () => {
-    const frame = capture(m.keys);
+    const frame = capture(m.keys, PROJECT, m.env);
     assert.match(frame, m.expect, `il modo ${m.name} non ha disegnato il proprio frame`);
   });
 }
@@ -364,10 +395,73 @@ test('^C dentro un modale lo chiude e avverte, invece di restare muto', {
   assert.match(frame, /t 💻/, `il detail non si è chiuso: ${frame}`);
 });
 
+// ── T121 · project status ─────────────────────────────────────────────────
+
+test('^O senza cache lo dice invece di aprire un viewer vuoto', { skip: !CAN_RUN }, () => {
+  // Il file non esiste: la cache assente è uno STATO del progetto, non un
+  // documento da mostrare — un viewer vuoto direbbe «il recap è questo, ed è
+  // nulla».
+  const frame = lastFrame(
+    capture(CTRL_O, PROJECT, { LOOM_DECK_STATUS_FILE: join(tmpdir(), 'loom-deck-mai-scritto.md') }),
+  );
+  assert.match(frame, /nessun recap in cache/i, `nessuna nota di inerzia: ${frame}`);
+  assert.match(frame, /t 💻/, `il viewer si è aperto a vuoto: ${frame}`);
+});
+
+test('^O mostra il testo della cache, non un rigenerato', { skip: !CAN_RUN }, () => {
+  const frame = lastFrame(capture(CTRL_O, PROJECT, STATUS_ENV));
+  assert.match(frame, /Due task aperte|Due .*task.* aperte/i, `testo della cache assente: ${frame}`);
+  assert.match(frame, /generato alle \d\d:\d\d/i, `nessuna ora di generazione: ${frame}`);
+});
+
+test('la testata mostra missing finché non c\'è cache', { skip: !CAN_RUN }, () => {
+  const frame = lastFrame(
+    capture('', PROJECT, { LOOM_DECK_STATUS_FILE: join(tmpdir(), 'loom-deck-mai-scritto.md') }),
+  );
+  assert.match(frame, /PROJECT STATUS \[ missing \]/, `stato missing non renderizzato: ${frame}`);
+});
+
+test('la testata mostra l\'ora quando la cache c\'è', { skip: !CAN_RUN }, () => {
+  // Il recap sopravvive alla chiusura del deck: qui il processo nasce con la
+  // cache già sul disco, che è esattamente la condizione di un deck riaperto.
+  const frame = lastFrame(capture('', PROJECT, STATUS_ENV));
+  assert.match(frame, /PROJECT STATUS \[ \d\d:\d\d \]/, `ora non renderizzata: ${frame}`);
+});
+
+test('^G avvia la generazione e la testata la conta', { skip: !CAN_RUN }, () => {
+  // Con NO_SPAWN il figlio è inerte e non chiude mai: lo stato resta `building`,
+  // che è ciò che questo scenario deve osservare.
+  const frame = lastFrame(capture(CTRL_G, PROJECT, STATUS_ENV));
+  assert.match(frame, /building \d+\.\.\./, `nessun contatore in testata: ${frame}`);
+});
+
+test('un secondo ^G non spawna una seconda generazione', { skip: !CAN_RUN }, () => {
+  const frame = lastFrame(capture(CTRL_G + CTRL_G, PROJECT, STATUS_ENV));
+  assert.match(frame, /generazione già in corso/i, `il secondo ^G non è stato rifiutato: ${frame}`);
+});
+
+test('^O durante una generazione apre la cache vecchia e lo dichiara', {
+  skip: !CAN_RUN,
+}, () => {
+  // D3 — la generazione dura minuti, quindi la finestra in cui questo caso
+  // capita è larga: leggere un recap di un'ora fa è quasi sempre meglio che non
+  // leggere niente, purché il viewer non lo spacci per l'ultimo.
+  const frame = lastFrame(capture(CTRL_G + CTRL_O, PROJECT, STATUS_ENV));
+  assert.match(frame, /versione precedente/i, `il viewer non dichiara lo stale: ${frame}`);
+});
+
+test('^G e ^O sono inerti dentro un modo capturing', { skip: !CAN_RUN }, () => {
+  // Come `^K`/`^P`/`^R`: chi è dentro il detail non deve poter far partire una
+  // generazione da minuti con un tasto pensato per un'altra schermata.
+  const frame = lastFrame(capture(`DD\r${CTRL_G}`, PROJECT, STATUS_ENV));
+  assert.doesNotMatch(frame, /building \d+/, `^G ha generato dal detail: ${frame}`);
+  assert.match(frame, /preflight|checkpoint/i, `il detail si è chiuso: ${frame}`);
+});
+
 // Chiusura: ogni modale torna alla lista con `esc`, e il deck resta vivo.
 for (const m of MODES.filter((x) => x.name !== 'normal')) {
   test(`modo ${m.name}: esc riporta alla lista`, { skip: !CAN_RUN }, () => {
-    const frame = lastFrame(capture(`${m.keys}${ESC}`));
+    const frame = lastFrame(capture(`${m.keys}${ESC}`, PROJECT, m.env));
     // La riga delle surface built-in esiste SOLO in modalità normale
     // (`launchLine`): è il marcatore che dice «siamo tornati alla lista».
     assert.match(frame, /t 💻/, `${m.name} non è tornato alla lista`);
