@@ -625,6 +625,90 @@ test('col modale aperto la rotella non scrive nel campo', { skip: !CAN_RUN }, ()
   assert.doesNotMatch(frame, /\[<|64;|65;/, `la sequenza rotella è finita nel campo: ${frame}`);
 });
 
+// ── T21 · mouse (mandata 3: focus via click sulle liste) ──────────────────
+//
+// Le righe non sono indovinate: il frame è ancorato a riga 1 e sopra i pane
+// tutto è incondizionato in modalità normale, quindi l'header con le viste sta
+// a riga 7, il corpo del pane sessioni da riga 8, la lista task da riga 9 (la
+// riga 8 del pane task è `sort:`). Ogni scenario legge il BERSAGLIO dal frame
+// di partenza e lo confronta con la selezione dopo il click: un conto delle
+// righe sbagliato non passa per caso, perché il caret finirebbe su un'altra
+// riga con un altro id.
+
+/** L'id task della riga `n` (1-based) del frame, paddato come a schermo. */
+function taskIdAtRow(frame: string, n: number): string {
+  const line = frame.split('\n')[n - 1] ?? '';
+  const m = line.match(/│ │\s+(T ?\d+)/);
+  assert.ok(m, `nessuna task a riga ${n}: ${line}`);
+  return m[1]!;
+}
+
+/** L'hash della conversazione sulla riga `n`: otto esadecimali, che il pane
+ *  task non porta mai. */
+function sessionAtRow(frame: string, n: number): string {
+  const line = frame.split('\n')[n - 1] ?? '';
+  const m = line.match(/([0-9a-f]{8})/);
+  assert.ok(m, `nessuna conversazione a riga ${n}: ${line}`);
+  return m[1]!;
+}
+
+const selectedTask = (f: string) => {
+  const m = f.match(/▸ (T ?\d+)/);
+  assert.ok(m, `nessuna task selezionata nel frame: ${f}`);
+  return m[1];
+};
+
+test('click su una riga task la seleziona senza aprire il detail', { skip: !CAN_RUN }, () => {
+  // Riga 13 = terza task della finestra (9 `≡`, 10 `○`, 11 prima task).
+  const target = taskIdAtRow(lastFrame(capture('')), 13);
+  const after = lastFrame(capture('@10,13;'));
+  assert.equal(selectedTask(after), target, `il caret non è sulla riga cliccata: ${after}`);
+  // D2: solo fuoco. La lista è ancora a schermo e `⏎` aprirebbe il detail ora.
+  assert.match(after, /t 💻/, `il click ha lasciato la lista: ${after}`);
+  assert.match(after, /⏎ detail/, `il fuoco non è sul pane task: ${after}`);
+});
+
+test('click su una riga meta riporta la selezione su di lei', { skip: !CAN_RUN }, () => {
+  // Da una task (tre `↓`) si torna su `○ spot` (riga 10) con un click.
+  const frame = lastFrame(capture('DDD@10,10;'));
+  assert.match(frame, /▸ ○ spot/, `la riga spot non è selezionata: ${frame}`);
+});
+
+test('click sulla riga sort del pane task è inerte', { skip: !CAN_RUN }, () => {
+  const base = selectedTask(lastFrame(capture('DDD')));
+  assert.equal(selectedTask(lastFrame(capture('DDD@10,8;'))), base);
+});
+
+test('click su una conversazione porta fuoco e selezione sul pane sessioni', { skip: !CAN_RUN }, () => {
+  // Riga 10 = terza conversazione (il corpo del pane sessioni parte da riga 8).
+  // Colonna 70: dentro il pane destro a qualunque larghezza ≥ 100.
+  const target = sessionAtRow(lastFrame(capture('')), 10);
+  const after = lastFrame(capture('@70,10;'));
+  const line = after.split('\n').find((l) => l.includes(target)) ?? '';
+  // Il caret precede l'hash sulla stessa riga senza un bordo in mezzo: il
+  // caret del pane task, a sinistra, è separato da `│ │`.
+  assert.match(line, new RegExp(`▸[^│]*${target}`), `il caret non è sulla conversazione cliccata: ${line}`);
+  assert.match(after, /⏎ resume/, `il fuoco non è passato al pane sessioni: ${after}`);
+});
+
+test('click su una voce dell\'header attiva quella vista', { skip: !CAN_RUN }, () => {
+  // La colonna di `nascoste` si legge dal frame: tutto ciò che la precede sulla
+  // riga 7 è largo 1, quindi indice + 1 = colonna. Scriverla come numero sarebbe
+  // un calco della larghezza di `Tasks (N/M)`, che cambia con le task.
+  const line = lastFrame(capture('')).split('\n')[6] ?? '';
+  const at = line.indexOf('nascoste');
+  assert.ok(at > 0, `la voce nascoste non è nell'header: ${line}`);
+  const after = lastFrame(capture(`@${at + 1},7;`));
+  assert.match(after, /vista task: \d+ nascoste/, `la vista non è cambiata: ${after}`);
+});
+
+test('click sulla vista già attiva non muove la selezione', { skip: !CAN_RUN }, () => {
+  // `Tasks` comincia a colonna 5 (bordo + padding del pane): un click lì con
+  // una task selezionata deve lasciarla dov'è, non riportarla su `≡ tutte`.
+  const base = selectedTask(lastFrame(capture('DDD')));
+  assert.equal(selectedTask(lastFrame(capture('DDD@6,7;'))), base);
+});
+
 test('il tracking si accende all\'avvio e si spegne all\'uscita', { skip: !CAN_RUN }, () => {
   // Un tracking lasciato acceso non è cosmetico: il terminale continua a
   // mandare sequenze a chi prende il posto del deck, che le stampa come testo.

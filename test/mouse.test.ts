@@ -7,7 +7,23 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hitRegion, isWheel, rowRegions, takeMouse, WHEEL_LINES, wheelDir } from '../src/mouse.js';
+import {
+  FRAME_TEXT_COL,
+  hitRegion,
+  inlineRegions,
+  isWheel,
+  listHit,
+  PANE_BODY_ROW,
+  PANE_HEADER_ROW,
+  paneSpans,
+  rowRegions,
+  takeMouse,
+  TASK_LIST_ROW,
+  WHEEL_LINES,
+  wheelDir,
+  type ListGeometry,
+} from '../src/mouse.js';
+import { headerItems, taskHeaderParts } from '../src/pane-header.js';
 
 test('takeMouse: sequenza pura, ESC iniziale strippato da Ink', () => {
   const { text, events } = takeMouse('[<0;5;3M');
@@ -126,4 +142,126 @@ test('hitRegion: dentro, sui bordi, e fuori', () => {
   assert.equal(hitRegion(regions, 7), null);
   assert.equal(hitRegion(regions, 2), null);
   assert.equal(hitRegion(regions, 99), null);
+});
+
+// ── mandata 3: hit-test delle liste ─────────────────────────────────────────
+
+test('paneSpans: i due pane si dividono l\'interno, la colonna di margine non è di nessuno', () => {
+  // 120 colonne, misurate sotto pty: pane task 3..60, margine 61, sessioni 62..118.
+  const s = paneSpans(120);
+  assert.deepEqual(s.tasks, { start: FRAME_TEXT_COL, end: 60 });
+  assert.deepEqual(s.sessions, { start: 62, end: 118 });
+  // Interno dispari: lo shrink di Yoga toglie mezza colonna a testa e il pane
+  // task resta `floor`, come `paneTextWidth`.
+  const odd = paneSpans(121);
+  assert.equal(odd.tasks.end, 60);
+  assert.deepEqual(odd.sessions, { start: 62, end: 119 });
+});
+
+test('inlineRegions: il separatore in testa a una parte non fa parte della regione', () => {
+  const r = inlineRegions(
+    [
+      { key: 'a', text: 'Tasks (3)' },
+      { key: 'b', text: ' · 2 nascoste' },
+      { key: null, text: ' · ↓4' },
+    ],
+    5,
+  );
+  assert.deepEqual(r, [
+    { key: 'a', start: 5, end: 13 },
+    { key: 'b', start: 17, end: 26 },
+  ]);
+  // Colonne 14..16 sono il ` · `: nessuna vista risponde.
+  assert.equal(hitRegion(r, 15), null);
+});
+
+test('inlineRegions: una parte caduta al taglio non consuma colonne', () => {
+  const r = inlineRegions(
+    [
+      { key: 'a', text: 'A' },
+      { key: 'b', text: '' },
+      { key: 'c', text: ' · C' },
+    ],
+    1,
+  );
+  assert.deepEqual(r, [
+    { key: 'a', start: 1, end: 1 },
+    { key: 'c', start: 5, end: 5 },
+  ]);
+});
+
+test('headerItems + inlineRegions: le regioni seguono il testo TAGLIATO, non quello intero', () => {
+  // Budget stretto: `paneTextWidth(40)` = 14 colonne. Resta la voce attiva e
+  // ciò che ci sta intero; le parti cadute non hanno regione.
+  const h = taskHeaderParts({ filtered: 3, total: 9, hidden: 6, archivable: 2 }, 'tasks', 0, 0, 40);
+  const items = headerItems(h);
+  assert.equal(items[0]!.text.startsWith('Tasks'), true);
+  const r = inlineRegions(items, 5);
+  assert.equal(r[0]!.key, 'tasks');
+  assert.equal(r.some((x) => x.key === 'archivable'), false, 'una parte caduta ha una regione');
+});
+
+const GEOMETRY: ListGeometry = {
+  columns: 120,
+  taskHeader: [{ key: 'tasks', start: 5, end: 17 }, { key: 'hidden', start: 21, end: 31 }],
+  sessionHeader: [{ key: 'context', start: 75, end: 85 }],
+  taskRows: 2 + 5, // due meta + cinque task
+  sessionRows: 4,
+};
+
+test('listHit: header → vista, col separatore e il nome del pane inerti', () => {
+  assert.deepEqual(listHit({ col: 25, row: PANE_HEADER_ROW }, GEOMETRY), {
+    pane: 'tasks',
+    target: 'view',
+    key: 'hidden',
+  });
+  assert.deepEqual(listHit({ col: 80, row: PANE_HEADER_ROW }, GEOMETRY), {
+    pane: 'sessions',
+    target: 'view',
+    key: 'context',
+  });
+  assert.equal(listHit({ col: 19, row: PANE_HEADER_ROW }, GEOMETRY), null);
+  assert.equal(listHit({ col: 65, row: PANE_HEADER_ROW }, GEOMETRY), null);
+});
+
+test('listHit: pane task — riga sort inerte, meta e task per indice di finestra', () => {
+  assert.equal(listHit({ col: 10, row: PANE_BODY_ROW }, GEOMETRY), null, 'la riga sort ha risposto');
+  assert.deepEqual(listHit({ col: 10, row: TASK_LIST_ROW }, GEOMETRY), {
+    pane: 'tasks',
+    target: 'row',
+    index: 0,
+  });
+  assert.deepEqual(listHit({ col: 10, row: TASK_LIST_ROW + 1 }, GEOMETRY), {
+    pane: 'tasks',
+    target: 'row',
+    index: 1,
+  });
+  assert.deepEqual(listHit({ col: 60, row: TASK_LIST_ROW + 6 }, GEOMETRY), {
+    pane: 'tasks',
+    target: 'row',
+    index: 6,
+  });
+  // Sotto l'ultima task c'è spazio vuoto: nessuna riga.
+  assert.equal(listHit({ col: 10, row: TASK_LIST_ROW + 7 }, GEOMETRY), null);
+});
+
+test('listHit: pane sessioni — prima riga subito sotto l\'header, oltre la finestra niente', () => {
+  assert.deepEqual(listHit({ col: 70, row: PANE_BODY_ROW }, GEOMETRY), {
+    pane: 'sessions',
+    target: 'row',
+    index: 0,
+  });
+  assert.deepEqual(listHit({ col: 118, row: PANE_BODY_ROW + 3 }, GEOMETRY), {
+    pane: 'sessions',
+    target: 'row',
+    index: 3,
+  });
+  assert.equal(listHit({ col: 70, row: PANE_BODY_ROW + 4 }, GEOMETRY), null);
+});
+
+test('listHit: margine fra i pane, bordo esterno e righe sopra i pane sono inerti', () => {
+  assert.equal(listHit({ col: 61, row: TASK_LIST_ROW }, GEOMETRY), null, 'il margine ha risposto');
+  assert.equal(listHit({ col: 1, row: TASK_LIST_ROW }, GEOMETRY), null);
+  assert.equal(listHit({ col: 120, row: TASK_LIST_ROW }, GEOMETRY), null);
+  assert.equal(listHit({ col: 10, row: PANE_HEADER_ROW - 1 }, GEOMETRY), null, 'il bordo del pane ha risposto');
 });

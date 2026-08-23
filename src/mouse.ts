@@ -234,3 +234,115 @@ export const LAUNCH_ROW = 4;
 /** Colonna (1-based) del primo carattere di testo dentro il box esterno:
  *  bordo + `paddingX={1}`. */
 export const FRAME_TEXT_COL = 3;
+
+// ── Hit-test delle liste (mandata 3) ────────────────────────────────────────
+//
+// Click su un elemento di lista = SOLO FUOCO (D2): la selezione si sposta, non
+// parte nessuna azione. A differenza della riga launch il click qui non può
+// rientrare dalla porta della tastiera — non esiste un tasto che dica «vai alla
+// riga 7» o «vista `nascoste`»: `↑↓` e `tab` sono relativi alla posizione
+// corrente. Il chiamante chiama quindi il setter della selezione, come la
+// rotella chiama lo `scroll` del modo.
+
+/**
+ * Righe fisse dei due pane in modalità normale, contate dall'alto come
+ * `LAUNCH_ROW` e per la stessa ragione: sopra di loro non c'è niente di
+ * condizionale. Sotto la riga launch stanno il `marginTop` del blocco pane
+ * (riga 5), il bordo superiore (6), l'header con le viste (7) e il corpo (8+).
+ */
+export const PANE_HEADER_ROW = LAUNCH_ROW + 3;
+export const PANE_BODY_ROW = PANE_HEADER_ROW + 1;
+/** Nel pane task fra header e lista sta la riga sort/filtri, che non si
+ *  seleziona: la prima riga di lista (`≡ tutte`) è quella dopo. */
+export const TASK_LIST_ROW = PANE_BODY_ROW + 1;
+/** Colonne fra il bordo di un pane e il suo testo: bordo + `paddingX={1}`. */
+export const PANE_TEXT_PAD = 2;
+
+export interface Span {
+  start: number;
+  end: number;
+}
+
+/**
+ * Colonne (1-based, estremi inclusi, bordi compresi) dei due pane affiancati.
+ *
+ * Entrambi dichiarano `width="50%"` dell'interno del box esterno (`columns - 4`)
+ * e il primo porta `marginRight={1}`: la somma sfora di una colonna e Yoga la
+ * toglie per shrink, metà a testa, poi arrotonda le posizioni. L'esito
+ * misurato sotto pty è che il pane task è largo `floor((columns - 4) / 2)` —
+ * lo stesso conto di `paneTextWidth` più i suoi 4 di cornice — e il pane
+ * sessioni comincia dopo la colonna di margine e arriva al padding del box
+ * esterno. La colonna di margine non appartiene a nessuno dei due.
+ */
+export function paneSpans(columns: number): { tasks: Span; sessions: Span } {
+  const inner = (columns || 80) - 4;
+  const taskW = Math.floor(inner / 2);
+  const tasksEnd = FRAME_TEXT_COL + taskW - 1;
+  return {
+    tasks: { start: FRAME_TEXT_COL, end: tasksEnd },
+    sessions: { start: tasksEnd + 2, end: FRAME_TEXT_COL + inner - 1 },
+  };
+}
+
+/**
+ * Colonne delle parti di una riga che portano il proprio separatore IN TESTA
+ * (gli header dei pane: ` · 68 nascoste`). La regione di una parte keyed
+ * esclude il separatore: un click sul ` · ` fra due viste non deve sceglierne
+ * una. Le parti con `key` null (nome del pane, `↑N`/`↓N`) consumano colonne ma
+ * non producono regione; quelle vuote (cadute al taglio) non consumano niente.
+ */
+export function inlineRegions(
+  parts: Array<{ key: string | null; text: string }>,
+  startCol: number,
+): Region[] {
+  const out: Region[] = [];
+  let col = startCol;
+  for (const p of parts) {
+    const w = termWidth(p.text);
+    if (w === 0) continue;
+    if (p.key !== null) {
+      const lead = termWidth(p.text.match(/^[\s·]+/)?.[0] ?? '');
+      if (w > lead) out.push({ key: p.key, start: col + lead, end: col + w - 1 });
+    }
+    col += w;
+  }
+  return out;
+}
+
+/** Ciò che serve a tradurre un click in un elemento di lista: lo assembla il
+ *  deck a ogni render dalla stessa aritmetica con cui disegna i pane. */
+export interface ListGeometry {
+  columns: number;
+  /** Regioni delle viste sull'header del pane task (`key` = id della vista). */
+  taskHeader: Region[];
+  sessionHeader: Region[];
+  /** Righe della lista task A SCHERMO, righe meta comprese (0 = `≡ tutte`). */
+  taskRows: number;
+  /** Righe della lista sessioni a schermo, separatore compreso. */
+  sessionRows: number;
+}
+
+export type ListHit =
+  | { pane: 'tasks' | 'sessions'; target: 'view'; key: string }
+  /** `index` è l'indice nella FINESTRA visibile: spetta al chiamante riportarlo
+   *  alla lista completa, perché solo lui sa dove la finestra comincia. */
+  | { pane: 'tasks' | 'sessions'; target: 'row'; index: number };
+
+/** L'elemento di lista sotto il click, o `null` se il click cade su cornice,
+ *  riga sort, spazio vuoto sotto la lista o fuori dai pane. */
+export function listHit(ev: { col: number; row: number }, g: ListGeometry): ListHit | null {
+  const spans = paneSpans(g.columns);
+  const inTasks = ev.col >= spans.tasks.start && ev.col <= spans.tasks.end;
+  const inSessions = ev.col >= spans.sessions.start && ev.col <= spans.sessions.end;
+  if (!inTasks && !inSessions) return null;
+  const pane = inTasks ? 'tasks' : 'sessions';
+  if (ev.row === PANE_HEADER_ROW) {
+    const key = hitRegion(inTasks ? g.taskHeader : g.sessionHeader, ev.col);
+    return key ? { pane, target: 'view', key } : null;
+  }
+  const first = inTasks ? TASK_LIST_ROW : PANE_BODY_ROW;
+  const count = inTasks ? g.taskRows : g.sessionRows;
+  const index = ev.row - first;
+  if (index < 0 || index >= count) return null;
+  return { pane, target: 'row', index };
+}

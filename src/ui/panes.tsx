@@ -2,7 +2,7 @@
 // header. Sono presentazionali puri: ricevono la vista già selezionata e le
 // larghezze già calcolate, non li derivano.
 import { Box, Text } from 'ink';
-import { cut, cutParts, pad, sanitize, termWidth } from '../width.js';
+import { cut, pad, sanitize, termWidth } from '../width.js';
 import { paneTextWidth } from '../layout.js';
 import {
   CARET,
@@ -25,13 +25,12 @@ import { rowLabel, sessionTitle, type SessionRow } from '../session-list.js';
 import {
   sessionView,
   taskView,
-  SESSION_VIEWS,
-  TASK_VIEWS,
   type SessionViewCounts,
   type SessionViewId,
   type TaskViewCounts,
   type TaskViewId,
 } from '../pane-views.js';
+import { sessionHeaderParts, taskHeaderParts, type HeaderPart } from '../pane-header.js';
 import {
   describeSort,
   PRI_ENTRIES,
@@ -77,30 +76,27 @@ export function TasksHeader({
   focused: boolean;
   columns: number;
 }) {
-  const views = TASK_VIEWS.map((v, i) => {
-    const n = v.count(counts);
-    return {
-      // Il separatore sta nel segmento, non fra i segmenti: `cutParts` misura la
-      // riga pezzo per pezzo e uno spazio fuori dai pezzi non verrebbe contato.
-      text: `${i > 0 ? ' · ' : ''}${v.label(counts)}`,
-      color: v.color,
-      dim: v.dim || n === 0,
-      active: v.id === active,
-    };
-  });
-  const segments = [
-    ...views,
-    { text: above > 0 ? ` · ↑${above}` : '', dim: true, active: false, color: undefined },
-    { text: below > 0 ? ` · ↓${below}` : '', dim: true, active: false, color: undefined },
-  ];
-  const shown = cutParts(
-    segments.map((s) => s.text),
-    paneTextWidth(columns),
-    segments.findIndex((s) => s.active),
-  );
+  // T21 — le parti e il loro taglio vengono da `pane-header.ts`, lo stesso
+  // modulo da cui `cli.tsx` ricava le colonne cliccabili: una fonte sola.
+  const { parts, shown } = taskHeaderParts(counts, active, above, below, columns);
+  return <HeaderLine parts={parts} shown={shown} focused={focused} />;
+}
+
+/** Resa di un header già tagliato: ogni parte col suo stile, l'attiva in
+ *  video inverso (T100/D5 — costa 0 colonne e non entra in gara con la
+ *  semantica di colore già occupata). */
+function HeaderLine({
+  parts,
+  shown,
+  focused,
+}: {
+  parts: HeaderPart[];
+  shown: string[];
+  focused: boolean;
+}) {
   return (
     <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
-      {segments.map((seg, i) =>
+      {parts.map((seg, i) =>
         shown[i] ? (
           <Text key={i} color={seg.color} dimColor={seg.dim} inverse={seg.active}>
             {shown[i]}
@@ -300,39 +296,8 @@ export function SessionsHeader({
   focused: boolean;
   columns: number;
 }) {
-  const views = SESSION_VIEWS.map((v) => {
-    const n = v.count(counts);
-    return {
-      text: ` · ${v.label(counts, parentLabel)}`,
-      color: v.color,
-      dim: v.dim || n === 0,
-      active: v.id === active,
-    };
-  });
-  const segments = [
-    // `Sessions` non è una voce del catalogo: nomina il pane, non un
-    // sottoinsieme, quindi non è raggiungibile con le frecce.
-    { text: 'Sessions', color: undefined, dim: false, active: false },
-    ...views,
-    { text: above > 0 ? ` · ↑${above}` : '', dim: true, active: false, color: undefined },
-    { text: below > 0 ? ` · ↓${below}` : '', dim: true, active: false, color: undefined },
-  ];
-  const shown = cutParts(
-    segments.map((s) => s.text),
-    paneTextWidth(columns),
-    segments.findIndex((s) => s.active),
-  );
-  return (
-    <Text bold color={focused ? 'cyan' : undefined} wrap="truncate-end">
-      {segments.map((seg, i) =>
-        shown[i] ? (
-          <Text key={i} color={seg.color} dimColor={seg.dim} inverse={seg.active}>
-            {shown[i]}
-          </Text>
-        ) : null,
-      )}
-    </Text>
-  );
+  const { parts, shown } = sessionHeaderParts(parentLabel, counts, active, above, below, columns);
+  return <HeaderLine parts={parts} shown={shown} focused={focused} />;
 }
 
 export function SessionsPane({

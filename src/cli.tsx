@@ -41,15 +41,21 @@ import {
   enableMouse,
   FRAME_TEXT_COL,
   hitRegion,
+  inlineRegions,
   isWheel,
   LAUNCH_ROW,
+  listHit,
+  PANE_TEXT_PAD,
+  paneSpans,
   rowRegions,
   takeMouse,
   WHEEL_LINES,
   wheelDir,
+  type ListGeometry,
   type MouseEvent,
   type Segment,
 } from './mouse.js';
+import { headerItems, sessionHeaderParts, taskHeaderParts } from './pane-header.js';
 import {
   cycleSessionView,
   cycleTaskView,
@@ -901,10 +907,15 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // 2..N+1 = task visibili) e la riconverte subito in sentinella o id: l'indice
   // non sopravvive a un cambio di filtro, l'id sì.
   function moveTaskSel(delta: number) {
-    const next = Math.max(0, Math.min(paneTasks.length + META_ROWS - 1, selIndex + delta));
-    if (next === ROW_ALL) setSel(ALL);
-    else if (next === ROW_SPOT) setSel(SPOT);
-    else setSel(paneTasks[next - META_ROWS]?.id ?? SPOT);
+    selectTaskRow(Math.max(0, Math.min(paneTasks.length + META_ROWS - 1, selIndex + delta)));
+  }
+
+  /** Selezione per INDICE nella vista, riconvertita subito in sentinella o id.
+   *  T21 — la chiama anche il click su una riga del pane task. */
+  function selectTaskRow(index: number) {
+    if (index === ROW_ALL) setSel(ALL);
+    else if (index === ROW_SPOT) setSel(SPOT);
+    else setSel(paneTasks[index - META_ROWS]?.id ?? SPOT);
   }
 
   // T100 — `tab` naviga il catalogo viste del pane in focus. Il reset della
@@ -914,17 +925,26 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // sessioni basta invalidare l'id, e l'effect di validità atterra sulla prima
   // riga selezionabile della vista nuova.
   function cycleView(delta: number) {
-    if (focus === 'tasks') {
-      const next = cycleTaskView(taskViewId, delta);
-      setTaskViewId(next);
-      setSel(ALL);
-      setNote(`vista task: ${taskView(next).label(taskCounts)}`);
-    } else {
-      const next = cycleSessionView(sessionViewId, delta);
-      setSessionViewId(next);
-      setSelSessionId(null);
-      setNote(`vista sessioni: ${sessionView(next).label(sessionCounts, parentLabel)}`);
-    }
+    if (focus === 'tasks') selectTaskView(cycleTaskView(taskViewId, delta));
+    else selectSessionView(cycleSessionView(sessionViewId, delta));
+  }
+
+  // T21 — per VISTA e non per passo: il click sull'header nomina una voce, e
+  // `tab` la raggiunge ciclando. Sulla vista già attiva non si fa niente — un
+  // click che azzerasse la selezione alla riga in alto sarebbe un effetto che
+  // la tastiera non ha mai avuto, perché `tab` non può restare ferma.
+  function selectTaskView(next: TaskViewId) {
+    if (next === taskViewId) return;
+    setTaskViewId(next);
+    setSel(ALL);
+    setNote(`vista task: ${taskView(next).label(taskCounts)}`);
+  }
+
+  function selectSessionView(next: SessionViewId) {
+    if (next === sessionViewId) return;
+    setSessionViewId(next);
+    setSelSessionId(null);
+    setNote(`vista sessioni: ${sessionView(next).label(sessionCounts, parentLabel)}`);
   }
 
   // T49 — resume di una conversazione in una nuova tab. Unico punto: lo chiamano
@@ -1240,13 +1260,42 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     if ((ev.button & 3) !== 0) return;
     // Le superfici esistono solo nella lista: un modo capturing prende il
     // frame intero e a quella riga c'è dell'altro.
-    if (mode !== 'normal' || ev.row !== LAUNCH_ROW) return;
-    const hit = hitRegion(launchRegions, ev.col);
-    // Il click NON chiama l'azione: rientra dalla porta della tastiera col
-    // tasto che la superficie annuncia. Un ramo nuovo su `t`/`c`/cifre nasce
-    // così già cliccabile, e non esiste un secondo posto in cui il click possa
-    // dire una cosa diversa dal tasto che gli sta scritto sopra.
-    if (hit) onKey(hit, NO_MODIFIERS);
+    if (mode !== 'normal') return;
+    if (ev.row === LAUNCH_ROW) {
+      const hit = hitRegion(launchRegions, ev.col);
+      // Il click NON chiama l'azione: rientra dalla porta della tastiera col
+      // tasto che la superficie annuncia. Un ramo nuovo su `t`/`c`/cifre nasce
+      // così già cliccabile, e non esiste un secondo posto in cui il click possa
+      // dire una cosa diversa dal tasto che gli sta scritto sopra.
+      if (hit) onKey(hit, NO_MODIFIERS);
+      return;
+    }
+    onListClick(ev);
+  }
+
+  /**
+   * T21 (mandata 3) — click su un elemento di lista = SOLO FUOCO (D2): il pane
+   * prende il focus e la selezione va sull'elemento, nessuna azione parte. Qui
+   * il click non sintetizza un tasto, perché nessun tasto nomina una riga o una
+   * vista — `↑↓` e `tab` sono relativi — e chiama i setter che la tastiera
+   * usa a sua volta. Un click sulla vista già attiva si limita al focus.
+   */
+  function onListClick(ev: MouseEvent) {
+    if (!listGeometry) return;
+    const hit = listHit(ev, listGeometry);
+    if (!hit) return;
+    setFocus(hit.pane);
+    if (hit.pane === 'tasks') {
+      if (hit.target === 'view') selectTaskView(hit.key as TaskViewId);
+      // Le due righe meta hanno indice fisso; le task riportano l'indice di
+      // finestra a quello della lista completa, su cui è keyata la selezione.
+      else selectTaskRow(hit.index < META_ROWS ? hit.index : taskWin.start + hit.index);
+    } else if (hit.target === 'view') {
+      selectSessionView(hit.key as SessionViewId);
+    } else {
+      const row = windowRows[hit.index];
+      if (row && row.kind !== 'separator') setSelSessionId(row.sessionId);
+    }
   }
 
   function onKey(input: string, key: Key) {
@@ -1822,6 +1871,46 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const selRowIndex = rowIndexOf(sessionRows, selSessionId);
   const sessionWin = windowRange(sessionRows.length, selRowIndex, budget.sessionRows);
   const windowRows = sessionRows.slice(sessionWin.start, sessionWin.end);
+
+  // T21 — geometria delle liste per l'hit-test del click, dalla STESSA
+  // aritmetica che disegna i pane: le parti degli header escono dal modulo che
+  // `ui/panes.tsx` consuma per renderle, le righe cliccabili sono le finestre
+  // appena calcolate. `null` in compatto: lì i pane non esistono.
+  const spans = paneSpans(columns);
+  const listGeometry: ListGeometry | null = budget.compact
+    ? null
+    : {
+        columns,
+        taskHeader: inlineRegions(
+          headerItems(
+            taskHeaderParts(
+              taskCounts,
+              taskViewId,
+              taskWin.start,
+              paneTasks.length - taskWin.end,
+              columns,
+            ),
+          ),
+          spans.tasks.start + PANE_TEXT_PAD,
+        ),
+        sessionHeader: inlineRegions(
+          headerItems(
+            sessionHeaderParts(
+              parentLabel,
+              sessionCounts,
+              sessionViewId,
+              sessionWin.start,
+              sessionRows.length - sessionWin.end,
+              columns,
+            ),
+          ),
+          spans.sessions.start + PANE_TEXT_PAD,
+        ),
+        // Con un errore di caricamento al posto delle task c'è la riga rossa:
+        // restano cliccabili le sole righe meta.
+        taskRows: META_ROWS + (loadError ? 0 : windowTasks.length),
+        sessionRows: windowRows.length,
+      };
 
   // Sotto la soglia minima il layout a box non entra a nessun costo: si scende
   // a una riga sola. Perdere il deck per un terminale basso è meglio che
