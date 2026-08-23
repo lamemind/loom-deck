@@ -348,7 +348,12 @@ test('legenda: indice base-1 + emoji + label, concorde col dispatch dei tasti', 
 });
 
 test('legenda: nessuna voce → riga vuota, nessun contatore', () => {
-  assert.deepEqual(launchLegend([], 200), { shown: '', overflow: 0, unreachable: 0 });
+  assert.deepEqual(launchLegend([], 200), {
+    shown: '',
+    taken: [],
+    overflow: 0,
+    unreachable: 0,
+  });
 });
 
 test('legenda: label mancante → parseLaunch mette il comando, la legenda lo mostra', () => {

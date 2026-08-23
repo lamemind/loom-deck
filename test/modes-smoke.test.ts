@@ -48,7 +48,18 @@ function capture(
   cwd: string = PROJECT,
   extraEnv: NodeJS.ProcessEnv = {},
 ): string {
-  const raw = execFileSync(
+  return stripAnsi(captureRaw(keys, cwd, extraEnv));
+}
+
+/** I byte come sono usciti dal pty. Serve solo a chi misura le SEQUENZE invece
+ *  del testo — il tracking mouse acceso e poi ripristinato (T21), che
+ *  `stripAnsi` cancellerebbe insieme al resto. */
+function captureRaw(
+  keys: string,
+  cwd: string = PROJECT,
+  extraEnv: NodeJS.ProcessEnv = {},
+): string {
+  return execFileSync(
     'python3',
     [
       join(HERE, 'pty-frame.py'),
@@ -77,7 +88,6 @@ function capture(
       },
     },
   );
-  return stripAnsi(raw);
 }
 
 /**
@@ -490,3 +500,66 @@ for (const m of MODES.filter((x) => x.name !== 'normal')) {
     assert.match(frame, /t 💻/, `${m.name} non è tornato alla lista`);
   });
 }
+
+// ── T21 · mouse (mandata 1: superfici della riga launch) ──────────────────
+
+/**
+ * Click su una colonna della riga launch, che sta a riga 4 del terminale.
+ *
+ * Le colonne non sono indovinate: la riga comincia a colonna 3 (bordo +
+ * padding) e i segmenti si susseguono separati da ` · ` — `t 💻` occupa 3..6,
+ * `c 🤖` occupa 10..13. Scritte qui come numeri sono un CALCO che scade se la
+ * riga cambia composizione, e per questo ogni scenario asserisce anche l'esito
+ * dell'azione: un bersaglio spostato non passa silenziosamente.
+ */
+const clickLaunch = (col: number) => `@${col},4;`;
+
+test('click su `t 💻` apre il terminale, come il tasto t', { skip: !CAN_RUN }, () => {
+  const captured = capture(clickLaunch(4));
+  assert.ok(alive(captured), 'il deck è morto sul click');
+  assert.match(lastFrame(captured), /terminale su/i, 'il click non ha attivato la surface t');
+});
+
+test('click su `c 🤖` spawna la sessione, come il tasto c', { skip: !CAN_RUN }, () => {
+  const frame = lastFrame(capture(clickLaunch(11)));
+  assert.match(frame, /deck-run/, `il click non ha attivato la surface c: ${frame}`);
+});
+
+test('lo spazio fra due superfici non attiva la vicina', { skip: !CAN_RUN }, () => {
+  // Colonna 8: il separatore fra `t 💻` e `c 🤖`. Un hit-test che arrotondasse
+  // al segmento più vicino lancerebbe un terminale che nessuno ha chiesto.
+  const frame = lastFrame(capture(clickLaunch(8)));
+  assert.doesNotMatch(frame, /terminale su/i, `il separatore ha attivato t: ${frame}`);
+  assert.doesNotMatch(frame, /deck-run/, `il separatore ha attivato c: ${frame}`);
+});
+
+test('un click fuori dalla riga launch è inerte', { skip: !CAN_RUN }, () => {
+  // Mandata 1: le liste non sono cliccabili. Riga 6 è dentro il pane task.
+  const frame = lastFrame(capture('@4,6;'));
+  assert.doesNotMatch(frame, /terminale su/i, `una riga estranea ha attivato t: ${frame}`);
+});
+
+test('col modale aperto il click non scrive nel campo né attiva la surface', {
+  skip: !CAN_RUN,
+}, () => {
+  // Due difetti in uno scenario. ① `useInput` riceve le sequenze come TESTO:
+  // senza il filtro incondizionato, un click battuto col modale aperto ci
+  // scriverebbe dentro `[<0;5;3M`. ② La riga launch NON è a schermo in un modo
+  // capturing, quindi la superficie che occupava quelle colonne non deve
+  // rispondere lo stesso.
+  const frame = lastFrame(capture(`C${clickLaunch(4)}`));
+  assert.match(frame, /C ›/, `il modale create non è aperto: ${frame}`);
+  assert.doesNotMatch(frame, /\[</, `la sequenza mouse è finita nel campo: ${frame}`);
+  assert.doesNotMatch(frame, /terminale su/i, `il click ha attivato t dal modale: ${frame}`);
+});
+
+test('il tracking si accende all\'avvio e si spegne all\'uscita', { skip: !CAN_RUN }, () => {
+  // Un tracking lasciato acceso non è cosmetico: il terminale continua a
+  // mandare sequenze a chi prende il posto del deck, che le stampa come testo.
+  // Si misura sui BYTE, non sul frame — `stripAnsi` cancellerebbe la prova.
+  const raw = captureRaw(CTRL_C + CTRL_C);
+  assert.match(raw, /\x1b\[\?1000h/, 'il tracking non è stato acceso');
+  assert.match(raw, /\x1b\[\?1006h/, 'la modalità SGR non è stata accesa');
+  const off = raw.lastIndexOf('\x1b[?1000l');
+  assert.ok(off > raw.indexOf('\x1b[?1000h'), 'il tracking non è stato spento all\'uscita');
+});

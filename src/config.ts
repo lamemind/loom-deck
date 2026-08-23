@@ -55,6 +55,11 @@ export function loadLaunch(projectRoot: string): LaunchEntry[] {
 // disponibili. Le voci oltre la nona restano configurate e non raggiungibili.
 export const LAUNCH_MAX = 9;
 
+/** Separatore fra le voci della riga launch. Costante e non letterale sparso:
+ *  lo usano il calcolo di quante voci entrano in riga, la resa, e l'hit-test
+ *  del mouse — tre conti che devono misurare lo stesso spazio. */
+export const LAUNCH_SEP = ' · ';
+
 // Larghezza in celle terminale, approssimata: emoji astrali (U+1F000+) e simboli
 // BMP portati a presentazione emoji occupano 2 colonne, il VS16 è un modificatore
 // a larghezza 0, tutto il resto 1. Serve solo a decidere quante voci stanno in
@@ -73,6 +78,11 @@ export function cellWidth(s: string): number {
 export interface LaunchLegend {
   /** Voci che entrano in riga, già formattate `<indice> <emoji> <label>`. */
   shown: string;
+  /** Le stesse voci PRIMA di essere unite: `shown` è il loro join. T21 —
+   *  l'hit-test del mouse deve sapere dove finisce una voce e comincia la
+   *  successiva, e ri-splittare `shown` sul separatore sarebbe un secondo conto
+   *  che diverge al primo separatore che compare dentro una label. */
+  taken: readonly string[];
   /** Voci raggiungibili ma fuori larghezza. */
   overflow: number;
   /** Voci oltre la nona: configurate ma senza un tasto per lanciarle. */
@@ -106,7 +116,7 @@ export function launchLegend(
     const taken: string[] = [];
     let used = 0;
     for (const p of parts) {
-      const cost = cellWidth(p) + (taken.length > 0 ? 3 : 0); // ' · '
+      const cost = cellWidth(p) + (taken.length > 0 ? cellWidth(LAUNCH_SEP) : 0);
       if (used + cost > budget - reserve) break;
       taken.push(p);
       used += cost;
@@ -118,7 +128,12 @@ export function launchLegend(
   // contatore che non servirebbe. Altrimenti si ripete riservando la coda.
   let taken = fit(0);
   if (taken.length < parts.length) taken = fit(10);
-  return { shown: taken.join(' · '), overflow: parts.length - taken.length, unreachable };
+  return {
+    shown: taken.join(LAUNCH_SEP),
+    taken,
+    overflow: parts.length - taken.length,
+    unreachable,
+  };
 }
 
 // T61 — soglia d'età del contatore archiviabili, campo `archivableDays`.

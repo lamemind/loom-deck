@@ -123,6 +123,19 @@ Le emoji sono quelle del menu compass. Per il terminale compass usa 🖥️, che
 
 `t` e `c` sono gemelle: entrambe aprono una surface del cappello nella stessa finestra Ptyxis, senza passare da un modale. `c` (minuscola, azione) e `C` (maiuscola, modale create-task) restano distinte per la regola sopra — così come `f` (fork) e `F` (filtri).
 
+### Il mouse
+
+Le voci della riga surface sono **cliccabili**: un click su `t 💻`, su `c 🤖` o su una voce `launch` fa la stessa cosa del tasto che le sta scritto sopra. Non c'è una semantica nuova da imparare, e non c'è doppio-click — il protocollo non lo prevede, andrebbe ricostruito con un timer. Le liste (task, conversazioni, viste dell'header) **non** rispondono ancora al mouse, né per selezionare né per attivare.
+
+Il click è l'unico gesto tracciato: modi `1000` + `1006`, niente movimento, niente drag, niente hover. I modi che li porterebbero (`1002`, `1003`) generano una valanga di eventi che sotto render pesante si frammentano su `stdin` e leakano dentro i campi di testo — è una classe di difetto osservata in più TUI. Con `1000`+`1006` gli eventi sono due per click, pressione e rilascio, e il deck agisce solo sulla pressione.
+
+Il tracking si spegne su ogni via d'uscita: uscita normale, `^C`, segnale, crash. Un tracking lasciato acceso non è un difetto cosmetico — il terminale continua a mandare sequenze a qualunque programma prenda il posto del deck, che se le ritrova stampate come testo.
+
+Due conseguenze visibili di come è fatto:
+
+- **Il deck pulisce lo schermo all'avvio.** Non è cosmesi: Ink non posiziona mai il cursore in modo assoluto, quindi il frame nasce dove capitava il cursore all'avvio del processo e una coordinata del mouse non sarebbe traducibile in una riga del frame. Pulire e tornare in alto a sinistra pinna il frame a riga 1, e da lì non si sposta più — il frame è alto al massimo `rows - 1`, quindi non fa mai scorrere lo schermo.
+- **Incollare un testo che contenga `[<0;5;3M` viene letto come un click.** Ink consegna le sequenze mouse a `useInput` come testo normale, con l'`ESC` iniziale già tolto: non resta niente che distingua la sequenza vera da quella scritta a mano.
+
 ### `CANC` — eliminare task
 
 Il deck **ordina** la potatura, non la esegue: la fa `loom-works:clean-tasks`, invocato da un processo Claude headless. Nessun `git rm` e nessuna riscrittura di `tasks.md` vivono qui — quella sequenza (task file + folder dot-prefixed + riga in `tasks.md`, un commit atomico per task, symlink `current-task.md` rimosso, righe orfane riconciliate) è implementata una volta sola, e averne una seconda darebbe due rimozioni capaci di divergere.

@@ -31,10 +31,23 @@ import {
 import {
   cellWidth,
   launchLegend,
+  LAUNCH_SEP,
   loadArchivableDays,
   loadIdentity,
   loadLaunch,
 } from './config.js';
+import {
+  anchorFrame,
+  enableMouse,
+  FRAME_TEXT_COL,
+  hitRegion,
+  isWheel,
+  LAUNCH_ROW,
+  rowRegions,
+  takeMouse,
+  type MouseEvent,
+  type Segment,
+} from './mouse.js';
 import {
   cycleSessionView,
   cycleTaskView,
@@ -146,6 +159,45 @@ import { VERSION } from './version.js';
 // lo segnala. Vive a livello di modulo perché ha due lettori — il ramo che la
 // scrive e il timer che la ritira, e quest'ultimo deve poterla riconoscere.
 const QUIT_NOTE = `⚠ ^C di nuovo entro ${QUIT_WINDOW_MS / 1000}s per chiudere il deck`;
+
+// Le due surface built-in del cappello, in testa alla riga launch. Non stanno
+// fra i tasti perché hanno la stessa natura delle voci `launch` — fire-once,
+// cwd = project root, nessuno stato — e la differenza è solo che sono
+// universali (nessun progetto le dichiara) invece che custom. Emoji del menu
+// compass: 🤖 = nuova sessione claude. Per il terminale compass usa 🖥️, che nel
+// frame Ink NON passa — `sanitize` lo sostituisce (VTE lo disegna largo 1,
+// string-width dice 2: discordante, invariante ① di width.ts) e resterebbe un
+// `·` muto. 💻 è il gemello concorde; il `sanitize` qui rende il vincolo
+// automatico invece che da ricordare.
+//
+// T21 — `key` è il tasto che la superficie rappresenta: un click su di essa
+// entra nell'handler di tastiera con quel tasto, invece di chiamare l'azione
+// per conto proprio. È ciò che tiene click e tasto per costruzione allineati.
+const SURFACE_SEGMENTS: readonly Segment[] = [
+  { key: 't', text: sanitize('t 💻') },
+  { key: 'c', text: sanitize('c 🤖') },
+];
+
+// T21 — il `Key` che accompagna un tasto sintetizzato da un click: nessun
+// modificatore, nessun tasto speciale. Deve elencare ogni campo, o i rami che
+// leggono `key.ctrl` o `key.tab` riceverebbero `undefined` invece di `false` —
+// equivalente nel test di verità, ma non nel tipo.
+const NO_MODIFIERS: Key = {
+  upArrow: false,
+  downArrow: false,
+  leftArrow: false,
+  rightArrow: false,
+  pageDown: false,
+  pageUp: false,
+  return: false,
+  escape: false,
+  ctrl: false,
+  shift: false,
+  tab: false,
+  backspace: false,
+  delete: false,
+  meta: false,
+};
 
 function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; tasksDir: string }) {
   const { tasks, loadError } = useTasks(tasksPath);
@@ -1133,7 +1185,46 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     purge: onPurgeKey,
   };
 
-  useInput((input, key) => {
+  /**
+   * T21 — il MOUSE precede tutto, in ogni modo del deck.
+   *
+   * Il filtro è incondizionato — anche dentro un campo di testo, anche in un
+   * modo che non ha nessuna superficie cliccabile — e non è una precauzione:
+   * `useInput` riceve le sequenze SGR come testo (`mouse.ts`, fatto ①), quindi
+   * senza filtro un click battuto mentre è aperto il campo del titolo ci
+   * scriverebbe dentro `[<0;5;3M`. Un listener raw su stdin non risolverebbe:
+   * riceve gli stessi chunk in broadcast e non li sottrae a `useInput`.
+   *
+   * Il chunk MISTO — un tasto e un click nella stessa scrittura, che arriva
+   * come una sola chiamata — si separa a mano: gli eventi vanno al mouse, il
+   * testo residuo prosegue verso la tastiera. Solo un chunk di solo mouse
+   * chiude qui.
+   */
+  useInput((raw, key) => {
+    const { text, events } = takeMouse(raw);
+    for (const ev of events) onMouse(ev);
+    if (events.length > 0 && !text) return;
+    onKey(text, key);
+  });
+
+  function onMouse(ev: MouseEvent) {
+    // Un click produce due eventi (pressione e rilascio): agire su entrambi
+    // spawnerebbe due volte. La rotella è mandata 2 — qui scartata, non
+    // silenziosamente equiparata a un click. Il bottone si legge sui due bit
+    // bassi, perché gli alti portano i modificatori (shift/meta/ctrl).
+    if (!ev.press || isWheel(ev.button) || (ev.button & 3) !== 0) return;
+    // Le superfici esistono solo nella lista: un modo capturing prende il
+    // frame intero e a quella riga c'è dell'altro.
+    if (mode !== 'normal' || ev.row !== LAUNCH_ROW) return;
+    const hit = hitRegion(launchRegions, ev.col);
+    // Il click NON chiama l'azione: rientra dalla porta della tastiera col
+    // tasto che la superficie annuncia. Un ramo nuovo su `t`/`c`/cifre nasce
+    // così già cliccabile, e non esiste un secondo posto in cui il click possa
+    // dire una cosa diversa dal tasto che gli sta scritto sopra.
+    if (hit) onKey(hit, NO_MODIFIERS);
+  }
+
+  function onKey(input: string, key: Key) {
     // T116 — `^C` sta SOPRA il dispatch dei modi, unico tasto a scavalcarlo.
     // Ogni altra combo `ctrl` è un acceleratore, e un acceleratore dentro un
     // modo capturing dev'essere inerte (`input-modes.ts`); questo non è un
@@ -1390,28 +1481,29 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     // chiuderlo, perché quel ramo esce prima di qui. L'unica uscita da tastiera
     // è `^C` battuto due volte (T116, in testa a questo handler); resta poi la
     // chiusura della tab Ptyxis che ospita il processo.
-  });
+  }
 
   const canSpawn = focus === 'tasks' && selTask !== null;
   const canResume = focus === 'sessions' && selSessionObj !== null;
   // T50 — il pin agisce su qualunque riga selezionata (anche stale, per
   // spinnarla); basta il focus sul pane e una selezione.
   const canPin = focus === 'sessions' && selSessionId !== null;
-  // Le due surface built-in del cappello stanno in testa alla riga launch, non
-  // fra i tasti: hanno la stessa natura delle voci `launch` — fire-once, cwd =
-  // project root, nessuno stato — e la differenza è solo che sono universali
-  // (nessun progetto le dichiara) invece che custom. Emoji del menu compass:
-  // 🤖 = nuova sessione claude. Per il terminale compass usa 🖥️, che nel frame
-  // Ink NON passa — `sanitize` lo sostituisce (VTE lo disegna largo 1,
-  // string-width dice 2: discordante, invariante ① di width.ts) e resterebbe un
-  // `·` muto. 💻 è il gemello concorde; il `sanitize` qui rende il vincolo
-  // automatico invece che da ricordare.
-  const surfaceLegend = sanitize('t 💻 · c 🤖');
+  const surfaceLegend = SURFACE_SEGMENTS.map((s) => s.text).join(LAUNCH_SEP);
   // Larghezza dal medesimo hook che dà l'altezza: dopo un resize la legenda si
   // ricalcola con lo stesso re-render che ridimensiona i pane. Le celle delle
   // surface (più il ` · ` che le separa dalle voci) sono già spese sulla riga →
   // vanno riservate, o le voci launch la sfonderebbero di quel tanto.
-  const legend = launchLegend(launch, columns, cellWidth(surfaceLegend) + 3);
+  const legend = launchLegend(launch, columns, cellWidth(surfaceLegend) + cellWidth(LAUNCH_SEP));
+
+  // T21 — la riga launch come DATO, non come stringa: gli stessi segmenti
+  // compongono il testo renderizzato e le colonne dell'hit-test. Derivare le
+  // seconde ri-splittando il primo sarebbe un conto parallelo, che diverge alla
+  // prima label che contenga il separatore.
+  const launchSegments: Segment[] = [
+    ...SURFACE_SEGMENTS,
+    ...legend.taken.map((text, i) => ({ key: String(i + 1), text })),
+  ];
+  const launchRegions = rowRegions(launchSegments, LAUNCH_SEP, FRAME_TEXT_COL);
 
   // Legenda della modalità normale. Elenca SOLO i tasti che fanno qualcosa qui e
   // ora: le voci contestuali compaiono quando il pane a fuoco le rende possibili
@@ -1791,8 +1883,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           riga non è mai vuota. */}
       {mode === 'normal' ? (
         <Text dimColor wrap="truncate-end">
-          {surfaceLegend}
-          {legend.shown ? ` · ${legend.shown}` : ''}
+          {launchSegments.map((s) => s.text).join(LAUNCH_SEP)}
           {legend.overflow > 0 ? (
             <Text color="yellow"> · +{legend.overflow} fuori riga</Text>
           ) : null}
@@ -1905,6 +1996,13 @@ const cwd = process.cwd();
 // osservabile. In raw mode `^C` non è un SIGINT — è il byte `\x03` nello
 // stream di input, e chi lo consuma per primo decide. Da qui in poi lo consuma
 // il deck, quindi l'uscita è tutta a carico del suo handler.
+// T21 — l'ordine dei tre passi è vincolante. `anchorFrame` va PRIMA del render:
+// pinna il frame a riga 1 e con lui l'origine dell'hit-test, che senza sarebbe
+// la posizione casuale del cursore all'avvio del processo. `enableMouse`
+// registra il ripristino del tracking sulle vie d'uscita, quindi prima che
+// esista qualcosa da cui uscire.
+anchorFrame();
+enableMouse();
 render(<Deck cwd={cwd} tasksPath={resolveTasksPath(cwd)} tasksDir={resolveTasksDir(cwd)} />, {
   exitOnCtrlC: false,
 });

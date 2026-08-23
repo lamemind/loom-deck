@@ -7,8 +7,8 @@ non basta. `script(1)` non è utilizzabile (mangia la geometria), da cui
 `pty.openpty` + `TIOCSWINSZ` a mano.
 
 Uso: pty-frame.py <cols> <rows> <cwd> <cmd...> [--keys <sequenza>]
-     dove <sequenza> usa D/U/R/L per le frecce, X per un incollaggio, e ogni
-     altro carattere è digitato.
+     dove <sequenza> usa D/U/R/L per le frecce, X per un incollaggio,
+     `@<col>,<riga>;` per un click del mouse, e ogni altro carattere è digitato.
 Stampa su stdout i byte grezzi letti dal pty, seguiti da una riga
 `<<PROC alive>>` o `<<PROC exit=N>>`: se il processo sia sopravvissuto alla
 sequenza è un ESITO come il frame, e senza questa riga uno scenario che verifica
@@ -60,6 +60,32 @@ KEYS = {
     'W': b'',
 }
 
+
+def tokenize(keys):
+    """Sequenza `--keys` → lista di byte da scrivere, un elemento per pump.
+
+    I tasti sono a carattere singolo, ma un CLICK porta con sé due coordinate e
+    nessun carattere le può esprimere: da qui la forma `@<col>,<riga>;`, l'unico
+    token del linguaggio che ha una lunghezza variabile. Emette la coppia
+    pressione+rilascio (`M` e `m`) come fa un terminale vero — un deck che
+    agisse anche sul rilascio spawnerebbe due volte, e uno scenario che mandasse
+    la sola pressione non se ne accorgerebbe.
+    """
+    out, i = [], 0
+    while i < len(keys):
+        ch = keys[i]
+        if ch == '@':
+            end = keys.index(';', i)
+            col, row = (int(v) for v in keys[i + 1:end].split(','))
+            out.append(b'\x1b[<0;%d;%dM' % (col, row))
+            out.append(b'\x1b[<0;%d;%dm' % (col, row))
+            i = end + 1
+            continue
+        out.append(KEYS.get(ch, ch.encode()))
+        i += 1
+    return out
+
+
 argv = sys.argv[1:]
 keys = ''
 if '--keys' in argv:
@@ -94,8 +120,8 @@ def pump(seconds):
 
 
 pump(4)
-for k in keys:
-    os.write(master, KEYS.get(k, k.encode()))
+for chunk in tokenize(keys):
+    os.write(master, chunk)
     pump(0.7)
 pump(1.0)
 
