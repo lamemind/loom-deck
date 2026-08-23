@@ -339,5 +339,6 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     occCur,
     open,
     onKey,
+    scroll,
   };
 }

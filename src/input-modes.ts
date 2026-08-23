@@ -68,3 +68,28 @@ export function captures(mode: Mode): mode is CapturingMode {
 export const CTRL_DEROGATIONS: Partial<Record<CapturingMode, readonly string[]>> = {
   detail: ['f'],
 };
+
+/**
+ * T21 (mandata 2) — i modi che SCORRONO un contenuto lungo, cioè gli unici in
+ * cui la rotella del mouse fa qualcosa.
+ *
+ * La rotella scorre il TESTO, mai la selezione di una lista (D5): nelle liste
+ * la selezione è un'intenzione — la riga su cui si preme `⏎` — e una rotella
+ * che la muovesse trasformerebbe ogni sfioramento in una scelta. Nei tre modi
+ * qui sotto lo scroll non sceglie niente, è solo posizione di lettura. Non
+ * coincide con «ha un documento a schermo»: `search` mostra un'anteprima, ma
+ * il fuoco lì è sulla lista dei risultati, che è una selezione.
+ *
+ * Il custode è `MODE_WHEEL` in `cli.tsx`, un `Record<ScrollingMode, …>` che non
+ * compila se un modo entra qui senza uno scroll da chiamare.
+ */
+export const SCROLLING_MODES = ['detail', 'status', 'reader'] as const;
+
+export type ScrollingMode = (typeof SCROLLING_MODES)[number];
+
+const SCROLLING = new Set<string>(SCROLLING_MODES);
+
+/** `true` se la rotella scorre il contenuto del modo. */
+export function scrolls(mode: Mode): mode is ScrollingMode {
+  return SCROLLING.has(mode);
+}

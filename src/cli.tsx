@@ -45,6 +45,8 @@ import {
   LAUNCH_ROW,
   rowRegions,
   takeMouse,
+  WHEEL_LINES,
+  wheelDir,
   type MouseEvent,
   type Segment,
 } from './mouse.js';
@@ -150,7 +152,7 @@ import { useSearchOverlay } from './overlays/search.js';
 import { useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
 import { useProjectStatus } from './overlays/status.js';
-import { captures, type CapturingMode } from './input-modes.js';
+import { captures, scrolls, type CapturingMode, type ScrollingMode } from './input-modes.js';
 import { VERSION } from './version.js';
 
 // T116 — l'avviso della prima pressione di `^C`. La durata è INTERPOLATA dalla
@@ -1185,6 +1187,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     purge: onPurgeKey,
   };
 
+  // T21 (mandata 2) — la ROTELLA, per i soli modi che scorrono un contenuto
+  // lungo (`SCROLLING_MODES`). Stessa forma di `MODE_KEYS`: un `Record` sul
+  // catalogo, quindi un modo dichiarato scorrevole senza uno scroll da chiamare
+  // non compila. Il delta è in righe, col segno del verso.
+  const MODE_WHEEL: Record<ScrollingMode, (delta: number) => void> = {
+    detail: sheet.scroll,
+    status: status.scroll,
+    reader: search.scrollReader,
+  };
+
   /**
    * T21 — il MOUSE precede tutto, in ogni modo del deck.
    *
@@ -1209,10 +1221,23 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
 
   function onMouse(ev: MouseEvent) {
     // Un click produce due eventi (pressione e rilascio): agire su entrambi
-    // spawnerebbe due volte. La rotella è mandata 2 — qui scartata, non
-    // silenziosamente equiparata a un click. Il bottone si legge sui due bit
-    // bassi, perché gli alti portano i modificatori (shift/meta/ctrl).
-    if (!ev.press || isWheel(ev.button) || (ev.button & 3) !== 0) return;
+    // spawnerebbe due volte. La rotella arriva come sola pressione, quindi il
+    // filtro su `press` la lascia passare e non la dedoppia.
+    if (!ev.press) return;
+    if (isWheel(ev.button)) {
+      // La rotella NON rientra dalla porta della tastiera come il click: nel
+      // detail `↑↓` muovono il fuoco fra i campi (T117), non il testo, e il
+      // tasto che scorre — `PgUp`/`PgDn` — ha la granularità sbagliata per una
+      // tacca. Va quindi allo scroll del modo, in righe. Fuori dai modi
+      // scorrevoli è inerte: nelle liste la rotella non muove mai la
+      // selezione (D5), e una tacca mentre il deck è sulla lista non deve
+      // fare niente.
+      if (scrolls(mode)) MODE_WHEEL[mode](wheelDir(ev.button) * WHEEL_LINES);
+      return;
+    }
+    // Il bottone si legge sui due bit bassi, perché gli alti portano i
+    // modificatori (shift/meta/ctrl).
+    if ((ev.button & 3) !== 0) return;
     // Le superfici esistono solo nella lista: un modo capturing prende il
     // frame intero e a quella riga c'è dell'altro.
     if (mode !== 'normal' || ev.row !== LAUNCH_ROW) return;

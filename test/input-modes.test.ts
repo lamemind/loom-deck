@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { captures, CAPTURING_MODES, CTRL_DEROGATIONS } from '../src/input-modes.js';
+import {
+  captures,
+  CAPTURING_MODES,
+  CTRL_DEROGATIONS,
+  scrolls,
+  SCROLLING_MODES,
+} from '../src/input-modes.js';
 import type { Mode } from '../src/model.js';
 
 // Ogni valore che `Mode` può assumere. Elencato a mano APPOSTA: se il tipo
@@ -56,4 +62,21 @@ test('purge cattura e non ha deroghe ctrl', () => {
 
 test('un modo fuori catalogo non risulta capturing', () => {
   assert.equal(captures('normal'), false);
+});
+
+// T21 (mandata 2) — la rotella scorre il TESTO, mai una selezione (D5). I tre
+// modi scorrevoli sono quelli con un documento e nessuna lista a fuoco:
+// `search` ha un'anteprima ma il fuoco è sui risultati, che sono una scelta.
+test('i modi scorrevoli sono i tre viewer di testo', () => {
+  assert.deepEqual([...SCROLLING_MODES].sort(), ['detail', 'reader', 'status']);
+});
+
+test('ogni modo scorrevole è anche capturing', () => {
+  for (const m of SCROLLING_MODES) assert.equal(captures(m), true);
+});
+
+test('la rotella è inerte in normal e nelle liste', () => {
+  assert.equal(scrolls('normal'), false);
+  assert.equal(scrolls('search'), false);
+  assert.equal(scrolls('assign'), false);
 });

@@ -8,7 +8,8 @@ non basta. `script(1)` non è utilizzabile (mangia la geometria), da cui
 
 Uso: pty-frame.py <cols> <rows> <cwd> <cmd...> [--keys <sequenza>]
      dove <sequenza> usa D/U/R/L per le frecce, X per un incollaggio,
-     `@<col>,<riga>;` per un click del mouse, e ogni altro carattere è digitato.
+     `@<col>,<riga>;` per un click del mouse, `^<col>,<riga>;` / `_<col>,<riga>;`
+     per una tacca di rotella su / giù, e ogni altro carattere è digitato.
 Stampa su stdout i byte grezzi letti dal pty, seguiti da una riga
 `<<PROC alive>>` o `<<PROC exit=N>>`: se il processo sia sopravvissuto alla
 sequenza è un ESITO come il frame, e senza questa riga uno scenario che verifica
@@ -60,13 +61,26 @@ KEYS = {
     'W': b'',
 }
 
+# Le forme MOUSE, per carattere di apertura: la lista di (bottone, M|m) da
+# emettere per un token `<ch><col>,<riga>;`. Il click è due eventi, pressione
+# e rilascio; la ROTELLA è uno solo — i terminali la mandano come sola
+# pressione (codice 64 su, 65 giù), e un driver che aggiungesse il rilascio
+# proverebbe una grammatica che nessun terminale parla. `^` e `_` sono scelti
+# come `<` e `>`: fuori dalle lettere, che restano libere per un binding futuro.
+MOUSE = {
+    '@': [(0, b'M'), (0, b'm')],
+    '^': [(64, b'M')],
+    '_': [(65, b'M')],
+}
+
 
 def tokenize(keys):
     """Sequenza `--keys` → lista di byte da scrivere, un elemento per pump.
 
-    I tasti sono a carattere singolo, ma un CLICK porta con sé due coordinate e
-    nessun carattere le può esprimere: da qui la forma `@<col>,<riga>;`, l'unico
-    token del linguaggio che ha una lunghezza variabile. Emette la coppia
+    I tasti sono a carattere singolo, ma un evento mouse porta con sé due
+    coordinate e nessun carattere le può esprimere: da qui la forma
+    `<ch><col>,<riga>;` (`@` click, `^`/`_` rotella), gli unici token del
+    linguaggio a lunghezza variabile. Il click emette la coppia
     pressione+rilascio (`M` e `m`) come fa un terminale vero — un deck che
     agisse anche sul rilascio spawnerebbe due volte, e uno scenario che mandasse
     la sola pressione non se ne accorgerebbe.
@@ -74,11 +88,10 @@ def tokenize(keys):
     out, i = [], 0
     while i < len(keys):
         ch = keys[i]
-        if ch == '@':
+        if ch in MOUSE:
             end = keys.index(';', i)
             col, row = (int(v) for v in keys[i + 1:end].split(','))
-            out.append(b'\x1b[<0;%d;%dM' % (col, row))
-            out.append(b'\x1b[<0;%d;%dm' % (col, row))
+            out.extend(b'\x1b[<%d;%d;%d%s' % (b, col, row, kind) for b, kind in MOUSE[ch])
             i = end + 1
             continue
         out.append(KEYS.get(ch, ch.encode()))

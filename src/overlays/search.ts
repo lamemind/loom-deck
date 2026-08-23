@@ -284,5 +284,6 @@ export function useSearchOverlay(deps: SearchOverlayDeps) {
     open,
     onReaderKey,
     onSearchKey,
+    scrollReader,
   };
 }

@@ -553,6 +553,78 @@ test('col modale aperto il click non scrive nel campo né attiva la surface', {
   assert.doesNotMatch(frame, /terminale su/i, `il click ha attivato t dal modale: ${frame}`);
 });
 
+// ── T21 · mouse (mandata 2: rotella nei contenuti lunghi) ─────────────────
+
+/** Una tacca di rotella: `^` su, `_` giù nella mappa di `pty-frame.py`. Le
+ *  coordinate sono irrilevanti per il deck — la rotella scorre il modo, non un
+ *  punto — ma il driver le emette perché un terminale le manda sempre. */
+const WHEEL_UP = '^10,10;';
+const WHEEL_DOWN = '_10,10;';
+
+/** La finestra `righe A-B di N` del viewer in cui si è scorso. */
+function linesAt(frame: string): number {
+  const m = frame.match(/righe (\d+)-\d+ di \d+/);
+  assert.ok(m, `nessun indicatore di posizione nel frame: ${frame}`);
+  return Number(m[1]);
+}
+
+test('la rotella scorre il project status di tre righe per tacca', { skip: !CAN_RUN }, () => {
+  // Cache più alta del terminale, come per `↑↓`: con un recap corto la
+  // posizione non si muove e lo scenario passerebbe senza provare niente.
+  const long = join(mkdtempSync(join(tmpdir(), 'loom-deck-wheel-')), 'lungo.md');
+  writeFileSync(
+    long,
+    Array.from({ length: 200 }, (_, i) => `riga numero ${i} del recap`).join('\n'),
+  );
+  const env = { LOOM_DECK_STATUS_FILE: long };
+  const down = linesAt(lastFrame(capture(`${CTRL_O}${WHEEL_DOWN}`, PROJECT, env)));
+  assert.equal(down, 4, 'una tacca giù non ha scorso tre righe');
+  // Due giù e una su: la rotella torna indietro, e non è un `PgUp` travestito.
+  const back = linesAt(
+    lastFrame(capture(`${CTRL_O}${WHEEL_DOWN}${WHEEL_DOWN}${WHEEL_UP}`, PROJECT, env)),
+  );
+  assert.equal(back, 4, 'una tacca su non ha riavvolto tre righe');
+});
+
+test('nel detail la rotella scorre il testo, non il fuoco fra i campi', { skip: !CAN_RUN }, () => {
+  // T117: `↑↓` nel detail muovono il fuoco fra le quattro righe dell'area di
+  // compilazione. Una rotella che sintetizzasse `↓` sposterebbe il fuoco e
+  // lascerebbe il testo fermo — il contrario di quello che la mano ha chiesto.
+  const start = lastFrame(capture('DD\r'));
+  const after = lastFrame(capture(`DD\r${WHEEL_DOWN}`));
+  assert.equal(linesAt(start), 1);
+  assert.equal(linesAt(after), 4, `il testo del detail non è scorso: ${after}`);
+  // Il fuoco è ancora sulla riga `azione`, che porta il caret; `↓` l'avrebbe
+  // spostato sulla riga del prompt.
+  assert.match(after, /▸ azione/, `il fuoco ha lasciato la riga azione: ${after}`);
+});
+
+test('sulla lista la rotella non muove la selezione', { skip: !CAN_RUN }, () => {
+  // D5: la rotella scorre testo, mai una scelta. La riga col caret deve restare
+  // la stessa dopo due tacche, mentre una `↓` vera la sposta — il secondo
+  // confronto è ciò che prova che il metodo vede il movimento.
+  // Il caret (`▸`, cioè `CARET` dopo `sanitize`) precede la riga a fuoco in
+  // ENTRAMBI i pane: si legge quello seguito da un id task (paddato: `T 94`),
+  // che solo il pane task porta. `DD` scende dalle due righe meta alla prima
+  // task, o il caret starebbe su `≡ tutte le sessioni` e l'id non ci sarebbe.
+  const selRow = (f: string) => {
+    const m = f.match(/▸ (T ?\d+)/);
+    assert.ok(m, `nessuna task selezionata nel frame: ${f}`);
+    return m[1];
+  };
+  const base = selRow(lastFrame(capture('DD')));
+  assert.equal(selRow(lastFrame(capture(`DD${WHEEL_DOWN}${WHEEL_DOWN}`))), base);
+  assert.notEqual(selRow(lastFrame(capture('DDD'))), base);
+});
+
+test('col modale aperto la rotella non scrive nel campo', { skip: !CAN_RUN }, () => {
+  // Stesso difetto del click: la sequenza `[<65;10;10M` è TESTO per `useInput`
+  // e senza filtro finirebbe nel titolo della task che si sta creando.
+  const frame = lastFrame(capture(`C${WHEEL_DOWN}${WHEEL_UP}`));
+  assert.match(frame, /C ›/, `il modale create non è aperto: ${frame}`);
+  assert.doesNotMatch(frame, /\[<|64;|65;/, `la sequenza rotella è finita nel campo: ${frame}`);
+});
+
 test('il tracking si accende all\'avvio e si spegne all\'uscita', { skip: !CAN_RUN }, () => {
   // Un tracking lasciato acceso non è cosmetico: il terminale continua a
   // mandare sequenze a chi prende il posto del deck, che le stampa come testo.

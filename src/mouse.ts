@@ -48,6 +48,29 @@ export function isWheel(button: number): boolean {
 }
 
 /**
+ * Verso della rotella: `-1` su (codice 64), `+1` giù (65), `0` se non è una
+ * rotella. Il verso sta nel bit 0, i modificatori nei bit 2-4 (shift/meta/
+ * ctrl): `66`/`67` sono le rotelle orizzontali, che qui valgono `0` perché il
+ * deck non ha nulla da scorrere in orizzontale.
+ *
+ * Un terminale manda la rotella come SOLA pressione (`M`), mai seguita da un
+ * rilascio: un tacca = un evento, e il chiamante non deve dedoppiare come fa
+ * per il click.
+ */
+export function wheelDir(button: number): -1 | 0 | 1 {
+  if (!isWheel(button) || (button & 2) !== 0) return 0;
+  return (button & 1) === 0 ? -1 : 1;
+}
+
+/**
+ * Righe scorse per tacca di rotella nei contenuti lunghi (detail, project
+ * status, reader). Tre è la convenzione dei terminali e dei browser: una tacca
+ * a riga singola costringe a girare la rotella quanto basta a stancare la mano,
+ * una a pagina salta il testo che si stava leggendo.
+ */
+export const WHEEL_LINES = 3;
+
+/**
  * Separa le sequenze mouse dal testo di un chunk di `useInput`.
  *
  * Ritorna il testo RIPULITO (quello che il deck deve continuare a trattare come

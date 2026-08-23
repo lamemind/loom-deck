@@ -7,7 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hitRegion, isWheel, rowRegions, takeMouse } from '../src/mouse.js';
+import { hitRegion, isWheel, rowRegions, takeMouse, WHEEL_LINES, wheelDir } from '../src/mouse.js';
 
 test('takeMouse: sequenza pura, ESC iniziale strippato da Ink', () => {
   const { text, events } = takeMouse('[<0;5;3M');
@@ -58,6 +58,36 @@ test('isWheel: il bit 6 separa la rotella dai bottoni', () => {
   assert.equal(isWheel(2), false);
   assert.equal(isWheel(64), true);
   assert.equal(isWheel(65), true);
+});
+
+test('wheelDir: su e giù dal bit 0, modificatori ignorati', () => {
+  assert.equal(wheelDir(64), -1);
+  assert.equal(wheelDir(65), 1);
+  // Shift (bit 2), meta (bit 3), ctrl (bit 4) sopra la rotella: il verso non
+  // cambia. Un terminale li manda quando si scorre tenendo premuto il tasto.
+  assert.equal(wheelDir(64 + 4), -1);
+  assert.equal(wheelDir(65 + 8), 1);
+  assert.equal(wheelDir(65 + 16), 1);
+});
+
+test('wheelDir: la rotella orizzontale e i bottoni valgono zero', () => {
+  // 66/67 = rotella orizzontale: il deck non ha nulla da scorrere in largo, e
+  // tradurla in verticale scorrerebbe un testo che nessuno ha chiesto.
+  assert.equal(wheelDir(66), 0);
+  assert.equal(wheelDir(67), 0);
+  assert.equal(wheelDir(0), 0);
+  assert.equal(wheelDir(2), 0);
+});
+
+test('takeMouse: la rotella arriva come sola pressione', () => {
+  // Nessun rilascio dopo una tacca: il chiamante non deve dedoppiare come fa
+  // per il click, e un `press` vero è ciò che la fa passare dal filtro.
+  const { events } = takeMouse('[<64;10;10M');
+  assert.deepEqual(events, [{ button: 64, col: 10, row: 10, press: true }]);
+});
+
+test('WHEEL_LINES: più di una riga, meno di una pagina', () => {
+  assert.ok(WHEEL_LINES > 1 && WHEEL_LINES < 10);
 });
 
 test('rowRegions: colonne 1-based, separatore contato fra le voci', () => {

@@ -190,5 +190,6 @@ export function useProjectStatus(deps: StatusOverlayDeps) {
     generate,
     open,
     onKey,
+    scroll,
   };
 }
