@@ -1279,22 +1279,45 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
    * il click non sintetizza un tasto, perché nessun tasto nomina una riga o una
    * vista — `↑↓` e `tab` sono relativi — e chiama i setter che la tastiera
    * usa a sua volta. Un click sulla vista già attiva si limita al focus.
+   *
+   * ECCEZIONE: la riga già selezionata col pane già a fuoco. Lì un tasto che
+   * la nomina ESISTE — `⏎`, che agisce proprio su «la riga selezionata» — e il
+   * click lo sintetizza, come le superfici della riga launch: due click sulla
+   * stessa riga aprono il detail della task o fanno il resume della
+   * conversazione, e ogni caso limite (pin stale, nessuna sessione) resta per
+   * costruzione quello del tasto. Le righe meta ne sono fuori: `⏎` su di loro
+   * non fa nulla, e un click che lo sintetizzasse produrrebbe solo la nota di
+   * scarto di `selectedTaskOr`.
    */
   function onListClick(ev: MouseEvent) {
     if (!listGeometry) return;
     const hit = listHit(ev, listGeometry);
     if (!hit) return;
-    setFocus(hit.pane);
+    if (hit.target === 'view') {
+      setFocus(hit.pane);
+      if (hit.pane === 'tasks') selectTaskView(hit.key as TaskViewId);
+      else selectSessionView(hit.key as SessionViewId);
+      return;
+    }
     if (hit.pane === 'tasks') {
-      if (hit.target === 'view') selectTaskView(hit.key as TaskViewId);
       // Le due righe meta hanno indice fisso; le task riportano l'indice di
       // finestra a quello della lista completa, su cui è keyata la selezione.
-      else selectTaskRow(hit.index < META_ROWS ? hit.index : taskWin.start + hit.index);
-    } else if (hit.target === 'view') {
-      selectSessionView(hit.key as SessionViewId);
+      const index = hit.index < META_ROWS ? hit.index : taskWin.start + hit.index;
+      if (focus === 'tasks' && index === selIndex && index >= META_ROWS) {
+        onKey('', { ...NO_MODIFIERS, return: true });
+        return;
+      }
+      setFocus('tasks');
+      selectTaskRow(index);
     } else {
       const row = windowRows[hit.index];
-      if (row && row.kind !== 'separator') setSelSessionId(row.sessionId);
+      if (!row || row.kind === 'separator') return;
+      if (focus === 'sessions' && row.sessionId === selSessionId) {
+        onKey('', { ...NO_MODIFIERS, return: true });
+        return;
+      }
+      setFocus('sessions');
+      setSelSessionId(row.sessionId);
     }
   }
 

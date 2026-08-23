@@ -709,6 +709,35 @@ test('click sulla vista già attiva non muove la selezione', { skip: !CAN_RUN },
   assert.equal(selectedTask(lastFrame(capture('DDD@6,7;'))), base);
 });
 
+test('secondo click sulla task già selezionata apre il detail, come ⏎', { skip: !CAN_RUN }, () => {
+  // Il primo click seleziona e mette a fuoco, il secondo — stessa riga, pane
+  // già a fuoco — sintetizza `⏎`. Niente doppio-click a timer (D2): sono due
+  // click qualsiasi, comunque distanti nel tempo.
+  const target = taskIdAtRow(lastFrame(capture('')), 13).replace(/ /g, ' ?');
+  const after = lastFrame(capture('@10,13;@10,13;'));
+  assert.match(after, /righe \d+-\d+ di \d+/, `il detail non si è aperto: ${after}`);
+  assert.match(after, new RegExp(target), `il detail non è della task cliccata: ${after}`);
+});
+
+test('secondo click sulla conversazione già selezionata fa il resume, come ⏎', { skip: !CAN_RUN }, () => {
+  const target = sessionAtRow(lastFrame(capture('')), 10);
+  const after = lastFrame(capture('@70,10;@70,10;'));
+  assert.match(
+    after,
+    new RegExp(`--resume ${target}`),
+    `il resume non è partito sulla conversazione cliccata: ${after}`,
+  );
+});
+
+test('secondo click su una riga meta già selezionata resta solo fuoco', { skip: !CAN_RUN }, () => {
+  // `⏎` su una riga meta non fa nulla: sintetizzarlo produrrebbe la nota di
+  // scarto. Il deck deve restare sulla lista, senza note.
+  const after = lastFrame(capture('@10,9;@10,9;'));
+  assert.match(after, /▸ ≡ tutte le sessioni/, `la selezione ha lasciato la riga meta: ${after}`);
+  assert.match(after, /t 💻/, `il click ha lasciato la lista: ${after}`);
+  assert.doesNotMatch(after, /⏎ → /, `il click ha prodotto una nota di scarto: ${after}`);
+});
+
 test('il tracking si accende all\'avvio e si spegne all\'uscita', { skip: !CAN_RUN }, () => {
   // Un tracking lasciato acceso non è cosmetico: il terminale continua a
   // mandare sequenze a chi prende il posto del deck, che le stampa come testo.
