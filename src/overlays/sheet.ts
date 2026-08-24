@@ -13,7 +13,7 @@
 // `onAction`, per lo stesso confine di `useSearchOverlay`.
 import { useEffect, useMemo, useState } from 'react';
 import type { Key } from 'ink';
-import { detailCapacity } from '../viewport.js';
+import { detailCapacity, pageStep } from '../viewport.js';
 import { wrapWithOffsets } from '../width.js';
 import { scanText, topForOffset, type Occurrence } from '../text-search.js';
 import { parseMarkdown } from '../markdown.js';
@@ -307,11 +307,11 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       return;
     }
     if (key.pageUp) {
-      scroll(-capacity);
+      scroll(-pageStep(capacity));
       return;
     }
     if (key.pageDown) {
-      scroll(capacity);
+      scroll(pageStep(capacity));
       return;
     }
 

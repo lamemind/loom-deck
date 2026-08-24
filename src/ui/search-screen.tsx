@@ -308,7 +308,7 @@ export function ReaderScreen({
         {bound ? ` · ${bound}` : ''} · righe {total === 0 ? 0 : top + 1}-{last} di {total}
       </Text>
       <Text dimColor wrap="truncate-end">
-        <Text color="yellow">↑↓</Text> riga · <Text color="yellow">PgUp/PgDn</Text> pagina ·{' '}
+        <Text color="yellow">↑↓</Text> riga · <Text color="yellow">PgUp/PgDn</Text> ½ pagina ·{' '}
         <Text color="yellow">g</Text> inizio · <Text color="yellow">G</Text> fine ·{' '}
         <Text color="yellow">esc</Text> torna alla lista
       </Text>

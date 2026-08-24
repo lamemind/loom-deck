@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Key } from 'ink';
 import { randomUUID } from 'node:crypto';
-import { statusCapacity } from '../viewport.js';
+import { pageStep, statusCapacity } from '../viewport.js';
 import { cut, wrapWithOffsets } from '../width.js';
 import { parseMarkdown } from '../markdown.js';
 import { CLAUDE_CMD, notifyDone, spawnProjectStatus } from '../spawn.js';
@@ -164,9 +164,9 @@ export function useProjectStatus(deps: StatusOverlayDeps) {
     } else if (key.downArrow) {
       scroll(1);
     } else if (key.pageUp) {
-      scroll(-capacity);
+      scroll(-pageStep(capacity));
     } else if (key.pageDown) {
-      scroll(capacity);
+      scroll(pageStep(capacity));
     } else if (input === 'g') {
       // `g`/`G` sugli estremi, come nel reader e nel detail: anche questa
       // schermata scorre testo grezzo, quindi eredita lo stesso alfabeto invece

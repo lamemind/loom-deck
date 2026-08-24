@@ -115,7 +115,7 @@ export function StatusScreen({
         ) : null}
       </Text>
       <Text dimColor wrap="truncate-end">
-        <Text color="yellow">↑↓</Text> riga · <Text color="yellow">PgUp/PgDn</Text> pagina ·{' '}
+        <Text color="yellow">↑↓</Text> riga · <Text color="yellow">PgUp/PgDn</Text> ½ pagina ·{' '}
         <Text color="yellow">g/G</Text> estremi · <Text color="yellow">esc</Text> chiude
       </Text>
       <Box

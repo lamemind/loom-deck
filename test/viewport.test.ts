@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   layoutBudget,
+  pageStep,
   windowRange,
   MODAL_HEIGHT,
   SLACK,
@@ -304,4 +305,18 @@ test('purge su terminale basso: frame sotto rows o riga compatta', () => {
     assert.ok(b.taskRows >= 0 && b.sessionRows >= 0, `righe negative a ${rows}`);
     assert.ok(frameHeight(i, b) + SLACK <= rows, `frame oltre rows a ${rows} righe`);
   }
+});
+
+// PagGiù/PagSu scorrono MEZZA schermata: la metà già letta resta a schermo e fa
+// da aggancio, mentre un salto di pagina piena non lascia nessuna riga in comune
+// fra il prima e il dopo.
+test('pageStep è la metà della capienza', () => {
+  assert.equal(pageStep(40), 20);
+  assert.equal(pageStep(21), 10); // dispari: si arrotonda per difetto
+});
+
+// Terminale bassissimo: la capienza scende a 1 o 0 e un passo 0 renderebbe il
+// tasto inerte invece che lento.
+test('pageStep non scende mai sotto una riga', () => {
+  for (const cap of [0, 1, 2, 3]) assert.ok(pageStep(cap) >= 1, `passo nullo a ${cap}`);
 });

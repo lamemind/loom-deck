@@ -26,7 +26,7 @@ import {
   type SearchResult,
   type SearchRow,
 } from '../search.js';
-import { readerCapacity, searchListCapacity } from '../viewport.js';
+import { pageStep, readerCapacity, searchListCapacity } from '../viewport.js';
 import { wrapWithOffsets } from '../width.js';
 import { searchExcerptWidth } from '../layout.js';
 import { sanitizeTyped } from '../glyphs.js';
@@ -211,9 +211,9 @@ export function useSearchOverlay(deps: SearchOverlayDeps) {
     } else if (key.downArrow) {
       scrollReader(1);
     } else if (key.pageUp) {
-      scrollReader(-readerCap);
+      scrollReader(-pageStep(readerCap));
     } else if (key.pageDown) {
-      scrollReader(readerCap);
+      scrollReader(pageStep(readerCap));
     } else if (input === 'g') {
       // Estremi su lettera e non su Home/End: Ink RICONOSCE quelle due (le
       // mappa a 'home'/'end' nel parser) ma NON le espone — `nonAlphanumericKeys`

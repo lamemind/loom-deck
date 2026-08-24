@@ -350,6 +350,21 @@ export function statusCapacity(rows: number): number {
   return Math.max(0, (rows || 24) - SLACK - STATUS_CHROME);
 }
 
+/**
+ * Righe scorse da una pressione di PagGiù/PagSu: METÀ della capienza visibile.
+ *
+ * Un salto di pagina intera non lascia nessuna riga in comune fra il prima e il
+ * dopo, quindi chi legge deve ricostruire da zero dove si trovava; con mezza
+ * pagina la metà già letta resta a schermo e fa da aggancio. È il compromesso
+ * dello scroll a mezza pagina classico (`^D`/`^U` di vi/less).
+ *
+ * Pavimento a 1: su un terminale bassissimo la capienza può valere 1 o 0, e un
+ * passo 0 renderebbe il tasto inerte invece che lento.
+ */
+export function pageStep(capacity: number): number {
+  return Math.max(1, Math.floor(capacity / 2));
+}
+
 // T52 — cornice del pannello di anteprima sotto la lista occorrenze:
 // marginTop + 2 bordi + riga meta.
 const SEARCH_PREVIEW_CHROME = 4;
