@@ -11,7 +11,6 @@ import {
   LIVE_IDLE,
   LIVE_NONE,
   MODEL_W,
-  SESSION_SEP,
   SID_CHARS,
   TASK_EMPTY,
   WARN,
@@ -39,7 +38,6 @@ import {
   type ViewState,
 } from '../view.js';
 import type { Task } from '../tasks.js';
-import type { Session } from '../sessions.js';
 import type { LiveSession } from '../live-sessions.js';
 
 /**
@@ -329,16 +327,14 @@ export function SessionsPane({
   /** T59 — sessionId → taskId, letto dal sidecar. Serve SOLO alla vista "tutte",
    *  l'unica dove l'appartenenza non è desumibile dal parent selezionato. */
   bindings: Map<string, string>;
-  /** T60 — larghezza della colonna task; 0 = colonna assente. Fuori dalla vista
-   *  "tutte" la cella si riempie solo sulle righe pinnate: le contestuali
-   *  condividono il binding dell'header, e ripeterlo N volte direbbe ciò che
-   *  l'header dice una. */
+  /** T60 — larghezza della colonna task; 0 = colonna assente. T133 — la colonna
+   *  esiste nella sola vista "tutte": altrove ogni riga condivide il binding
+   *  dell'header, e ripeterlo N volte direbbe ciò che l'header dice una. */
   taskW: number;
   /** T60 — larghezza della colonna data, ancorata al margine destro. */
   ageW: number;
-  /** T50 — solo la finestra visibile della lista a due gruppi (pinnate +
-   *  separatore + contestuali). T100 — della vista attiva, non più
-   *  necessariamente di quella di default. */
+  /** Solo la finestra visibile della lista, e della vista attiva (T100) — non
+   *  necessariamente quella di default. */
   rows: SessionRow[];
   /** T100 — contatori delle 4 voci del catalogo, tutti misurati sulla vista di
    *  default: l'header è un selettore e le sue cifre non si muovono navigando. */
@@ -398,28 +394,22 @@ export function SessionsPane({
           )}
         </Text>
       ) : (
-        rows.map((row, i) => {
-          // T50 — separatore leggero fra pinnate e contestuali: riga dim, non un
-          // box pesante (coerente con lo styling delle Done dimmate).
-          if (row.kind === 'separator') {
-            return (
-              <Text key={`sep${i}`} dimColor wrap="truncate-end">
-                {SESSION_SEP}
-              </Text>
-            );
-          }
+        rows.map((row) => {
           const sel = row.sessionId === selectedId;
           // T50 — pin stale: transcript sparito, nessuna Session da mostrare.
-          // Riga navigabile e spinnabile (`p`), marcata, mai un crash.
-          if (row.kind === 'pinned' && row.stale) {
+          // Riga navigabile e spinnabile (`p`), marcata, mai un crash. T133 D5 —
+          // compare nella sola vista `📌`, dove non ha accanto nessuna griglia da
+          // rispettare: resta testo libero.
+          if (row.kind === 'stale') {
             // T60 — anche qui la nota si taglia sul budget DERIVATO, non su un
             // 30 inchiodato: su un pane stretto quel valore fisso mandava la
             // riga oltre il bordo, e a ripararla arrivava `cli-truncate` (che
             // sfora di una colonna per emoji e mangia il bordo stesso).
             const staleNote = sessionNotes.get(row.sessionId);
             // La riga stale è libera (niente colonne: non ha né titolo né
-            // data), ma il binding va detto lo stesso — è una pinnata, quindi
-            // l'header del pane non ne dice l'appartenenza.
+            // data), ma il binding va detto lo stesso — vive nella vista `📌`,
+            // che raccoglie le pinnate di ogni task e quindi non ne dice
+            // l'appartenenza dall'header.
             const staleTask = bindings.get(row.sessionId) ?? null;
             const staleW = Math.max(
               0,
@@ -449,8 +439,8 @@ export function SessionsPane({
               </Text>
             );
           }
-          const s = row.session as Session; // non-stale → session presente
-          const isPinnedRow = row.kind === 'pinned';
+          const s = row.session;
+          const isPinnedRow = row.pinned;
           // T28 — un ramo eredita il titolo dell'origine: senza marcatore le due
           // righe sarebbero identiche a occhio.
           const forked = forkOf.has(s.sessionId);
@@ -467,13 +457,12 @@ export function SessionsPane({
           // appartiene la conversazione (pin/task/spot), questa dice se è aperta
           // adesso. Farle condividere una cella perderebbe una delle due.
           const liveEntry = live.get(s.sessionId);
-          // Stesso motivo per cui la colonna esiste: una pinnata resta in lista
-          // qualunque sia il parent selezionato, quindi l'header non ne dice
-          // l'appartenenza e la cella va riempita anche fuori dalla vista
-          // "tutte". Sulle contestuali, dove l'header parla già, resta vuota —
-          // ma la cella è comunque larga `taskW`, o le colonne a destra
-          // slitterebbero riga per riga.
-          const taskCell = isAll || isPinnedRow ? (bound ?? TASK_EMPTY) : '';
+          // T133 D10 — la colonna vive nella sola vista "tutte". Il ramo sulle
+          // pinnate esisteva perché una pinnata stava in lista anche sotto un
+          // parent che non era il suo; ora ogni riga è figlia del parent
+          // selezionato, quindi l'header parla già per tutte e la cella
+          // ripeterebbe N volte ciò che è scritto una riga sopra.
+          const taskCell = isAll ? (bound ?? TASK_EMPTY) : '';
           // T60 — colonne VERE: ogni cella fissa è larga esattamente quanto
           // dichiara, riempita di spazi con `pad` (che misura in colonne, non in
           // caratteri). Il marker va portato a 2 anche quando è `○`, largo 1:

@@ -4,8 +4,8 @@
 // vista raggiungibile con `tab`.
 //
 // Modulo PURO: nessun import da ink/react, nessun I/O. Il calcolo resta dove
-// stava — `view.ts` per i filtri task, `session-list.ts` per l'assemblaggio a
-// due gruppi — qui c'è solo la mappa di quali sottoinsiemi esistono, come si
+// stava — `view.ts` per i filtri task, `session-list.ts` per l'assemblaggio
+// della lista — qui c'è solo la mappa di quali sottoinsiemi esistono, come si
 // chiamano e con che numero.
 //
 // Invarianti (decisioni congelate al create-task e al preflight):
@@ -108,11 +108,15 @@ export function selectTasks(tasks: Task[], id: TaskViewId, ctx: TaskViewCtx): Ta
 // ── pane sessioni ──────────────────────────────────────────────────────────
 
 export interface SessionViewCounts {
-  /** Pinnate + contestuali del parent corrente, cap escluso (voce 1). */
+  /** T133 D9 — le figlie del parent corrente, cap escluso (voce 1). Le pinnate
+   *  non si sommano più: non sono un gruppo della lista, e quelle del parent sono
+   *  già contate qui dentro come tutte le altre. */
   total: number;
   live: number;
+  /** Pinnate del progetto intero, stale comprese: è l'insieme della vista `📌`,
+   *  più largo della lista di qualunque parent. */
   pinned: number;
-  /** Contestuali troncate dal cap `maxContext`. */
+  /** Figlie troncate dal cap `maxContext`. */
   older: number;
 }
 
@@ -140,14 +144,6 @@ export interface SessionViewEntry extends Styling {
  *  `sanitize`. */
 const LIVE_GLYPH = '●';
 
-type SelectableRow = Extract<SessionRow, { sessionId: string }>;
-
-/** Righe selezionabili della lista assemblata (il separatore non è una riga di
- *  contenuto: fuori dalla vista di default i due gruppi non ci sono più). */
-function selectable(rows: SessionRow[]): SelectableRow[] {
-  return rows.filter((r): r is SelectableRow => r.kind !== 'separator');
-}
-
 export const SESSION_VIEWS: readonly SessionViewEntry[] = [
   {
     id: 'context',
@@ -160,15 +156,19 @@ export const SESSION_VIEWS: readonly SessionViewEntry[] = [
     id: 'live',
     label: (c) => `${LIVE_GLYPH}${c.live} vive`,
     count: (c) => c.live,
-    rows: (ctx) => selectable(ctx.assembled.rows).filter((r) => ctx.isLive(r.sessionId)),
+    rows: (ctx) => ctx.assembled.rows.filter((r) => ctx.isLive(r.sessionId)),
     color: 'green',
     empty: 'nessuna conversazione viva in questa lista',
   },
   {
+    // T133 D7 — sola vista che NON filtra la lista: il suo insieme è più largo
+    // (le pinnate di ogni task, più le stale), quindi il core lo consegna a
+    // parte. Un filtro su `rows` mostrerebbe le sole pinnate del parent
+    // selezionato, cioè la risposta sbagliata alla domanda «quali ho pinnato».
     id: 'pinned',
     label: (c) => `📌${c.pinned}`,
     count: (c) => c.pinned,
-    rows: (ctx) => ctx.assembled.rows.filter((r) => r.kind === 'pinned'),
+    rows: (ctx) => ctx.assembled.pinnedRows,
     color: 'yellow',
     empty: 'nessuna conversazione pinnata',
   },
@@ -178,12 +178,7 @@ export const SESSION_VIEWS: readonly SessionViewEntry[] = [
     id: 'older',
     label: (c) => `+${c.older} più vecchie`,
     count: (c) => c.older,
-    rows: (ctx) =>
-      ctx.assembled.contextOverflow.map((s) => ({
-        kind: 'context' as const,
-        sessionId: s.sessionId,
-        session: s,
-      })),
+    rows: (ctx) => ctx.assembled.overflowRows,
     dim: true,
     empty: 'nessuna conversazione oltre il cap',
   },

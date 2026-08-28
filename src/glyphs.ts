@@ -9,10 +9,6 @@ import { sanitize } from './width.js';
 export const CARET = sanitize('▶ ');
 export const CARET_OFF = '  ';
 export const WARN = sanitize('⚠');
-// T50 — separatore leggero fra blocco pinnate e contestuali. `─` (box-drawing) è
-// largo 1 sia per string-width sia per il terminale. Corto +
-// wrap="truncate-end" così non va mai a capo nel pane al 50%.
-export const SESSION_SEP = '─'.repeat(16);
 // Prefisso del sessionId mostrato in lista: stesso dato e stessa lunghezza del
 // widget `⛓ <8 char>` della statusline, così le due superfici si confrontano a
 // occhio.

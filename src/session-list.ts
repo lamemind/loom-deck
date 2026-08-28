@@ -1,19 +1,26 @@
-// T50 — Assemblaggio della lista sessioni a DUE gruppi: pinnate (sempre in
-// lista, in cima) + separatore + contestuali (figlie del parent selezionato).
+// T133 — Assemblaggio della lista sessioni: UNA lista sola, le figlie del parent
+// selezionato in ordine `ts desc`. Il pin è un ATTRIBUTO della riga (glifo, vista
+// dedicata), non una posizione privilegiata.
 // Modulo PURO: nessun import da ink/react, nessun I/O → testabile senza terminale
 // (il pacchetto non ha infrastruttura TUI di test, solo unit sui core puri).
 //
-// Invarianti (decisioni congelate al preflight):
-//  - D2: dentro il blocco pinnate l'ordine è di PIN stabile (ultima pinnata in
-//    cima), dato dal rango del sidecar `session-tasks.jsonl` — non `ts desc`.
-//  - Dedup: una sessione sia pinnata sia contestuale compare SOLO fra le pinnate.
-//  - Cap: `maxContext` limita SOLO le contestuali; le pinnate sono esenti. Il
-//    conteggio delle troncate (`contextHidden`) resta esposto (non-silenzioso).
-//  - D3: una pinnata il cui transcript non esiste più è una riga STALE (session
-//    null), navigabile e spinnabile — non sparisce in silenzio.
-//  - Trap T39: la selezione è KEYED SU sessionId, non su indice posizionale. La
-//    lista è una vista trasformata (due gruppi + separatore): un indice grezzo
-//    identificherebbe la riga sbagliata dopo un pin/cambio-contesto.
+// Invarianti (decisioni congelate al preflight T133):
+//  - D1/D3: una forma sola di lista qualunque sia il parent, vista «tutte»
+//    compresa. Nessun criterio speciale per le righe pinnate: nessun blocco in
+//    cima, nessun ordine proprio, nessuna esenzione dal cap (D6).
+//  - D4: una pinnata compare in lista se e solo se è figlia del parent
+//    selezionato. Le pinnate fuori contesto vivono nella sola vista `📌`.
+//  - D7: le righe pinnate escono in un CAMPO A PARTE (`pinnedRows`), non dentro
+//    `rows`: il loro insieme è più largo della lista (tutte le sessioni del
+//    progetto più le stale), quindi non è esprimibile come filtro di `rows`.
+//  - D8: `pinnedRows` conserva l'ordine per RANGO di pin desc (ultima pinnata in
+//    cima), dato dal sidecar `session-tasks.jsonl`. È l'unico lettore rimasto del
+//    rango.
+//  - D5: una pinnata il cui transcript non esiste più è una riga STALE, presente
+//    nelle sole `pinnedRows` — navigabile e spinnabile dalla vista `📌`.
+//  - Trap T39: la selezione è KEYED SU sessionId, non su indice posizionale. Le
+//    righe a schermo sono quelle della vista attiva, e un indice grezzo
+//    identificherebbe la riga sbagliata al primo cambio di vista o di parent.
 
 import type { Session } from './sessions.js';
 import { cut, termWidth } from './width.js';
@@ -140,27 +147,28 @@ export function rowLabel(text: string, note: string | undefined, budget: number)
 }
 
 export type SessionRow =
-  | { kind: 'pinned'; sessionId: string; session: Session | null; stale: boolean }
-  | { kind: 'context'; sessionId: string; session: Session }
-  | { kind: 'separator' };
-
-/** Riga selezionabile: pinnata (anche stale) o contestuale — mai il separatore. */
-type SelectableRow = Extract<SessionRow, { sessionId: string }>;
+  /** Conversazione col suo transcript. `pinned` è un attributo della riga: dice
+   *  che è pinnata senza spostarla, e serve al render per il marker. */
+  | { kind: 'session'; sessionId: string; session: Session; pinned: boolean }
+  /** Pinnata orfana: il transcript non esiste più. Nessuna `Session` da mostrare,
+   *  quindi nessuna colonna — compare nella sola vista `📌`, l'unico posto da cui
+   *  spinnarla. */
+  | { kind: 'stale'; sessionId: string };
 
 export interface AssembledList {
-  /** Lista appiattita: pinnate, [separatore], contestuali. Il separatore è una
-   *  riga a sé così il budget d'altezza lo conta come le altre. */
+  /** La lista: figlie del parent selezionato, `ts desc`, cap applicato. Le
+   *  pinnate che appartengono al parent ci stanno dentro come le altre. */
   rows: SessionRow[];
-  pinnedCount: number;
-  /** Contestuali deduplicate, PRIMA del cap. */
+  /** D7 — tutte le pinnate del progetto, ordine rango desc, stale comprese. Fuori
+   *  da `rows` perché il loro insieme è più largo della lista: la vista `📌` legge
+   *  questo campo invece di filtrare le righe. */
+  pinnedRows: SessionRow[];
+  /** Figlie del parent, PRIMA del cap. */
   contextTotal: number;
-  /** Contestuali troncate dal cap (contatore non-silenzioso). */
-  contextHidden: number;
-  /** T100 — le troncate stesse, non solo il loro numero: il contatore
+  /** T100 — le troncate dal cap, come righe e non come solo numero: il contatore
    *  `+N più vecchie` è diventato una vista, e una vista ha bisogno delle righe.
-   *  Ordine `ts desc` invariato, pinnate escluse (sono esenti dal cap, quindi
-   *  non sono mai fra le troncate). */
-  contextOverflow: Session[];
+   *  D6 — nessuna esenzione: anche una pinnata vecchia cade qui dentro. */
+  overflowRows: SessionRow[];
 }
 
 export function assembleSessionList(
@@ -169,73 +177,56 @@ export function assembleSessionList(
   pinned: Map<string, number>,
   maxContext: number,
 ): AssembledList {
-  // Le pinnate si risolvono contro TUTTE le sessioni del progetto, non solo le
-  // figlie del parent: una pinnata può appartenere a un'altra task. Assente
-  // dallo store → stale.
-  const byId = new Map(allSessions.map((s) => [s.sessionId, s]));
-  const pinnedIds = [...pinned.entries()]
-    .sort((a, b) => b[1] - a[1]) // rango desc → ultima pinnata in cima (D2)
-    .map(([id]) => id);
-  const pinnedRows: SessionRow[] = pinnedIds.map((id) => {
-    const session = byId.get(id) ?? null;
-    return { kind: 'pinned', sessionId: id, session, stale: session === null };
-  });
-
-  const pinnedSet = new Set(pinnedIds);
-  const dedupedContext = childSessions.filter((s) => !pinnedSet.has(s.sessionId));
   const cap = Math.max(0, maxContext);
-  const shownContext = dedupedContext.slice(0, cap);
-  const overflowContext = dedupedContext.slice(cap);
-  const contextRows: SessionRow[] = shownContext.map((s) => ({
-    kind: 'context',
+  const toRow = (s: Session): SessionRow => ({
+    kind: 'session',
     sessionId: s.sessionId,
     session: s,
-  }));
+    pinned: pinned.has(s.sessionId),
+  });
+  const rows = childSessions.slice(0, cap).map(toRow);
+  const overflowRows = childSessions.slice(cap).map(toRow);
 
-  const rows: SessionRow[] = [...pinnedRows];
-  // Separatore SOLO fra due gruppi entrambi non vuoti: senza pinnate o senza
-  // contestuali non c'è confine da segnare.
-  if (pinnedRows.length > 0 && contextRows.length > 0) rows.push({ kind: 'separator' });
-  rows.push(...contextRows);
+  // Le pinnate si risolvono contro TUTTE le sessioni del progetto, non solo le
+  // figlie del parent: una pinnata può appartenere a un'altra task, e la vista
+  // dedicata è l'unico posto dove resta raggiungibile. Assente dallo store →
+  // stale.
+  const byId = new Map(allSessions.map((s) => [s.sessionId, s]));
+  const pinnedRows: SessionRow[] = [...pinned.entries()]
+    .sort((a, b) => b[1] - a[1]) // rango desc → ultima pinnata in cima (D8)
+    .map(([id]) => {
+      const session = byId.get(id);
+      return session
+        ? ({ kind: 'session', sessionId: id, session, pinned: true } as const)
+        : ({ kind: 'stale', sessionId: id } as const);
+    });
 
-  return {
-    rows,
-    pinnedCount: pinnedRows.length,
-    contextTotal: dedupedContext.length,
-    contextHidden: overflowContext.length,
-    contextOverflow: overflowContext,
-  };
+  return { rows, pinnedRows, contextTotal: childSessions.length, overflowRows };
 }
 
-function isSelectable(r: SessionRow): r is SelectableRow {
-  return r.kind !== 'separator';
-}
-
-/** Primo id selezionabile (salta il separatore); null = lista senza righe. */
+/** Primo id della lista; null = lista senza righe. */
 export function firstSelectableId(rows: SessionRow[]): string | null {
-  return rows.find(isSelectable)?.sessionId ?? null;
+  return rows[0]?.sessionId ?? null;
 }
 
 /** Indice della riga con quel sessionId nell'ARRAY COMPLETO (per il windowing);
- *  -1 se assente o id null. Il separatore non ha id → mai matchato. */
+ *  -1 se assente o id null. */
 export function rowIndexOf(rows: SessionRow[], sessionId: string | null): number {
   if (sessionId === null) return -1;
-  return rows.findIndex((r) => isSelectable(r) && r.sessionId === sessionId);
+  return rows.findIndex((r) => r.sessionId === sessionId);
 }
 
-/** Sposta la selezione di `delta` fra le sole righe selezionabili (attraversa il
- *  separatore senza fermarcisi). Id perso → prima riga; lista vuota → null. */
+/** Sposta la selezione di `delta`. Id perso → prima riga; lista vuota → null. */
 export function moveSelection(
   rows: SessionRow[],
   currentId: string | null,
   delta: number,
 ): string | null {
-  const selectable = rows.filter(isSelectable);
-  if (selectable.length === 0) return null;
-  const cur = selectable.findIndex((r) => r.sessionId === currentId);
-  if (cur < 0) return selectable[0].sessionId;
-  const next = Math.max(0, Math.min(selectable.length - 1, cur + delta));
-  return selectable[next].sessionId;
+  if (rows.length === 0) return null;
+  const cur = rows.findIndex((r) => r.sessionId === currentId);
+  if (cur < 0) return rows[0].sessionId;
+  const next = Math.max(0, Math.min(rows.length - 1, cur + delta));
+  return rows[next].sessionId;
 }
 
 /**
@@ -248,43 +239,19 @@ export function moveSelection(
  * assegnazione rimanderebbe la selezione in cima. L'id va catturato PRIMA di
  * riscrivere il sidecar — dopo, la riga non c'è più e il vicino non è
  * calcolabile.
+ *
+ * T133 D12 — stesso servizio per l'unpin dentro la vista `📌`, dove spinnare fa
+ * uscire la riga. Nella lista principale non serve: lì una pinnata è in lista
+ * perché è figlia del parent, e spinnarla non la fa uscire.
  */
 export function neighborId(rows: SessionRow[], sessionId: string): string | null {
-  const selectable = rows.filter(isSelectable);
-  const at = selectable.findIndex((r) => r.sessionId === sessionId);
+  const at = rows.findIndex((r) => r.sessionId === sessionId);
   if (at < 0) return null;
-  return selectable[at + 1]?.sessionId ?? selectable[at - 1]?.sessionId ?? null;
-}
-
-/**
- * Id su cui atterrare quando la riga pinnata `sessionId` viene SPINNATA: la
- * pinnata successiva, la precedente se era l'ultima, la prima contestuale se il
- * gruppo pinnate si svuota. `null` se `sessionId` non è pinnata o non resta
- * nessuna riga.
- *
- * Non è `neighborId` ristretto al gruppo: quello attraversa il separatore,
- * quindi sull'ULTIMA pinnata atterrerebbe sulla prima contestuale — il caret
- * scavalcherebbe l'intero gruppo invece di risalire di una riga. Qui il confine
- * fra i due gruppi è la regola, non un ostacolo.
- *
- * L'id va calcolato PRIMA di riscrivere il sidecar: dopo, la riga pinnata non
- * c'è più e il vicino nel gruppo non è calcolabile. Serve perché una spinnata
- * non sparisce necessariamente dalla lista — se appartiene al parent
- * selezionato ricompare fra le contestuali, e la selezione keyed sull'id la
- * seguirebbe fin laggiù, trascinando il caret.
- */
-export function unpinLandingId(rows: SessionRow[], sessionId: string): string | null {
-  const pinnedRows = rows.filter((r) => r.kind === 'pinned') as SelectableRow[];
-  const at = pinnedRows.findIndex((r) => r.sessionId === sessionId);
-  if (at < 0) return null;
-  const inGroup = pinnedRows[at + 1]?.sessionId ?? pinnedRows[at - 1]?.sessionId;
-  if (inGroup) return inGroup;
-  const firstContext = rows.find((r) => r.kind === 'context');
-  return firstContext && isSelectable(firstContext) ? firstContext.sessionId : null;
+  return rows[at + 1]?.sessionId ?? rows[at - 1]?.sessionId ?? null;
 }
 
 /** Session della riga selezionata; null se stale o nessuna selezione. */
 export function selectedSession(rows: SessionRow[], sessionId: string | null): Session | null {
-  const r = rows.find((row) => isSelectable(row) && row.sessionId === sessionId);
-  return r && isSelectable(r) ? r.session : null;
+  const r = rows.find((row) => row.sessionId === sessionId);
+  return r && r.kind === 'session' ? r.session : null;
 }

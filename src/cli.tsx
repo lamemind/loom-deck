@@ -26,7 +26,6 @@ import {
   neighborId,
   rowIndexOf,
   selectedSession,
-  unpinLandingId,
 } from './session-list.js';
 import {
   cellWidth,
@@ -409,9 +408,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           }),
     [sessions, bindings, selectedTaskId, isAll],
   );
-  // T50 — lista a due gruppi: pinnate (sempre, in cima) + separatore +
-  // contestuali. Dedup, cap solo sulle contestuali, righe stale per le pinnate
-  // orfane. Core PURO in session-list.ts (testabile senza Ink).
+  // T133 — lista unica: le figlie del parent, `ts desc`, cap su tutte. Le
+  // pinnate del progetto escono a parte (`pinnedRows`), per la sola vista `📌`.
+  // Core PURO in session-list.ts (testabile senza Ink).
   const assembled = useMemo(
     () => assembleSessionList(childSessions, sessions, pinned, isAll ? MAX_SESSIONS_ALL : MAX_SESSIONS),
     [childSessions, sessions, pinned, isAll],
@@ -423,18 +422,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // non quella a schermo: il contatore di una voce del catalogo non può
   // dipendere da quale voce è selezionata, o navigare muoverebbe i numeri.
   const liveCount = useMemo(
-    () => assembled.rows.filter((r) => r.kind !== 'separator' && live.has(r.sessionId)).length,
+    () => assembled.rows.filter((r) => live.has(r.sessionId)).length,
     [assembled, live],
   );
   const sessionCounts: SessionViewCounts = {
-    total: assembled.pinnedCount + assembled.contextTotal,
+    total: assembled.contextTotal,
     live: liveCount,
-    pinned: assembled.pinnedCount,
-    older: assembled.contextHidden,
+    pinned: assembled.pinnedRows.length,
+    older: assembled.overflowRows.length,
   };
-  // T100 — le righe a schermo sono quelle della vista attiva. Fuori dalla vista
-  // di default il separatore non c'è: segna il confine fra pinnate e
-  // contestuali, e in un sottoinsieme quel confine non esiste più.
+  // T100 — le righe a schermo sono quelle della vista attiva.
   const sessionRows = useMemo(
     () => selectSessionRows(sessionViewId, { assembled, isLive: (id) => live.has(id) }),
     [sessionViewId, assembled, live],
@@ -450,16 +447,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     let task = 0;
     let age = 2;
     for (const r of sessionRows) {
-      if (r.kind === 'separator') continue;
-      // La colonna serve dove l'appartenenza NON è già scritta altrove sullo
-      // schermo: nella vista "tutte" (ogni riga ha un binding proprio) e su
-      // OGNI riga pinnata, in qualunque vista — una pinnata è sganciata dal
-      // parent selezionato, quindi l'header del pane non parla per lei.
-      if (isAll || r.kind === 'pinned') {
+      // T133 D10 — la colonna serve dove l'appartenenza NON è già scritta
+      // altrove sullo schermo, cioè nella sola vista "tutte": ogni altra lista
+      // contiene le figlie del parent selezionato, che l'header nomina.
+      if (isAll) {
         const b = bindings.get(r.sessionId);
         if (b) task = Math.max(task, termWidth(b));
       }
-      if (r.session) age = Math.max(age, termWidth(relTime(r.session.ts)));
+      if (r.kind === 'session') age = Math.max(age, termWidth(relTime(r.session.ts)));
     }
     // La cella vuota deve poter entrare nella colonna, o le righe spot
     // perderebbero il segnaposto e con lui l'allineamento.
@@ -1311,7 +1306,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       selectTaskRow(index);
     } else {
       const row = windowRows[hit.index];
-      if (!row || row.kind === 'separator') return;
+      if (!row) return;
       if (focus === 'sessions' && row.sessionId === selSessionId) {
         onKey('', { ...NO_MODIFIERS, return: true });
         return;
@@ -1502,12 +1497,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         setNote('p → nessuna sessione da pinnare');
       } else {
         const isPinned = pinned.has(selSessionId);
-        // Dove atterra la selezione: sul pin resta sulla sessione (sale in cima
-        // con lei, il caret la segue perché è l'oggetto dell'azione); sull'unpin
-        // resta IN PLACE nel gruppo pinnate — successiva, precedente, o prima
-        // contestuale se il gruppo si svuota. Calcolato PRIMA della riscrittura
-        // del sidecar, quando la riga pinnata esiste ancora.
-        const landing = isPinned ? unpinLandingId(sessionRows, selSessionId) : null;
+        // T133 D12 — il caret si sposta solo quando la riga ESCE dalla lista, e
+        // succede nella sola vista `📌` (spinnare toglie la riga dall'insieme che
+        // la vista mostra). Altrove pin e unpin non riordinano niente: la riga è
+        // in lista perché è figlia del parent, e ci resta al suo posto. Il vicino
+        // va calcolato PRIMA di riscrivere il sidecar, quando la riga c'è ancora.
+        const landing =
+          isPinned && sessionViewId === 'pinned' ? neighborId(sessionRows, selSessionId) : null;
         appendPin(cwd, selSessionId, !isPinned);
         reloadSessions();
         if (landing) setSelSessionId(landing);
