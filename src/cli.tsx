@@ -1950,6 +1950,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     );
   }
 
+  // Segmento destro della testata: dimensione del terminale in CELLE
+  // (colonne×righe, mai pixel — un processo dentro un terminale vede solo la
+  // griglia di caratteri) e versione. La parte sinistra riceve un budget
+  // derivato da questa stringa e non da una lunghezza fissa: la risoluzione
+  // cambia a ogni resize, quindi anche la larghezza che occupa.
+  const headerRight = `${columns}×${rows} · v${VERSION}`;
+
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
       {/* Riga di testata: project status a sinistra, versione ancorata a
@@ -1959,17 +1966,17 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           T121/D1 — il nome del programma esce dalla cornice: resta nel fallback
           compatto e nel titolo della tab Ptyxis, che sono i due posti dove
           serve davvero a identificare cosa si sta guardando. Il blocco status
-          riceve il budget già scalato della versione a destra, o
-          `space-between` lo lascerebbe crescere fin dentro di lei. */}
+          riceve il budget già scalato del segmento destro (risoluzione +
+          versione), o `space-between` lo lascerebbe crescere fin dentro. */}
       <Box flexDirection="row" justifyContent="space-between">
         <StatusHeadline
           name={projectCore ?? projectName}
           label={status.label}
           building={status.building}
           failed={status.failed}
-          cols={Math.max(4, columns - 4 - `v${VERSION}`.length - 1)}
+          cols={Math.max(4, columns - 4 - termWidth(headerRight) - 1)}
         />
-        <Text dimColor>v{VERSION}</Text>
+        <Text dimColor>{headerRight}</Text>
       </Box>
       {mode === 'create' ? (
         <Text dimColor wrap="truncate-end">
