@@ -5,7 +5,6 @@ import {
   firstSelectableId,
   moveSelection,
   neighborId,
-  unpinLandingId,
   rowIndexOf,
   rowLabel,
   sessionTitle,
@@ -33,93 +32,83 @@ const sess = (sessionId: string, ts = 0): Session => ({
 });
 
 const kinds = (rows: { kind: string }[]) => rows.map((r) => r.kind);
-const ids = (rows: any[]) => rows.filter((r) => r.kind !== 'separator').map((r) => r.sessionId);
+const ids = (rows: { sessionId: string }[]) => rows.map((r) => r.sessionId);
+const pinFlags = (rows: any[]) => rows.map((r) => r.pinned);
 
-test('nessun pin: solo contestuali, nessun separatore', () => {
+test('lista unica: le figlie del parent nel loro ordine, tutte dello stesso kind', () => {
   const child = [sess('c1', 3), sess('c2', 2)];
   const a = assembleSessionList(child, child, new Map(), 30);
-  assert.equal(a.pinnedCount, 0);
-  assert.deepEqual(kinds(a.rows), ['context', 'context']);
-  assert.equal(a.rows.some((r) => r.kind === 'separator'), false);
+  assert.deepEqual(kinds(a.rows), ['session', 'session']);
+  assert.deepEqual(ids(a.rows), ['c1', 'c2']);
+  assert.deepEqual(a.pinnedRows, [], 'nessun pin → nessuna riga nel campo a parte');
 });
 
-test('pinnate sopra le contestuali, con separatore in mezzo', () => {
+test('una pinnata figlia del parent sta in lista al posto che l’ordine le dà, non in cima', () => {
+  const child = [sess('c1', 3), sess('c2', 2), sess('c3', 1)];
+  const a = assembleSessionList(child, child, new Map([['c3', 0]]), 30);
+  assert.deepEqual(ids(a.rows), ['c1', 'c2', 'c3'], 'il pin non promuove la riga');
+  assert.deepEqual(pinFlags(a.rows), [false, false, true], 'il pin è un attributo della riga');
+});
+
+test('una pinnata di un altro parent non entra in lista: vive nel campo a parte', () => {
+  const all = [sess('p1', 5), sess('c1', 3)];
+  const a = assembleSessionList([sess('c1', 3)], all, new Map([['p1', 0]]), 30);
+  assert.deepEqual(ids(a.rows), ['c1'], 'la lista contiene le sole figlie del parent');
+  assert.deepEqual(ids(a.pinnedRows), ['p1']);
+});
+
+test('pinnedRows: tutte le pinnate del progetto, ordine rango desc (ultima pinnata in cima)', () => {
   const all = [sess('p1'), sess('p2'), sess('c1')];
   const a = assembleSessionList([sess('c1')], all, new Map([['p1', 0], ['p2', 1]]), 30);
-  assert.deepEqual(kinds(a.rows), ['pinned', 'pinned', 'separator', 'context']);
-  assert.equal(a.pinnedCount, 2);
+  assert.deepEqual(ids(a.pinnedRows), ['p2', 'p1']);
+  assert.deepEqual(pinFlags(a.pinnedRows), [true, true]);
 });
 
-test('ordine pinnate = rango di pin desc (ultima pinnata in cima)', () => {
-  const all = [sess('p1'), sess('p2')];
-  // p2 ha rango più alto → pinnata più di recente → in cima
-  const a = assembleSessionList([], all, new Map([['p1', 0], ['p2', 1]]), 30);
-  assert.deepEqual(ids(a.rows), ['p2', 'p1']);
-});
-
-test('dedup: una sessione pinnata + contestuale compare solo fra le pinnate', () => {
-  const shared = sess('shared');
-  const other = sess('c2');
+test('pinnata anche contestuale: una riga in lista e una fra le pinnate, mai due nella stessa', () => {
+  const shared = sess('shared', 3);
+  const other = sess('c2', 2);
   const a = assembleSessionList([shared, other], [shared, other], new Map([['shared', 0]]), 30);
-  assert.deepEqual(kinds(a.rows), ['pinned', 'separator', 'context']);
-  assert.deepEqual(ids(a.rows), ['shared', 'c2']);
-  assert.equal(a.contextTotal, 1, 'la contestuale duplicata non conta due volte');
+  assert.deepEqual(ids(a.rows), ['shared', 'c2'], 'niente da deduplicare: i gruppi non sono due');
+  assert.deepEqual(ids(a.pinnedRows), ['shared']);
+  assert.equal(a.contextTotal, 2);
 });
 
-test('pin stale: id senza transcript → riga stale (session null), selezionabile', () => {
+test('pin stale: riga senza transcript, presente SOLO fra le pinnate', () => {
   const a = assembleSessionList([sess('c1')], [sess('c1')], new Map([['gone', 0]]), 30);
-  const stale = a.rows.find((r) => r.kind === 'pinned');
-  assert.ok(stale && stale.kind === 'pinned');
-  assert.equal(stale.stale, true);
-  assert.equal(stale.session, null);
-  // resta navigabile
-  assert.equal(rowIndexOf(a.rows, 'gone') >= 0, true);
+  assert.deepEqual(kinds(a.rows), ['session'], 'una stale non è figlia di nessun parent');
+  assert.deepEqual(kinds(a.pinnedRows), ['stale']);
+  assert.equal(rowIndexOf(a.pinnedRows, 'gone'), 0, 'navigabile dalla vista dedicata');
+  assert.equal(selectedSession(a.pinnedRows, 'gone'), null, 'nessuna Session da mostrare');
 });
 
-test('cap: limita SOLO le contestuali; le pinnate sono esenti', () => {
-  const child = [sess('c1'), sess('c2'), sess('c3')];
-  const pins = [sess('p1'), sess('p2'), sess('p3')];
-  const a = assembleSessionList(
-    child,
-    [...pins, ...child],
-    new Map([['p1', 0], ['p2', 1], ['p3', 2]]),
-    2, // cap contestuali a 2
-  );
-  assert.equal(a.pinnedCount, 3, 'tutte le pinnate mostrate malgrado il cap');
+test('cap: conta ogni riga, pinnate comprese — nessuna esenzione', () => {
+  const child = [sess('c1', 3), sess('c2', 2), sess('c3', 1)];
+  const a = assembleSessionList(child, child, new Map([['c3', 0]]), 2);
+  assert.deepEqual(ids(a.rows), ['c1', 'c2']);
   assert.equal(a.contextTotal, 3);
-  assert.equal(a.contextHidden, 1, 'contatore non-silenzioso delle troncate');
-  assert.equal(a.rows.filter((r) => r.kind === 'context').length, 2);
+  assert.deepEqual(ids(a.overflowRows), ['c3'], 'una pinnata vecchia cade fra le troncate');
 });
 
-test('un solo gruppo non vuoto → nessun separatore', () => {
-  const onlyPinned = assembleSessionList([], [sess('p1')], new Map([['p1', 0]]), 30);
-  assert.deepEqual(kinds(onlyPinned.rows), ['pinned']);
-  const onlyContext = assembleSessionList([sess('c1')], [sess('c1')], new Map(), 30);
-  assert.deepEqual(kinds(onlyContext.rows), ['context']);
-});
-
-test('moveSelection attraversa il separatore, keyed su id, clamp agli estremi', () => {
-  const rows = assembleSessionList([sess('c1')], [sess('p1'), sess('c1')], new Map([['p1', 0]]), 30)
-    .rows;
-  // rows = [pinned p1, separator, context c1]
-  assert.equal(moveSelection(rows, 'p1', 1), 'c1', 'giù salta il separatore');
-  assert.equal(moveSelection(rows, 'c1', -1), 'p1', 'su salta il separatore');
-  assert.equal(moveSelection(rows, 'p1', -1), 'p1', 'clamp in cima');
-  assert.equal(moveSelection(rows, 'c1', 1), 'c1', 'clamp in fondo');
-  assert.equal(moveSelection(rows, 'id-perso', 1), 'p1', 'id perso → prima riga');
+test('moveSelection: keyed su id, clamp agli estremi', () => {
+  const child = [sess('c1', 3), sess('c2', 2)];
+  const rows = assembleSessionList(child, child, new Map(), 30).rows;
+  assert.equal(moveSelection(rows, 'c1', 1), 'c2');
+  assert.equal(moveSelection(rows, 'c2', -1), 'c1');
+  assert.equal(moveSelection(rows, 'c1', -1), 'c1', 'clamp in cima');
+  assert.equal(moveSelection(rows, 'c2', 1), 'c2', 'clamp in fondo');
+  assert.equal(moveSelection(rows, 'id-perso', 1), 'c1', 'id perso → prima riga');
   assert.equal(moveSelection([], null, 1), null, 'lista vuota → null');
 });
 
 test('helper: firstSelectableId, rowIndexOf, selectedSession', () => {
-  const rows = assembleSessionList([sess('c1')], [sess('p1'), sess('c1')], new Map([['p1', 0]]), 30)
-    .rows;
-  assert.equal(firstSelectableId(rows), 'p1');
-  assert.equal(rowIndexOf(rows, 'c1'), 2, 'indice nell’array completo, separatore incluso');
+  const child = [sess('c1', 3), sess('c2', 2)];
+  const rows = assembleSessionList(child, child, new Map(), 30).rows;
+  assert.equal(firstSelectableId(rows), 'c1');
+  assert.equal(firstSelectableId([]), null);
+  assert.equal(rowIndexOf(rows, 'c2'), 1);
   assert.equal(rowIndexOf(rows, null), -1);
-  assert.equal(selectedSession(rows, 'c1')?.sessionId, 'c1');
-  // stale → selectedSession null
-  const staleRows = assembleSessionList([], [], new Map([['gone', 0]]), 30).rows;
-  assert.equal(selectedSession(staleRows, 'gone'), null);
+  assert.equal(rowIndexOf(rows, 'ignota'), -1);
+  assert.equal(selectedSession(rows, 'c2')?.sessionId, 'c2');
 });
 
 // ── T53 · etichetta di riga (strip del core + nota) ─────────────────────────
@@ -254,46 +243,26 @@ test('vicino: unica riga → null (nessun posto dove atterrare)', () => {
   assert.equal(neighborId(a.rows, 'ignota'), null);
 });
 
-test('vicino: attraversa il separatore senza fermarcisi', () => {
-  const all = [sess('p1'), sess('c1')];
-  const a = assembleSessionList([sess('c1')], all, new Map([['p1', 0]]), 30);
-  assert.deepEqual(kinds(a.rows), ['pinned', 'separator', 'context']);
-  assert.equal(neighborId(a.rows, 'p1'), 'c1', 'il separatore non è una destinazione');
-});
-
-test('unpin: si atterra sulla pinnata successiva', () => {
+test('unpin dalla vista dedicata: si atterra sulla pinnata vicina della stessa vista', () => {
   const all = [sess('p1'), sess('p2'), sess('p3'), sess('c1')];
   // Rango desc → l'ultima pinnata sta in cima: p3, p2, p1.
   const pins = new Map([['p1', 0], ['p2', 1], ['p3', 2]]);
   const a = assembleSessionList([sess('c1')], all, pins, 30);
-  assert.deepEqual(ids(a.rows), ['p3', 'p2', 'p1', 'c1']);
-  assert.equal(unpinLandingId(a.rows, 'p3'), 'p2');
-  assert.equal(unpinLandingId(a.rows, 'p2'), 'p1');
+  assert.deepEqual(ids(a.pinnedRows), ['p3', 'p2', 'p1']);
+  assert.equal(neighborId(a.pinnedRows, 'p3'), 'p2');
+  assert.equal(
+    neighborId(a.pinnedRows, 'p1'),
+    'p2',
+    'sull’ultima si risale: la lista è quella delle pinnate, non c’è nessun gruppo da scavalcare',
+  );
 });
 
-test('unpin: sull’ultima pinnata si risale, non si scavalca il gruppo', () => {
-  const all = [sess('p1'), sess('p2'), sess('c1')];
-  const a = assembleSessionList([sess('c1')], all, new Map([['p1', 0], ['p2', 1]]), 30);
-  assert.equal(unpinLandingId(a.rows, 'p1'), 'p2');
-  assert.equal(neighborId(a.rows, 'p1'), 'c1', 'il vicino generico esce dal gruppo');
-});
-
-test('unpin: gruppo che si svuota → prima contestuale', () => {
-  const all = [sess('p1'), sess('c1', 3), sess('c2', 2)];
-  const a = assembleSessionList([sess('c1', 3), sess('c2', 2)], all, new Map([['p1', 0]]), 30);
-  assert.equal(unpinLandingId(a.rows, 'p1'), 'c1');
-});
-
-test('unpin: unica pinnata senza contestuali, o riga non pinnata → null', () => {
+test('unpin: unica pinnata → null (nessun posto dove atterrare)', () => {
   const only = assembleSessionList([], [sess('p1')], new Map([['p1', 0]]), 30);
-  assert.equal(unpinLandingId(only.rows, 'p1'), null);
-  const ctx = [sess('c1'), sess('c2')];
-  const a = assembleSessionList(ctx, ctx, new Map(), 30);
-  assert.equal(unpinLandingId(a.rows, 'c1'), null, 'una contestuale non si spinna');
-  assert.equal(unpinLandingId([], 'p1'), null);
+  assert.equal(neighborId(only.pinnedRows, 'p1'), null);
 });
 
-test('cambio di parent: la sessione riassegnata esce dal gruppo contestuale', () => {
+test('cambio di parent: la sessione riassegnata esce dalla lista', () => {
   const all = [sess('s1', 3), sess('s2', 2)];
   // Prima: entrambe spot (nessun binding) → entrambe figlie della riga spot.
   const prima = assembleSessionList(all, all, new Map(), 30);
@@ -305,35 +274,32 @@ test('cambio di parent: la sessione riassegnata esce dal gruppo contestuale', ()
   assert.deepEqual(ids(taskDopo.rows), ['s1']);
 });
 
-test('cambio di parent su una PINNATA: resta in lista (esente dal contesto), senza duplicarsi', () => {
+test('cambio di parent su una PINNATA: esce dalla lista come ogni altra riga', () => {
   const all = [sess('s1', 3), sess('s2', 2)];
   const pin = new Map([['s1', 0]]);
-  // s1 pinnata e assegnata altrove: sparisce dalle contestuali di spot ma
-  // resta nel blocco pinnate — una sola riga, non due.
+  // s1 pinnata e assegnata altrove: sparisce dalla lista di spot, e resta
+  // raggiungibile dalla sola vista dedicata.
   const a = assembleSessionList([sess('s2', 2)], all, pin, 30);
-  assert.deepEqual(kinds(a.rows), ['pinned', 'separator', 'context']);
-  assert.deepEqual(ids(a.rows), ['s1', 's2']);
-  // E quando è ANCHE contestuale, il dedup la tiene solo fra le pinnate.
-  const b = assembleSessionList([sess('s1', 3), sess('s2', 2)], all, pin, 30);
-  assert.deepEqual(ids(b.rows), ['s1', 's2']);
+  assert.deepEqual(ids(a.rows), ['s2']);
+  assert.deepEqual(ids(a.pinnedRows), ['s1']);
 });
 
-test('vista "tutte" (T59): contesto === universo → nessun doppione delle pinnate', () => {
+test('vista "tutte": contesto === universo → una riga per sessione, la pinnata al suo posto', () => {
   // La riga meta `≡ tutte` passa `sessions` come PRIMO argomento, cioè lo stesso
-  // array che fa da universo. È il caso limite del dedup: ogni pinnata è anche
-  // contestuale, e senza il filtro comparirebbe due volte.
+  // array che fa da universo: ogni pinnata è anche figlia, e col vecchio blocco
+  // in cima sarebbe comparsa due volte.
   const all = [sess('s1', 3), sess('s2', 2), sess('s3', 1)];
   const a = assembleSessionList(all, all, new Map([['s2', 0]]), 100);
-  assert.deepEqual(kinds(a.rows), ['pinned', 'separator', 'context', 'context']);
-  assert.deepEqual(ids(a.rows), ['s2', 's1', 's3']);
-  assert.equal(a.contextTotal, 2, 'la pinnata non si conta due volte');
-  assert.equal(a.contextHidden, 0);
+  assert.deepEqual(ids(a.rows), ['s1', 's2', 's3']);
+  assert.deepEqual(pinFlags(a.rows), [false, true, false]);
+  assert.equal(a.contextTotal, 3);
+  assert.deepEqual(a.overflowRows, []);
 });
 
-test('vista "tutte" (T59): il cap dedicato tronca, e lo dichiara', () => {
+test('vista "tutte": il cap dedicato tronca, e le troncate restano righe', () => {
   const all = Array.from({ length: 120 }, (_, i) => sess(`s${i}`, 120 - i));
   const a = assembleSessionList(all, all, new Map(), 100);
   assert.equal(a.contextTotal, 120);
-  assert.equal(a.contextHidden, 20, 'le troncate restano contate, mai silenziose');
   assert.equal(a.rows.length, 100);
+  assert.equal(a.overflowRows.length, 20, 'le troncate restano raggiungibili, mai silenziose');
 });

@@ -51,8 +51,7 @@ const sess = (sessionId: string, ts = 0): Session => ({
   bodies: [],
 });
 
-const ids = (rows: { kind: string; sessionId?: string }[]) =>
-  rows.filter((r) => r.kind !== 'separator').map((r) => r.sessionId);
+const ids = (rows: { sessionId: string }[]) => rows.map((r) => r.sessionId);
 
 const TASK_COUNTS: TaskViewCounts = { filtered: 2, total: 5, hidden: 3, archivable: 0 };
 const SESSION_COUNTS: SessionViewCounts = { total: 7, live: 0, pinned: 2, older: 4 };
@@ -173,39 +172,53 @@ test('`+N più vecchie` sono ESATTAMENTE le troncate dal cap, nello stesso ordin
   const child = [sess('c1', 5), sess('c2', 4), sess('c3', 3), sess('c4', 2)];
   const assembled = assembleSessionList(child, child, new Map(), 2);
   const ctx = { assembled, isLive: () => false };
-  assert.equal(assembled.contextHidden, 2);
   assert.deepEqual(ids(selectSessionRows('older', ctx)), ['c3', 'c4']);
   assert.equal(
     selectSessionRows('older', ctx).length,
-    sessionView('older').count({ total: 4, live: 0, pinned: 0, older: assembled.contextHidden }),
+    sessionView('older').count({
+      total: 4,
+      live: 0,
+      pinned: 0,
+      older: assembled.overflowRows.length,
+    }),
     'contatore e righe sono lo stesso insieme',
   );
 });
 
-test('le pinnate non entrano in `+N più vecchie`: sono esenti dal cap', () => {
-  const child = [sess('c1', 5), sess('c2', 4), sess('c3', 3)];
+test('`📌` mostra le pinnate del progetto, anche quelle che la lista non contiene', () => {
+  // T133 D7 — è l'unica vista che non filtra `rows`: il suo insieme è più largo
+  // della lista, e un filtro mostrerebbe le sole pinnate del parent selezionato.
+  const child = [sess('c1', 5), sess('c2', 4)];
   const all = [...child, sess('p1', 9)];
-  const assembled = assembleSessionList(child, all, new Map([['p1', 1]]), 1);
+  const assembled = assembleSessionList(child, all, new Map([['p1', 1], ['c2', 2]]), 30);
   const ctx = { assembled, isLive: () => false };
-  assert.deepEqual(ids(selectSessionRows('older', ctx)), ['c2', 'c3']);
-  assert.deepEqual(ids(selectSessionRows('pinned', ctx)), ['p1']);
+  assert.deepEqual(ids(selectSessionRows('context', ctx)), ['c1', 'c2'], 'p1 non è del parent');
+  assert.deepEqual(ids(selectSessionRows('pinned', ctx)), ['c2', 'p1'], 'rango desc');
 });
 
-test('`vive` filtra le righe mostrate e non porta con sé il separatore', () => {
+test('nessuna vista produce righe non selezionabili', () => {
+  const child = [sess('c1', 5), sess('c2', 4), sess('c3', 3)];
+  const all = [...child, sess('p1', 9)];
+  const assembled = assembleSessionList(child, all, new Map([['p1', 1], ['gone', 2]]), 2);
+  const ctx = { assembled, isLive: () => true };
+  for (const v of SESSION_VIEWS) {
+    for (const row of v.rows(ctx)) {
+      assert.ok(row.sessionId, `riga senza id nella vista ${v.id}`);
+      assert.ok(rowIndexOf(v.rows(ctx), row.sessionId) >= 0, `riga irraggiungibile in ${v.id}`);
+    }
+  }
+});
+
+test('`vive` filtra le righe della lista, senza pescare fuori contesto', () => {
   const child = [sess('c1', 5), sess('c2', 4)];
   const all = [...child, sess('p1', 9)];
   const assembled = assembleSessionList(child, all, new Map([['p1', 1]]), 30);
-  assert.ok(
-    assembled.rows.some((r) => r.kind === 'separator'),
-    'la vista di default ha due gruppi, quindi il separatore',
-  );
   const live = new Set(['p1', 'c2']);
   const rows = selectSessionRows('live', { assembled, isLive: (id) => live.has(id) });
-  assert.deepEqual(rows.map((r) => r.kind), ['pinned', 'context']);
-  assert.deepEqual(ids(rows), ['p1', 'c2']);
+  assert.deepEqual(ids(rows), ['c2'], 'p1 è viva ma non è in lista: la voce conta ciò che mostra');
 });
 
-test('la vista di default resta la lista assemblata, separatore compreso', () => {
+test('la vista di default è la lista assemblata, senza trasformazioni', () => {
   const child = [sess('c1', 5)];
   const all = [...child, sess('p1', 9)];
   const assembled = assembleSessionList(child, all, new Map([['p1', 1]]), 30);
