@@ -36,6 +36,7 @@ import { META_ROWS, QUIT_WINDOW_MS, type Mode } from './model.js';
 import { TASK_VIEWS, taskView, type SessionViewId, type TaskViewId } from './pane-views.js';
 import type { InboxViewId } from './inbox-views.js';
 import { loadTaskFileText } from './tasks.js';
+import { loadInboxText } from './inbox.js';
 import type { Frame } from './frame.js';
 import type { DeckActions } from './actions.js';
 import type { DeckModel } from './deck-model.js';
@@ -43,6 +44,7 @@ import type { useAssignOverlay } from './overlays/assign.js';
 import type { useSheetOverlay } from './overlays/sheet.js';
 import type { useSearchOverlay } from './overlays/search.js';
 import type { useProjectStatus } from './overlays/status.js';
+import type { useInboxOverlay } from './overlays/inbox.js';
 import type { usePurgeOverlay } from './overlays/purge.js';
 import type { useTextModals, useViewModals } from './overlays/modals.js';
 
@@ -79,12 +81,14 @@ export type DeckOverlays = {
   sheet: ReturnType<typeof useSheetOverlay>;
   search: ReturnType<typeof useSearchOverlay>;
   status: ReturnType<typeof useProjectStatus>;
+  inbox: ReturnType<typeof useInboxOverlay>;
   purge: ReturnType<typeof usePurgeOverlay>;
   view: ReturnType<typeof useViewModals>;
   text: ReturnType<typeof useTextModals>;
 };
 
 export function useDeckInput({
+  cwd,
   tasksDir,
   mode,
   setMode,
@@ -96,6 +100,9 @@ export function useDeckInput({
   launchRegions,
   indicatorRegions,
 }: {
+  /** Project root: serve a leggere un file inbox, che `doc-metrics` nomina
+   *  relativo alla radice del progetto e non alla docs-root. */
+  cwd: string;
   tasksDir: string;
   mode: Mode;
   setMode: (m: Mode) => void;
@@ -139,6 +146,7 @@ export function useDeckInput({
   const MODE_KEYS: Record<CapturingMode, (input: string, key: Key) => void> = {
     detail: overlays.sheet.onKey,
     status: overlays.status.onKey,
+    inbox: overlays.inbox.onKey,
     reader: overlays.search.onReaderKey,
     search: overlays.search.onSearchKey,
     assign: overlays.assign.onKey,
@@ -157,6 +165,7 @@ export function useDeckInput({
   const MODE_WHEEL: Record<ScrollingMode, (delta: number) => void> = {
     detail: overlays.sheet.scroll,
     status: overlays.status.scroll,
+    inbox: overlays.inbox.scroll,
     reader: overlays.search.scrollReader,
   };
 
@@ -388,7 +397,16 @@ export function useDeckInput({
       else if (model.focus === 'inbox') model.moveInboxSel(1);
       else model.setSelSessionId((id) => moveSelection(model.sessionRows, id, 1));
     } else if (key.return) {
-      if (model.focus === 'tasks') {
+      if (model.focus === 'inbox') {
+        // T134 — `⏎` apre il DETAIL del file, non la sessione: la sessione la
+        // apre il `⏎` di dentro. Stessa scala del pane task, dove `⏎` apre il
+        // detail e le combo restano per chi sa già cosa vuole — con la
+        // differenza che qui non esiste un acceleratore, perché la skill non è
+        // una scelta ma una conseguenza della natura del file.
+        const f = model.selInbox;
+        if (!f) setNote('nessun file inbox selezionato');
+        else overlays.inbox.open({ file: f, text: loadInboxText(cwd, f.path) });
+      } else if (model.focus === 'tasks') {
         // T66 — ⏎ apre il DETAIL, non più una sessione. Secondo rimappaggio in
         // due task (T56 lo spostò da recap a sessione a mani nude), e la
         // direzione è una sola: da azione singola a punto d'ingresso. Il tasto

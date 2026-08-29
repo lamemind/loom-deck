@@ -81,15 +81,24 @@ export function deckLegend(state: {
   purgeBulk: boolean;
   /** T134 — il pane inbox occupa lo slot destro. */
   inboxPane: boolean;
+  /** T134 — c'è una riga inbox selezionata da aprire. */
+  hasInbox: boolean;
 }): string {
   const canSpawn = state.focus === 'tasks' && state.hasTask;
   const canResume = state.focus === 'sessions' && state.hasSession;
+  const canOpenInbox = state.focus === 'inbox' && state.hasInbox;
   // T50 — il pin agisce su qualunque riga selezionata (anche stale, per
   // spinnarla); basta il focus sul pane e una selezione.
   const canPin = state.focus === 'sessions' && state.hasSessionId;
   return sanitize(
     [
-      ...(canSpawn ? ['⏎ detail', '^K/^P/^R spawn'] : canResume ? ['⏎ resume'] : []),
+      ...(canSpawn
+        ? ['⏎ detail', '^K/^P/^R spawn']
+        : canResume
+          ? ['⏎ resume']
+          : canOpenInbox
+            ? ['⏎ apri']
+            : []),
       // T112 — la voce nomina il BERSAGLIO, che cambia di taglia senza che
       // cambi il tasto. Legge `purgeBulk`, la stessa condizione del ramo di
       // apertura: una legenda che annunciasse «tutte» dove il tasto ne pota una

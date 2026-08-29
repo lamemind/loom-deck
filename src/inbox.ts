@@ -11,8 +11,9 @@
 // senza pseudo-terminale.
 
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { promisify } from 'node:util';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import { pluginScript } from './plugin-cache.js';
 
 const execFileAsync = promisify(execFile);
@@ -190,6 +191,65 @@ export function staleCount(
   now: number,
 ): number {
   return files.filter((f) => isQueued(f) && ageHours(f.created, now) >= hours).length;
+}
+
+/**
+ * La skill che consuma ogni natura (D8). Il file viaggia come BASENAME e non
+ * come path: la grammatica di matching è identica per le tre — path completo,
+ * basename con o senza `.md`, case-insensitive contro `{docs_root}/inbox/` —
+ * quindi il deck non deve conoscere il path, e non lo compone.
+ */
+const DRAIN_SKILL: Record<Natura, string> = {
+  nozioni: 'drain-notions',
+  derivazione: 'derive-notions',
+  sweep: 'align-doc',
+};
+
+/**
+ * Il prompt della sessione che il deck apre su un file inbox.
+ *
+ * Su un `malformato` NON è un drain ma una RIPARAZIONE: nessuna delle tre skill
+ * prende un file senza natura, quindi offrirgliene una significherebbe aprire
+ * una sessione destinata a fermarsi allo step 0.
+ *
+ * Nessuna guardia sul token `drainable` né sul branch (D5): le tre skill
+ * dichiarano tutte, con le stesse parole, che un file NOMINATO si esegue anche
+ * senza `drainable` — quel token governa la coda automatica del notturno, non
+ * il permesso di eseguire, e nominare un file È la decisione che il token
+ * dichiarerebbe. Il solo `branch:` lo rifiutano loro, e lo fanno per chiunque:
+ * replicarlo qui aggiungerebbe una seconda copia divergibile per impedire ciò
+ * che l'utente ha appena chiesto.
+ *
+ * Niente backtick nel testo: il prompt attraversa `--prompt` come argv singolo
+ * e poi `bash -lc` dentro `deck-run`, dove viene quotato ad apici singoli. Con
+ * quel quoting un backtick sarebbe inerte, ma il testo lo si legge anche in
+ * riga di stato e in un titolo di tab — un carattere che non serve non si
+ * spende.
+ */
+export function inboxPrompt(f: InboxFile): string {
+  if (f.natura === 'malformato') {
+    return (
+      `il file inbox ${f.basename} non ha un marker leggibile: nessuna delle tre skill di drain ` +
+      'lo prende. aprilo, stabilisci di che natura e (nozioni, derivazione o sweep) e riporta il ' +
+      'marker alla grammatica di scripts/docs/inbox.sh del plugin. non drenare niente finche il ' +
+      'marker non e valido.'
+    );
+  }
+  return `/loom-works:${DRAIN_SKILL[f.natura]} ${f.basename}`;
+}
+
+/**
+ * Il testo del file inbox, per il detail fullscreen. `null` = illeggibile —
+ * il detail lo dice e tiene l'azione attiva, come fa quello della task con un
+ * task file mancante: la skill risolve il file per nome, non per il testo che
+ * il deck è riuscito a leggere.
+ */
+export function loadInboxText(projectRoot: string, relPath: string): string | null {
+  try {
+    return readFileSync(join(projectRoot, relPath), 'utf8');
+  } catch {
+    return null;
+  }
 }
 
 export interface InboxScan {

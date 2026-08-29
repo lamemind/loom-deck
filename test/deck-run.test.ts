@@ -171,10 +171,28 @@ test('--prompt e --prompt-kind sono mutuamente esclusivi', () => {
   assert.match(r.err, /mutuamente esclusivi/);
 });
 
-test('--prompt richiede una task, come il kind', () => {
-  const r = deckRun(['--no-task', '--prompt', 'x']);
+// T134/D9 — il divieto è caduto, e l'asimmetria col kind è il punto: i sette
+// template del catalogo interpolano tutti `{TASK}`, un testo già composto no.
+// Il caso vivo è il deck che offre il drain di un file inbox e lo srotolamento
+// dei `.md` di un path: due lavori sulla doc, che non appartengono a nessuna
+// task e non devono ereditarne una.
+test('--prompt con --no-task: ammesso, e il prompt arriva alla sessione', () => {
+  const cmd = inTabCmd(['--no-task', '--prompt', '/loom-works:drain-notions T134-x.md']);
+  assert.ok(
+    cmd.endsWith("'/loom-works:drain-notions T134-x.md'"),
+    `il prompt non è arrivato nella sessione nuda: ${cmd}`,
+  );
+  // Nuda resta nuda: nessun LOOM_TASK, nessun suffisso di task nel titolo.
+  assert.ok(!cmd.includes('LOOM_TASK='), `sessione nuda con un binding task: ${cmd}`);
+});
+
+test('--prompt-kind con --no-task resta rifiutato: il catalogo nomina un TaskID', () => {
+  // L'asimmetria col ramo sopra non è una dimenticanza: un kind senza task
+  // produrrebbe `/loom-works:run-task ` con l'id vuoto, cioè una tab che parte
+  // su un comando monco.
+  const r = deckRun(['--no-task', '--prompt-kind', 'run']);
   assert.equal(r.ok, false);
-  assert.match(r.err, /--prompt richiede una task/);
+  assert.match(r.err, /--prompt-kind richiede una task/);
 });
 
 test('LOOM_DECK_ENTER_PROMPT non scavalca un --prompt esplicito', () => {

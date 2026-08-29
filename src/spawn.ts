@@ -348,6 +348,34 @@ export function spawnClaudeEmpty(cwd: string): Spawned {
   return launchDeckRun(['--no-task'], cwd);
 }
 
+/**
+ * T134 — sessione NUDA con un prompt letterale: `deck-run --no-task --prompt
+ * <testo> --model <alias>`.
+ *
+ * Il lavoro che apre — drenare un file inbox, srotolare l'hard-wrap di un path
+ * — sta sulla DOC, non su una task (D10 preflight). Legarlo a un cappello
+ * esporterebbe `LOOM_TASK`, farebbe scattare l'hook `SessionStart` che inietta
+ * in contesto il task file di un lavoro spesso già chiuso, e metterebbe
+ * `· T<n>` nel titolo della tab; per un file `sweep` senza cappello la strada
+ * non esisterebbe nemmeno.
+ *
+ * Presidiata, non headless (D11): `spawnSkill` resta dov'è e non si estende
+ * qui. Ne discendono due cose. Il confine presidiata / non presidiata delle
+ * skill di doc smette di essere un vincolo — anche `align-doc`, che apre un
+ * branch con PR, è offribile, perché c'è un umano nella tab che la guarda. E la
+ * guardia d'ingresso `doc-guard.sh worktree`, che esce 2 su worktree sporco
+ * sotto `inbox/`, `reference/` o `CLAUDE.md`, la incontra la sessione e la
+ * mostra a chi l'ha lanciata: il deck non deve replicarla per sapere in
+ * anticipo se l'azione morirebbe allo step 0.
+ *
+ * Il modello è passato SEMPRE, anche sul default, per la stessa ragione di
+ * `permissionMode`: lo spawn resta deterministico e leggibile nel process tree
+ * invece di dipendere da un default che può cambiare fra versioni.
+ */
+export function spawnBare(cwd: string, prompt: string, model: ModelKind): Spawned {
+  return launchDeckRun(['--no-task', '--prompt', prompt, '--model', model], cwd);
+}
+
 // T39/T32: voce `launch` custom del file config, eseguita con cwd = project root.
 // Spawn detached come spawnDeck: il deck lancia ma non possiede il processo.
 // Shell login+interattiva (bash -lic) perché i comandi tipici sono alias o

@@ -26,8 +26,12 @@
 # Il quarto asse (T108) è indipendente dagli altri tre: vale sul ramo bound come
 # su --no-task, su una sessione nuova come su una ripresa.
 #
-# Con --no-task la sessione è NUDA: niente LOOM_TASK, niente prompt iniziale,
-# niente --session-id. Serve al lavoro spot che non appartiene a nessuna task.
+# Con --no-task la sessione è NUDA: niente LOOM_TASK, niente --session-id.
+# Serve al lavoro spot che non appartiene a nessuna task.
+# T134 — un prompt iniziale ce l'ha se glielo si passa LETTERALE (`--prompt`):
+# il lavoro sulla doc — drenare un file inbox, srotolare l'hard-wrap di un path
+# — non appartiene a nessuna task e non deve ereditarne una. I `--prompt-kind`
+# del catalogo restano invece rifiutati con --no-task: nominano tutti un TaskID.
 #
 # Con --resume <sid> riprende una conversazione esistente; aggiungendo --fork la
 # riprende RAMANDOLA (`--fork-session`): id nuovo, transcript copiato, l'origine
@@ -172,7 +176,9 @@ USAGE="uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <kind>] [--sessio
        checkpoint  /loom-works:checkpoint-task <TaskID>
 
   --prompt       prompt LETTERALE, per chi lo ha già composto (o fatto
-                 modificare). Esclusivo con --prompt-kind; vuoto = nessun prompt
+                 modificare). Esclusivo con --prompt-kind; vuoto = nessun
+                 prompt. Ammesso anche con --no-task: un testo già scritto non
+                 ha una task da nominare, a differenza dei kind del catalogo
 
   --model        modello della sessione: fable|opus|sonnet|haiku (default: opus)
                  valore ignoto → fallback sul default, con avviso su stderr
@@ -219,11 +225,21 @@ if [[ $NO_TASK -eq 1 && -n "$PROMPT_KIND" ]]; then
   echo "$USAGE" >&2
   exit 2
 fi
-if [[ $NO_TASK -eq 1 && $PROMPT_GIVEN -eq 1 ]]; then
-  echo "--prompt richiede una task: una sessione --no-task non ha prompt iniziale" >&2
-  echo "$USAGE" >&2
-  exit 2
-fi
+# T134/D9 — `--prompt` con `--no-task` è AMMESSO, e il divieto che c'era qui è
+# caduto. Il razionale del divieto valeva per il catalogo, non per il testo
+# letterale: i sette kind nominano tutti il TaskID, quindi senza task non c'è
+# nulla da chiedere loro; un prompt già composto dal chiamante non ha invece
+# nessuna task da nominare — e ce ne sono di legittimi che non ne hanno una.
+# Il caso che ha fatto cadere il divieto: il deck offre il drain di un file
+# inbox e lo srotolamento dei `.md` di un path, due lavori che stanno sulla doc
+# e non su una task; legarli a un cappello esporterebbe `LOOM_TASK`, farebbe
+# iniettare in contesto il task file di un lavoro chiuso e metterebbe `· T<n>`
+# nel titolo della tab (D10 preflight).
+#
+# Il divieto gemello su `--prompt-kind` RESTA. Toglierlo non è simmetrico:
+# ogni template del catalogo interpola `{TASK}`, e senza task produrrebbe un
+# prompt come `/loom-works:run-task ` con l'id vuoto — cioè una sessione che
+# parte su un comando monco, che è il guasto che il divieto esiste per evitare.
 # Due modi di dire la stessa cosa: accettarli insieme obbligherebbe a stabilire
 # quale vince, cioè a scrivere una precedenza che nessun chiamante ha chiesto.
 if [[ $PROMPT_GIVEN -eq 1 && -n "$PROMPT_KIND" ]]; then
@@ -528,7 +544,12 @@ PROMPT_ARG=""
 # scelta di chi apre la sessione, non una proprietà della task né della ripresa
 # (T108) — stesso layer di MODE_FLAG, che infatti gli sta accanto.
 if [[ $NO_TASK -eq 1 ]]; then
-  _default_intab="${PROFILE_ENV}claude --name '${TITLE}' ${MODE_FLAG}${MODEL_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}"
+  # T134/D9 — il PROMPT_ARG entra anche qui: dal 134 una sessione nuda può
+  # nascere su un prompt letterale (drain di un file inbox, srotolamento di un
+  # path). Resta vuoto su ogni altro percorso `--no-task`, perché senza
+  # `--prompt` il ramo del catalogo non gira — `PROMPT_KIND` con `--no-task`
+  # è ancora rifiutato a monte.
+  _default_intab="${PROFILE_ENV}claude --name '${TITLE}' ${MODE_FLAG}${MODEL_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}${PROMPT_ARG}"
 else
   _default_intab="${PROFILE_ENV}LOOM_TASK=${TASK} claude --name '${TITLE}' ${MODE_FLAG}${MODEL_FLAG}${SID_FLAG}${RES_FLAG}${FORK_FLAG}${PROMPT_ARG}"
 fi

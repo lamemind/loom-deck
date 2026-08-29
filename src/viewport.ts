@@ -92,6 +92,10 @@ export const MODAL_HEIGHT = {
   // progetto è un documento lungo quanto un task file, quindi vale la stessa
   // ragione delle altre quattro. La sua altezza la distribuisce `statusCapacity`.
   status: 0,
+  // T134 — il detail di un file inbox: sesta sostitutiva. Un file di nozioni
+  // arriva a 28KB, cioè più lungo di ogni task file del progetto: la stessa
+  // ragione delle altre cinque. Altezza da `inboxDetailCapacity`.
+  inbox: 0,
 } as const;
 
 export type Mode = keyof typeof MODAL_HEIGHT;
@@ -370,6 +374,24 @@ const STATUS_CHROME = 8;
 /** Righe di recap che entrano nel terminale. */
 export function statusCapacity(rows: number): number {
   return Math.max(0, (rows || 24) - SLACK - STATUS_CHROME);
+}
+
+// T134 — cornice del detail di un file inbox. Gemella di STATUS_CHROME più una
+// riga: il detail porta in fondo la riga dell'azione (quale skill partirà su
+// `⏎`), che è l'unica cosa che l'utente deve leggere prima di premere.
+//   2  bordi del box esterno
+//   1  riga di testata (natura :: nome del file)
+//   1  riga meta (marcatori · cifre · posizione nel testo)
+//   1  riga hint
+//   1  marginTop del box corpo
+//   2  bordi del box corpo
+//   1  marginTop della riga azione
+//   1  riga azione
+const INBOX_CHROME = 10;
+
+/** Righe di file inbox che entrano nel terminale. */
+export function inboxDetailCapacity(rows: number): number {
+  return Math.max(0, (rows || 24) - SLACK - INBOX_CHROME);
 }
 
 /**

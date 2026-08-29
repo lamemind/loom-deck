@@ -37,6 +37,7 @@ import {
   runLaunch,
   spawnClaudeEmpty,
   spawnCleanTasks,
+  spawnBare,
   spawnCreateTask,
   spawnDeck,
   spawnDeckFork,
@@ -50,6 +51,7 @@ import {
   type Spawned,
 } from './spawn.js';
 import { useTaskOps } from './task-ops.js';
+import type { InboxFile } from './inbox.js';
 import type { DeckModel } from './deck-model.js';
 
 export function useDeckActions({
@@ -308,6 +310,24 @@ export function useDeckActions({
     setNote(`t → terminale su ${model.projectName}`);
   }
 
+  /**
+   * T134 — apre la sessione PRESIDIATA che drena un file inbox.
+   *
+   * Il prompt arriva già composto dall'overlay (`inboxPrompt`), che è l'unico
+   * posto in cui vive la mappa natura → skill: derivarlo qui una seconda volta
+   * darebbe due tabelle capaci di divergere, e la seconda si scoprirebbe solo
+   * il giorno in cui una natura nuova apre la skill sbagliata.
+   *
+   * Sessione NUDA e modello esplicito: il drain lavora sulla doc, non sulla
+   * task (D10 preflight), e `opus` passa nell'argv anche essendo il default,
+   * come `permissionMode`.
+   */
+  function drainInbox(file: InboxFile, prompt: string) {
+    const spawned = spawnBare(cwd, prompt, MODEL_DEFAULT);
+    spawned.child.on('error', () => setNote(`⚠ drain ${file.basename} fallito (${DECK_RUN})`));
+    noteSpawn(spawned);
+  }
+
   /** `c` — sessione claude a mani nude, senza task e senza prompt. */
   function openClaude() {
     const spawned = spawnClaudeEmpty(cwd);
@@ -355,6 +375,7 @@ export function useDeckActions({
     assignSession,
     forkSession,
     togglePin,
+    drainInbox,
     openTerminal,
     openClaude,
     saveCurrentView,

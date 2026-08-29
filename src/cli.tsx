@@ -27,6 +27,7 @@ import { useSearchOverlay } from './overlays/search.js';
 import { useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
 import { useProjectStatus } from './overlays/status.js';
+import { useInboxOverlay } from './overlays/inbox.js';
 import { usePurgeOverlay } from './overlays/purge.js';
 import { useTextModals, useViewModals } from './overlays/modals.js';
 import { useTerminalSize } from './hooks.js';
@@ -91,6 +92,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     setNote,
   });
 
+  // T134 — il detail di un file inbox. Come lo sheet della task riceve lo spawn
+  // come callback: un hook di overlay non esce dal deck.
+  const inbox = useInboxOverlay({
+    rows,
+    columns,
+    setMode,
+    setNote,
+    onDrain: actions.drainInbox,
+  });
+
   const purge = usePurgeOverlay({
     setMode,
     setNote,
@@ -116,7 +127,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     currentNote: (sid) => model.sessionNotes.get(sid) ?? '',
   });
 
-  const overlays = { assign, sheet, search, status, purge, view: viewModals, text: textModals };
+  const overlays = {
+    assign,
+    sheet,
+    search,
+    status,
+    inbox,
+    purge,
+    view: viewModals,
+    text: textModals,
+  };
 
   // T70 — un solo blocco preview, sotto i due pane, e il FOCUS decide cosa
   // contiene: a sinistra la task selezionata, a destra la conversazione. È il
@@ -180,6 +200,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   });
 
   useDeckInput({
+    cwd,
     tasksDir,
     mode,
     setMode,
@@ -192,7 +213,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     indicatorRegions: indicators.regions,
   });
 
-  // Le cinque schermate sostitutive prendono il frame intero: se una è attiva
+  // Le sei schermate sostitutive prendono il frame intero: se una è attiva
   // il render finisce qui, e il budget dei pane resta calcolato ma inutilizzato.
   const screen = screenFor({
     mode,
@@ -207,7 +228,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     projectName: model.projectName,
     taskRowData: model.taskRowData,
     hiddenTasks: model.hiddenTasks,
-    overlays: { assign, sheet, search, status },
+    overlays: { assign, sheet, search, status, inbox },
   });
   if (screen) return screen;
 
@@ -258,6 +279,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           hasSessionId: model.selSessionId !== null,
           purgeBulk: model.purgeBulk,
           inboxPane: model.rightPane === 'inbox',
+          hasInbox: model.selInbox !== null,
         })}
         indicators={indicators}
         columns={columns}

@@ -1,12 +1,13 @@
 // Le SCHERMATE SOSTITUTIVE del deck e i due frammenti che le accompagnano.
 //
 // Una schermata sostitutiva prende il frame intero invece di stare in un box
-// sopra i due pane: assegnazione, detail della task, project status, ricerca e
-// reader. Il criterio è la taglia del contenuto — una lista di occorrenze o un
-// task file non entrano in quattro righe — e la conseguenza è che il budget
-// d'altezza dei pane non viene nemmeno calcolato, perché il render esce prima.
+// sopra i due pane: assegnazione, detail della task, project status, detail di
+// un file inbox, ricerca e reader. Il criterio è la taglia del contenuto — una
+// lista di occorrenze, un task file o un file di nozioni non entrano in quattro
+// righe — e la conseguenza è che il budget d'altezza dei pane non viene nemmeno
+// calcolato, perché il render esce prima.
 //
-// `screenFor` è il ROUTER: sceglie fra le cinque e restituisce `null` quando
+// `screenFor` è il ROUTER: sceglie fra le sei e restituisce `null` quando
 // nessuna è attiva, cioè quando si resta sulla lista. È una funzione e non un
 // componente proprio per questo — il chiamante deve poter distinguere «ecco la
 // schermata» da «non è il tuo turno», e un componente che rende `null` non gli
@@ -35,16 +36,19 @@ import type { Session } from '../sessions.js';
 import { AssignScreen } from './assign-screen.js';
 import { DetailScreen } from './detail-screen.js';
 import { StatusScreen } from './status-screen.js';
+import { InboxScreen } from './inbox-screen.js';
 import { ReaderScreen, SearchScreen } from './search-screen.js';
 import type { useAssignOverlay } from '../overlays/assign.js';
 import type { useSheetOverlay } from '../overlays/sheet.js';
 import type { useSearchOverlay } from '../overlays/search.js';
 import type { useProjectStatus } from '../overlays/status.js';
+import type { useInboxOverlay } from '../overlays/inbox.js';
 
 type AssignOverlay = ReturnType<typeof useAssignOverlay>;
 type SheetOverlay = ReturnType<typeof useSheetOverlay>;
 type SearchOverlay = ReturnType<typeof useSearchOverlay>;
 type StatusOverlay = ReturnType<typeof useProjectStatus>;
+type InboxOverlay = ReturnType<typeof useInboxOverlay>;
 
 /**
  * Il ripiego per un terminale troppo basso: una riga sola al posto della
@@ -210,6 +214,7 @@ export type ScreensInput = {
     sheet: SheetOverlay;
     search: SearchOverlay;
     status: StatusOverlay;
+    inbox: InboxOverlay;
   };
 };
 
@@ -217,13 +222,14 @@ export type ScreensInput = {
  * Sceglie la schermata sostitutiva attiva, o `null` per restare sulla lista.
  *
  * L'ordine dei rami è quello che avevano in `cli.tsx` e non è indifferente: i
- * modi si escludono a vicenda, ma `detail` e `status` chiedono anche che il
- * proprio contenuto esista (`sheet.sheet`, `status.view`) — un modo dichiarato
- * senza contenuto deve cadere alla lista, non a una schermata vuota.
+ * modi si escludono a vicenda, ma `detail`, `status` e `inbox` chiedono anche
+ * che il proprio contenuto esista (`sheet.sheet`, `status.view`, `inbox.sheet`)
+ * — un modo dichiarato senza contenuto deve cadere alla lista, non a una
+ * schermata vuota.
  */
 export function screenFor(input: ScreensInput) {
   const { mode, rows, columns, note, overlays } = input;
-  const { assign, sheet, search, status } = overlays;
+  const { assign, sheet, search, status, inbox } = overlays;
 
   // ── T57 · schermata di assegnazione ─────────────────────────────────────
   // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
@@ -342,6 +348,38 @@ export function screenFor(input: ScreensInput) {
         top={start}
         total={status.lines.length}
         capacity={status.capacity}
+        columns={columns}
+      />
+    );
+  }
+
+  // ── T134 · detail di un file inbox ──────────────────────────────────────
+  // Sesta schermata sostitutiva, stessa ragione delle altre cinque: un file di
+  // nozioni supera i 28KB, cioè è più lungo di ogni task file del progetto.
+  if (mode === 'inbox' && inbox.sheet) {
+    if (isCompact(inbox.capacity)) {
+      return (
+        <CompactNotice
+          what={inbox.sheet.file.basename}
+          esc="chiude"
+          rows={rows}
+          columns={columns}
+        />
+      );
+    }
+    // Il clamp serve anche qui: un resize può accorciare il testo sotto uno
+    // scroll già dato.
+    const start = Math.min(inbox.top, inbox.maxTop);
+    return (
+      <InboxScreen
+        file={inbox.sheet.file}
+        missing={inbox.sheet.text === null}
+        lines={inbox.lines.slice(start, start + inbox.capacity)}
+        spans={inbox.doc?.spans ?? []}
+        top={start}
+        total={inbox.lines.length}
+        capacity={inbox.capacity}
+        prompt={inbox.prompt}
         columns={columns}
       />
     );

@@ -27,6 +27,7 @@ import type { Mode } from './model.js';
 export const CAPTURING_MODES = [
   'detail',
   'status',
+  'inbox',
   'reader',
   'search',
   'assign',
@@ -85,7 +86,7 @@ export const CTRL_DEROGATIONS: Partial<Record<CapturingMode, readonly string[]>>
  * Il custode è `MODE_WHEEL` in `input.ts`, un `Record<ScrollingMode, …>` che non
  * compila se un modo entra qui senza uno scroll da chiamare.
  */
-export const SCROLLING_MODES = ['detail', 'status', 'reader'] as const;
+export const SCROLLING_MODES = ['detail', 'status', 'inbox', 'reader'] as const;
 
 export type ScrollingMode = (typeof SCROLLING_MODES)[number];
 
