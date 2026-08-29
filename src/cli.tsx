@@ -1,989 +1,61 @@
 #!/usr/bin/env node
-import { render, Box, Text, useApp, useInput, type Key } from 'ink';
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { randomUUID } from 'node:crypto';
-import {
-  resolveTasksPath,
-  resolveTasksDir,
-  loadTasks,
-  loadTaskFileText,
-  type Task,
-} from './tasks.js';
-import {
-  rowIndexOfKey,
-  selectedRow,
-} from './search.js';
-import {
-  appendNote,
-  appendPin,
-  appendSessionRecord,
-  appendTaskBinding,
-} from './task-index.js';
-import {
-  assembleSessionList,
-  firstSelectableId,
-  moveSelection,
-  neighborId,
-  rowIndexOf,
-  selectedSession,
-} from './session-list.js';
-import {
-  cellWidth,
-  launchLegend,
-  LAUNCH_SEP,
-  loadArchivableDays,
-  loadIdentity,
-  loadLaunch,
-} from './config.js';
-import {
-  anchorFrame,
-  enableMouse,
-  FRAME_TEXT_COL,
-  hitRegion,
-  inlineRegions,
-  isWheel,
-  LAUNCH_ROW,
-  listHit,
-  PANE_TEXT_PAD,
-  paneSpans,
-  rowRegions,
-  takeMouse,
-  WHEEL_LINES,
-  wheelDir,
-  type ListGeometry,
-  type MouseEvent,
-  type Segment,
-} from './mouse.js';
-import { headerItems, sessionHeaderParts, taskHeaderParts } from './pane-header.js';
-import {
-  cycleSessionView,
-  cycleTaskView,
-  selectSessionRows,
-  selectTasks,
-  sessionView,
-  taskView,
-  TASK_VIEWS,
-  type SessionViewCounts,
-  type SessionViewId,
-  type TaskViewCounts,
-  type TaskViewId,
-} from './pane-views.js';
-import {
-  isCompact,
-  layoutBudget,
-  searchPreviewCapacity,
-  windowRange,
-  type Budget,
-  type PreviewKind,
-} from './viewport.js';
-import { cut, cutMiddle, sanitize, termWidth } from './width.js';
-import {
-  applyView,
-  cycleSort,
-  describeSort,
-  priName,
-  progName,
-  taskColumns,
-  toggleHidden,
-  PRI_ENTRIES,
-  PROG_ENTRIES,
-  type PriName,
-  type ProgName,
-  type TaskRowData,
-  type ViewState,
-} from './view.js';
-import { initialDetail, writeTaskEdit, PRI_GLYPH, PRI_LABEL } from './task-edit.js';
-import {
-  ALL,
-  EDIT_FIELDS,
-  EDIT_PRI,
-  EDIT_PROG,
-  editTextField,
-  MAX_SESSIONS,
-  MAX_SESSIONS_ALL,
-  META_ROWS,
-  QUIT_WINDOW_MS,
-  ROW_ALL,
-  ROW_SPOT,
-  SORT_TASTI,
-  SPOT,
-  type EditDraft,
-  type FilterCursor,
-  type Focus,
-  type Mode,
-  type Parent,
-  type PurgeDraft,
-} from './model.js';
-import { purgeTargets, splitTargets } from './purge.js';
-import { conversationLabel, cpLen, isDone } from './layout.js';
-import { caretAtEnd, fieldsKey, type FieldsCursor, type FieldsIO } from './fields.js';
-import { TASK_EMPTY, relTime, sanitizeTyped } from './glyphs.js';
-import type { TaskLive } from './live-sessions.js';
-import {
-  commitTaskEdit,
-  runLaunch,
-  spawnClaudeEmpty,
-  spawnCleanTasks,
-  spawnCreateTask,
-  spawnDeck,
-  spawnDeckFork,
-  spawnDeckResume,
-  spawnTerminal,
-  onInTabCommand,
-  CLAUDE_CMD,
-  DECK_RUN,
-  MODEL_DEFAULT,
-  type ModelKind,
-  type PromptKind,
-  type Spawned,
-} from './spawn.js';
-import { EditModal, FilterModal, PurgeModal, SortModal, idList } from './ui/modals.js';
-import { ReaderScreen, SearchScreen } from './ui/search-screen.js';
-import { DetailScreen } from './ui/detail-screen.js';
-import { StatusHeadline, StatusScreen } from './ui/status-screen.js';
-import { AssignScreen } from './ui/assign-screen.js';
-import { SessionsPane, TasksPane } from './ui/panes.js';
-import { PreviewPane, detailMetaOf } from './ui/preview.js';
-import { loadView, saveView, viewFilePath } from './view-store.js';
-import {
-  useArchivable,
-  useDirtyFolders,
-  useSessions,
-  useTaskDetail,
-  useTasks,
-  useTerminalSize,
-} from './hooks.js';
+// Il deck: composizione e resa della schermata normale.
+//
+// Questo file NON contiene logica. È il cablaggio — chi parla con chi — più il
+// `return` della lista, che è la schermata del deck e non avrebbe senso come
+// componente con venti props e un chiamante solo.
+//
+// L'ordine delle chiamate è imposto dalle dipendenze, non dalla leggibilità:
+//
+//   modello  →  attuatore  →  overlay  →  geometria  →  input
+//
+// La geometria sta PRIMA dell'input (T131): il dispatch riceve `listGeometry`
+// come valore, e prima di questo split la leggeva da una closure risolta solo
+// all'arrivo dell'evento, cioè dopo la fine del render.
+import { render, Box, Text } from 'ink';
+import { useState } from 'react';
+import { resolveTasksPath, resolveTasksDir } from './tasks.js';
+import { LAUNCH_SEP } from './config.js';
+import { anchorFrame, enableMouse } from './mouse.js';
+import { sanitize } from './width.js';
+import { type Mode } from './model.js';
+import { deckLegend, frameGeometry, headlineWidth, launchRow } from './frame.js';
+import { useDeckModel } from './deck-model.js';
+import { useDeckActions } from './actions.js';
+import { useDeckInput } from './input.js';
 import { useSearchOverlay } from './overlays/search.js';
 import { useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
 import { useProjectStatus } from './overlays/status.js';
-import { captures, scrolls, type CapturingMode, type ScrollingMode } from './input-modes.js';
+import { usePurgeOverlay } from './overlays/purge.js';
+import { useTextModals, useViewModals } from './overlays/modals.js';
+import { useTerminalSize } from './hooks.js';
+import { EditModal, FilterModal, PurgeModal, SortModal } from './ui/modals.js';
+import { StatusHeadline } from './ui/status-screen.js';
+import { SessionsPane, TasksPane } from './ui/panes.js';
+import { PreviewPane, detailMetaOf } from './ui/preview.js';
+import { CompactNotice, HintBar, TextBox, screenFor } from './ui/screens.js';
 import { VERSION } from './version.js';
 
-// T116 — l'avviso della prima pressione di `^C`. La durata è INTERPOLATA dalla
-// finestra, non ricopiata: un numero scritto a mano in un testo che promette un
-// comportamento diventa falso il giorno che la costante cambia, e nessuno strumento
-// lo segnala. Vive a livello di modulo perché ha due lettori — il ramo che la
-// scrive e il timer che la ritira, e quest'ultimo deve poterla riconoscere.
-const QUIT_NOTE = `⚠ ^C di nuovo entro ${QUIT_WINDOW_MS / 1000}s per chiudere il deck`;
-
-// Le due surface built-in del cappello, in testa alla riga launch. Non stanno
-// fra i tasti perché hanno la stessa natura delle voci `launch` — fire-once,
-// cwd = project root, nessuno stato — e la differenza è solo che sono
-// universali (nessun progetto le dichiara) invece che custom. Emoji del menu
-// compass: 🤖 = nuova sessione claude. Per il terminale compass usa 🖥️, che nel
-// frame Ink NON passa — `sanitize` lo sostituisce (VTE lo disegna largo 1,
-// string-width dice 2: discordante, invariante ① di width.ts) e resterebbe un
-// `·` muto. 💻 è il gemello concorde; il `sanitize` qui rende il vincolo
-// automatico invece che da ricordare.
-//
-// T21 — `key` è il tasto che la superficie rappresenta: un click su di essa
-// entra nell'handler di tastiera con quel tasto, invece di chiamare l'azione
-// per conto proprio. È ciò che tiene click e tasto per costruzione allineati.
-const SURFACE_SEGMENTS: readonly Segment[] = [
-  { key: 't', text: sanitize('t 💻') },
-  { key: 'c', text: sanitize('c 🤖') },
-];
-
-// T21 — il `Key` che accompagna un tasto sintetizzato da un click: nessun
-// modificatore, nessun tasto speciale. Deve elencare ogni campo, o i rami che
-// leggono `key.ctrl` o `key.tab` riceverebbero `undefined` invece di `false` —
-// equivalente nel test di verità, ma non nel tipo.
-const NO_MODIFIERS: Key = {
-  upArrow: false,
-  downArrow: false,
-  leftArrow: false,
-  rightArrow: false,
-  pageDown: false,
-  pageUp: false,
-  return: false,
-  escape: false,
-  ctrl: false,
-  shift: false,
-  tab: false,
-  backspace: false,
-  delete: false,
-  meta: false,
-};
-
 function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; tasksDir: string }) {
-  const { tasks, loadError } = useTasks(tasksPath);
-  // `notes` esce dall'indice come `sessionNotes`: in questo componente `note` è
-  // già la riga di STATO in fondo al frame (il feedback di un'azione). Due
-  // concetti diversi a una lettera di distanza sarebbero una trappola di
-  // lettura — e di scrittura, visto che `setNote` compare in quasi ogni ramo.
-  const {
-    sessions,
-    bindings,
-    forkOf,
-    pinned,
-    notes: sessionNotes,
-    live,
-    reload: reloadSessions,
-  } = useSessions(cwd);
-  const [focus, setFocus] = useState<Focus>('tasks');
-  // T39 — selezione KEYED SU ID, non su indice. Con una vista trasformata
-  // (filtro/sort) l'indice non identifica più la stessa task: leggere l'array
-  // grezzo per posizione spawnerebbe la task sbagliata, in silenzio.
-  // T59 — e le righe meta sono sentinelle, non `null`: gli stati sono tre.
-  // D4 — si apre su `≡ tutte`: la vista più ampia in cima, poi si scende verso
-  // i sottoinsiemi. La selezione non è persistita (a differenza di `view`, T39),
-  // quindi questo atterraggio vale a ogni avvio.
-  const [sel, setSel] = useState<Parent>(ALL);
-  // T50 — selezione del pane sessioni KEYED SU sessionId (non indice): la lista
-  // a due gruppi + separatore è una vista trasformata, un indice grezzo punterebbe
-  // alla riga sbagliata dopo un pin o un cambio di contesto (stesso trap T39).
-  const [selSessionId, setSelSessionId] = useState<string | null>(null);
+  // La riga di STATO in fondo al frame: il feedback dell'ultima azione. Non è
+  // la nota di una conversazione, che nel modello si chiama `sessionNotes`.
   const [note, setNote] = useState('');
   // Modali: catturano i tasti e corto-circuitano la navigazione normale.
-  // T30 create · T39 sort/filter.
   const [mode, setMode] = useState<Mode>('normal');
-  const [draft, setDraft] = useState('');
-  // T53 — bozza della nota sulla conversazione selezionata. Si apre PRECARICATA
-  // con la nota esistente: annotare due volte è quasi sempre correggere, non
-  // riscrivere da zero, e un campo vuoto costringerebbe a ridigitare tutto per
-  // cambiare una parola. Confermare il campo vuoto cancella la nota.
-  const [noteDraft, setNoteDraft] = useState('');
-  // T39 — vista corrente (filtri + sort) e sua fotografia all'apertura di un
-  // modale: la lista si aggiorna dal vivo, quindi `esc` deve poter ripristinare.
-  const [view, setView] = useState<ViewState>(() => loadView(cwd));
-  const [viewBackup, setViewBackup] = useState<ViewState | null>(null);
-  // T100 — vista attiva di ciascun pane, navigata con `tab`. VOLATILE per
-  // decisione (D3 create): non entra in `deck-view.json`, il deck riapre sempre
-  // su `Tasks` e su `{parent}`. Il criterio è il rischio di leggere una lista
-  // parziale credendola completa — un filtro salvato lo si è scelto, una vista
-  // riaperta a freddo si legge come la lista intera.
-  const [taskViewId, setTaskViewId] = useState<TaskViewId>('tasks');
-  const [sessionViewId, setSessionViewId] = useState<SessionViewId>('context');
-  const [filterCursor, setFilterCursor] = useState<FilterCursor>({ row: 0, col: 0 });
-  // T41 — bozza dell'edit (null fuori dal modale) e posizione nell'area di
-  // compilazione: riga in fuoco + caret dentro la riga di testo attiva.
-  const [edit, setEdit] = useState<EditDraft | null>(null);
-  const [editCursor, setEditCursor] = useState<FieldsCursor>({ row: 0, caret: 0 });
-  // T112 — bozza della conferma di eliminazione (null fuori dal modale).
-  const [purge, setPurge] = useState<PurgeDraft | null>(null);
-
-  // T116 — uscita a doppio `^C`. Il timer È lo stato dell'armamento: finché il
-  // handle esiste la finestra è aperta, e non serve un secondo stato da tenere
-  // in fase con lui. In un `useRef` e non in `useState` perché il ramo di uscita
-  // lo legge NELLO STESSO tasto in cui potrebbe averlo scritto — un valore di
-  // stato React arriverebbe al render dopo, cioè troppo tardi per decidere.
-  const { exit } = useApp();
-  const quitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Dimensioni vive del terminale: sono l'input del budget d'altezza sotto.
+  // Dimensioni vive del terminale: sono l'input del budget d'altezza.
   const { rows, columns } = useTerminalSize();
 
-  // Voci launch del progetto (T32): lette una volta, raggiunte per indice 1..9.
-  const launch = useMemo(() => loadLaunch(cwd), [cwd]);
-  // Identità (T37): titolo delle tab terminale spawnate col tasto `t`.
-  const identity = useMemo(() => loadIdentity(cwd), [cwd]);
-  // T53 — il core che ogni titolo di tab porta, quindi la colonna costante da
-  // togliere quando serve spazio. Hoistato qui perché ora lo consumano DUE
-  // schermate (lista e ricerca): calcolarlo su ogni call site è il modo in cui
-  // le due smettono di togliere la stessa cosa.
-  // T58 — il core è il solo `name`, non `<emoji> <name>` come la chiave di match
-  // di compass: qui non serve entropia (è un taglio cosmetico, non un matcher) e
-  // il nome nudo ripulisce anche i titoli storici, scritti quando la formula
-  // includeva l'owner.
-  const projectCore = identity ? identity.name : null;
-  // La vista è una trasformazione DERIVATA, applicata a valle del load: il
-  // polling di tasks.md continua a funzionare senza saperne nulla.
-  const { visible: viewTasks, hidden: hiddenTasks } = useMemo(
-    () => applyView(tasks, view),
-    [tasks, view],
-  );
+  const model = useDeckModel({ cwd, tasksPath, tasksDir, setNote });
+  const actions = useDeckActions({ cwd, tasksPath, tasksDir, columns, model, setNote });
 
-  // T61 — il conteggio guarda la lista GREZZA, non `viewTasks`: le Done fuori
-  // dai filtri della vista restano archiviabili, e un contatore che cambiasse
-  // filtrando direbbe qualcosa sulla vista invece che sulla task list.
-  const doneSig = useMemo(
-    () => tasks.filter((t) => isDone(t.prog)).map((t) => t.id).join(','),
-    [tasks],
-  );
-  const archivableDays = useMemo(() => loadArchivableDays(cwd), [cwd]);
-  const archivable = useArchivable(doneSig, tasksDir, cwd, archivableDays);
-  // T112 — secondo asse di stato della vista `archiviabili`: quali fra le
-  // eliminabili hanno una folder che `git rm` non svuoterebbe. Si misura solo
-  // su quelle, non su tutta la lista: fuori da quella vista `CANC` agisce su
-  // una task sola e il dato lo ricalcola al momento.
-  const archivableSig = useMemo(() => [...archivable].sort().join(','), [archivable]);
-  const dirtyFolders = useDirtyFolders(archivableSig, tasksDir, cwd);
-
-  // T100 — le task effettivamente a schermo: la vista principale coincide con
-  // `viewTasks` (nessun ricalcolo sul cammino di default), le altre due passano
-  // dal predicato del catalogo. I CONTATORI restano misurati sulla vista di
-  // default, o navigare cambierebbe i numeri che si sta navigando.
-  const taskCounts: TaskViewCounts = {
-    filtered: viewTasks.length,
-    total: tasks.length,
-    hidden: hiddenTasks,
-    archivable: archivable.size,
-  };
-  const paneTasks = useMemo(
-    () =>
-      taskViewId === 'tasks'
-        ? viewTasks
-        : selectTasks(tasks, taskViewId, { view, archivable }),
-    [taskViewId, viewTasks, tasks, view, archivable],
-  );
-
-  const isSpot = sel === SPOT;
-  const isAll = sel === ALL;
-  // T112 — quando `CANC` pota in BLOCCO invece della sola task selezionata.
-  //
-  // La SELEZIONE batte la vista, non il contrario: con una riga task sotto il
-  // caret il tasto tocca quella task e basta, in ogni vista. Il bulk vive solo
-  // sulle righe meta della vista `archiviabili`, cioè richiede di essere usciti
-  // da ogni riga task — così l'azione di massa non è mai a un tasto di distanza
-  // da quella singola, e non si preme guardando una task evidenziata credendo
-  // che il bersaglio sia lei.
-  //
-  // Derivato una volta e letto sia dal ramo di apertura sia dalla legenda: due
-  // condizioni scritte due volte direbbero due cose diverse sullo stesso tasto
-  // alla prima modifica.
-  const purgeBulk = taskViewId === 'archivable' && (isAll || isSpot);
-  const projectName = cwd.split('/').pop() || cwd;
-  // Unica fonte della selezione: si legge SEMPRE dalla vista, mai dall'array
-  // grezzo — è l'invariante che tiene allineati dettaglio mostrato e spawn.
-  const selTask = typeof sel === 'string' ? paneTasks.find((t) => t.id === sel) ?? null : null;
-  const selectedTaskId = selTask?.id ?? null;
-  const selIndex = selTask ? paneTasks.indexOf(selTask) + META_ROWS : isAll ? ROW_ALL : ROW_SPOT;
-  const detail = useTaskDetail(tasksDir, selectedTaskId ?? undefined);
-  // Il parent delle conversazioni: l'asse che sceglie il pane task, ortogonale
-  // alla vista che sceglie l'header (D2 create).
-  const parentLabel = isAll ? 'tutte' : isSpot ? 'spot' : selectedTaskId ?? '—';
-
-  // Conteggio figli per task + spot (badge nel Tasks pane).
-  //
-  // T124 — il rollup delle VIVE si deriva nello stesso ciclo, non da un secondo
-  // passaggio sul registry dei processi: quel registry conosce una conversazione
-  // PRIMA che abbia scritto il suo primo record di transcript, quindi due
-  // derivazioni indipendenti renderebbero producibile `1/0` — una viva senza
-  // totale — che non è un caso limite teorico ma la finestra normale fra lo
-  // spawn e il primo turno. Intersecando qui, `vive ≤ totali` è garantito per
-  // costruzione: la conversazione appena nata resta invisibile a entrambi i
-  // numeri finché non scrive, e il segnale arriva in ritardo di un turno invece
-  // che sbagliato.
-  const childCount = new Map<string, number>();
-  const taskLive = new Map<string, TaskLive>();
-  let spotCount = 0;
-  for (const s of sessions) {
-    const bound = bindings.get(s.sessionId);
-    if (!bound) {
-      spotCount++;
-      continue;
-    }
-    childCount.set(bound, (childCount.get(bound) ?? 0) + 1);
-    const entry = live.get(s.sessionId);
-    if (!entry) continue;
-    const prev = taskLive.get(bound);
-    // Rollup a stato misto: vince `busy`. Fra N vive, quella che sta lavorando è
-    // la ragione per cui si guarda la riga.
-    taskLive.set(bound, {
-      count: (prev?.count ?? 0) + 1,
-      status: prev?.status === 'busy' || entry.status === 'busy' ? 'busy' : 'idle',
-    });
-  }
-  const taskRowData: TaskRowData = { childCount, live: taskLive, dirty: dirtyFolders };
-
-  // T118 — colonne fisse della lista task, misurate su `paneTasks` (la vista
-  // attiva INTERA) e non sulla finestra visibile: gemelle di `sessionCols` e
-  // per la stessa ragione, che una larghezza derivata dallo schermo si muove a
-  // ogni scroll.
-  const taskCols = taskColumns(paneTasks, taskRowData);
-
-  // Figli della selezione: tutte le conversazioni del progetto (`≡ tutte`), le
-  // sessioni bound alla task selezionata, oppure (spot) quelle senza binding.
-  // sessions è già ts desc → l'ordine si eredita in tutti e tre i rami.
-  // Memoizzato così `sessionRows` resta stabile fra render che non cambiano gli
-  // input: l'effect di validità della selezione non rigira a vuoto.
-  const childSessions = useMemo(
-    () =>
-      isAll
-        ? sessions
-        : sessions.filter((s) => {
-            const bound = bindings.get(s.sessionId);
-            return selectedTaskId ? bound === selectedTaskId : !bound;
-          }),
-    [sessions, bindings, selectedTaskId, isAll],
-  );
-  // T133 — lista unica: le figlie del parent, `ts desc`, cap su tutte. Le
-  // pinnate del progetto escono a parte (`pinnedRows`), per la sola vista `📌`.
-  // Core PURO in session-list.ts (testabile senza Ink).
-  const assembled = useMemo(
-    () => assembleSessionList(childSessions, sessions, pinned, isAll ? MAX_SESSIONS_ALL : MAX_SESSIONS),
-    [childSessions, sessions, pinned, isAll],
-  );
-  // T62 — contato sulla lista INTERA (stessa ragione delle larghezze di colonna
-  // qui sotto): derivarlo dalla finestra visibile lo farebbe cambiare a ogni
-  // scroll, cioè un contatore che conta lo schermo invece della lista.
-  // T100 — «intera» ora vuol dire la lista della vista di DEFAULT (`assembled`),
-  // non quella a schermo: il contatore di una voce del catalogo non può
-  // dipendere da quale voce è selezionata, o navigare muoverebbe i numeri.
-  const liveCount = useMemo(
-    () => assembled.rows.filter((r) => live.has(r.sessionId)).length,
-    [assembled, live],
-  );
-  const sessionCounts: SessionViewCounts = {
-    total: assembled.contextTotal,
-    live: liveCount,
-    pinned: assembled.pinnedRows.length,
-    older: assembled.overflowRows.length,
-  };
-  // T100 — le righe a schermo sono quelle della vista attiva.
-  const sessionRows = useMemo(
-    () => selectSessionRows(sessionViewId, { assembled, isLive: (id) => live.has(id) }),
-    [sessionViewId, assembled, live],
-  );
-  const selSessionObj = selectedSession(sessionRows, selSessionId);
-
-  // T60 — larghezze delle colonne fisse della lista sessioni, misurate sulla
-  // lista INTERA e non sulla finestra visibile: derivarle dalle sole righe a
-  // schermo le farebbe cambiare a ogni scroll, cioè l'opposto di una tabella.
-  // La colonna task esiste solo nella vista "tutte" (altrove il binding è lo
-  // stesso su ogni riga e sta già nell'header del pane), e `0` la spegne.
-  const sessionCols = useMemo(() => {
-    let task = 0;
-    let age = 2;
-    for (const r of sessionRows) {
-      // T133 D10 — la colonna serve dove l'appartenenza NON è già scritta
-      // altrove sullo schermo, cioè nella sola vista "tutte": ogni altra lista
-      // contiene le figlie del parent selezionato, che l'header nomina.
-      if (isAll) {
-        const b = bindings.get(r.sessionId);
-        if (b) task = Math.max(task, termWidth(b));
-      }
-      if (r.kind === 'session') age = Math.max(age, termWidth(relTime(r.session.ts)));
-    }
-    // La cella vuota deve poter entrare nella colonna, o le righe spot
-    // perderebbero il segnaposto e con lui l'allineamento.
-    return { task: task > 0 ? Math.max(task, termWidth(TASK_EMPTY)) : 0, age };
-  }, [sessionRows, bindings, isAll]);
-
-  // T66 — testo del task file wrappato per il detail. `wrapWithOffsets` e non
-  // `wrapLines`: quest'ultimo appiattisce gli a-capo in un flusso unico, che per
-  // una preview di 4 righe va bene e per un task file — titoli, bullet, tabelle,
-
-  // T39 — selezione stabile sotto trasformazione. Se la task selezionata esce
-  // dalla vista (filtro appena attivato, oppure sparita da tasks.md), si cade
-  // sulla prima visibile — fallback deterministico, mai una posizione a caso.
-  useEffect(() => {
-    if (typeof sel === 'string' && !paneTasks.some((t) => t.id === sel)) {
-      setSel(paneTasks[0]?.id ?? ALL);
-    }
-  }, [paneTasks, sel]);
-  // T50 — la selezione (id) resta valida sotto la vista a due gruppi: se l'id
-  // non è più una riga selezionabile (cambio parent, lista mutata, pin rimosso,
-  // sessione sparita) cade sulla prima riga — fallback deterministico, mai una
-  // posizione a caso. Sostituisce il reset-a-0 e il clamp index-based.
-  useEffect(() => {
-    if (rowIndexOf(sessionRows, selSessionId) < 0) {
-      setSelSessionId(firstSelectableId(sessionRows));
-    }
-  }, [sessionRows, selSessionId]);
-
-  // T30: submit dell'input box. Il taskId nasce DOPO create-task (lo assegna la
-  // skill scrivendo tasks.md) → non è noto allo spawn. Il sessionId invece è
-  // pinnato qui: snapshot degli id PRIMA, poi al completamento re-leggo tasks.md
-  // e il diff dà il nuovo id → appendTaskBinding lega la sessione (scoped).
-  function submitCreate() {
-    const text = draft.trim();
-    setMode('normal');
-    setDraft('');
-    if (!text) {
-      setNote('C → create annullato (vuoto)');
-      return;
-    }
-    const sid = randomUUID();
-    const beforeIds = new Set(tasks.map((t) => t.id));
-    setNote(`⏳ creando task… "${cut(text, 40)}" (sid ${sid.slice(0, 8)})`);
-    const child = spawnCreateTask(text, cwd, sid, (ok) => {
-      if (!ok) {
-        setNote(`⚠ create-task fallito (${CLAUDE_CMD} -p)`);
-        return;
-      }
-      let newId: string | undefined;
-      try {
-        newId = loadTasks(tasksPath).find((t) => !beforeIds.has(t.id))?.id;
-      } catch {
-        // tasks.md illeggibile → id non rilevato, sotto
-      }
-      if (newId) {
-        appendTaskBinding(cwd, sid, newId);
-        setNote(`✔ ${newId} creata · sessione scoped (sid ${sid.slice(0, 8)})`);
-      } else {
-        setNote(`✔ task creata (id non rilevato) · sid ${sid.slice(0, 8)}`);
-      }
-    });
-    child.on('error', () => setNote(`⚠ create-task: '${CLAUDE_CMD}' non lanciabile`));
-  }
-
-  // La riga di stato di OGNI spawn di sessione Claude: il comando esatto, come
-  // lo si scriverebbe in bash, invece di una parafrasi.
-  //
-  // Non è un di più sulla nota descrittiva, la sostituisce: task, sessionId,
-  // prompt-kind, modello e nota del titolo sono già tutti argomenti del comando,
-  // quindi elencarli a parole li direbbe una seconda volta in una grafia che non
-  // si può ricopiare in un terminale. Ciò che va perso è il tasto premuto
-  // (`^K`, `⏎`, `f`), che è ciò che l'utente ha appena fatto e non ciò che il
-  // deck ha fatto per lui.
-  //
-  // Il taglio è al MEZZO (`cutMiddle`, non `cut`): in un comando di spawn è la
-  // coda a distinguere un'invocazione dall'altra, e un taglio dalla coda la
-  // butterebbe via per intero. Si taglia QUI, alla composizione, e non al
-  // render: la riga di stato porta anche messaggi normali, dove è la testa a
-  // contare. Ne discende che un resize successivo non ricalcola l'elisione — la
-  // nota è transitoria e `wrap="truncate-end"` resta come rete.
-  function noteCommand(cmd: string) {
-    // 4 = bordo + padding della cornice esterna, 2 = il prompt `$ `. Sbagliare
-    // il budget non produce un errore visibile: la `truncate-end` di Ink taglia
-    // il resto dalla CODA, e il comando esce col mezzo eliso E la fine persa —
-    // cioè con entrambi i pezzi che l'elisione al mezzo voleva salvare.
-    setNote(`$ ${cutMiddle(cmd, Math.max(8, columns - 6))}`);
-  }
-
-  // Le due note di uno spawn, in quest'ordine: il comando di `deck-run` subito,
-  // e appena arriva l'annuncio quello della sessione `claude` che gira DENTRO
-  // la tab — che è ciò che si vuole vedere davvero (`deck-run` è l'involucro,
-  // l'invocazione vera la compone lui).
-  //
-  // La prima non è un ripiego di stile: è l'unica che esiste quando l'annuncio
-  // non arriva (spawn inerte nei test, argomenti rifiutati, `deck-run` morto
-  // prima dell'exec), ed è anche il comando da ripetere a mano per vedere
-  // l'errore. Il salto fra le due dura i millisecondi che `deck-run` impiega a
-  // comporre.
-  const spawnSeq = useRef(0);
-  function noteSpawn(spawned: Spawned) {
-    noteCommand(spawned.cmd);
-    const mine = ++spawnSeq.current;
-    onInTabCommand(spawned.child, (inTab) => {
-      // Due spawn ravvicinati: gli annunci sono asincroni e possono tornare
-      // fuori ordine, e senza guardia il più vecchio scriverebbe sopra il più
-      // recente — la riga di stato mostrerebbe un comando che non è l'ultimo
-      // partito.
-      if (spawnSeq.current === mine) noteCommand(inTab);
-    });
-  }
-
-  // T56 — apre una sessione bound alla task selezionata. Punto UNICO dei quattro
-  // tasti (⏎/^K/^P/^R): fra loro cambia solo il prompt iniziale, tutto il resto
-  // è identico — uuid pinnato, binding scritto PRIMA dello spawn (la sessione
-  // risulta figlia della task appena il JSONL compare), handler d'errore, nota.
-  // Quattro copie sarebbero quattro posti dove dimenticare il `child.on('error')`,
-  // e uno spawn fallito è async: senza handler diventa uncaughtException e
-  // ucciderebbe il deck, che invece deve restare vivo.
-  // La guardia di focus sta qui e non nei chiamanti perché l'oggetto dell'azione
-  // è la task SELEZIONATA: senza il pane task a fuoco non ce n'è una. Per `⏎` il
-  // ramo è irraggiungibile (ci arriva già dentro `focus === 'tasks'`); per i tre
-  // CTRL, che il ramo `key.ctrl` intercetta globalmente, è l'unico posto.
-  // T66 — la guardia, estratta perché ora ha due chiamanti: gli spawn dalla
-  // lista e l'apertura del detail. Le tre uscite sono le stesse (pane sbagliato,
-  // riga meta, task sparita), e duplicarle vorrebbe dire tenerne allineati i
-  // messaggi a mano. `verb` è l'unica cosa che cambia fra i due usi.
-  function selectedTaskOr(keyLabel: string, verb: string): Task | null {
-    if (focus !== 'tasks') {
-      setNote(`${keyLabel} → ${verb}: seleziona una task (← per il pane)`);
-      return null;
-    }
-    // T59 — la guardia è "non è una task", non "è spot": le righe meta sono due
-    // e nessuna delle due ha una task da aprire. Il messaggio dice quale delle
-    // due, perché il motivo è diverso (vista di sola lettura vs sessioni libere).
-    if (isAll || isSpot) {
-      setNote(
-        isAll
-          ? `tutte: vista di sola lettura, nessuna task da ${verb}`
-          : `spot: sessioni libere, nessuna task da ${verb}`,
-      );
-      return null;
-    }
-    return selTask;
-  }
-
-  // Lo spawn vero, su una task GIÀ risolta. Separato dalla guardia perché il
-  // detail passa l'id fotografato all'apertura e non la selezione corrente: la
-  // lista lì sotto non è più a schermo, quindi non è più la fonte dell'oggetto.
-  // T111 — `spawnNote` arriva dal campo sempre attivo del detail ed è vuota per
-  // ogni altro percorso (`^K`/`^P`/`^R` non passano di lì, quindi non hanno da
-  // dove prenderla). Si scrive nel sidecar PRIMA dello spawn, accanto al
-  // binding e per la stessa ragione: la conversazione deve risultare figlia
-  // della task e portare la propria maniglia appena il suo JSONL compare, o per
-  // il tempo di un tick la riga in lista comparirebbe nuda. Due record separati
-  // sullo stesso `sessionId` sono la forma normale di un file append-only
-  // last-wins, non una scrittura da fondere.
-  // T117 — `prompt` è il testo LETTERALE quando lo spawn arriva dal detail, dove
-  // il campo è editabile: quello che l'utente legge è quello che parte. Assente
-  // per gli acceleratori della lista, che non hanno un campo da cui prenderlo e
-  // viaggiano col simbolo.
-  function spawnForTask(
-    id: string,
-    kind: PromptKind,
-    model: ModelKind,
-    spawnNote = '',
-    prompt?: string,
-  ) {
-    const sid = randomUUID();
-    appendTaskBinding(cwd, sid, id);
-    if (spawnNote) appendNote(cwd, sid, spawnNote);
-    const spawned = spawnDeck(id, cwd, sid, kind, model, spawnNote, prompt);
-    spawned.child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
-    // Il modello resta SEMPRE visibile anche quando è il default, perché è un
-    // argomento esplicito del comando (T108): gli acceleratori della lista non
-    // passano dal selettore del detail e usano il default fisso, quindi senza
-    // vederlo l'utente crederebbe di aver ereditato la scelta dell'ultimo
-    // detail aperto.
-    noteSpawn(spawned);
-  }
-
-  function spawnTaskSession(kind: PromptKind, keyLabel: string) {
-    const task = selectedTaskOr(keyLabel, 'spawnare');
-    if (task) spawnForTask(task.id, kind, MODEL_DEFAULT);
-  }
-
-  // T53 — apertura del modale nota sulla conversazione selezionata. Come
-  // `openEdit`, la bozza parte dal valore ATTUALE: annotare una seconda volta è
-  // quasi sempre correggere, e ripartire da vuoto costringerebbe a ridigitare
-  // tutto per cambiare una parola.
-  function openNote() {
-    if (!selSessionId) return;
-    setNoteDraft(sessionNotes.get(selSessionId) ?? '');
-    setNote('');
-    setMode('note');
-  }
-
-  // T53 — ⏎ nel modale nota: scrive il sidecar e ricarica subito, senza
-  // attendere il tick del poll (stesso feedback immediato del pin).
-  //
-  // Il campo VUOTO non è un annullamento: è la CANCELLAZIONE della nota. Sono
-  // due intenzioni diverse e hanno due tasti diversi — `esc` lascia tutto com'è,
-  // `⏎` su campo svuotato toglie la nota. Trattare il vuoto come un no-op (come
-  // fa `submitCreate`, dove però una task senza titolo non esiste) renderebbe
-  // impossibile disannotare una conversazione se non con un editor sul JSONL.
-  function submitNote() {
-    const sid = selSessionId;
-    const text = noteDraft.trim();
-    setMode('normal');
-    setNoteDraft('');
-    if (!sid) return;
-    appendNote(cwd, sid, text);
-    reloadSessions();
-    setNote(
-      text
-        ? `✎ titolo su ${sid.slice(0, 8)}: "${cut(text, 40)}"`
-        : `✎ titolo rimosso da ${sid.slice(0, 8)}`,
-    );
-  }
-
-  // T41 — apertura dell'edit: la bozza parte dai valori ATTUALI della task, non
-  // da default. La priorità arriva dal glifo di tasks.md (già in `selTask`), lo
-  // stato dal suo glifo Prog; il progresso arbitrario dal campo `Progress` del
-  // task file — ma solo se è davvero custom (vedi `initialDetail`).
-  //
-  // Il titolo si semina dalla riga di tasks.md e non dall'H1 del task file per
-  // due ragioni: è la fonte che esiste SEMPRE (un task file può mancare), ed è
-  // il testo che l'utente sta guardando in lista quando preme `E`. Grezzo
-  // (`rawDesc`), non sanificato: rimandare a disco la forma sanificata
-  // riscriverebbe i glifi anche senza toccare il campo.
-  function openEdit() {
-    if (!selTask) return;
-    const prog = progName(selTask.prog) ?? 'todo';
-    setEdit({
-      pri: priName(selTask.pri) ?? 'med',
-      prog,
-      detail: initialDetail(detail?.fields['Progress'] ?? '', prog),
-      title: selTask.rawDesc,
-    });
-    // Si apre sulla riga 0 (priorità), che non è un campo di testo: il caret
-    // prende la sua posizione entrando in una riga di testo con ↑↓.
-    setEditCursor({ row: 0, caret: 0 });
-    setNote('');
-    setMode('edit');
-  }
-
-  // T41 — ⏎ nell'edit: scrive tasks.md + task file, poi committa. Il commit è
-  // immediato e non confermato (scelta esplicita: l'edit è una micro-modifica,
-  // la storia granulare vale più di un batch). Se nessuno dei due lati è stato
-  // scritto non si committa nulla — `paths` vuoto renderebbe `git commit --`
-  // un commit di TUTTO il working tree, che è l'opposto di ciò che vogliamo.
-  function submitEdit() {
-    const task = selTask;
-    const draft = edit;
-    setMode('normal');
-    setEdit(null);
-    if (!task || !draft) return;
-
-    // Il titolo si scrive solo se è CAMBIATO davvero: rimandarlo identico
-    // riscriverebbe comunque la cella (collassando spazi ed escape) e sporcherebbe
-    // il diff di una riga per un edit di sola priorità. Vuoto → scartato: una
-    // task senza descrizione in overview non è più riconoscibile.
-    const title = draft.title.trim();
-    const titleChanged = title.length > 0 && title !== task.rawDesc.trim();
-
-    let res: ReturnType<typeof writeTaskEdit>;
-    try {
-      res = writeTaskEdit({
-        tasksPath,
-        tasksDir,
-        id: task.id,
-        pri: draft.pri,
-        prog: draft.prog,
-        detail: draft.detail,
-        title: titleChanged ? title : undefined,
-      });
-    } catch (e) {
-      setNote(`⚠ ${task.id}: scrittura fallita (${(e as Error).message})`);
-      return;
-    }
-    if (res.paths.length === 0) {
-      setNote(`⚠ ${task.id}: nessun campo aggiornabile (riga o task file assenti)`);
-      return;
-    }
-
-    const summary = `${PRI_GLYPH[draft.pri]} ${PRI_LABEL[draft.pri]} · ${res.progress}${
-      titleChanged ? ` · "${cut(sanitize(title), 32)}"` : ''
-    }`;
-    setNote(`⏳ ${task.id} → ${summary} · commit…`);
-    commitTaskEdit(
-      cwd,
-      res.paths,
-      `chore(${task.id}): pri ${PRI_LABEL[draft.pri]} · stato ${res.progress}${
-        titleChanged ? ' · titolo' : ''
-      }`,
-      (ok, err) => {
-        setNote(ok ? `✔ ${task.id} → ${summary} · committato` : `⚠ ${task.id} salvato, commit fallito: ${err}`);
-      },
-    );
-  }
-
-  // T112 — apertura della conferma di eliminazione. Il tasto è uno e il
-  // bersaglio ha due taglie: la task selezionata, o l'insieme intero della vista
-  // `archiviabili`. A discriminare è `purgeBulk` — la selezione prima della
-  // vista. Il modale nomina comunque il bersaglio (quante e quali) e non
-  // l'azione: è l'unico punto in cui la differenza fra i due gesti è leggibile.
-  //
-  // Il bersaglio del bulk si legge da `paneTasks`, cioè dalla stessa fonte che
-  // disegna le righe e alimenta il contatore in header (D6): mai il `Set` grezzo
-  // di `archivable.ts`, mai un secondo filtro sullo stato. T100 ha fissato che
-  // ciò che si conta e ciò che si mostra siano lo stesso insieme per
-  // costruzione; qui l'invariante si estende a ciò che si pota.
-  function openPurge() {
-    // La guardia di focus sta QUI e non solo dentro `selectedTaskOr`: il ramo
-    // bulk non passa da quella, perché il suo oggetto è la vista e non la
-    // selezione. Senza, `CANC` col focus sulle sessioni potrebbe potare in
-    // blocco senza che nessuna task fosse selezionata.
-    if (focus !== 'tasks') {
-      setNote('CANC → eliminare: seleziona una task (← per il pane)');
-      return;
-    }
-    const bulk = purgeBulk;
-    const ids = bulk ? paneTasks.map((t) => t.id) : [];
-    if (!bulk) {
-      const task = selectedTaskOr('CANC', 'eliminare');
-      if (!task) return;
-      ids.push(task.id);
-    }
-    if (ids.length === 0) {
-      setNote('CANC → nessuna task in vista da eliminare');
-      return;
-    }
-    // Ricalcolo al momento dell'AZIONE, non lettura del campionamento in lista:
-    // una folder sporcata dopo l'ultimo scan si presenterebbe come eliminabile.
-    const { clean, dirty } = splitTargets(purgeTargets(ids, tasksDir, cwd));
-    if (bulk) {
-      // Il gate del plugin esce 2 PRIMA di toccare qualsiasi cosa, quindi una
-      // sola folder sporca annullerebbe il purge di tutte le altre: si scartano
-      // a monte e il modale nomina sia le potate sia le scartate.
-      if (clean.length === 0) {
-        setNote(
-          `CANC → ${dirty.length} task con file non tracciati in folder: eliminale una per una`,
-        );
-        return;
-      }
-      setPurge({
-        ids: clean.map((t) => t.id),
-        skipped: dirty.map((t) => t.id),
-        bulk: true,
-        ignored: null,
-        survivors: 0,
-      });
-    } else {
-      // Singola con superstiti → conferma a TRE uscite (D3): la scelta
-      // keep/purge è rara e distruttiva in modo diverso dal purge normale, e
-      // qui è visibile invece di stare davanti a ogni potatura.
-      const one = clean[0] ?? dirty[0]!;
-      setPurge({
-        ids: [one.id],
-        skipped: [],
-        bulk: false,
-        ignored: one.survivors > 0 ? 'keep' : null,
-        survivors: one.survivors,
-      });
-    }
-    setNote('');
-    setMode('purge');
-  }
-
-  function onPurgeKey(_input: string, key: Key) {
-    if (key.escape) {
-      setMode('normal');
-      setPurge(null);
-      setNote('CANC → eliminazione annullata');
-    } else if (key.return) {
-      submitPurge();
-    } else if ((key.leftArrow || key.rightArrow) && purge?.ignored) {
-      setPurge((p) => (p ? { ...p, ignored: p.ignored === 'keep' ? 'purge' : 'keep' } : p));
-    }
-  }
-
-  // ⏎ nella conferma: ordina la potatura a `loom-works:clean-tasks` e la
-  // osserva. Il deck non rimuove niente da sé — nessun `git rm`, nessuna
-  // riscrittura di tasks.md, nessuna `unlink`: quella sequenza è già
-  // implementata una volta, e averne due significherebbe due rimozioni capaci
-  // di divergere.
-  //
-  // La lista si riallinea al primo tick del poll e il set delle archiviabili
-  // allo scan che `doneSig` fa scattare quando la popolazione Done cambia; la
-  // selezione, keyed su id, cade sulla prima riga della vista (effect di
-  // validità) invece che su una posizione residua.
-  function submitPurge() {
-    const draft = purge;
-    setMode('normal');
-    setPurge(null);
-    if (!draft) return;
-    const sid = randomUUID();
-    setNote(`⏳ eliminando ${draft.ids.length} task… ${idList(draft.ids, 6)}`);
-    const child = spawnCleanTasks(draft.ids, cwd, sid, draft.ignored, (ok, detail) => {
-      // L'esito si misura su `tasks.md`, NON sul solo `is_error`. Misurato: col
-      // gate `--ignored-files` che blocca, la skill spiega il blocco e chiude
-      // comunque `is_error: false` — un successo dichiarato su zero rimozioni.
-      // Il segnale robusto è quali degli ID bersaglio non hanno più una riga:
-      // deterministico, e indipendente da come la skill racconta sé stessa.
-      let survived = draft.ids;
-      try {
-        const now = new Set(loadTasks(tasksPath).map((t) => t.id));
-        survived = draft.ids.filter((id) => now.has(id));
-      } catch {
-        // tasks.md illeggibile → nessuna verifica possibile, e allora si dice
-        // che non è stata fatta invece di dedurre un esito.
-        setNote(`⚠ ${draft.ids.length} task: esito non verificabile (tasks.md illeggibile)`);
-        return;
-      }
-      const removed = draft.ids.length - survived.length;
-      if (removed === draft.ids.length) {
-        // Il push non c'è, per scelta della skill: finché nessuno pusha, un
-        // altro worktree continua a vedere le task potate in tasks.md. Non
-        // dirlo lascerebbe leggere l'assenza di push come «fatto».
-        setNote(`✔ ${removed} task eliminate · commit locali, nessun push`);
-      } else {
-        // Il gate `--ignored-files` (exit 2) può scattare lo stesso: la
-        // dirtiness è un dato campionato e una folder può sporcarsi fra il
-        // ricalcolo e l'apply. Il testo del result event è l'unica cosa che dice
-        // PERCHÉ, quindi entra nella riga invece di un ⚠ muto.
-        setNote(
-          `⚠ ${removed}/${draft.ids.length} eliminate · restano ${idList(survived, 4)} · ${cut(
-            detail || (ok ? '' : `${CLAUDE_CMD} -p`),
-            56,
-          )}`,
-        );
-      }
-    });
-    child?.on('error', () => setNote(`⚠ clean-tasks: '${CLAUDE_CMD}' non lanciabile`));
-  }
-
-  // Chiusura di un modale di vista: `restore` rimette la fotografia scattata
-  // all'apertura (esc = annulla), altrimenti tiene ciò che si è composto (⏎).
-  function closeViewModal(restore: boolean) {
-    if (restore && viewBackup) setView(viewBackup);
-    setViewBackup(null);
-    setMode('normal');
-  }
-
-  // Sposta la selezione di `delta` righe nella VISTA (0 = tutte, 1 = spot,
-  // 2..N+1 = task visibili) e la riconverte subito in sentinella o id: l'indice
-  // non sopravvive a un cambio di filtro, l'id sì.
-  function moveTaskSel(delta: number) {
-    selectTaskRow(Math.max(0, Math.min(paneTasks.length + META_ROWS - 1, selIndex + delta)));
-  }
-
-  /** Selezione per INDICE nella vista, riconvertita subito in sentinella o id.
-   *  T21 — la chiama anche il click su una riga del pane task. */
-  function selectTaskRow(index: number) {
-    if (index === ROW_ALL) setSel(ALL);
-    else if (index === ROW_SPOT) setSel(SPOT);
-    else setSel(paneTasks[index - META_ROWS]?.id ?? SPOT);
-  }
-
-  // T100 — `tab` naviga il catalogo viste del pane in focus. Il reset della
-  // selezione è la regola letterale «prima riga in alto», senza eccezioni: sul
-  // pane task è `ROW_ALL` (D2 preflight — le righe meta non si saltano, e il
-  // parent delle sessioni che torna a `tutte` è un effetto accettato); sul pane
-  // sessioni basta invalidare l'id, e l'effect di validità atterra sulla prima
-  // riga selezionabile della vista nuova.
-  function cycleView(delta: number) {
-    if (focus === 'tasks') selectTaskView(cycleTaskView(taskViewId, delta));
-    else selectSessionView(cycleSessionView(sessionViewId, delta));
-  }
-
-  // T21 — per VISTA e non per passo: il click sull'header nomina una voce, e
-  // `tab` la raggiunge ciclando. Sulla vista già attiva non si fa niente — un
-  // click che azzerasse la selezione alla riga in alto sarebbe un effetto che
-  // la tastiera non ha mai avuto, perché `tab` non può restare ferma.
-  function selectTaskView(next: TaskViewId) {
-    if (next === taskViewId) return;
-    setTaskViewId(next);
-    setSel(ALL);
-    setNote(`vista task: ${taskView(next).label(taskCounts)}`);
-  }
-
-  function selectSessionView(next: SessionViewId) {
-    if (next === sessionViewId) return;
-    setSessionViewId(next);
-    setSelSessionId(null);
-    setNote(`vista sessioni: ${sessionView(next).label(sessionCounts, parentLabel)}`);
-  }
-
-  // T49 — resume di una conversazione in una nuova tab. Unico punto: lo chiamano
-  // il `⏎` della lista sessioni e quello sulla riga-sessione della ricerca, che
-  // devono restare la stessa azione.
-  function resumeSession(sessionId: string) {
-    const bound = bindings.get(sessionId) ?? null;
-    const spawned = spawnDeckResume(bound, cwd, sessionId, sessionNotes.get(sessionId));
-    spawned.child.on('error', () => setNote(`⚠ resume fallito (${DECK_RUN})`));
-    noteSpawn(spawned);
-  }
-
-  // T57 — ⏎ nel modale: riscrive il binding nel sidecar e ricarica subito.
-  //
-  // Il binding retroattivo governa il FUTURO della conversazione, non il suo
-  // passato: il titolo della tab è stato deciso allo spawn da `claude --name` e
-  // vive nel transcript, la `LOOM_TASK` di un processo già partito non si
-  // reinietta. Cambia cosa fa il prossimo `⏎ resume`, che rilegge il binding dal
-  // sidecar. La nota lo dice: senza, la promessa implicita è «ho spostato la
-  // conversazione» e il titolo che non cambia sembra un bug.
-  //
-  // Dove atterra la selezione (D6): il pane task non si muove, quindi la
-  // sessione appena assegnata esce dal gruppo contestuale → si scende alla riga
-  // SUCCESSIVA, catturata PRIMA della riscrittura (dopo, la riga non c'è più).
-  // Due eccezioni in cui invece resta dov'è, perché non sparisce affatto: una
-  // pinnata (esente dal contesto) e un'assegnazione al parent già selezionato.
   const assign = useAssignOverlay({
-    viewTasks,
+    viewTasks: model.viewTasks,
     rows,
     hasNote: Boolean(note),
     setMode,
     setNote,
-    onSubmit: (sid, target) => {
-      const stays = pinned.has(sid) || target === selectedTaskId;
-      const next = stays ? sid : neighborId(sessionRows, sid);
-      appendTaskBinding(cwd, sid, target ?? '');
-      reloadSessions();
-      setSelSessionId(next);
-      setNote(
-        target
-          ? `A ${sid.slice(0, 8)} → ${target} · vale dal prossimo ⏎ resume (titolo tab invariato)`
-          : `A ${sid.slice(0, 8)} → spot · binding rimosso`,
-      );
-    },
+    onSubmit: actions.assignSession,
   });
 
   const sheet = useSheetOverlay({
@@ -991,18 +63,17 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     columns,
     setMode,
     setNote,
-    onAction: (id, kind, model, spawnNote, prompt) =>
-      spawnForTask(id, kind, model, spawnNote, prompt),
+    onAction: actions.spawnForTask,
   });
 
   const search = useSearchOverlay({
-    sessions,
+    sessions: model.sessions,
     rows,
     columns,
     hasNote: Boolean(note),
     setMode,
     setNote,
-    onResume: (row) => resumeSession(row.session.sessionId),
+    onResume: (row) => actions.resumeSession(row.session.sessionId),
   });
 
   // T121 — il project status. Non è solo un overlay come i tre sopra: il suo
@@ -1013,852 +84,40 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // registrato.
   const status = useProjectStatus({
     cwd,
-    name: projectCore ?? projectName,
+    name: model.projectCore ?? model.projectName,
     rows,
     columns,
     setMode,
     setNote,
   });
 
-  function onCreateKey(input: string, key: Key) {
-    if (key.escape) {
-      setMode('normal');
-      setDraft('');
-      setNote('C → create annullato');
-    } else if (key.return) {
-      submitCreate();
-    } else if (key.backspace || key.delete) {
-      setDraft((d) => d.slice(0, -1));
-    } else if (input && !key.ctrl && !key.meta) {
-      setDraft((d) => d + input);
-    }
-  }
-
-  function onNoteKey(input: string, key: Key) {
-    if (key.escape) {
-      setMode('normal');
-      setNoteDraft('');
-      setNote('N → titolo annullato');
-    } else if (key.return) {
-      submitNote();
-    } else if (key.ctrl && input === 'u') {
-      // Svuota il campo in un colpo. NON è una scorciatoia di comodo: il
-      // backspace tenuto premuto cancella UN carattere per CHUNK letto da
-      // stdin, non per pressione (`useInput` consegna il chunk, e per una
-      // raffica di DEL Ink alza `key.backspace` una volta sola) — misurato,
-      // 30 pressioni → 2 caratteri. Siccome «campo vuoto» qui è l'unico modo
-      // di CANCELLARE una nota, dipendere dal backspace renderebbe
-      // l'operazione praticamente non eseguibile. `^U` è il kill-line delle
-      // shell, quindi il gesto è già nelle dita di chi usa un terminale.
-      setNoteDraft('');
-    } else if (key.backspace || key.delete) {
-      setNoteDraft((d) => d.slice(0, -1));
-    } else if (input && !key.ctrl && !key.meta) {
-      // Sanificazione dei byte di controllo, come `typeIntoField` della
-      // ricerca: `useInput` consegna il CHUNK letto da stdin, quindi un
-      // incollaggio porta dentro newline e control char. Invisibili a schermo
-      // ma contati da Ink nella larghezza della riga — e qui finirebbero
-      // scritti su disco, dove resterebbero a sporcare la riga per sempre.
-      // Le newline diventano spazio: incollare due righe deve separare le
-      // parole, non fonderle.
-      setNoteDraft((d) => d + sanitizeTyped(input));
-    }
-  }
-
-  function onSortKey(input: string, key: Key) {
-    if (key.escape) {
-      closeViewModal(true);
-      setNote('S → sort annullato');
-    } else if (key.return) {
-      closeViewModal(false);
-      setNote(`S → sort: ${describeSort(view.sort)}`);
-    } else if (input) {
-      // useInput consegna il CHUNK letto da stdin, non un tasto: digitando
-      // veloce (o incollando) `ppi` arriva come stringa unica. Si cicla su
-      // ogni carattere, così la chain esce identica a battitura lenta.
-      const keys = [...input].map((ch) => SORT_TASTI[ch]).filter(Boolean);
-      if (keys.length > 0) {
-        setView((v) => ({ ...v, sort: keys.reduce(cycleSort, v.sort) }));
-      }
-    }
-  }
-
-  function onFilterKey(input: string, key: Key) {
-    const rowLen = (r: 0 | 1) => (r === 0 ? PRI_ENTRIES.length : PROG_ENTRIES.length);
-    if (key.escape) {
-      closeViewModal(true);
-      setNote('F → filtri annullati');
-    } else if (key.return) {
-      closeViewModal(false);
-      setNote(hiddenTasks > 0 ? `F → ${hiddenTasks} task nascoste` : 'F → nessun filtro attivo');
-    } else if (key.upArrow || key.downArrow) {
-      setFilterCursor((c) => {
-        const row: 0 | 1 = c.row === 0 ? 1 : 0;
-        return { row, col: Math.min(c.col, rowLen(row) - 1) };
-      });
-    } else if (key.leftArrow) {
-      setFilterCursor((c) => ({ ...c, col: Math.max(0, c.col - 1) }));
-    } else if (key.rightArrow) {
-      setFilterCursor((c) => ({ ...c, col: Math.min(rowLen(c.row) - 1, c.col + 1) }));
-    } else if (input === ' ') {
-      const { row, col } = filterCursor;
-      setView((v) =>
-        row === 0
-          ? { ...v, hiddenPri: toggleHidden<PriName>(v.hiddenPri, PRI_ENTRIES[col].name) }
-          : { ...v, hiddenProg: toggleHidden<ProgName>(v.hiddenProg, PROG_ENTRIES[col].name) },
-      );
-    }
-  }
-
-  // Il ponte fra le quattro righe del modale e la bozza. I valori restano
-  // tipizzati (`PriName`, `ProgName`) invece di finire in un record generico:
-  // `fields.ts` governa la grammatica dei tasti, non il modello dati.
-  const editIO: FieldsIO = {
-    text: (row) => edit?.[editTextField(row)] ?? '',
-    setText: (row, next) => setEdit((e) => (e ? { ...e, [editTextField(row)]: next } : e)),
-    choice: (row) =>
-      row === 0
-        ? Math.max(0, EDIT_PRI.indexOf(edit?.pri ?? 'med'))
-        : Math.max(0, EDIT_PROG.indexOf(edit?.prog ?? 'todo')),
-    setChoice: (row, index) =>
-      setEdit((e) =>
-        e ? (row === 0 ? { ...e, pri: EDIT_PRI[index]! } : { ...e, prog: EDIT_PROG[index]! }) : e,
-      ),
-  };
-
-  function onEditKey(input: string, key: Key) {
-    if (key.escape) {
-      setMode('normal');
-      setEdit(null);
-      setNote('E → edit annullato');
-      return;
-    }
-    if (key.return) {
-      submitEdit();
-      return;
-    }
-    // Tutto il resto è dell'area di compilazione, che è la STESSA del detail
-    // (T117): una grammatica sola, non due copie da tenere allineate a mano.
-    fieldsKey(input, key, EDIT_FIELDS, editCursor, setEditCursor, editIO);
-  }
-
-  /**
-   * T116 — `^C`: la prima pressione ARMA, la seconda entro la finestra chiude.
-   *
-   * Prima di questa task `^C` usciva subito, e a chiuderlo era Ink stesso
-   * (`exitOnCtrlC`, di default vero) PRIMA che il tasto raggiungesse
-   * `useInput`. Spegnere quell'opzione è la condizione perché il ramo esista —
-   * ma spegnerla e basta lascerebbe il deck senza NESSUNA uscita da tastiera:
-   * il ramo qui sotto è ciò che restituisce quella via, e i due cambi non si
-   * possono separare.
-   *
-   * La prima pressione RIPORTA IN `normal` quando si è dentro un modo
-   * capturing. L'avviso vive nella riga di stato, e le tre schermate
-   * sostitutive (detail, ricerca, reader) prendono l'intero frame senza
-   * renderizzarla: armare restando lì dentro darebbe un deck che sembra
-   * ignorare il tasto e che alla pressione successiva sparisce senza aver mai
-   * avvertito. Chiudere lo strato è anche coerente con `esc` — `^C` dice
-   * «voglio uscire», e il primo passo fuori è la lista.
-   */
-  function onQuitKey() {
-    if (quitTimer.current) {
-      clearTimeout(quitTimer.current);
-      quitTimer.current = null;
-      exit();
-      return;
-    }
-    if (captures(mode)) setMode('normal');
-    setNote(QUIT_NOTE);
-    quitTimer.current = setTimeout(() => {
-      quitTimer.current = null;
-      // Solo se l'avviso è ANCORA il proprio: nei 5 secondi una qualunque altra
-      // azione può aver scritto in riga di stato, e cancellare quella nota
-      // significherebbe far sparire il feedback di un'azione che non c'entra.
-      setNote((n) => (n === QUIT_NOTE ? '' : n));
-    }, QUIT_WINDOW_MS);
-  }
-
-  // Il timer pendente è un handle vivo del loop di Node: lasciarlo appeso allo
-  // smontaggio terrebbe il processo in piedi fino allo scadere della finestra,
-  // con lo schermo già restituito al terminale.
-  useEffect(() => () => {
-    if (quitTimer.current) clearTimeout(quitTimer.current);
-  }, []);
-
-  // Il dispatch consulta il CATALOGO (`input-modes.ts`), non l'ordine di una
-  // catena di `if`. `MODE_KEYS` è il custode: essendo un `Record` su
-  // `CapturingMode`, un modo nuovo senza handler non compila.
-  const MODE_KEYS: Record<CapturingMode, (input: string, key: Key) => void> = {
-    detail: sheet.onKey,
-    status: status.onKey,
-    reader: search.onReaderKey,
-    search: search.onSearchKey,
-    assign: assign.onKey,
-    create: onCreateKey,
-    note: onNoteKey,
-    sort: onSortKey,
-    filter: onFilterKey,
-    edit: onEditKey,
-    purge: onPurgeKey,
-  };
-
-  // T21 (mandata 2) — la ROTELLA, per i soli modi che scorrono un contenuto
-  // lungo (`SCROLLING_MODES`). Stessa forma di `MODE_KEYS`: un `Record` sul
-  // catalogo, quindi un modo dichiarato scorrevole senza uno scroll da chiamare
-  // non compila. Il delta è in righe, col segno del verso.
-  const MODE_WHEEL: Record<ScrollingMode, (delta: number) => void> = {
-    detail: sheet.scroll,
-    status: status.scroll,
-    reader: search.scrollReader,
-  };
-
-  /**
-   * T21 — il MOUSE precede tutto, in ogni modo del deck.
-   *
-   * Il filtro è incondizionato — anche dentro un campo di testo, anche in un
-   * modo che non ha nessuna superficie cliccabile — e non è una precauzione:
-   * `useInput` riceve le sequenze SGR come testo (`mouse.ts`, fatto ①), quindi
-   * senza filtro un click battuto mentre è aperto il campo del titolo ci
-   * scriverebbe dentro `[<0;5;3M`. Un listener raw su stdin non risolverebbe:
-   * riceve gli stessi chunk in broadcast e non li sottrae a `useInput`.
-   *
-   * Il chunk MISTO — un tasto e un click nella stessa scrittura, che arriva
-   * come una sola chiamata — si separa a mano: gli eventi vanno al mouse, il
-   * testo residuo prosegue verso la tastiera. Solo un chunk di solo mouse
-   * chiude qui.
-   */
-  useInput((raw, key) => {
-    const { text, events } = takeMouse(raw);
-    for (const ev of events) onMouse(ev);
-    if (events.length > 0 && !text) return;
-    onKey(text, key);
+  const purge = usePurgeOverlay({
+    setMode,
+    setNote,
+    draftFor: actions.purgeDraftFor,
+    onSubmit: actions.purgeTasks,
   });
 
-  function onMouse(ev: MouseEvent) {
-    // Un click produce due eventi (pressione e rilascio): agire su entrambi
-    // spawnerebbe due volte. La rotella arriva come sola pressione, quindi il
-    // filtro su `press` la lascia passare e non la dedoppia.
-    if (!ev.press) return;
-    if (isWheel(ev.button)) {
-      // La rotella NON rientra dalla porta della tastiera come il click: nel
-      // detail `↑↓` muovono il fuoco fra i campi (T117), non il testo, e il
-      // tasto che scorre — `PgUp`/`PgDn` — ha la granularità sbagliata per una
-      // tacca. Va quindi allo scroll del modo, in righe. Fuori dai modi
-      // scorrevoli è inerte: nelle liste la rotella non muove mai la
-      // selezione (D5), e una tacca mentre il deck è sulla lista non deve
-      // fare niente.
-      if (scrolls(mode)) MODE_WHEEL[mode](wheelDir(ev.button) * WHEEL_LINES);
-      return;
-    }
-    // Il bottone si legge sui due bit bassi, perché gli alti portano i
-    // modificatori (shift/meta/ctrl).
-    if ((ev.button & 3) !== 0) return;
-    // Le superfici esistono solo nella lista: un modo capturing prende il
-    // frame intero e a quella riga c'è dell'altro.
-    if (mode !== 'normal') return;
-    if (ev.row === LAUNCH_ROW) {
-      const hit = hitRegion(launchRegions, ev.col);
-      // Il click NON chiama l'azione: rientra dalla porta della tastiera col
-      // tasto che la superficie annuncia. Un ramo nuovo su `t`/`c`/cifre nasce
-      // così già cliccabile, e non esiste un secondo posto in cui il click possa
-      // dire una cosa diversa dal tasto che gli sta scritto sopra.
-      if (hit) onKey(hit, NO_MODIFIERS);
-      return;
-    }
-    onListClick(ev);
-  }
+  const viewModals = useViewModals({
+    view: model.view,
+    setView: model.setView,
+    hiddenTasks: model.hiddenTasks,
+    setMode,
+    setNote,
+  });
 
-  /**
-   * T21 (mandata 3) — click su un elemento di lista = SOLO FUOCO (D2): il pane
-   * prende il focus e la selezione va sull'elemento, nessuna azione parte. Qui
-   * il click non sintetizza un tasto, perché nessun tasto nomina una riga o una
-   * vista — `↑↓` e `tab` sono relativi — e chiama i setter che la tastiera
-   * usa a sua volta. Un click sulla vista già attiva si limita al focus.
-   *
-   * ECCEZIONE: la riga già selezionata col pane già a fuoco. Lì un tasto che
-   * la nomina ESISTE — `⏎`, che agisce proprio su «la riga selezionata» — e il
-   * click lo sintetizza, come le superfici della riga launch: due click sulla
-   * stessa riga aprono il detail della task o fanno il resume della
-   * conversazione, e ogni caso limite (pin stale, nessuna sessione) resta per
-   * costruzione quello del tasto. Le righe meta ne sono fuori: `⏎` su di loro
-   * non fa nulla, e un click che lo sintetizzasse produrrebbe solo la nota di
-   * scarto di `selectedTaskOr`.
-   */
-  function onListClick(ev: MouseEvent) {
-    if (!listGeometry) return;
-    const hit = listHit(ev, listGeometry);
-    if (!hit) return;
-    if (hit.target === 'view') {
-      setFocus(hit.pane);
-      if (hit.pane === 'tasks') selectTaskView(hit.key as TaskViewId);
-      else selectSessionView(hit.key as SessionViewId);
-      return;
-    }
-    if (hit.pane === 'tasks') {
-      // Le due righe meta hanno indice fisso; le task riportano l'indice di
-      // finestra a quello della lista completa, su cui è keyata la selezione.
-      const index = hit.index < META_ROWS ? hit.index : taskWin.start + hit.index;
-      if (focus === 'tasks' && index === selIndex && index >= META_ROWS) {
-        onKey('', { ...NO_MODIFIERS, return: true });
-        return;
-      }
-      setFocus('tasks');
-      selectTaskRow(index);
-    } else {
-      const row = windowRows[hit.index];
-      if (!row) return;
-      if (focus === 'sessions' && row.sessionId === selSessionId) {
-        onKey('', { ...NO_MODIFIERS, return: true });
-        return;
-      }
-      setFocus('sessions');
-      setSelSessionId(row.sessionId);
-    }
-  }
+  const textModals = useTextModals({
+    setMode,
+    setNote,
+    onCreate: actions.createTask,
+    onNote: actions.writeNote,
+    onEdit: actions.writeEdit,
+    editDraftFor: actions.editDraftFor,
+    currentNote: (sid) => model.sessionNotes.get(sid) ?? '',
+  });
 
-  function onKey(input: string, key: Key) {
-    // T116 — `^C` sta SOPRA il dispatch dei modi, unico tasto a scavalcarlo.
-    // Ogni altra combo `ctrl` è un acceleratore, e un acceleratore dentro un
-    // modo capturing dev'essere inerte (`input-modes.ts`); questo non è un
-    // acceleratore ma la via d'uscita dal processo, e una via d'uscita che
-    // funziona solo in una schermata su undici non è una via d'uscita. Non è
-    // quindi una deroga di `CTRL_DEROGATIONS` — quelle vivono DENTRO un modo e
-    // le gestisce il modo, questa li precede tutti.
-    if (key.ctrl && input === 'c') {
-      onQuitKey();
-      return;
-    }
+  const overlays = { assign, sheet, search, status, purge, view: viewModals, text: textModals };
 
-    // Un modo capturing consuma TUTTO — acceleratori globali compresi — e le
-    // deroghe se le gestisce da sé (`CTRL_DEROGATIONS`). Da qui in giù si è
-    // quindi in `normal`, l'unico modo che cede ai `key.ctrl`.
-    if (captures(mode)) {
-      MODE_KEYS[mode](input, key);
-      return;
-    }
-
-    // T52/D1 — il ramo CTRL sta PRIMA di quelli su lettera nuda e li chiude
-    // tutti. `CTRL+F` e `f` nudo arrivano con lo STESSO `input` ('f'),
-    // distinguibili solo da `key.ctrl`: senza questa precedenza `CTRL+F`
-    // cadrebbe nel ramo fork e spawnerebbe una sessione invece di aprire la
-    // ricerca. Non è un caso isolato della `f` — `^Q` finirebbe nel quit, `^T`
-    // aprirebbe un terminale, `^C` … ogni lettera legata a un'azione ha la sua
-    // combo omonima. Chiudere qui l'intera classe è più solido che ricordarsi
-    // un `!key.ctrl` su ognuno dei rami, oggi e a ogni tasto aggiunto domani.
-    if (key.ctrl) {
-      if (input === 'f') {
-        setNote('');
-        setMode('search');
-      } else if (input === 'k') {
-        spawnTaskSession('recap', '^K');
-      } else if (input === 'p') {
-        spawnTaskSession('preflight', '^P');
-      } else if (input === 'r') {
-        spawnTaskSession('run', '^R');
-      } else if (input === 'g') {
-        // T121 — GENERA e APRI su due tasti distinti (D2): aprire un recap
-        // vecchio deve costare zero, e generare non deve essere un effetto
-        // collaterale del guardare. Nessuno dei due è preso né bruciato da Ink,
-        // e `^S`/`^Q` sono evitati perché il terminale li intercetta come flow
-        // control.
-        status.generate();
-      } else if (input === 'o') {
-        status.open();
-      }
-      return;
-    }
-
-    if (key.tab) {
-      // `tab` cicla la VISTA del pane a fuoco, `←→` spostano il focus fra i due
-      // pane: il criterio dell'assegnazione è spaziale. Una freccia orizzontale
-      // porta con sé una direzione e i pane sono affiancati (task a sinistra,
-      // sessioni a destra), quindi il tasto NOMINA il pane invece di limitarsi
-      // a scambiarlo; un catalogo ciclico non ha un verso da rispettare, e un
-      // tasto solo gli basta. `shift+tab` (backtab, `[Z`) scorre a rovescio — il
-      // verso che un tasto singolo non esprime sta nel modificatore, e su cinque
-      // voci risparmia quattro pressioni.
-      cycleView(key.shift ? -1 : 1);
-    } else if (key.leftArrow || key.rightArrow) {
-      // Binding ASSOLUTO, non toggle: `←` porta sempre sui task e `→` sempre
-      // sulle sessioni, quindi ripremere lo stesso tasto non riporta indietro.
-      // È ciò che lo rende spaziale — la direzione indica una destinazione, e
-      // con due soli pane un toggle sarebbe indistinguibile solo per caso.
-      setFocus(key.leftArrow ? 'tasks' : 'sessions');
-    } else if (key.upArrow) {
-      if (focus === 'tasks') moveTaskSel(-1);
-      else setSelSessionId((id) => moveSelection(sessionRows, id, -1));
-    } else if (key.downArrow) {
-      if (focus === 'tasks') moveTaskSel(1);
-      else setSelSessionId((id) => moveSelection(sessionRows, id, 1));
-    } else if (key.return) {
-      if (focus === 'tasks') {
-        // T66 — ⏎ apre il DETAIL, non più una sessione. Secondo rimappaggio in
-        // due task (T56 lo spostò da recap a sessione a mani nude), e la
-        // direzione è una sola: da azione singola a punto d'ingresso. Il tasto
-        // più battuto non è il posto dove inchiodare una scelta di prompt — le
-        // shortcut CTRL restano per chi sa già cosa vuole, `⏎` apre il ventaglio.
-        // Lo spawn a mani nude di prima è `open`, cioè `⏎ ⏎` (è il focus iniziale).
-        {
-          const task = selectedTaskOr('⏎', 'aprire');
-          if (task) {
-            sheet.open({
-              id: task.id,
-              // Il titolo del task file quando c'è (è l'H1, cioè la forma
-              // lunga), la riga di tasks.md altrimenti: il detail non deve
-              // restare senza intestazione solo perché il file manca.
-              title: detail?.title || task.desc,
-              text: loadTaskFileText(tasksDir, task.id),
-            });
-          }
-        }
-      } else {
-        // T49 — ⏎ su una sessione = resume in nuova tab. Il binding si rilegge
-        // dal sidecar (non dal padre selezionato): vale anche per le spot.
-        const s = selSessionObj;
-        if (!s) {
-          setNote(selSessionId ? 'pin stale: transcript non più presente' : 'nessuna sessione da riprendere');
-        } else {
-          resumeSession(s.sessionId);
-        }
-      }
-    } else if (key.delete) {
-      // T112/D1 — `CANC` non esiste come tasto distinto in Ink: `\x7f`
-      // (Backspace) e `\x1b[3~` (Canc) collassano entrambi su `key.delete` con
-      // `input` azzerato, quindi a valle non resta niente da cui distinguerli.
-      // Il binding vale per entrambi e si accetta come tale: in `normal` non
-      // c'è nessun campo di testo da cui Backspace possa rubare un significato,
-      // e ogni modo che ne ha uno è capturing e non vede questo ramo. Il modale
-      // di conferma è la rete contro chi usa Backspace come «indietro».
-      openPurge();
-    } else if (input === 'C') {
-      setNote('');
-      setMode('create');
-    } else if (input === 'E') {
-      // L'edit ha senso solo su una task reale: le righe meta non ne sono.
-      if (!selTask) setNote('E → nessuna task selezionata');
-      else openEdit();
-    } else if (input === 'S') {
-      setViewBackup(view);
-      setNote('');
-      setMode('sort');
-    } else if (input === 'F') {
-      // T100/D3 — i filtri valgono SOLO sulla vista principale: su `nascoste`
-      // riapplicarli non ha senso (quella vista È il loro complemento), su
-      // `archiviabili` non li si vuole (è cieca ai filtri per decisione). Stessa
-      // forma dell'inerzia di ^K/^P/^R dentro il detail, ma keyed sulla vista
-      // invece che sul modo — e come là, l'inerzia lo DICE invece di non fare
-      // niente in silenzio.
-      if (taskViewId !== 'tasks') {
-        setNote(
-          `F → filtri: solo sulla vista ${TASK_VIEWS[0]!.label(taskCounts)} (ora: ${taskView(taskViewId).label(taskCounts)})`,
-        );
-      } else {
-        setViewBackup(view);
-        setNote('');
-        setMode('filter');
-      }
-    } else if (input === 'f') {
-      // T28 — fork della sessione selezionata. Minuscola come `t`/`c` (T39):
-      // azione immediata, nessun modale — la `F` maiuscola resta ai filtri.
-      // Vive solo sul pane sessioni: il fork ha per oggetto una conversazione,
-      // e senza focus lì non ce n'è una selezionata su cui agire.
-      if (focus !== 'sessions') {
-        setNote('f → fork: seleziona una sessione (→ per il pane)');
-      } else {
-        const s = selSessionObj;
-        if (!s) {
-          setNote(selSessionId ? 'f → pin stale: niente da forkare' : 'f → nessuna sessione da forkare');
-        } else {
-          // L'id del ramo nasce qui, prima dello spawn: pinnandolo posso
-          // scrivere subito binding e lineage. Il binding task si eredita
-          // dall'origine (un ramo appartiene alla stessa task), il lineage
-          // registra la provenienza che il transcript non porta.
-          const newId = randomUUID();
-          const bound = bindings.get(s.sessionId) ?? null;
-          appendSessionRecord(cwd, {
-            sessionId: newId,
-            ...(bound ? { taskId: bound } : {}),
-            forkOf: s.sessionId,
-          });
-          const spawned = spawnDeckFork(bound, cwd, s.sessionId, newId);
-          spawned.child.on('error', () => setNote(`⚠ fork fallito (${DECK_RUN})`));
-          noteSpawn(spawned);
-        }
-      }
-    } else if (input === 'p') {
-      // T50 — pin/unpin della conversazione selezionata. Minuscola = azione
-      // immediata (convenzione T39), gemella di `f`: opera sulla riga
-      // selezionata del pane sessioni, quindi vive solo lì. Vale anche su una
-      // pinnata STALE (l'unico modo di spinnarla). Scrive il sidecar e ricarica
-      // subito, senza attendere il tick del poll.
-      if (focus !== 'sessions') {
-        setNote('p → pin: seleziona una sessione (→ per il pane)');
-      } else if (!selSessionId) {
-        setNote('p → nessuna sessione da pinnare');
-      } else {
-        const isPinned = pinned.has(selSessionId);
-        // T133 D12 — il caret si sposta solo quando la riga ESCE dalla lista, e
-        // succede nella sola vista `📌` (spinnare toglie la riga dall'insieme che
-        // la vista mostra). Altrove pin e unpin non riordinano niente: la riga è
-        // in lista perché è figlia del parent, e ci resta al suo posto. Il vicino
-        // va calcolato PRIMA di riscrivere il sidecar, quando la riga c'è ancora.
-        const landing =
-          isPinned && sessionViewId === 'pinned' ? neighborId(sessionRows, selSessionId) : null;
-        appendPin(cwd, selSessionId, !isPinned);
-        reloadSessions();
-        if (landing) setSelSessionId(landing);
-        setNote(`${isPinned ? 'unpin' : '📌 pin'} ${selSessionId.slice(0, 8)}`);
-      }
-    } else if (input === 'N') {
-      // T53 — nota sulla conversazione selezionata. MAIUSCOLA perché apre un
-      // modale: nel deck le minuscole sono azioni immediate (`f` fork, `p` pin,
-      // `t` term, `c` claude) e le maiuscole aprono un box (`C` create, `E`
-      // edit, `S` sort, `F` filtri). Vincolo di focus identico a `p`: vale anche
-      // su una pinnata STALE, perché annotare «questa non c'è più, era X» è
-      // proprio il caso in cui una nota serve.
-      if (focus !== 'sessions') {
-        setNote('N → titolo: seleziona una sessione (→ per il pane)');
-      } else if (!selSessionId) {
-        setNote('N → nessuna sessione da annotare');
-      } else {
-        openNote();
-      }
-    } else if (input === 'A') {
-      // T57 — assegna la conversazione selezionata a una task. MAIUSCOLA perché
-      // apre un modale (convenzione T39), e il modale è obbligatorio: il pane
-      // task non può fare da picker, perché spostare la selezione lì cambia il
-      // parent e la sessione da assegnare sparisce dalla lista sotto le mani.
-      // Vincolo di focus identico a `p`/`N`, e vale anche su una pinnata STALE:
-      // il binding è nostro, il transcript è di CC — riassegnare una
-      // conversazione il cui transcript non c'è più resta legittimo.
-      if (focus !== 'sessions') {
-        setNote('A → assegna: seleziona una sessione (→ per il pane)');
-      } else if (!selSessionId) {
-        setNote('A → nessuna sessione da assegnare');
-      } else {
-        if (selSessionId) assign.open(selSessionId, bindings.get(selSessionId));
-      }
-    } else if (input === 't') {
-      const title = identity ? `🖥️ ${identity.name} [term]` : null;
-      const child = spawnTerminal(cwd, title);
-      child.on('error', () => setNote('⚠ t → ptyxis non lanciabile'));
-      setNote(`t → terminale su ${projectName}`);
-    } else if (input === 'c') {
-      // Minuscola = azione immediata (convenzione T39), gemella di `t`: entrambe
-      // aprono una surface del cappello senza passare da un modale. `C` (create
-      // task) resta distinta — stessa lettera, ma la maiuscola è per i modali.
-      const spawned = spawnClaudeEmpty(cwd);
-      spawned.child.on('error', () => setNote(`⚠ c → spawn claude fallito (${DECK_RUN})`));
-      noteSpawn(spawned);
-    } else if (input === 'w') {
-      // Salvataggio ESPLICITO: comporre una vista non tocca il disco, così
-      // sperimentare non sporca lo stato persistito.
-      try {
-        saveView(cwd, view);
-        setNote(`w → vista salvata (${viewFilePath(cwd)})`);
-      } catch {
-        setNote('⚠ salvataggio vista fallito');
-      }
-    } else if (input && /^[1-9]$/.test(input)) {
-      const entry = launch[Number(input) - 1];
-      if (!entry) {
-        setNote(`${input} → nessuna voce launch (${launch.length} configurate)`);
-      } else {
-        const child = runLaunch(entry, cwd);
-        child.on('error', () => setNote(`⚠ ${entry.label}: '${entry.command}' non lanciabile`));
-        setNote(`${input} → ${entry.label} su ${projectName}`);
-      }
-    }
-    // Nessun tasto NUDO di uscita: `q` resta libera per un binding futuro, e
-    // `esc` in modalità normale è inerte — dentro un overlay continua a
-    // chiuderlo, perché quel ramo esce prima di qui. L'unica uscita da tastiera
-    // è `^C` battuto due volte (T116, in testa a questo handler); resta poi la
-    // chiusura della tab Ptyxis che ospita il processo.
-  }
-
-  const canSpawn = focus === 'tasks' && selTask !== null;
-  const canResume = focus === 'sessions' && selSessionObj !== null;
-  // T50 — il pin agisce su qualunque riga selezionata (anche stale, per
-  // spinnarla); basta il focus sul pane e una selezione.
-  const canPin = focus === 'sessions' && selSessionId !== null;
-  const surfaceLegend = SURFACE_SEGMENTS.map((s) => s.text).join(LAUNCH_SEP);
-  // Larghezza dal medesimo hook che dà l'altezza: dopo un resize la legenda si
-  // ricalcola con lo stesso re-render che ridimensiona i pane. Le celle delle
-  // surface (più il ` · ` che le separa dalle voci) sono già spese sulla riga →
-  // vanno riservate, o le voci launch la sfonderebbero di quel tanto.
-  const legend = launchLegend(launch, columns, cellWidth(surfaceLegend) + cellWidth(LAUNCH_SEP));
-
-  // T21 — la riga launch come DATO, non come stringa: gli stessi segmenti
-  // compongono il testo renderizzato e le colonne dell'hit-test. Derivare le
-  // seconde ri-splittando il primo sarebbe un conto parallelo, che diverge alla
-  // prima label che contenga il separatore.
-  const launchSegments: Segment[] = [
-    ...SURFACE_SEGMENTS,
-    ...legend.taken.map((text, i) => ({ key: String(i + 1), text })),
-  ];
-  const launchRegions = rowRegions(launchSegments, LAUNCH_SEP, FRAME_TEXT_COL);
-
-  // Legenda della modalità normale. Elenca SOLO i tasti che fanno qualcosa qui e
-  // ora: le voci contestuali compaiono quando il pane a fuoco le rende possibili
-  // e altrimenti spariscono, invece di annunciarsi inerti con un `—`.
-  // Fuori: la navigazione (`↑↓` `←→`), universale in qualunque TUI, e
-  // l'indicatore `focus:` — il pane a fuoco si vede già dall'evidenziazione, e
-  // ridirlo a parole costava colonne su una riga che tronca in silenzio.
-  // Nessuna voce di uscita: non esiste più un tasto che chiuda il deck.
-  const keyLegend = sanitize(
-    [
-      ...(canSpawn ? ['⏎ detail', '^K/^P/^R spawn'] : canResume ? ['⏎ resume'] : []),
-      // T112 — la voce nomina il BERSAGLIO, che cambia di taglia senza che
-      // cambi il tasto. Legge `purgeBulk`, la stessa condizione del ramo di
-      // apertura: una legenda che annunciasse «tutte» dove il tasto ne pota una
-      // sola sarebbe peggio di nessuna legenda.
-      ...(focus === 'tasks'
-        ? [purgeBulk ? 'CANC elimina tutte' : 'CANC elimina']
-        : []),
-      ...(canResume ? ['f fork'] : []),
-      // T117 · D3 — «titolo» anche qui: è lo stesso valore che il detail chiede
-      // allo spawn, e due nomi per una cosa sola li paga chi legge le due
-      // schermate. Rename di sola ETICHETTA: il dato resta `note` nel sidecar e
-      // `--title-note` in deck-run, dove rinominarlo sarebbe un breaking.
-      ...(canPin ? ['p pin', 'N titolo', 'A assegna'] : []),
-      // T121 — le due voci nominano il GESTO e non l'oggetto: «status» da solo
-      // sarebbe indistinguibile dal recap della task su `^K`, che è un'altra
-      // cosa e sta a due voci di distanza.
-      '^G genera status',
-      '^O apri status',
-      '^F cerca',
-      'C nuova',
-      'E edit',
-      'S sort',
-      'F filtri',
-      'w salva',
-    ].join(' · '),
-  );
-
-  // ── T57 · schermata di assegnazione ─────────────────────────────────────
-  // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
-  // sopra i due pane, e prendendo l'intero frame non costa nulla al loro budget.
-  // Conseguenza obbligata della scelta: la sessione in assegnazione non è più
-  // visibile, quindi va RIPETUTA nel titolo — senza, non si sa più su cosa si
-  // sta agendo.
-  if (mode === 'assign') {
-    if (isCompact(assign.capacity)) {
-      return (
-        <Text wrap="truncate-end">
-          <Text bold color="cyan">loom-deck</Text>
-          <Text dimColor>
-            {' '}· assegna · terminale {rows}×{columns}: troppo basso, allarga · esc annulla
-          </Text>
-        </Text>
-      );
-    }
-    const at = assign.list.findIndex((t) => (t?.id ?? null) === assign.sel);
-    const win = windowRange(assign.list.length, at, assign.capacity);
-    const s = assign.sid ? sessions.find((x) => x.sessionId === assign.sid) ?? null : null;
-    // Etichetta della conversazione: la nota umana se c'è (è il nome con cui la
-    // riconosci), altrimenti la stessa derivazione della ricerca. Su una pinnata
-    // stale non resta nulla: il titolo si accontenta dell'hash.
-    const label =
-      (assign.sid ? sessionNotes.get(assign.sid) : '') ||
-      (s ? conversationLabel(s, projectCore, assign.sid ? bindings.get(assign.sid) : undefined) : '');
-    // T124 — le colonne si misurano sulla lista FILTRATA di questa schermata,
-    // non su `paneTasks`: la popolazione è un'altra, e riusare le larghezze del
-    // pane darebbe una colonna dimensionata su righe che qui non ci sono.
-    // `assign.list` porta in testa la riga `detach` (`null`), che non è una task.
-    const assignCols = taskColumns(
-      assign.list.filter((t): t is Task => t !== null),
-      taskRowData,
-    );
-    return (
-      <AssignScreen
-        sessionId={assign.sid ?? ''}
-        label={label}
-        current={assign.sid ? bindings.get(assign.sid) ?? null : null}
-        filter={assign.filter}
-        rows={assign.list.slice(win.start, win.end)}
-        selected={assign.sel}
-        matched={assign.list.length - 1}
-        hidden={hiddenTasks}
-        above={win.start}
-        below={assign.list.length - win.end}
-        idW={assignCols.id}
-        tailW={assignCols.tail}
-        data={taskRowData}
-        columns={columns}
-        note={note}
-      />
-    );
-  }
-
-  // ── T66 · detail della task ─────────────────────────────────────────────
-  // Quarta schermata sostitutiva, stessa ragione delle altre tre: un task file
-  // non entra in un box sopra i due pane. Il budget dei pane non viene nemmeno
-  // calcolato — il render esce di qui prima.
-  if (mode === 'detail' && sheet.sheet) {
-    if (isCompact(sheet.capacity)) {
-      return (
-        <Text wrap="truncate-end">
-          <Text bold color="cyan">loom-deck</Text>
-          <Text dimColor>
-            {' '}· {sheet.sheet.id} · terminale {rows}×{columns}: troppo basso, allarga · esc chiude
-          </Text>
-        </Text>
-      );
-    }
-    // Niente `windowRange`: quella centra la finestra su una selezione, qui la
-    // posizione è lo scroll mosso a mano. Il clamp serve comunque — un resize
-    // può accorciare il testo sotto uno scroll già dato.
-    const start = Math.min(sheet.top, sheet.maxTop);
-    return (
-      <DetailScreen
-        id={sheet.sheet.id}
-        title={sheet.sheet.title}
-        missing={sheet.sheet.text === null}
-        lines={sheet.lines.slice(start, start + sheet.capacity)}
-        spans={sheet.doc?.spans ?? []}
-        top={start}
-        total={sheet.lines.length}
-        capacity={sheet.capacity}
-        action={sheet.action}
-        model={sheet.model}
-        spawnNote={sheet.spawnNote}
-        prompt={sheet.prompt}
-        cursor={sheet.cursor}
-        columns={columns}
-        find={sheet.find}
-        occ={sheet.findRes.occ}
-        occCur={sheet.occCur}
-      />
-    );
-  }
-
-  // ── T121 · viewer del project status ────────────────────────────────────
-  // Quinta schermata sostitutiva, stessa ragione delle altre quattro: un recap
-  // di progetto è lungo quanto un task file e non entra in un box sopra i pane.
-  if (mode === 'status' && status.view) {
-    if (isCompact(status.capacity)) {
-      return (
-        <Text wrap="truncate-end">
-          <Text bold color="cyan">loom-deck</Text>
-          <Text dimColor>
-            {' '}· project status · terminale {rows}×{columns}: troppo basso, allarga · esc chiude
-          </Text>
-        </Text>
-      );
-    }
-    // Il clamp serve anche qui: un resize può accorciare il testo sotto uno
-    // scroll già dato.
-    const start = Math.min(status.top, status.maxTop);
-    return (
-      <StatusScreen
-        name={projectCore ?? projectName}
-        label={status.label}
-        building={status.building}
-        failed={status.failed}
-        view={status.view}
-        lines={status.lines.slice(start, start + status.capacity)}
-        spans={status.doc?.spans ?? []}
-        top={start}
-        total={status.lines.length}
-        capacity={status.capacity}
-        columns={columns}
-      />
-    );
-  }
-
-  // ── T52 · schermate sostitutive ─────────────────────────────────────────
-  // Ricerca e reader sono gli unici modali che NON stanno in flusso sopra i
-  // pane: una lista di occorrenze non entra in un box da 4 righe. Prendono
-  // l'intero frame, quindi escono di qui — il budget dei due pane sotto non
-  // serve nemmeno calcolarlo, e la loro altezza la distribuiscono
-  // `searchListCapacity` / `readerCapacity`.
-  if (mode === 'search' || mode === 'reader') {
-    const hit = mode === 'reader' && search.readerRow?.kind === 'hit' ? search.readerRow.hit : null;
-    // Terminale sotto la cornice: riga singola invece del box, per lo stesso
-    // motivo del `budget.compact` del deck — un frame più alto di `rows` fa
-    // pulire lo schermo a Ink a ogni redraw, e il poll lo versa nello scrollback.
-    if (isCompact(hit ? search.readerCap : search.listCap)) {
-      return (
-        <Text wrap="truncate-end">
-          <Text bold color="cyan">loom-deck</Text>
-          <Text dimColor>
-            {' '}· {hit ? 'reader' : 'ricerca'} · terminale {rows}×{columns}: troppo basso, allarga ·{' '}
-            esc {hit ? 'torna' : 'chiude'}
-          </Text>
-        </Text>
-      );
-    }
-    if (hit) {
-      // Niente `windowRange`: quella centra la finestra su una SELEZIONE, qui
-      // la posizione è lo scroll che l'utente muove a mano. Il clamp serve
-      // comunque — un resize può accorciare il testo sotto uno scroll già dato.
-      const start = Math.min(search.readerTop, search.readerMaxTop);
-      return (
-        <ReaderScreen
-          hit={hit}
-          lines={search.readerLines.slice(start, start + search.readerCap)}
-          top={start}
-          total={search.readerLines.length}
-          capacity={search.readerCap}
-          bound={bindings.get(hit.sessionId) ?? null}
-        />
-      );
-    }
-    const selIdx = rowIndexOfKey(search.rows, search.selKey);
-    const win = windowRange(search.rows.length, selIdx, search.listCap);
-    // Anteprima dell'occorrenza selezionata: prende le righe che la lista non
-    // usa. Con molti risultati `spare` è 0 e il pannello non esiste — la lista
-    // se le riprende tutte, che è la priorità giusta quando c'è molto da
-    // scorrere. La finestra si CENTRA sul match (`windowRange`), così il
-    // contesto arriva da entrambi i lati.
-    const spare = searchPreviewCapacity(search.listCap, win.end - win.start);
-    let preview = null;
-    if (spare >= 1 && search.selRow?.kind === 'hit') {
-      const h = search.selRow.hit;
-      const mline = Math.max(0, search.previewBody.findIndex((l) => l.end > h.matchStart));
-      const pw = windowRange(search.previewBody.length, mline, spare);
-      preview = {
-        hit: h,
-        lines: search.previewBody.slice(pw.start, pw.end),
-        from: pw.start,
-        total: search.previewBody.length,
-        ts: sessions.find((s) => s.sessionId === h.sessionId)?.ts ?? 0,
-      };
-    }
-    return (
-      <SearchScreen
-        preview={preview}
-        hash={search.hash}
-        query={search.query}
-        field={search.field}
-        opts={search.opts}
-        result={search.result}
-        rows={search.rows.slice(win.start, win.end)}
-        selectedKey={search.selKey}
-        selectedKind={selectedRow(search.rows, search.selKey)?.kind ?? null}
-        above={win.start}
-        below={search.rows.length - win.end}
-        capacity={search.listCap}
-        bindings={bindings}
-        pinned={pinned}
-        sessionNotes={sessionNotes}
-        projectCore={projectCore}
-        columns={columns}
-        note={note}
-      />
-    );
-  }
-
-  // ── Budget d'altezza ────────────────────────────────────────────────────
-  // Il frame deve restare sotto `rows`, sempre: oltre quella soglia Ink smette
-  // di aggiornare per differenza e pulisce lo schermo a ogni redraw, che su
-  // Ptyxis significa un frame intero versato nello scrollback per ogni tick del
-  // poll. Tutto ciò che varia in altezza (le due liste e la descrizione del
-  // dettaglio) riceve qui la propria capienza.
-  // Le surface built-in `t`/`c` la rendono sempre presente in modalità normale:
-  // non dipende più da quante voci `launch` il progetto dichiara.
-  const launchLine = mode === 'normal';
-  const detailParts = detail ? detailMetaOf(detail) : null;
   // T70 — un solo blocco preview, sotto i due pane, e il FOCUS decide cosa
   // contiene: a sinistra la task selezionata, a destra la conversazione. È il
   // focus e non la selezione perché il blocco è uno — averne due significava
@@ -1866,92 +125,85 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // che si sta guardando e di una che non si sta guardando.
   // `none` quando non c'è contenuto (riga meta selezionata, task file assente,
   // pin stale): il blocco sparisce del tutto, non resta una cornice vuota.
-  const previewKind: PreviewKind =
-    focus === 'tasks' ? (detail ? 'task' : 'none') : selSessionObj ? 'session' : 'none';
-  const budget: Budget = layoutBudget({
+  const previewKind =
+    model.focus === 'tasks'
+      ? model.detail
+        ? ('task' as const)
+        : ('none' as const)
+      : model.selSessionObj
+        ? ('session' as const)
+        : ('none' as const);
+  const detailParts = model.detail ? detailMetaOf(model.detail) : null;
+
+  const launch = launchRow(model.launch, columns);
+  const frame = frameGeometry({
     rows,
+    columns,
     mode,
-    launchLine,
-    noteLine: Boolean(note),
-    preview: previewKind,
+    hasNote: Boolean(note),
+    previewKind,
     detailMetaLines: detailParts?.metaLines ?? 0,
-    // Riservo righe di anteprima solo per i blocchi che davvero renderizzano: il
-    // primo prompt aggiunge info solo con un titolo custom (senza, titolo ===
-    // primo prompt); l'ultima risposta solo se il modello ha già risposto.
-    sessionHasFirstPreview: previewKind === 'session' && Boolean(selSessionObj?.customTitle),
-    sessionHasLastPreview: previewKind === 'session' && Boolean(selSessionObj?.lastReply),
+    sessionHasFirstPreview:
+      previewKind === 'session' && Boolean(model.selSessionObj?.customTitle),
+    sessionHasLastPreview: previewKind === 'session' && Boolean(model.selSessionObj?.lastReply),
+    paneTasks: model.paneTasks,
+    selIndex: model.selIndex,
+    sessionRows: model.sessionRows,
+    selSessionId: model.selSessionId,
+    taskCounts: model.taskCounts,
+    taskViewId: model.taskViewId,
+    sessionCounts: model.sessionCounts,
+    sessionViewId: model.sessionViewId,
+    parentLabel: model.parentLabel,
+    hasLoadError: Boolean(model.loadError),
   });
 
-  // Finestre di rendering. Le liste "logiche" (viewTasks, sessionRows)
-  // restano intere: navigazione, selezione e spawn continuano a ragionare su
-  // quelle, la finestra è solo ciò che finisce a schermo.
-  const taskWin = windowRange(paneTasks.length, selIndex - META_ROWS, budget.taskRows);
-  const windowTasks = paneTasks.slice(taskWin.start, taskWin.end);
-  const selRowIndex = rowIndexOf(sessionRows, selSessionId);
-  const sessionWin = windowRange(sessionRows.length, selRowIndex, budget.sessionRows);
-  const windowRows = sessionRows.slice(sessionWin.start, sessionWin.end);
+  useDeckInput({
+    tasksDir,
+    mode,
+    setMode,
+    setNote,
+    model,
+    actions,
+    overlays,
+    frame,
+    launchRegions: launch.regions,
+  });
 
-  // T21 — geometria delle liste per l'hit-test del click, dalla STESSA
-  // aritmetica che disegna i pane: le parti degli header escono dal modulo che
-  // `ui/panes.tsx` consuma per renderle, le righe cliccabili sono le finestre
-  // appena calcolate. `null` in compatto: lì i pane non esistono.
-  const spans = paneSpans(columns);
-  const listGeometry: ListGeometry | null = budget.compact
-    ? null
-    : {
-        columns,
-        taskHeader: inlineRegions(
-          headerItems(
-            taskHeaderParts(
-              taskCounts,
-              taskViewId,
-              taskWin.start,
-              paneTasks.length - taskWin.end,
-              columns,
-            ),
-          ),
-          spans.tasks.start + PANE_TEXT_PAD,
-        ),
-        sessionHeader: inlineRegions(
-          headerItems(
-            sessionHeaderParts(
-              parentLabel,
-              sessionCounts,
-              sessionViewId,
-              sessionWin.start,
-              sessionRows.length - sessionWin.end,
-              columns,
-            ),
-          ),
-          spans.sessions.start + PANE_TEXT_PAD,
-        ),
-        // Con un errore di caricamento al posto delle task c'è la riga rossa:
-        // restano cliccabili le sole righe meta.
-        taskRows: META_ROWS + (loadError ? 0 : windowTasks.length),
-        sessionRows: windowRows.length,
-      };
+  // Le cinque schermate sostitutive prendono il frame intero: se una è attiva
+  // il render finisce qui, e il budget dei pane resta calcolato ma inutilizzato.
+  const screen = screenFor({
+    mode,
+    rows,
+    columns,
+    note,
+    sessions: model.sessions,
+    bindings: model.bindings,
+    pinned: model.pinned,
+    sessionNotes: model.sessionNotes,
+    projectCore: model.projectCore,
+    projectName: model.projectName,
+    taskRowData: model.taskRowData,
+    hiddenTasks: model.hiddenTasks,
+    overlays: { assign, sheet, search, status },
+  });
+  if (screen) return screen;
 
   // Sotto la soglia minima il layout a box non entra a nessun costo: si scende
   // a una riga sola. Perdere il deck per un terminale basso è meglio che
   // sporcare la cronologia del terminale a ogni poll.
-  if (budget.compact) {
+  if (frame.budget.compact) {
     return (
-      <Text wrap="truncate-end">
-        <Text bold color="cyan">loom-deck</Text>
-        <Text dimColor>
-          {' '}v{VERSION} · {viewTasks.length} task · sel {selectedTaskId ?? parentLabel} ·
-          terminale {rows}×{columns}: troppo basso, allarga
-        </Text>
-      </Text>
+      <CompactNotice
+        dot={false}
+        what={`v${VERSION} · ${model.viewTasks.length} task · sel ${
+          model.selectedTaskId ?? model.parentLabel
+        }`}
+        rows={rows}
+        columns={columns}
+      />
     );
   }
-
-  // Segmento destro della testata: dimensione del terminale in CELLE
-  // (colonne×righe, mai pixel — un processo dentro un terminale vede solo la
-  // griglia di caratteri) e versione. La parte sinistra riceve un budget
-  // derivato da questa stringa e non da una lunghezza fissa: la risoluzione
-  // cambia a ogni resize, quindi anche la larghezza che occupa.
-  const headerRight = `${columns}×${rows} · v${VERSION}`;
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
@@ -1966,163 +218,123 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           versione), o `space-between` lo lascerebbe crescere fin dentro. */}
       <Box flexDirection="row" justifyContent="space-between">
         <StatusHeadline
-          name={projectCore ?? projectName}
+          name={model.projectCore ?? model.projectName}
           label={status.label}
           building={status.building}
           failed={status.failed}
-          cols={Math.max(4, columns - 4 - termWidth(headerRight) - 1)}
+          cols={headlineWidth(columns, frame.headerRight)}
         />
-        <Text dimColor>{headerRight}</Text>
+        <Text dimColor>{frame.headerRight}</Text>
       </Box>
-      {mode === 'create' ? (
-        <Text dimColor wrap="truncate-end">
-          nuova task · <Text color="yellow">⏎</Text> crea · <Text color="yellow">esc</Text> annulla
-        </Text>
-      ) : mode === 'sort' ? (
-        <Text dimColor wrap="truncate-end">
-          sort · <Text color="yellow">p</Text> pri <Text color="yellow">s</Text> stato{' '}
-          <Text color="yellow">i</Text> id (asc→desc→off) · <Text color="yellow">⏎</Text> ok ·{' '}
-          <Text color="yellow">esc</Text> annulla
-        </Text>
-      ) : mode === 'filter' ? (
-        <Text dimColor wrap="truncate-end">
-          filtri · <Text color="yellow">↑↓←→</Text> naviga · <Text color="yellow">spazio</Text>{' '}
-          mostra/nascondi · <Text color="yellow">⏎</Text> ok · <Text color="yellow">esc</Text> annulla
-        </Text>
-      ) : mode === 'note' ? (
-        <Text dimColor wrap="truncate-end">
-          titolo conversazione · <Text color="yellow">^U</Text> svuota ·{' '}
-          <Text color="yellow">⏎</Text> salva (vuoto = rimuove) ·{' '}
-          <Text color="yellow">esc</Text> annulla
-        </Text>
-      ) : mode === 'purge' ? (
-        <Text dimColor wrap="truncate-end">
-          elimina task ·{' '}
-          {purge?.ignored ? (
-            <>
-              <Text color="yellow">←→</Text> keep/purge dei file non tracciati ·{' '}
-            </>
-          ) : null}
-          <Text color="yellow">⏎</Text> conferma · <Text color="yellow">esc</Text> annulla
-        </Text>
-      ) : mode === 'edit' ? (
-        <Text dimColor wrap="truncate-end">
-          edit · <Text color="yellow">↑↓</Text> campo · <Text color="yellow">←→</Text> valore, o
-          cursore sul testo · <Text color="yellow">^A/^E</Text> inizio/fine ·{' '}
-          <Text color="yellow">^D</Text> canc · <Text color="yellow">⏎</Text> salva+commit ·{' '}
-          <Text color="yellow">esc</Text> annulla
-        </Text>
-      ) : (
-        <Text dimColor wrap="truncate-end">
-          {keyLegend}
-        </Text>
-      )}
+      <HintBar
+        mode={mode}
+        purge={purge.draft}
+        keyLegend={deckLegend({
+          focus: model.focus,
+          hasTask: model.selTask !== null,
+          hasSession: model.selSessionObj !== null,
+          hasSessionId: model.selSessionId !== null,
+          purgeBulk: model.purgeBulk,
+        })}
+      />
       {/* T43 — riga delle surface: prima le due built-in (`t`/`c`), poi la mappa
           indice→launch del progetto. Presente in tutta la modalità normale, non
           più solo con voci configurate: `t` e `c` esistono ovunque, quindi la
           riga non è mai vuota. */}
-      {mode === 'normal' ? (
+      {frame.launchLine ? (
         <Text dimColor wrap="truncate-end">
-          {launchSegments.map((s) => s.text).join(LAUNCH_SEP)}
-          {legend.overflow > 0 ? (
-            <Text color="yellow"> · +{legend.overflow} fuori riga</Text>
+          {launch.segments.map((s) => s.text).join(LAUNCH_SEP)}
+          {launch.overflow > 0 ? (
+            <Text color="yellow"> · +{launch.overflow} fuori riga</Text>
           ) : null}
-          {legend.unreachable > 0 ? (
-            <Text color="yellow"> · {legend.unreachable} oltre la 9ª (non raggiungibili)</Text>
+          {launch.unreachable > 0 ? (
+            <Text color="yellow"> · {launch.unreachable} oltre la 9ª (non raggiungibili)</Text>
           ) : null}
         </Text>
       ) : null}
-      {mode === 'create' ? (
-        <Box borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
-          <Text color="yellow">C › </Text>
-          <Text>{draft}</Text>
-          <Text inverse> </Text>
-        </Box>
-      ) : null}
+      {mode === 'create' ? <TextBox glyph="C" value={textModals.draft} /> : null}
       {/* T53 — gemello del box create. Il cursore sta in coda al testo (append
           only, come create): un cursore mobile vorrebbe gestire frecce e Home/End,
           e `Home`/`End` non sono nemmeno esposte da `useInput`. */}
-      {mode === 'note' ? (
-        <Box borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
-          <Text color="yellow">✎ › </Text>
-          <Text>{noteDraft}</Text>
-          <Text inverse> </Text>
-        </Box>
+      {mode === 'note' ? <TextBox glyph="✎" value={textModals.noteDraft} /> : null}
+      {mode === 'sort' ? <SortModal sort={model.view.sort} /> : null}
+      {mode === 'filter' ? (
+        <FilterModal view={model.view} cursor={viewModals.filterCursor} />
       ) : null}
-      {mode === 'sort' ? <SortModal sort={view.sort} /> : null}
-      {mode === 'filter' ? <FilterModal view={view} cursor={filterCursor} /> : null}
-      {mode === 'edit' && edit && selTask ? (
+      {mode === 'edit' && textModals.edit && textModals.editTask ? (
         <EditModal
-          id={selTask.id}
-          draft={edit}
-          row={editCursor.row}
-          caret={editCursor.caret}
+          id={textModals.editTask.id}
+          draft={textModals.edit}
+          row={textModals.editCursor.row}
+          caret={textModals.editCursor.caret}
           columns={columns}
         />
       ) : null}
-      {mode === 'purge' && purge ? <PurgeModal draft={purge} columns={columns} /> : null}
+      {mode === 'purge' && purge.draft ? (
+        <PurgeModal draft={purge.draft} columns={columns} />
+      ) : null}
       <Box flexDirection="row" marginTop={1}>
         <TasksPane
-          tasks={windowTasks}
-          counts={taskCounts}
-          activeView={taskViewId}
-          paneCount={paneTasks.length}
-          view={view}
-          selected={selIndex}
-          spotCount={spotCount}
-          allCount={sessions.length}
-          idW={taskCols.id}
-          tailW={taskCols.tail}
-          focused={focus === 'tasks'}
-          loadError={loadError}
-          windowStart={taskWin.start}
-          above={taskWin.start}
-          below={paneTasks.length - taskWin.end}
+          tasks={frame.windowTasks}
+          counts={model.taskCounts}
+          activeView={model.taskViewId}
+          paneCount={model.paneTasks.length}
+          view={model.view}
+          selected={model.selIndex}
+          spotCount={model.spotCount}
+          allCount={model.sessions.length}
+          idW={model.taskCols.id}
+          tailW={model.taskCols.tail}
+          focused={model.focus === 'tasks'}
+          loadError={model.loadError}
+          windowStart={frame.taskWin.start}
+          above={frame.taskWin.start}
+          below={model.paneTasks.length - frame.taskWin.end}
           columns={columns}
-          data={taskRowData}
+          data={model.taskRowData}
         />
         <SessionsPane
-          parentLabel={parentLabel}
-          isSpot={isSpot}
-          isAll={isAll}
-          bindings={bindings}
-          taskW={sessionCols.task}
-          ageW={sessionCols.age}
-          rows={windowRows}
-          counts={sessionCounts}
-          activeView={sessionViewId}
-          paneCount={sessionRows.length}
-          selectedId={selSessionId ?? undefined}
-          focused={focus === 'sessions'}
-          above={sessionWin.start}
-          below={sessionRows.length - sessionWin.end}
+          parentLabel={model.parentLabel}
+          isSpot={model.isSpot}
+          isAll={model.isAll}
+          bindings={model.bindings}
+          taskW={model.sessionCols.task}
+          ageW={model.sessionCols.age}
+          rows={frame.windowRows}
+          counts={model.sessionCounts}
+          activeView={model.sessionViewId}
+          paneCount={model.sessionRows.length}
+          selectedId={model.selSessionId ?? undefined}
+          focused={model.focus === 'sessions'}
+          above={frame.sessionWin.start}
+          below={model.sessionRows.length - frame.sessionWin.end}
           columns={columns}
-          forkOf={forkOf}
-          sessionNotes={sessionNotes}
-          projectCore={projectCore}
-          live={live}
+          forkOf={model.forkOf}
+          sessionNotes={model.sessionNotes}
+          projectCore={model.projectCore}
+          live={model.live}
         />
       </Box>
       {/* T70 — blocco preview UNICO, a piena larghezza, sotto le due liste.
           Renderizzato solo con contenuto E spazio: `budget.preview` copre il
           secondo, `previewKind` il primo. */}
-      {budget.preview && previewKind === 'task' && detail ? (
+      {frame.budget.preview && previewKind === 'task' && model.detail ? (
         <PreviewPane
           kind="task"
-          detail={detail}
-          maxLines={budget.detailLines}
+          detail={model.detail}
+          maxLines={frame.budget.detailLines}
           columns={columns}
         />
-      ) : budget.preview && previewKind === 'session' && selSessionObj ? (
+      ) : frame.budget.preview && previewKind === 'session' && model.selSessionObj ? (
         <PreviewPane
           kind="session"
-          s={selSessionObj}
-          firstLines={budget.sessionFirstLines}
-          lastLines={budget.sessionLastLines}
+          s={model.selSessionObj}
+          firstLines={frame.budget.sessionFirstLines}
+          lastLines={frame.budget.sessionLastLines}
           columns={columns}
-          origin={forkOf.get(selSessionObj.sessionId) ?? null}
-          note={sessionNotes.get(selSessionObj.sessionId) ?? ''}
-          live={live.get(selSessionObj.sessionId) ?? null}
+          origin={model.forkOf.get(model.selSessionObj.sessionId) ?? null}
+          note={model.sessionNotes.get(model.selSessionObj.sessionId) ?? ''}
+          live={model.live.get(model.selSessionObj.sessionId) ?? null}
         />
       ) : null}
       {note ? <Text color="green" wrap="truncate-end">{sanitize(note)}</Text> : null}
