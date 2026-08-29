@@ -139,7 +139,7 @@ export interface SessionViewEntry extends Styling {
 }
 
 /** Glifo della sessione viva, gemello di `LIVE_IDLE` del render. Duplicato qui
- *  perché il catalogo è puro e non può importare da `cli.tsx`; è un carattere
+ *  perché il catalogo è puro e non può importare da `ui/`; è un carattere
  *  concorde (largo 1 per entrambe le contabilità), quindi non passa da
  *  `sanitize`. */
 const LIVE_GLYPH = '●';

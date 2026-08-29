@@ -1,7 +1,7 @@
 // Modello del deck: i tipi e i cataloghi che descrivono COSA il deck
 // rappresenta — la selezione a tre casi, i modi, le griglie dei modali. Sta a
-// monte della vista: i componenti di `ui/` li importano da qui, mai da
-// `cli.tsx`, così la dipendenza resta in un verso solo.
+// monte della vista: i componenti di `ui/` li importano da qui, mai dai moduli
+// che li consumano, così la dipendenza resta in un verso solo.
 import type { FieldSpec } from './fields.js';
 import type { BodyKind } from './sessions.js';
 import type { Mode as ViewportMode } from './viewport.js';
@@ -125,7 +125,7 @@ export const KIND_LABEL: Record<BodyKind, string> = { ai: 'IA', tool: 'tools', h
 // che è già l'ordine naturale di lettura.
 //
 // L'elenco deve coprire OGNI valore di ProgName: il cursore del modale nasce da
-// `Math.max(0, EDIT_PROG.indexOf(prog))` (cli.tsx), quindi un valore assente
+// `Math.max(0, EDIT_PROG.indexOf(prog))` (`overlays/modals.ts`), quindi un valore assente
 // torna -1, viene schiacciato a 0 e salvare retrocede la task alla prima voce.
 export const EDIT_PRI: readonly PriName[] = ['high', 'med', 'low'];
 

@@ -75,7 +75,7 @@ export function TasksHeader({
   columns: number;
 }) {
   // T21 — le parti e il loro taglio vengono da `pane-header.ts`, lo stesso
-  // modulo da cui `cli.tsx` ricava le colonne cliccabili: una fonte sola.
+  // modulo da cui `frame.ts` ricava le colonne cliccabili: una fonte sola.
   const { parts, shown } = taskHeaderParts(counts, active, above, below, columns);
   return <HeaderLine parts={parts} shown={shown} focused={focused} />;
 }

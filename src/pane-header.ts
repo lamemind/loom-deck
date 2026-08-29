@@ -1,8 +1,8 @@
 // T21 (mandata 3) — le PARTI degli header dei due pane come DATO, non come JSX.
 //
-// Stesso principio della riga launch (`launchSegments` in `cli.tsx`): gli
+// Stesso principio della riga launch (`launchRow` in `frame.ts`): gli
 // stessi oggetti compongono la riga disegnata (`ui/panes.tsx`) e le colonne
-// dell'hit-test (`cli.tsx`). Chi li deriva dall'altro — ri-splittando la
+// dell'hit-test (`frame.ts`). Chi li deriva dall'altro — ri-splittando la
 // stringa renderizzata, o ricontando le voci del catalogo — tiene due conti
 // paralleli che divergono alla prima voce che cambia testo o ordine.
 //

@@ -97,7 +97,7 @@ export function displayProg(prog: string): string {
  * 3 spazi vuoti su ogni riga di un pane largo la metà del terminale.
  *
  * Vive qui e non nel sito di render perché la STESSA stringa serve due volte —
- * a misurare la larghezza della colonna (sulla vista completa, in `cli.tsx`) e
+ * a misurare la larghezza della colonna (sulla vista completa, in `deck-model.ts`) e
  * a disegnarla (sulla finestra, in `panes.tsx`). Due formattazioni gemelle
  * divergerebbero alla prima modifica, e la colonna risulterebbe larga quanto
  * una stringa che nessuno scrive.

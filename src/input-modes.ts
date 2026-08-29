@@ -6,9 +6,11 @@
 // `detail` anteposto a quello `key.ctrl` per rendere inerti gli acceleratori
 // dentro il detail, con `^F` come deroga *dentro* quel ramo.
 //
-// Il custode è `MODE_KEYS` in `cli.tsx`: un `Record<CapturingMode, Handler>`
-// che non compila se un modo nuovo resta senza handler. Il test gemello fissa
-// l'insieme e la deroga.
+// Il custode è `MODE_KEYS` in `input.ts`: un `Record<CapturingMode, Handler>`
+// che non compila se un modo nuovo resta senza handler. Il `Record` però non
+// impedisce all'handler di vivere DENTRO il dispatch invece che in un overlay,
+// ed è il buco che `test/input-wiring.test.ts` chiude leggendo il sorgente come
+// testo. Il test gemello di questo file fissa l'insieme e la deroga.
 
 import type { Mode } from './model.js';
 
@@ -80,7 +82,7 @@ export const CTRL_DEROGATIONS: Partial<Record<CapturingMode, readonly string[]>>
  * coincide con «ha un documento a schermo»: `search` mostra un'anteprima, ma
  * il fuoco lì è sulla lista dei risultati, che è una selezione.
  *
- * Il custode è `MODE_WHEEL` in `cli.tsx`, un `Record<ScrollingMode, …>` che non
+ * Il custode è `MODE_WHEEL` in `input.ts`, un `Record<ScrollingMode, …>` che non
  * compila se un modo entra qui senza uno scroll da chiamare.
  */
 export const SCROLLING_MODES = ['detail', 'status', 'reader'] as const;
