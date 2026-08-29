@@ -28,6 +28,7 @@ import { useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
 import { useProjectStatus } from './overlays/status.js';
 import { useInboxOverlay } from './overlays/inbox.js';
+import { useWrapOverlay } from './overlays/wrap.js';
 import { usePurgeOverlay } from './overlays/purge.js';
 import { useTextModals, useViewModals } from './overlays/modals.js';
 import { useTerminalSize } from './hooks.js';
@@ -102,6 +103,17 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     onDrain: actions.drainInbox,
   });
 
+  // T134 — l'hard-wrap. Come il project status non è solo un overlay: i suoi
+  // numeri si leggono in testata a schermata chiusa, e la lista è una delle sue
+  // superfici invece che il suo contenuto.
+  const wrap = useWrapOverlay({
+    cwd,
+    rows,
+    setMode,
+    setNote,
+    onApply: actions.unwrapPath,
+  });
+
   const purge = usePurgeOverlay({
     setMode,
     setNote,
@@ -133,6 +145,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     search,
     status,
     inbox,
+    wrap,
     purge,
     view: viewModals,
     text: textModals,
@@ -165,10 +178,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // hanno la precedenza sul budget (D5 preflight).
   const indicators = indicatorRow(
     {
-      counts: model.inboxCounts,
-      stale: model.inboxStale,
-      scanned: model.inboxScanned,
-      ok: model.inboxOk,
+      inbox: {
+        counts: model.inboxCounts,
+        stale: model.inboxStale,
+        scanned: model.inboxScanned,
+        ok: model.inboxOk,
+      },
+      wrap: { count: wrap.count, mtime: wrap.mtime, ok: wrap.ok, scanning: wrap.scanning },
     },
     columns,
   );
@@ -228,7 +244,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     projectName: model.projectName,
     taskRowData: model.taskRowData,
     hiddenTasks: model.hiddenTasks,
-    overlays: { assign, sheet, search, status, inbox },
+    overlays: { assign, sheet, search, status, inbox, wrap },
   });
   if (screen) return screen;
 

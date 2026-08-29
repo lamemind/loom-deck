@@ -45,6 +45,7 @@ import type { useSheetOverlay } from './overlays/sheet.js';
 import type { useSearchOverlay } from './overlays/search.js';
 import type { useProjectStatus } from './overlays/status.js';
 import type { useInboxOverlay } from './overlays/inbox.js';
+import type { useWrapOverlay } from './overlays/wrap.js';
 import type { usePurgeOverlay } from './overlays/purge.js';
 import type { useTextModals, useViewModals } from './overlays/modals.js';
 
@@ -82,6 +83,7 @@ export type DeckOverlays = {
   search: ReturnType<typeof useSearchOverlay>;
   status: ReturnType<typeof useProjectStatus>;
   inbox: ReturnType<typeof useInboxOverlay>;
+  wrap: ReturnType<typeof useWrapOverlay>;
   purge: ReturnType<typeof usePurgeOverlay>;
   view: ReturnType<typeof useViewModals>;
   text: ReturnType<typeof useTextModals>;
@@ -147,6 +149,7 @@ export function useDeckInput({
     detail: overlays.sheet.onKey,
     status: overlays.status.onKey,
     inbox: overlays.inbox.onKey,
+    wrap: overlays.wrap.onKey,
     reader: overlays.search.onReaderKey,
     search: overlays.search.onSearchKey,
     assign: overlays.assign.onKey,
@@ -166,6 +169,7 @@ export function useDeckInput({
     detail: overlays.sheet.scroll,
     status: overlays.status.scroll,
     inbox: overlays.inbox.scroll,
+    wrap: overlays.wrap.scroll,
     reader: overlays.search.scrollReader,
   };
 
@@ -355,6 +359,24 @@ export function useDeckInput({
         overlays.status.generate();
       } else if (input === 'o') {
         overlays.status.open();
+      } else if (input === 'w') {
+        // T134/D8 preflight — `^W` APRE la lista, `^E` ESEGUE lo scan: generare
+        // e aprire restano due tasti distinti per la stessa ragione di `^G`/`^O`
+        // — aprire un dato vecchio deve costare zero, e generare non deve essere
+        // un effetto collaterale del guardare. Qui la posta è più alta che sul
+        // project status: lo scan cammina l'albero del progetto intero,
+        // submodule compresi.
+        //
+        // `^S` sarebbe la mnemonica migliore per «scan» ed è scartata di
+        // proposito: nel repo esistono due commenti in contraddizione sul suo
+        // conto (`model.ts` dice che il raw mode di Ink disattiva il
+        // flow-control XON/XOFF e quindi passa pulito, `cli.tsx` dice che è
+        // stato evitato proprio perché il terminale lo intercetta). Finché la
+        // contraddizione non è risolta con una misura, un tasto nuovo non ci si
+        // appoggia.
+        overlays.wrap.open();
+      } else if (input === 'e') {
+        overlays.wrap.scan();
       } else if (input === 'b') {
         // T134/D8 preflight — `^B` (box/bacheca) scambia i due pane dello slot
         // destro. Non è un modale né una schermata: il pane resta uno dei due

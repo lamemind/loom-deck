@@ -96,6 +96,10 @@ export const MODAL_HEIGHT = {
   // arriva a 28KB, cioè più lungo di ogni task file del progetto: la stessa
   // ragione delle altre cinque. Altezza da `inboxDetailCapacity`.
   inbox: 0,
+  // T134 — la lista hard-wrap: settima sostitutiva. Sul cappello lo scan trova
+  // 77 `WRAP` e 147 `misto`, cioè una lista che non entra in nessun box sopra i
+  // pane. Altezza da `wrapListCapacity`.
+  wrap: 0,
 } as const;
 
 export type Mode = keyof typeof MODAL_HEIGHT;
@@ -392,6 +396,22 @@ const INBOX_CHROME = 10;
 /** Righe di file inbox che entrano nel terminale. */
 export function inboxDetailCapacity(rows: number): number {
   return Math.max(0, (rows || 24) - SLACK - INBOX_CHROME);
+}
+
+// T134 — cornice della lista hard-wrap.
+//   2  bordi del box esterno
+//   1  riga di testata (conteggi + ora dell'ultimo scan)
+//   1  riga hint
+//   1  marginTop del box lista
+//   2  bordi del box lista
+//   1  marginTop del box path
+//   2  bordi del box path
+//   1  riga del campo path
+const WRAP_CHROME = 12;
+
+/** Righe di lista che entrano nel terminale. */
+export function wrapListCapacity(rows: number): number {
+  return Math.max(0, (rows || 24) - SLACK - WRAP_CHROME);
 }
 
 /**

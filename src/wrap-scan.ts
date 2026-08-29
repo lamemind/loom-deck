@@ -60,7 +60,11 @@ export function parseWrapTsv(stdout: string): WrapFile[] {
       const m = FIELD_RE.exec(cell.trim());
       if (m) fields[m[1]] = m[2];
     }
-    const column = Number(fields.col);
+    // `Number('')` vale 0, non NaN: senza il controllo sul campo VUOTO una
+    // colonna non stimabile (troppe poche righe candidate) si leggerebbe come
+    // `col=0`, cioè una misura che non esiste travestita da misura.
+    const raw = fields.col ?? '';
+    const column = raw === '' ? Number.NaN : Number(raw);
     out.push({
       verdict,
       path: cells[1],
@@ -87,6 +91,36 @@ export function parseWrapTsv(stdout: string): WrapFile[] {
  */
 export function wrapCount(files: readonly WrapFile[]): number {
   return files.filter((f) => f.verdict === 'WRAP').length;
+}
+
+/** Quanti file `misto`: fuori dal contatore ma in lista, col proprio marker. */
+export function mixedCount(files: readonly WrapFile[]): number {
+  return files.filter((f) => f.verdict === 'misto').length;
+}
+
+/** Radice di default dell'area di srotolamento: la project root intera (D4). */
+export const WRAP_DEFAULT_PATH = '.';
+
+/**
+ * Il prompt della sessione che srotola un path.
+ *
+ * CABLATO per decisione, non per fretta (D9): parametrizzarlo prima di aver
+ * visto come si comporta significherebbe scegliere i parametri a occhio. Le tre
+ * cose che dice sono le tre che rendono l'operazione reversibile e verificabile
+ * — backup fuori dal repo, rapporto, commit solo se il diff è chiaramente
+ * innocuo — e nessuna delle tre è una preferenza da esporre.
+ *
+ * Il `<path>` è l'unico buco. Arriva dal campo della lista e finisce dentro
+ * `--prompt` come argv singolo, quindi non passa da nessuna shell prima di
+ * `deck-run`, che lo quota ad apici singoli: non c'è quoting da fare qui.
+ */
+export function wrapPrompt(path: string): string {
+  const target = path.trim() || WRAP_DEFAULT_PATH;
+  return (
+    `lancia md-wrap modo apply su ${target} e backup in cartella tmp dedicata. ` +
+    'verifica risultato e fai rapporto. se le modifiche sono tutte chiaramente safe, ' +
+    'puoi committare direttamente'
+  );
 }
 
 /**

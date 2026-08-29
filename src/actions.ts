@@ -328,6 +328,21 @@ export function useDeckActions({
     noteSpawn(spawned);
   }
 
+  /**
+   * T134 — apre la sessione che SROTOLA l'hard-wrap di un path.
+   *
+   * `sonnet` e non il default (D9): lo srotolamento è una passata meccanica con
+   * un verificatore deterministico dietro (`md-wrap --apply` confronta le due
+   * versioni normalizzate `\s+ → spazio` e rimette indietro il file se
+   * differiscono), quindi il giudizio richiesto al modello è leggere un diff e
+   * decidere se committarlo — non progettare niente.
+   */
+  function unwrapPath(path: string, prompt: string) {
+    const spawned = spawnBare(cwd, prompt, 'sonnet');
+    spawned.child.on('error', () => setNote(`⚠ srotolamento ${path} fallito (${DECK_RUN})`));
+    noteSpawn(spawned);
+  }
+
   /** `c` — sessione claude a mani nude, senza task e senza prompt. */
   function openClaude() {
     const spawned = spawnClaudeEmpty(cwd);
@@ -376,6 +391,7 @@ export function useDeckActions({
     forkSession,
     togglePin,
     drainInbox,
+    unwrapPath,
     openTerminal,
     openClaude,
     saveCurrentView,

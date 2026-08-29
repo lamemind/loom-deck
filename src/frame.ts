@@ -181,6 +181,14 @@ export const INDICATOR_SEP = '  ';
 
 export type IndicatorRow = {
   segments: Segment[];
+  /** I segmenti già uniti, nella forma che il render disegna. Una STRINGA
+   *  PIATTA e non un albero di `Text` annidati: misurato sotto pty, Ink non
+   *  stira alla larghezza del box un `Text` i cui figli sono altri `Text`, e la
+   *  riga esce larga `columns - 1` — cioè col bordo mangiato. La testata
+   *  (`space-between` con due figli a stringa piatta) non ne soffre, ed è la
+   *  forma che questa riga adotta. Il prezzo è un colore solo per il blocco
+   *  invece di uno per indicatore. */
+  text: string;
   regions: Region[];
   /** Colonne occupate dal blocco intero, separatori compresi: la legenda a
    *  sinistra riceve il resto. Gli indicatori hanno la PRECEDENZA sul budget
@@ -216,19 +224,64 @@ export function inboxButton(state: {
   return sanitize(`[ Inbox 📄 ${numbers}${siren}${warn} ]`);
 }
 
+/**
+ * L'indicatore hard-wrap: `wrap 77`.
+ *
+ * Etichetta a PAROLA e non un glifo, dopo una misura sotto pty: `〰` (U+3030)
+ * passa il controllo di concordanza di `width.ts` — `string-width` e la nostra
+ * tabella EAW dicono entrambe 2 — ma dentro il frame Ink emette una colonna in
+ * meno di quante ne conta, e la riga esce larga `columns - 1` col bordo
+ * mangiato. È un terzo caso oltre alle due invarianti note: `agrees()` confronta
+ * due LIBRERIE, e un glifo può ingannarle entrambe insieme. Chi volesse
+ * rimettere un simbolo qui lo misuri sul frame vero, non su `agrees`.
+ *
+ * Conta i soli `WRAP` (D4). `misto` compare in lista con un marker proprio ma
+ * resta fuori: è la classe che ospita il falso allarme noto — i file di note
+ * scritte una riga per pensiero, che nessuno vuole srotolare — e sommarlo
+ * darebbe un numero che non si può portare a zero. Un contatore che non arriva
+ * mai a zero smette di essere letto.
+ *
+ * Tre stati distinti, come per il project status: `missing` quando lo scan non
+ * è mai stato eseguito (non parte all'avvio, D4), `scan…` mentre cammina
+ * l'albero, il numero altrimenti. Il glifo di allerta si AGGIUNGE al numero
+ * invece di sostituirlo — un tentativo fallito non riscrive la cache, quindi
+ * l'esito dell'ultimo riuscito resta vero e ancora apribile.
+ */
+export function wrapIndicator(state: {
+  count: number;
+  mtime: number | null;
+  ok: boolean;
+  scanning: boolean;
+}): string {
+  const body = state.scanning
+    ? 'scan…'
+    : state.mtime === null
+      ? STATUS_MISSING
+      : String(state.count);
+  return sanitize(`wrap ${body}${state.ok ? '' : ` ${WARN}`}`);
+}
+
 export function indicatorRow(
-  state: Parameters<typeof inboxButton>[0],
+  state: {
+    inbox: Parameters<typeof inboxButton>[0];
+    wrap: Parameters<typeof wrapIndicator>[0];
+  },
   columns: number,
 ): IndicatorRow {
-  const segments: Segment[] = [{ key: '^b', text: inboxButton(state) }];
-  const width =
-    segments.reduce((w, s) => w + termWidth(s.text), 0) +
-    termWidth(INDICATOR_SEP) * Math.max(0, segments.length - 1);
+  // Ordine di lettura: l'indicatore, poi il bottone. Il bottone sta all'estremo
+  // destro perché è l'unico dei due che MONTA qualcosa restando in vista
+  // normale — la lista del wrap è una schermata che si apre e si chiude.
+  const segments: Segment[] = [
+    { key: '^w', text: wrapIndicator(state.wrap) },
+    { key: '^b', text: inboxButton(state.inbox) },
+  ];
+  const text = segments.map((s) => s.text).join(INDICATOR_SEP);
+  const width = termWidth(text);
   // Ancorato al bordo destro del box esterno: il blocco è renderizzato da un
   // `justifyContent="space-between"`, quindi la sua prima colonna si ricava per
   // sottrazione e non da un accumulo da sinistra.
   const start = FRAME_TEXT_COL + Math.max(0, (columns || 80) - 4) - width;
-  return { segments, regions: rowRegions(segments, INDICATOR_SEP, start), width };
+  return { segments, text, regions: rowRegions(segments, INDICATOR_SEP, start), width };
 }
 
 export type FrameInput = {

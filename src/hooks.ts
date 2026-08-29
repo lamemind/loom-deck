@@ -2,7 +2,7 @@
 // che sta fuori — dimensioni del terminale, tasks.md, sessioni del progetto,
 // task archiviabili, task file selezionato. Ognuno possiede la propria cadenza
 // di refresh e non sa nulla della vista che li consuma.
-import { useState, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStdout } from 'ink';
 import { statSync } from 'node:fs';
 import { loadTasks, loadTaskDetail, type Task, type TaskDetail } from './tasks.js';
@@ -11,6 +11,15 @@ import { discoverLiveSessions, liveSig, type LiveSession } from './live-sessions
 import { loadSessionIndex, type SessionIndex } from './task-index.js';
 import { archivableIds, SCAN_INTERVAL_MS } from './archivable.js';
 import { scanInbox, type InboxFile } from './inbox.js';
+import {
+  mixedCount,
+  readWrapCache,
+  runWrapScan,
+  wrapCacheFile,
+  wrapCount,
+  type WrapCache,
+  type WrapFile,
+} from './wrap-scan.js';
 import { purgeTargets } from './purge.js';
 import { POLL_MS } from './model.js';
 
@@ -274,6 +283,85 @@ export function useInboxScan(projectRoot: string, docsRoot: string): InboxState 
     };
   }, [projectRoot, docsRoot]);
   return state;
+}
+
+/**
+ * T134 — l'hard-wrap dei `.md`, quarto membro della famiglia degli scan.
+ *
+ * Due cose lo distinguono dagli altri tre, ed entrambe vengono da D4 preflight.
+ *
+ * NON PARTE ALL'AVVIO: il perimetro è la project root intera, submodule
+ * compresi, e camminare quell'albero si fa pesante su un progetto grosso —
+ * pagarlo all'apertura del deck rallenterebbe proprio il momento in cui si
+ * vuole vedere qualcosa subito. Al mount si legge la sola cache su disco, che è
+ * ciò che fa ripartire un deck riaperto dalla misura di prima invece che da
+ * `missing`.
+ *
+ * LO SCAN A RICHIESTA RESETTA IL TIMER: senza, l'intervallo continuerebbe a
+ * scorrere dall'ultimo tick automatico, e uno scan chiesto a mano potrebbe
+ * essere seguito pochi minuti dopo da uno automatico che rimisura un dato
+ * appena misurato — costo pieno, risultato identico. Il reset passa da `epoch`,
+ * che rientra nelle dipendenze dell'effect e quindi ricrea l'intervallo.
+ */
+export interface WrapState {
+  files: WrapFile[];
+  /** Solo i `WRAP`: `misto` compare in lista e resta fuori dal contatore (D4). */
+  count: number;
+  mixed: number;
+  /** Ora dell'ultimo scan riuscito; `null` = mai misurato. */
+  mtime: number | null;
+  ok: boolean;
+  scanning: boolean;
+  /** Lancia lo scan headless e resetta il timer del periodico. */
+  scan: () => void;
+}
+
+export function useWrapScan(projectRoot: string): WrapState {
+  const path = useMemo(() => wrapCacheFile(projectRoot), [projectRoot]);
+  const [cache, setCache] = useState<WrapCache | null>(() => readWrapCache(path));
+  const [ok, setOk] = useState(true);
+  const [scanning, setScanning] = useState(false);
+  const [epoch, setEpoch] = useState(0);
+  // Il flag di corsa sta in un ref e non in stato: il ramo che lo legge gira
+  // NELLO STESSO tasto in cui potrebbe averlo scritto, e un valore di stato
+  // React arriverebbe al render dopo — cioè troppo tardi per impedire il
+  // secondo lancio.
+  const busy = useRef(false);
+
+  const run = useCallback(() => {
+    if (busy.current) return;
+    busy.current = true;
+    setScanning(true);
+    runWrapScan(projectRoot).then((good) => {
+      busy.current = false;
+      setScanning(false);
+      setOk(good);
+      // La cache si rilegge SOLO su successo: un tentativo fallito lascia in
+      // piedi l'esito dell'ultimo riuscito, che resta vero e ancora apribile.
+      if (good) setCache(readWrapCache(path));
+    });
+  }, [projectRoot, path]);
+
+  useEffect(() => {
+    const id = setInterval(run, SCAN_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [run, epoch]);
+
+  const scan = useCallback(() => {
+    setEpoch((e) => e + 1);
+    run();
+  }, [run]);
+
+  const files = cache?.files ?? [];
+  return {
+    files,
+    count: wrapCount(files),
+    mixed: mixedCount(files),
+    mtime: cache?.mtime ?? null,
+    ok,
+    scanning,
+    scan,
+  };
 }
 
 // Legge il task file della task selezionata (Q1+B T20). On-id-change: navigare

@@ -26,7 +26,7 @@
 import { Box, Text } from 'ink';
 import { rowIndexOfKey, selectedRow } from '../search.js';
 import { cut } from '../width.js';
-import { INDICATOR_SEP, legendWidth, type IndicatorRow } from '../frame.js';
+import { legendWidth, type IndicatorRow } from '../frame.js';
 import { isCompact, searchPreviewCapacity, windowRange } from '../viewport.js';
 import { conversationLabel } from '../layout.js';
 import { taskColumns, type TaskRowData, type ViewState } from '../view.js';
@@ -37,18 +37,21 @@ import { AssignScreen } from './assign-screen.js';
 import { DetailScreen } from './detail-screen.js';
 import { StatusScreen } from './status-screen.js';
 import { InboxScreen } from './inbox-screen.js';
+import { WrapScreen } from './wrap-screen.js';
 import { ReaderScreen, SearchScreen } from './search-screen.js';
 import type { useAssignOverlay } from '../overlays/assign.js';
 import type { useSheetOverlay } from '../overlays/sheet.js';
 import type { useSearchOverlay } from '../overlays/search.js';
 import type { useProjectStatus } from '../overlays/status.js';
 import type { useInboxOverlay } from '../overlays/inbox.js';
+import type { useWrapOverlay } from '../overlays/wrap.js';
 
 type AssignOverlay = ReturnType<typeof useAssignOverlay>;
 type SheetOverlay = ReturnType<typeof useSheetOverlay>;
 type SearchOverlay = ReturnType<typeof useSearchOverlay>;
 type StatusOverlay = ReturnType<typeof useProjectStatus>;
 type InboxOverlay = ReturnType<typeof useInboxOverlay>;
+type WrapOverlay = ReturnType<typeof useWrapOverlay>;
 
 /**
  * Il ripiego per un terminale troppo basso: una riga sola al posto della
@@ -170,25 +173,21 @@ export function HintBar({
       </Text>
     );
   }
-  // Riga full-width come la testata: `space-between` la riempie fino al bordo,
-  // quindi il gate di `frame-width.test.ts` continua a misurare esattamente
-  // `columns`. Il taglio della legenda lo fa il deck e non Ink, come ovunque:
-  // la stringa porta emoji e frecce, e `cli-truncate` le conta con un budget in
-  // colonne indicizzando per code point — una colonna di troppo finisce sopra
-  // il bordo destro, che sparisce dalla riga (invariante ③ di width.ts).
+  // Riga a piena larghezza nella stessa forma della testata: un `Box` con
+  // `justifyContent="space-between"` e due figli a stringa piatta. Il blocco
+  // indicatori arriva già unito (`indicators.text`) invece che come segmenti
+  // resi uno per uno — da cui il colore unico per il blocco.
+  //
+  // Il taglio della legenda resta del deck e non di Ink: la stringa porta emoji
+  // e frecce, e `cli-truncate` le conta con un budget in colonne indicizzando
+  // per code point — una colonna di troppo finisce sopra il bordo destro, che
+  // sparisce dalla riga (invariante ③ di width.ts).
   return (
     <Box flexDirection="row" justifyContent="space-between">
       <Text dimColor wrap="truncate-end">
         {cut(keyLegend, legendWidth(columns, indicators.width))}
       </Text>
-      <Text>
-        {indicators.segments.map((s, i) => (
-          <Text key={s.key} color="cyan">
-            {i > 0 ? INDICATOR_SEP : ''}
-            {s.text}
-          </Text>
-        ))}
-      </Text>
+      <Text color="cyan">{indicators.text}</Text>
     </Box>
   );
 }
@@ -215,6 +214,7 @@ export type ScreensInput = {
     search: SearchOverlay;
     status: StatusOverlay;
     inbox: InboxOverlay;
+    wrap: WrapOverlay;
   };
 };
 
@@ -229,7 +229,7 @@ export type ScreensInput = {
  */
 export function screenFor(input: ScreensInput) {
   const { mode, rows, columns, note, overlays } = input;
-  const { assign, sheet, search, status, inbox } = overlays;
+  const { assign, sheet, search, status, inbox, wrap } = overlays;
 
   // ── T57 · schermata di assegnazione ─────────────────────────────────────
   // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
@@ -380,6 +380,29 @@ export function screenFor(input: ScreensInput) {
         total={inbox.lines.length}
         capacity={inbox.capacity}
         prompt={inbox.prompt}
+        columns={columns}
+      />
+    );
+  }
+
+  // ── T134 · lista hard-wrap ──────────────────────────────────────────────
+  // Settima schermata sostitutiva: sul cappello lo scan trova 77 `WRAP` e 147
+  // `misto`, cioè una lista che in un box sopra i pane non entrerebbe.
+  if (mode === 'wrap' && wrap.files) {
+    if (isCompact(wrap.capacity)) {
+      return <CompactNotice what="hard-wrap" esc="chiude" rows={rows} columns={columns} />;
+    }
+    const start = Math.min(wrap.top, wrap.maxTop);
+    return (
+      <WrapScreen
+        files={wrap.files.slice(start, start + wrap.capacity)}
+        count={wrap.count}
+        mixed={wrap.mixed}
+        mtime={wrap.mtime}
+        top={start}
+        capacity={wrap.capacity}
+        path={wrap.path}
+        caret={wrap.caret}
         columns={columns}
       />
     );
