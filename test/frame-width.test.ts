@@ -224,6 +224,10 @@ function assertBordersHold(region: Array<{ line: string; i: number }>, label: st
 
 const CTRL_F = String.fromCharCode(6);
 const CTRL_A = String.fromCharCode(1);
+/** T134 — `^B` scambia i due pane dello slot destro. */
+const CTRL_B = String.fromCharCode(2);
+/** T134 — `^W` apre la lista hard-wrap. */
+const CTRL_W = String.fromCharCode(23);
 /** T121 — genera e apri il project status. */
 const CTRL_G = String.fromCharCode(7);
 const CTRL_O = String.fromCharCode(15);
@@ -245,6 +249,31 @@ function statusCacheFile(): string {
       '- `T109` — asfaltatura v2',
       '',
       'Chiusura con un paragrafo normale.',
+    ].join('\n'),
+  );
+  return path;
+}
+
+/**
+ * T134 — cache dello scan hard-wrap, sintetica: il gate non deve dipendere da
+ * uno scan reale (cammina l'albero del progetto intero e dura minuti) né dal
+ * fatto che chi lancia i test ne abbia già fatto uno.
+ *
+ * I path sono lunghi di proposito: la cella del path è l'unica elastica della
+ * riga, quindi è l'unica che può sfondare il box, e su un terminale a 80
+ * colonne un path da 120 caratteri è il caso vero — le task folder rientrano nel
+ * perimetro dello scan (D3 preflight) e producono esattamente questi.
+ */
+function wrapCacheFileFixture(): string {
+  const path = join(mkdtempSync(join(tmpdir(), 'deck-wrap-')), 'scan.tsv');
+  const lungo = `.26-08-11-review/${'sotto-cartella-lunga/'.repeat(5)}turno.md`;
+  writeFileSync(
+    path,
+    [
+      `WRAP\t${lungo}\tcol=93\tratio=0.82\tbreaks=41\tprose=50`,
+      'WRAP\truntime/reference/doc-system/doc-system-topology.md\tcol=80\tratio=0.7\tbreaks=9\tprose=13',
+      'misto\truntime/inbox/T134-note-una-riga-per-pensiero.md\tcol=\tratio=0.3\tbreaks=2\tprose=7',
+      '',
     ].join('\n'),
   );
   return path;
@@ -361,6 +390,24 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // Il bulk: l'elenco ID cresce con l'insieme, ed è il pezzo che sfonda se il
   // troncamento `+N` non lo tiene. La soglia a 1 giorno riempie la vista.
   ['conferma · bulk archiviabili', 'TTK', [80, 100, 176], ARCHIVABLE_ON],
+  // T134 — il pane inbox nello slot destro. Due colonne fisse (natura, marker)
+  // più una cella elastica calcolata per sottrazione: la stessa aritmetica che
+  // ha fatto uscire dal pane la lista sessioni due volte. Il nome di un file
+  // inbox arriva ai 45 caratteri, cioè sfora da solo il pane a 80 colonne.
+  ['pane inbox', CTRL_B, [80, 100, 176]],
+  // L'header del catalogo inbox al completo: `Inbox · Tutti (N) · nozioni (n) ·
+  // derivazione (n) · sweep (n)` è più lungo di quello delle sessioni, e su un
+  // pane stretto è il caso in cui la voce attiva deve restare e le altre cedere.
+  ['pane inbox · vista sweep attiva', `${CTRL_B}RTTT`, [80, 100]],
+  // Il detail di un file inbox: schermata sostitutiva col testo reso a piena
+  // larghezza più la riga dell'azione, che porta un comando lungo quanto il
+  // basename del file.
+  ['detail inbox', `${CTRL_B}RD\r`, [80, 100, 176]],
+  // T134 — la riga legenda divide il budget con gli indicatori ancorati a
+  // destra. A 80 colonne è la larghezza in cui la legenda cede quasi tutto e il
+  // bottone resta intero: se il budget fosse sbagliato di una colonna, il bordo
+  // sparirebbe proprio qui.
+  ['legenda con indicatori', 'W', [80, 100, 176]],
 ];
 
 // T121 — il viewer del project status e i due stati «rumorosi» della testata.
@@ -378,6 +425,16 @@ for (const cols of [80, 100, 176]) {
   test(`gate larghezza · testata in building @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
     const raw = capture(cols, 38, CTRL_G, { LOOM_DECK_STATUS_FILE: statusCacheFile() });
     assertFrameFits(raw, cols, `testata building@${cols}`);
+  });
+}
+
+// T134 — la lista hard-wrap. Fuori da `SCENARIOS` per la stessa ragione del
+// project status: la cache va scritta prima, e un file temporaneo creato al
+// modulo sarebbe condiviso da scenari che non lo usano.
+for (const cols of [80, 100, 176]) {
+  test(`gate larghezza · lista hard-wrap @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+    const raw = capture(cols, 38, CTRL_W, { LOOM_DECK_WRAP_FILE: wrapCacheFileFixture() });
+    assertFrameFits(raw, cols, `lista hard-wrap@${cols}`);
   });
 }
 
