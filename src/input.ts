@@ -29,11 +29,12 @@ import {
   type MouseEvent,
   type Region,
 } from './mouse.js';
-import { LAUNCH_ROW } from './frame.js';
+import { HINT_ROW, LAUNCH_ROW } from './frame.js';
 import { moveSelection } from './session-list.js';
 import { captures, scrolls, type CapturingMode, type ScrollingMode } from './input-modes.js';
 import { META_ROWS, QUIT_WINDOW_MS, type Mode } from './model.js';
 import { TASK_VIEWS, taskView, type SessionViewId, type TaskViewId } from './pane-views.js';
+import type { InboxViewId } from './inbox-views.js';
 import { loadTaskFileText } from './tasks.js';
 import type { Frame } from './frame.js';
 import type { DeckActions } from './actions.js';
@@ -93,6 +94,7 @@ export function useDeckInput({
   overlays,
   frame,
   launchRegions,
+  indicatorRegions,
 }: {
   tasksDir: string;
   mode: Mode;
@@ -106,6 +108,9 @@ export function useDeckInput({
   frame: Frame;
   /** Le colonne cliccabili della riga launch (`launchRow` in `frame.ts`). */
   launchRegions: Region[];
+  /** T134 — le colonne cliccabili degli indicatori sulla riga legenda
+   *  (`indicatorRow` in `frame.ts`). Le loro chiavi portano il prefisso `^`. */
+  indicatorRegions: Region[];
 }) {
   // T116 — uscita a doppio `^C`. Il timer È lo stato dell'armamento: finché il
   // handle esiste la finestra è aperta, e non serve un secondo stato da tenere
@@ -222,6 +227,14 @@ export function useDeckInput({
       if (hit) onKey(hit, NO_MODIFIERS);
       return;
     }
+    if (ev.row === HINT_ROW) {
+      // T134 — stessa porta, con i modificatori: gli indicatori rappresentano
+      // combo `ctrl`, e una chiave nuda le farebbe cadere nel ramo delle lettere
+      // (`b` non è legata a niente oggi, ma `w` salva la vista).
+      const hit = hitRegion(indicatorRegions, ev.col);
+      if (hit) onKey(hit.slice(1), { ...NO_MODIFIERS, ctrl: true });
+      return;
+    }
     onListClick(ev);
   }
 
@@ -248,7 +261,19 @@ export function useDeckInput({
     if (hit.target === 'view') {
       model.setFocus(hit.pane);
       if (hit.pane === 'tasks') model.selectTaskView(hit.key as TaskViewId);
+      else if (hit.pane === 'inbox') model.selectInboxView(hit.key as InboxViewId);
       else model.selectSessionView(hit.key as SessionViewId);
+      return;
+    }
+    if (hit.pane === 'inbox') {
+      const f = frame.windowInbox[hit.index];
+      if (!f) return;
+      if (model.focus === 'inbox' && f.path === model.selInboxPath) {
+        onKey('', { ...NO_MODIFIERS, return: true });
+        return;
+      }
+      model.setFocus('inbox');
+      model.selectInboxRow(frame.inboxWin.start + hit.index);
       return;
     }
     if (hit.pane === 'tasks') {
@@ -321,6 +346,12 @@ export function useDeckInput({
         overlays.status.generate();
       } else if (input === 'o') {
         overlays.status.open();
+      } else if (input === 'b') {
+        // T134/D8 preflight — `^B` (box/bacheca) scambia i due pane dello slot
+        // destro. Non è un modale né una schermata: il pane resta uno dei due
+        // riquadri della vista normale, quindi `tab` continua a ciclare le
+        // viste DENTRO quello montato e `←→` a spostare il focus fra le colonne.
+        model.toggleInboxPane();
       }
       return;
     }
@@ -335,17 +366,26 @@ export function useDeckInput({
       // verso che un tasto singolo non esprime sta nel modificatore, e su cinque
       // voci risparmia quattro pressioni.
       model.cycleView(key.shift ? -1 : 1);
+    } else if (key.escape) {
+      // T134/D8 preflight — `esc` in vista normale chiude il pane inbox e torna
+      // alle sessioni. Resta inerte quando le sessioni sono già montate: `esc`
+      // dice «esci da dove sei», e da lì non c'è niente da cui uscire.
+      model.closeInboxPane();
     } else if (key.leftArrow || key.rightArrow) {
       // Binding ASSOLUTO, non toggle: `←` porta sempre sui task e `→` sempre
-      // sulle sessioni, quindi ripremere lo stesso tasto non riporta indietro.
+      // sul pane DESTRO, quindi ripremere lo stesso tasto non riporta indietro.
       // È ciò che lo rende spaziale — la direzione indica una destinazione, e
-      // con due soli pane un toggle sarebbe indistinguibile solo per caso.
-      model.setFocus(key.leftArrow ? 'tasks' : 'sessions');
+      // con due colonne un toggle sarebbe indistinguibile solo per caso.
+      // T134 — «destro» è il pane montato, non `sessions`: il tasto nomina una
+      // posizione, e quale dei due la occupi è un'altra decisione (`^B`).
+      model.setFocus(key.leftArrow ? 'tasks' : model.rightPane);
     } else if (key.upArrow) {
       if (model.focus === 'tasks') model.moveTaskSel(-1);
+      else if (model.focus === 'inbox') model.moveInboxSel(-1);
       else model.setSelSessionId((id) => moveSelection(model.sessionRows, id, -1));
     } else if (key.downArrow) {
       if (model.focus === 'tasks') model.moveTaskSel(1);
+      else if (model.focus === 'inbox') model.moveInboxSel(1);
       else model.setSelSessionId((id) => moveSelection(model.sessionRows, id, 1));
     } else if (key.return) {
       if (model.focus === 'tasks') {

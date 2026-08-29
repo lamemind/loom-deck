@@ -78,6 +78,32 @@ export const LIVE_IDLE = '●';
 export const LIVE_BUSY = '◍';
 export const LIVE_NONE = ' ';
 
+/**
+ * T134 — colonna di stato della riga inbox, larga 2 come la cella marker della
+ * lista sessioni.
+ *
+ * `held` non ha glifo, e non è una dimenticanza: un file senza il token
+ * `drainable` resta eseguibile se qualcuno lo nomina, quindi ogni simbolo di
+ * divieto direbbe una cosa più forte del vero. L'assenza dice «non è in coda»
+ * senza promettere altro, e la colonna natura accanto continua a nominarlo.
+ *
+ * Nessun glifo è riusato dalla lista sessioni con un significato spostato: là
+ * `●`/`◍` dicono la liveness di un processo e `📌`/`🔗`/`○` l'appartenenza,
+ * qui si parla di una coda di lavoro. Un falso amico costa più di un simbolo
+ * nuovo.
+ */
+export const INBOX_MARK: Record<'broken' | 'branched' | 'held' | 'queued', string> = {
+  broken: WARN,
+  branched: sanitize('🔒'),
+  held: '',
+  queued: sanitize('⏳'),
+};
+
+/** Larghezza della cella marker della riga inbox, gemella dei 2 della lista
+ *  sessioni: la cella si riempie di spazi anche quando è vuota, o le righe
+ *  `held` sposterebbero a sinistra tutto ciò che segue. */
+export const INBOX_MARK_W = 2;
+
 // Marker Done per il DISPLAY. `task.prog` resta il `✔️` letto da tasks.md —
 // `isDone()` e le lookup di `view.ts` ci confrontano sopra, e `task-edit` lo
 // riscrive sul file: è una chiave semantica, non testo. Qui `sanitize` lo

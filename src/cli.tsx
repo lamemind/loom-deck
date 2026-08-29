@@ -19,7 +19,7 @@ import { LAUNCH_SEP } from './config.js';
 import { anchorFrame, enableMouse } from './mouse.js';
 import { sanitize } from './width.js';
 import { type Mode } from './model.js';
-import { deckLegend, frameGeometry, headlineWidth, launchRow } from './frame.js';
+import { deckLegend, frameGeometry, headlineWidth, indicatorRow, launchRow } from './frame.js';
 import { useDeckModel } from './deck-model.js';
 import { useDeckActions } from './actions.js';
 import { useDeckInput } from './input.js';
@@ -32,7 +32,7 @@ import { useTextModals, useViewModals } from './overlays/modals.js';
 import { useTerminalSize } from './hooks.js';
 import { EditModal, FilterModal, PurgeModal, SortModal } from './ui/modals.js';
 import { StatusHeadline } from './ui/status-screen.js';
-import { SessionsPane, TasksPane } from './ui/panes.js';
+import { InboxPane, SessionsPane, TasksPane } from './ui/panes.js';
 import { PreviewPane, detailMetaOf } from './ui/preview.js';
 import { CompactNotice, HintBar, TextBox, screenFor } from './ui/screens.js';
 import { VERSION } from './version.js';
@@ -130,12 +130,28 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       ? model.detail
         ? ('task' as const)
         : ('none' as const)
-      : model.selSessionObj
-        ? ('session' as const)
-        : ('none' as const);
+      : model.focus === 'inbox'
+        ? model.selInbox
+          ? ('inbox' as const)
+          : ('none' as const)
+        : model.selSessionObj
+          ? ('session' as const)
+          : ('none' as const);
   const detailParts = model.detail ? detailMetaOf(model.detail) : null;
 
   const launch = launchRow(model.launch, columns);
+  // T134 — gli indicatori ancorati a destra della riga legenda. Si compongono
+  // PRIMA della legenda perché è la loro larghezza a decidere quanto ne resta:
+  // hanno la precedenza sul budget (D5 preflight).
+  const indicators = indicatorRow(
+    {
+      counts: model.inboxCounts,
+      stale: model.inboxStale,
+      scanned: model.inboxScanned,
+      ok: model.inboxOk,
+    },
+    columns,
+  );
   const frame = frameGeometry({
     rows,
     columns,
@@ -156,6 +172,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     sessionViewId: model.sessionViewId,
     parentLabel: model.parentLabel,
     hasLoadError: Boolean(model.loadError),
+    rightPane: model.rightPane,
+    inboxFiles: model.inboxFiles,
+    selInboxPath: model.selInboxPath,
+    inboxCounts: model.inboxCounts,
+    inboxViewId: model.inboxViewId,
   });
 
   useDeckInput({
@@ -168,6 +189,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     overlays,
     frame,
     launchRegions: launch.regions,
+    indicatorRegions: indicators.regions,
   });
 
   // Le cinque schermate sostitutive prendono il frame intero: se una è attiva
@@ -235,7 +257,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           hasSession: model.selSessionObj !== null,
           hasSessionId: model.selSessionId !== null,
           purgeBulk: model.purgeBulk,
+          inboxPane: model.rightPane === 'inbox',
         })}
+        indicators={indicators}
+        columns={columns}
       />
       {/* T43 — riga delle surface: prima le due built-in (`t`/`c`), poi la mappa
           indice→launch del progetto. Presente in tutta la modalità normale, non
@@ -293,27 +318,46 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           columns={columns}
           data={model.taskRowData}
         />
-        <SessionsPane
-          parentLabel={model.parentLabel}
-          isSpot={model.isSpot}
-          isAll={model.isAll}
-          bindings={model.bindings}
-          taskW={model.sessionCols.task}
-          ageW={model.sessionCols.age}
-          rows={frame.windowRows}
-          counts={model.sessionCounts}
-          activeView={model.sessionViewId}
-          paneCount={model.sessionRows.length}
-          selectedId={model.selSessionId ?? undefined}
-          focused={model.focus === 'sessions'}
-          above={frame.sessionWin.start}
-          below={model.sessionRows.length - frame.sessionWin.end}
-          columns={columns}
-          forkOf={model.forkOf}
-          sessionNotes={model.sessionNotes}
-          projectCore={model.projectCore}
-          live={model.live}
-        />
+        {/* T134 — lo slot destro ospita UNO dei due pane (D6): con due riquadri
+            i tipi delle righe restano disgiunti, e ogni azione della lista
+            sessioni continua a valere solo dove una conversazione esiste. */}
+        {model.rightPane === 'inbox' ? (
+          <InboxPane
+            files={frame.windowInbox}
+            counts={model.inboxCounts}
+            activeView={model.inboxViewId}
+            paneCount={model.inboxFiles.length}
+            selectedPath={model.selInboxPath}
+            focused={model.focus === 'inbox'}
+            above={frame.inboxWin.start}
+            below={model.inboxFiles.length - frame.inboxWin.end}
+            columns={columns}
+            ok={model.inboxOk}
+            scanned={model.inboxScanned}
+          />
+        ) : (
+          <SessionsPane
+            parentLabel={model.parentLabel}
+            isSpot={model.isSpot}
+            isAll={model.isAll}
+            bindings={model.bindings}
+            taskW={model.sessionCols.task}
+            ageW={model.sessionCols.age}
+            rows={frame.windowRows}
+            counts={model.sessionCounts}
+            activeView={model.sessionViewId}
+            paneCount={model.sessionRows.length}
+            selectedId={model.selSessionId ?? undefined}
+            focused={model.focus === 'sessions'}
+            above={frame.sessionWin.start}
+            below={model.sessionRows.length - frame.sessionWin.end}
+            columns={columns}
+            forkOf={model.forkOf}
+            sessionNotes={model.sessionNotes}
+            projectCore={model.projectCore}
+            live={model.live}
+          />
+        )}
       </Box>
       {/* T70 — blocco preview UNICO, a piena larghezza, sotto le due liste.
           Renderizzato solo con contenuto E spazio: `budget.preview` copre il
@@ -325,6 +369,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           maxLines={frame.budget.detailLines}
           columns={columns}
         />
+      ) : frame.budget.preview && previewKind === 'inbox' && model.selInbox ? (
+        <PreviewPane kind="inbox" file={model.selInbox} columns={columns} />
       ) : frame.budget.preview && previewKind === 'session' && model.selSessionObj ? (
         <PreviewPane
           kind="session"

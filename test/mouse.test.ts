@@ -205,8 +205,11 @@ const GEOMETRY: ListGeometry = {
   columns: 120,
   taskHeader: [{ key: 'tasks', start: 5, end: 17 }, { key: 'hidden', start: 21, end: 31 }],
   sessionHeader: [{ key: 'context', start: 75, end: 85 }],
+  inboxHeader: [{ key: 'all', start: 75, end: 84 }],
   taskRows: 2 + 5, // due meta + cinque task
   sessionRows: 4,
+  inboxRows: 3,
+  rightPane: 'sessions',
 };
 
 test('listHit: header → vista, col separatore e il nome del pane inerti', () => {
@@ -257,6 +260,33 @@ test('listHit: pane sessioni — prima riga subito sotto l\'header, oltre la fin
     index: 3,
   });
   assert.equal(listHit({ col: 70, row: PANE_BODY_ROW + 4 }, GEOMETRY), null);
+});
+
+// T134 — lo slot destro ospita uno dei due pane, e `rightPane` decide QUALE
+// catalogo il click interroga. Senza, un click sull'header del pane inbox
+// tornerebbe una chiave del catalogo delle sessioni: una vista che esiste, con
+// un id che il pane montato non conosce, e nessun errore.
+test('listHit: col pane inbox montato il click destro parla di inbox', () => {
+  const g: ListGeometry = { ...GEOMETRY, rightPane: 'inbox' };
+  assert.deepEqual(listHit({ col: 80, row: PANE_HEADER_ROW }, g), {
+    pane: 'inbox',
+    target: 'view',
+    key: 'all',
+  });
+  assert.deepEqual(listHit({ col: 70, row: PANE_BODY_ROW + 2 }, g), {
+    pane: 'inbox',
+    target: 'row',
+    index: 2,
+  });
+  // Le righe del pane inbox sono le sue, non quelle delle sessioni: oltre la
+  // terza non c'è niente da colpire anche se le sessioni ne avrebbero quattro.
+  assert.equal(listHit({ col: 70, row: PANE_BODY_ROW + 3 }, g), null);
+  // Il pane task non cambia: lo slot destro non lo tocca.
+  assert.deepEqual(listHit({ col: 10, row: TASK_LIST_ROW }, g), {
+    pane: 'tasks',
+    target: 'row',
+    index: 0,
+  });
 });
 
 test('listHit: margine fra i pane, bordo esterno e righe sopra i pane sono inerti', () => {

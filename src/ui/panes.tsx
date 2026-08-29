@@ -7,6 +7,8 @@ import { paneTextWidth } from '../layout.js';
 import {
   CARET,
   CARET_OFF,
+  INBOX_MARK,
+  INBOX_MARK_W,
   LIVE_BUSY,
   LIVE_IDLE,
   LIVE_NONE,
@@ -18,6 +20,12 @@ import {
   modelShort,
   relTime,
 } from '../glyphs.js';
+import { NATURA_SHORT, NATURA_W, inboxMark, type InboxFile } from '../inbox.js';
+import {
+  inboxView,
+  type InboxViewCounts,
+  type InboxViewId,
+} from '../inbox-views.js';
 import { TaskRow } from './task-row.js';
 import { META_ROWS, ROW_ALL, ROW_SPOT } from '../model.js';
 import { rowLabel, sessionTitle, type SessionRow } from '../session-list.js';
@@ -29,7 +37,12 @@ import {
   type TaskViewCounts,
   type TaskViewId,
 } from '../pane-views.js';
-import { sessionHeaderParts, taskHeaderParts, type HeaderPart } from '../pane-header.js';
+import {
+  inboxHeaderParts,
+  sessionHeaderParts,
+  taskHeaderParts,
+  type HeaderPart,
+} from '../pane-header.js';
 import {
   describeSort,
   PRI_ENTRIES,
@@ -296,6 +309,164 @@ export function SessionsHeader({
 }) {
   const { parts, shown } = sessionHeaderParts(parentLabel, counts, active, above, below, columns);
   return <HeaderLine parts={parts} shown={shown} focused={focused} />;
+}
+
+/**
+ * T134 — header del pane inbox, terzo gemello dei due sopra: le parti e il loro
+ * taglio vengono da `pane-header.ts`, lo stesso modulo da cui `frame.ts` ricava
+ * le colonne cliccabili.
+ */
+export function InboxHeader({
+  counts,
+  active,
+  above,
+  below,
+  focused,
+  columns,
+}: {
+  counts: InboxViewCounts;
+  active: InboxViewId;
+  above: number;
+  below: number;
+  focused: boolean;
+  columns: number;
+}) {
+  const { parts, shown } = inboxHeaderParts(counts, active, above, below, columns);
+  return <HeaderLine parts={parts} shown={shown} focused={focused} />;
+}
+
+/**
+ * T134 — il pane inbox, alternativo a quello delle sessioni nello slot destro
+ * (D6). Uno dei due è montato e l'altro non esiste: `^B` li scambia.
+ *
+ * Mostra SEMPRE TUTTO, senza filtro sulla task selezionata a sinistra (D7
+ * preflight, che supersede la clausola di D6 congelate): niente righe meta,
+ * nessun trattamento speciale per il cappello vuoto o per un cappello che
+ * nomina una task non più in `tasks.md`. Ne discende che la colonna `CAPPELLO`
+ * di `doc-metrics` non serve al filtro — resta nel blocco preview, dove dice
+ * qualcosa senza costare una colonna su ogni riga.
+ *
+ * La riga porta marcatori, branch e nome (D8). Non le cifre (nozioni, aperte,
+ * char): stanno nella preview, e su un pane largo la metà del terminale ogni
+ * colonna fissa la paga la cella elastica del nome — che è l'unica cosa con cui
+ * si riconosce un file.
+ */
+export function InboxPane({
+  files,
+  counts,
+  activeView,
+  paneCount,
+  selectedPath,
+  focused,
+  above,
+  below,
+  columns,
+  ok,
+  scanned,
+}: {
+  /** Solo la finestra visibile della lista, e della vista attiva. */
+  files: InboxFile[];
+  counts: InboxViewCounts;
+  activeView: InboxViewId;
+  /** Righe della vista ATTIVA (non `files.length`, che è la sola finestra). */
+  paneCount: number;
+  selectedPath: string | null;
+  focused: boolean;
+  above: number;
+  below: number;
+  columns: number;
+  /** L'ultimo scan è riuscito. */
+  ok: boolean;
+  /** Almeno uno scan è stato tentato. */
+  scanned: boolean;
+}) {
+  const width = paneTextWidth(columns);
+  // La cella elastica si calcola per SOTTRAZIONE dalle colonne fisse, come il
+  // titolo della lista sessioni: pavimento 0 e non un minimo di cortesia — è un
+  // tetto, non una preferenza, e alzarlo sopra lo spazio reale fa uscire la riga
+  // dal pane mangiandone il bordo (invariante ③ di width.ts).
+  const ageW = 3;
+  const nameW = Math.max(
+    0,
+    width -
+      (2 /* caret */ +
+        NATURA_W +
+        1 /* gutter */ +
+        INBOX_MARK_W +
+        1 /* gutter */ +
+        1 /* gutter prima della data */ +
+        ageW),
+  );
+  return (
+    <Box
+      flexDirection="column"
+      width="50%"
+      borderStyle="single"
+      borderColor={focused ? 'cyan' : 'gray'}
+      paddingX={1}
+    >
+      <InboxHeader
+        counts={counts}
+        active={activeView}
+        above={above}
+        below={below}
+        focused={focused}
+        columns={columns}
+      />
+      {paneCount === 0 ? (
+        // Tre vuoti diversi, e dirlo è il punto: «non ho ancora misurato» non è
+        // «ho misurato e non c'è niente», e «la misura si è rotta» non è nessuno
+        // dei due (D2 preflight). Una lista vuota che non dice quale dei tre è
+        // si legge come un pane rotto.
+        <Text color="yellow" wrap="truncate-end">
+          {cut(
+            !scanned
+              ? 'coda non ancora misurata'
+              : !ok
+                ? 'misura della coda fallita: plugin assente o script in errore'
+                : inboxView(activeView).empty,
+            width,
+          )}
+        </Text>
+      ) : (
+        files.map((f) => {
+          const sel = f.path === selectedPath;
+          const mark = inboxMark(f);
+          // Il branch sta DENTRO la cella del nome, non in una colonna propria:
+          // è raro, e una colonna dedicata costerebbe spazio vuoto su ogni riga
+          // non-branchata di un pane largo la metà del terminale. Stessa scelta
+          // del marcatore di fork nella lista sessioni.
+          const branchMark = f.branch ? `⟨${f.branch}⟩ ` : '';
+          const inner = Math.max(0, nameW - termWidth(sanitize(branchMark)));
+          const name = cut(f.basename.replace(/\.md$/, ''), inner);
+          const age = relTime(f.created * 1000);
+          return (
+            <Text
+              key={f.path}
+              inverse={sel && focused}
+              bold={sel && !focused}
+              wrap="truncate-end"
+            >
+              {sel ? CARET : CARET_OFF}
+              <Text
+                color={mark === 'broken' ? 'red' : mark === 'queued' ? 'green' : undefined}
+                dimColor={mark === 'held' || mark === 'branched'}
+              >
+                {pad(NATURA_SHORT[f.natura], NATURA_W)}
+              </Text>{' '}
+              <Text color={mark === 'branched' ? 'yellow' : undefined}>
+                {pad(INBOX_MARK[mark], INBOX_MARK_W)}
+              </Text>{' '}
+              {branchMark ? <Text color="yellow">{sanitize(branchMark)}</Text> : null}
+              <Text dimColor={mark !== 'queued'}>{name}</Text>
+              {' '.repeat(Math.max(0, inner - termWidth(name)))}{' '}
+              <Text dimColor>{pad(age, ageW, 'right')}</Text>
+            </Text>
+          );
+        })
+      )}
+    </Box>
+  );
 }
 
 export function SessionsPane({

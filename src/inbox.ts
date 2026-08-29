@@ -117,6 +117,48 @@ export function isQueued(f: InboxFile): boolean {
   return f.drainable && !f.branch && f.natura !== 'malformato';
 }
 
+/**
+ * Abbreviazione a larghezza fissa della natura, per la colonna della riga.
+ *
+ * CHIESTE e non derivate con uno `slice(0,3)`, come le short dei modelli:
+ * `der` e `swp` non coincidono col troncamento (`der`/`swe`), e una regola che
+ * sbaglia su due voci su quattro non è una regola.
+ */
+export const NATURA_SHORT: Record<InboxNatura, string> = {
+  nozioni: 'noz',
+  derivazione: 'der',
+  sweep: 'swp',
+  malformato: '???',
+};
+
+/** Larghezza COSTANTE della colonna natura: il dominio è chiuso e le short
+ *  sono tutte larghe 3, quindi misurarla a ogni render calcolerebbe un numero
+ *  già noto. */
+export const NATURA_W = 3;
+
+/**
+ * Perché un file è o non è nella coda automatica. Quattro casi, in ordine di
+ * precedenza — ognuno esclude quelli sotto:
+ *
+ *  - `broken`   — nessuna natura leggibile: non lo prende nessuna delle tre
+ *                 skill, e il file va riparato prima che drenato;
+ *  - `branched` — `branch:<nome>`, congelato per CHIUNQUE finché il branch non
+ *                 è su main: lo sblocca `pull-repos`, non chi guarda il deck;
+ *  - `held`     — senza il token `drainable`: fuori dalla coda del notturno, ma
+ *                 eseguibile eccome se qualcuno lo NOMINA (D5). Non è un
+ *                 divieto, ed è la ragione per cui il deck non ci mette sopra
+ *                 una guardia;
+ *  - `queued`   — lavoro che una skill può prendere da sola.
+ */
+export type InboxMark = 'broken' | 'branched' | 'held' | 'queued';
+
+export function inboxMark(f: InboxFile): InboxMark {
+  if (f.natura === 'malformato') return 'broken';
+  if (f.branch) return 'branched';
+  if (!f.drainable) return 'held';
+  return 'queued';
+}
+
 export type NaturaCounts = Record<Natura, number>;
 
 /**

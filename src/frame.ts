@@ -15,9 +15,10 @@
 // leggeva dichiarata seicento righe più in basso. Il costo è calcolare il
 // budget anche quando il render esce presto su una schermata sostitutiva:
 // aritmetica su array già in memoria, e `layoutBudget` accetta ogni `Mode`.
-import { headerItems, sessionHeaderParts, taskHeaderParts } from './pane-header.js';
+import { headerItems, inboxHeaderParts, sessionHeaderParts, taskHeaderParts } from './pane-header.js';
 import {
   FRAME_TEXT_COL,
+  HINT_ROW,
   inlineRegions,
   LAUNCH_ROW,
   PANE_TEXT_PAD,
@@ -30,8 +31,12 @@ import {
 import { cellWidth, launchLegend, LAUNCH_SEP, type LaunchEntry } from './config.js';
 import { layoutBudget, windowRange, type Budget, type PreviewKind } from './viewport.js';
 import { sanitize, termWidth } from './width.js';
-import { META_ROWS, type Focus, type Mode } from './model.js';
+import { WARN } from './glyphs.js';
+import { STATUS_MISSING } from './project-status.js';
+import { META_ROWS, type Focus, type Mode, type RightPane } from './model.js';
 import type { SessionViewCounts, SessionViewId, TaskViewCounts, TaskViewId } from './pane-views.js';
+import type { InboxViewCounts, InboxViewId } from './inbox-views.js';
+import type { InboxFile } from './inbox.js';
 import { rowIndexOf, type SessionRow } from './session-list.js';
 import type { Task } from './tasks.js';
 import { VERSION } from './version.js';
@@ -74,6 +79,8 @@ export function deckLegend(state: {
   hasSessionId: boolean;
   /** `CANC` pota in blocco invece della sola selezionata. */
   purgeBulk: boolean;
+  /** T134 — il pane inbox occupa lo slot destro. */
+  inboxPane: boolean;
 }): string {
   const canSpawn = state.focus === 'tasks' && state.hasTask;
   const canResume = state.focus === 'sessions' && state.hasSession;
@@ -99,6 +106,11 @@ export function deckLegend(state: {
       // cosa e sta a due voci di distanza.
       '^G genera status',
       '^O apri status',
+      // T134 — la voce nomina il pane che il tasto MONTA, non quello montato:
+      // `^B` scambia i due, e annunciare quello che si sta già guardando
+      // direbbe il contrario di ciò che il tasto fa. Stessa regola di `CANC
+      // elimina tutte`, che nomina il bersaglio e non il tasto.
+      state.inboxPane ? '^B sessioni' : '^B inbox',
       '^F cerca',
       'C nuova',
       'E edit',
@@ -144,6 +156,72 @@ export function launchRow(launch: LaunchEntry[], columns: number): LaunchRow {
   };
 }
 
+/**
+ * T134 — gli INDICATORI ancorati a destra della riga legenda: dato, non
+ * stringa, per la stessa ragione della riga launch (`launchRow`). Gli stessi
+ * segmenti compongono il testo disegnato e le colonne dell'hit-test, e chi
+ * derivasse le seconde ri-splittando il primo terrebbe due conti che divergono
+ * alla prima etichetta che contiene il separatore.
+ *
+ * `key` è la COMBO che l'indicatore rappresenta, col prefisso `^`: il click non
+ * chiama l'azione, rientra dalla porta della tastiera premendola. È lo stesso
+ * schema delle superfici launch, esteso ai `ctrl` — senza il prefisso il click
+ * sintetizzerebbe una lettera nuda, che su questa tastiera fa un'altra cosa.
+ */
+export const INDICATOR_SEP = '  ';
+
+export type IndicatorRow = {
+  segments: Segment[];
+  regions: Region[];
+  /** Colonne occupate dal blocco intero, separatori compresi: la legenda a
+   *  sinistra riceve il resto. Gli indicatori hanno la PRECEDENZA sul budget
+   *  (D5 preflight) — `keyLegend` è già troncabile per costruzione e la sua
+   *  perdita è recuperabile a memoria, mentre un contatore troncato mente. */
+  width: number;
+};
+
+/**
+ * Il bottone che monta il pane inbox: `[ Inbox 📄 3/1/2 🚨2 ]`.
+ *
+ * SEMPRE ACCESO, mai grigio (D7): è un pane, non un sottoinsieme che può essere
+ * vuoto. I tre numeri sono le tre nature nell'ordine del catalogo; la sirena e
+ * il suo contatore compaiono solo sopra la soglia.
+ *
+ * Prima del primo scan i numeri non esistono ancora, e stampare `0/0/0`
+ * direbbe «ho misurato e non c'è niente» — cioè la cosa sbagliata (D2
+ * preflight: `missing` e guasto sono stati distinti). Il glifo di allerta si
+ * AGGIUNGE ai numeri invece di sostituirli: un tentativo fallito lascia in
+ * piedi l'esito dell'ultimo riuscito, che resta vero e ancora apribile.
+ */
+export function inboxButton(state: {
+  counts: InboxViewCounts;
+  stale: number;
+  scanned: boolean;
+  ok: boolean;
+}): string {
+  const numbers = state.scanned
+    ? `${state.counts.nozioni}/${state.counts.derivazione}/${state.counts.sweep}`
+    : STATUS_MISSING;
+  const siren = state.stale > 0 ? ` 🚨${state.stale}` : '';
+  const warn = state.ok ? '' : ` ${WARN}`;
+  return sanitize(`[ Inbox 📄 ${numbers}${siren}${warn} ]`);
+}
+
+export function indicatorRow(
+  state: Parameters<typeof inboxButton>[0],
+  columns: number,
+): IndicatorRow {
+  const segments: Segment[] = [{ key: '^b', text: inboxButton(state) }];
+  const width =
+    segments.reduce((w, s) => w + termWidth(s.text), 0) +
+    termWidth(INDICATOR_SEP) * Math.max(0, segments.length - 1);
+  // Ancorato al bordo destro del box esterno: il blocco è renderizzato da un
+  // `justifyContent="space-between"`, quindi la sua prima colonna si ricava per
+  // sottrazione e non da un accumulo da sinistra.
+  const start = FRAME_TEXT_COL + Math.max(0, (columns || 80) - 4) - width;
+  return { segments, regions: rowRegions(segments, INDICATOR_SEP, start), width };
+}
+
 export type FrameInput = {
   rows: number;
   columns: number;
@@ -167,6 +245,14 @@ export type FrameInput = {
   parentLabel: string;
   /** `tasks.md` non è stato caricato: al posto delle righe task c'è la riga rossa. */
   hasLoadError: boolean;
+  /** T134 — quale pane occupa lo slot destro. */
+  rightPane: RightPane;
+  /** T134 — la lista inbox INTERA della vista attiva. */
+  inboxFiles: InboxFile[];
+  /** Selezione del pane inbox, keyed sul path. */
+  selInboxPath: string | null;
+  inboxCounts: InboxViewCounts;
+  inboxViewId: InboxViewId;
 };
 
 export type Frame = {
@@ -175,6 +261,11 @@ export type Frame = {
   windowTasks: Task[];
   sessionWin: { start: number; end: number };
   windowRows: SessionRow[];
+  /** T134 — finestra e righe visibili del pane inbox, gemelle delle due sopra.
+   *  Calcolate anche quando il pane non è montato: è aritmetica su un array già
+   *  in memoria, e un ramo condizionale qui costerebbe più della somma. */
+  inboxWin: { start: number; end: number };
+  windowInbox: InboxFile[];
   /** `null` in compatto: lì i pane non esistono, quindi non c'è nulla da colpire. */
   listGeometry: ListGeometry | null;
   /** Segmento destro della testata: risoluzione in celle e versione. */
@@ -222,6 +313,11 @@ export function frameGeometry(input: FrameInput): Frame {
   const selRowIndex = rowIndexOf(input.sessionRows, input.selSessionId);
   const sessionWin = windowRange(input.sessionRows.length, selRowIndex, budget.sessionRows);
   const windowRows = input.sessionRows.slice(sessionWin.start, sessionWin.end);
+  // Stessa capienza del pane sessioni: i due hanno la stessa cornice e uno solo
+  // dei due è montato (vedi SESSIONS_PANE_CHROME in viewport.ts).
+  const selInboxIndex = input.inboxFiles.findIndex((f) => f.path === input.selInboxPath);
+  const inboxWin = windowRange(input.inboxFiles.length, selInboxIndex, budget.sessionRows);
+  const windowInbox = input.inboxFiles.slice(inboxWin.start, inboxWin.end);
 
   // T21 — geometria delle liste per l'hit-test del click, dalla STESSA
   // aritmetica che disegna i pane: le parti degli header escono dal modulo che
@@ -257,10 +353,24 @@ export function frameGeometry(input: FrameInput): Frame {
           ),
           spans.sessions.start + PANE_TEXT_PAD,
         ),
+        inboxHeader: inlineRegions(
+          headerItems(
+            inboxHeaderParts(
+              input.inboxCounts,
+              input.inboxViewId,
+              inboxWin.start,
+              input.inboxFiles.length - inboxWin.end,
+              input.columns,
+            ),
+          ),
+          spans.sessions.start + PANE_TEXT_PAD,
+        ),
         // Con un errore di caricamento al posto delle task c'è la riga rossa:
         // restano cliccabili le sole righe meta.
         taskRows: META_ROWS + (input.hasLoadError ? 0 : windowTasks.length),
         sessionRows: windowRows.length,
+        inboxRows: windowInbox.length,
+        rightPane: input.rightPane,
       };
 
   return {
@@ -269,6 +379,8 @@ export function frameGeometry(input: FrameInput): Frame {
     windowTasks,
     sessionWin,
     windowRows,
+    inboxWin,
+    windowInbox,
     listGeometry,
     // Dimensione del terminale in CELLE (colonne×righe, mai pixel — un processo
     // dentro un terminale vede solo la griglia di caratteri) e versione. La
@@ -285,4 +397,18 @@ export function headlineWidth(columns: number, headerRight: string): number {
   return Math.max(4, columns - 4 - termWidth(headerRight) - 1);
 }
 
-export { LAUNCH_ROW };
+/**
+ * T134 — il budget della legenda tasti, per sottrazione del blocco indicatori
+ * che le sta a destra sulla stessa riga.
+ *
+ * La legenda cede per prima (D5 preflight): è già troncabile per costruzione e
+ * ciò che perde si ricorda, mentre un contatore troncato mente. Pavimento a 4
+ * come la testata — sotto quella soglia non resta comunque niente di leggibile,
+ * e un budget negativo farebbe tornare `cut` una stringa vuota per il tramite
+ * di un numero che nessuno ha scelto.
+ */
+export function legendWidth(columns: number, indicatorW: number): number {
+  return Math.max(4, (columns || 80) - 4 - indicatorW - termWidth(INDICATOR_SEP));
+}
+
+export { HINT_ROW, LAUNCH_ROW };

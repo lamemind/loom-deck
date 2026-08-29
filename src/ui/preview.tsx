@@ -1,9 +1,10 @@
 // Blocco preview a piena larghezza sotto i due pane: mostra la task o la
 // conversazione selezionata a seconda del pane a fuoco.
 import { Box, Text } from 'ink';
-import { wrapLines } from '../width.js';
+import { cut, wrapLines } from '../width.js';
 import { previewTextWidth } from '../layout.js';
 import { LIVE_BUSY, LIVE_IDLE, META_KEYS, SID_CHARS, fmtDateTime, fmtSize } from '../glyphs.js';
+import { NATURA_SHORT, inboxMark, type InboxFile } from '../inbox.js';
 import type { TaskDetail } from '../tasks.js';
 import type { Session } from '../sessions.js';
 import type { LiveSession } from '../live-sessions.js';
@@ -38,13 +39,25 @@ export type PreviewProps =
       note: string;
       /** T62 — processo vivo che sta scrivendo questo transcript; null = chiuso. */
       live: LiveSession | null;
-    };
+    }
+  /** T134 — il file inbox selezionato. Nessun parametro di righe: il blocco è
+   *  tutto a righe fisse (INBOX_DETAIL_FIXED), quindi non c'è una capienza da
+   *  distribuire. */
+  | { kind: 'inbox'; file: InboxFile; columns: number };
+
+/** Colonne del prefisso delle due anteprime della preview sessione (`» `, `« `,
+ *  e i due spazi delle righe di continuazione). Costante perché entra nel
+ *  budget di wrap, che è il posto in cui dimenticarla non produce un errore ma
+ *  un bordo mangiato. */
+const PREVIEW_PREFIX_W = 2;
 
 export function PreviewPane(p: PreviewProps) {
   return (
     <Box flexDirection="column" marginTop={1} borderStyle="single" borderColor="gray" paddingX={1}>
       {p.kind === 'task' ? (
         <TaskPreview detail={p.detail} maxLines={p.maxLines} columns={p.columns} />
+      ) : p.kind === 'inbox' ? (
+        <InboxPreview file={p.file} columns={p.columns} />
       ) : (
         <SessionPreview
           s={p.s}
@@ -57,6 +70,45 @@ export function PreviewPane(p: PreviewProps) {
         />
       )}
     </Box>
+  );
+}
+
+/**
+ * T134 — corpo della preview inbox: due righe FISSE, contate da
+ * `INBOX_DETAIL_FIXED`. Ogni riga aggiunta va scalata lì, o il frame sfonda
+ * `rows` e Ink passa a `clearTerminal` — che su VTE riversa un frame nello
+ * scrollback a ogni tick del poll.
+ *
+ * Porta ciò che la riga di lista non può: il nome INTERO (in lista si tronca
+ * su un pane largo la metà del terminale), le cifre del marker e il cappello.
+ * Il perché di uno stato — `branch:` che congela per chiunque, `drainable`
+ * assente che tiene fuori dalla coda ma non vieta l'esecuzione — è scritto per
+ * esteso, perché il glifo della lista dice solo QUALE stato, non cosa comporta.
+ */
+export function InboxPreview({ file, columns }: { file: InboxFile; columns: number }) {
+  const mark = inboxMark(file);
+  const width = previewTextWidth(columns);
+  const state =
+    mark === 'broken'
+      ? 'marker illeggibile: nessuna skill lo prende, va riparato'
+      : mark === 'branched'
+        ? `congelato su ${file.branch}: lo sblocca pull-repos quando il branch è su main`
+        : mark === 'held'
+          ? 'fuori dalla coda automatica (nessun drainable): eseguibile se lo nomini'
+          : 'in coda: una skill può prenderlo da sola';
+  return (
+    <>
+      <Text bold wrap="truncate-end">
+        <Text color="cyan">{NATURA_SHORT[file.natura]}</Text>{' '}
+        {cut(file.basename, Math.max(10, width - 8))}
+      </Text>
+      <Text dimColor wrap="truncate-end">
+        {file.nozioni} nozioni · {file.aperte} aperte · {fmtSize(file.chars)} ·{' '}
+        {fmtDateTime(file.created * 1000)}
+        {file.cappello ? ` · ${file.cappello}` : ''}
+        {file.indexed ? ' · indexed' : ''} · {state}
+      </Text>
+    </>
   );
 }
 
@@ -84,7 +136,15 @@ export function SessionPreview({
   note: string;
   live: LiveSession | null;
 }) {
-  const width = previewTextWidth(columns);
+  // Il prefisso `» `/`« ` è largo 2 e sta SULLA riga: va tolto dal budget di
+  // wrap, o una riga piena esce dal box di quelle due colonne e a raccoglierla
+  // arriva `cli-truncate`, che sfora di una colonna per emoji e mangia il bordo
+  // (invariante ③ di width.ts). Il difetto si vede solo quando una riga cade
+  // esattamente sul budget, cioè su una risposta abbastanza lunga: da qui un
+  // gate che passa o fallisce a seconda delle conversazioni che trova sul
+  // disco. Le righe di continuazione portano due spazi, quindi il prefisso
+  // costa 2 su OGNI riga, non solo sulla prima.
+  const width = previewTextWidth(columns) - PREVIEW_PREFIX_W;
   const first = s.customTitle && firstLines > 0 ? wrapLines(s.firstPrompt, width, firstLines) : [];
   const last = s.lastReply && lastLines > 0 ? wrapLines(s.lastReply, width, lastLines) : [];
   return (

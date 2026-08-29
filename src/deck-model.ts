@@ -17,10 +17,21 @@ import { loadArchivableDays, loadIdentity, loadLaunch } from './config.js';
 import {
   useArchivable,
   useDirtyFolders,
+  useInboxScan,
   useSessions,
   useTaskDetail,
   useTasks,
 } from './hooks.js';
+import { DEFAULT_INBOX_STALE_HOURS, staleCount, type InboxFile } from './inbox.js';
+import {
+  cycleInboxView,
+  inboxCounts as deriveInboxCounts,
+  inboxView,
+  selectInboxRows,
+  type InboxViewCounts,
+  type InboxViewId,
+} from './inbox-views.js';
+import { docsRootName } from './tasks.js';
 import { isDone } from './layout.js';
 import { TASK_EMPTY, relTime } from './glyphs.js';
 import {
@@ -52,6 +63,7 @@ import {
   SPOT,
   type Focus,
   type Parent,
+  type RightPane,
 } from './model.js';
 import { applyView, taskColumns, type TaskRowData, type ViewState } from './view.js';
 import { loadView } from './view-store.js';
@@ -200,6 +212,15 @@ export function useDeckModel({
   // riaperta a freddo si legge come la lista intera.
   const [taskViewId, setTaskViewId] = useState<TaskViewId>('tasks');
   const [sessionViewId, setSessionViewId] = useState<SessionViewId>('context');
+  // T134 — quale pane occupa lo slot destro, e la vista attiva di quello inbox.
+  // Volatili entrambi (D6 preflight): il deck riapre sempre sulle sessioni.
+  const [rightPane, setRightPane] = useState<RightPane>('sessions');
+  const [inboxViewId, setInboxViewId] = useState<InboxViewId>('all');
+  // Selezione KEYED SUL PATH, mai su indice: la lista si riordina sotto le
+  // viste e si accorcia a ogni scan, e un indice grezzo punterebbe alla riga
+  // sbagliata in silenzio (stessa trappola di T39 sulle task e T50 sulle
+  // conversazioni).
+  const [selInboxPath, setSelInboxPath] = useState<string | null>(null);
 
   // Voci launch del progetto (T32): lette una volta, raggiunte per indice 1..9.
   const launch = useMemo(() => loadLaunch(cwd), [cwd]);
@@ -238,6 +259,27 @@ export function useDeckModel({
   // una task sola e il dato lo ricalcola al momento.
   const archivableSig = useMemo(() => [...archivable].sort().join(','), [archivable]);
   const dirtyFolders = useDirtyFolders(archivableSig, tasksDir, cwd);
+
+  // T134 — terzo scan della famiglia (D1): coda inbox per natura, età del più
+  // vecchio. La docs-root arriva dalla sola env, come `resolveTasksPath` — il
+  // limite si eredita invece di aprire qui una cascata che nessun percorso di
+  // avvio reale userebbe (D1 preflight).
+  const docsRoot = useMemo(() => docsRootName(), []);
+  const inbox = useInboxScan(cwd, docsRoot);
+  const inboxCounts: InboxViewCounts = useMemo(
+    () => deriveInboxCounts(inbox.files),
+    [inbox.files],
+  );
+  // Il numero accanto alla sirena: solo i file in coda oltre soglia. `Date.now()`
+  // letto a ogni render e non memoizzato — è una sottrazione, e congelarlo
+  // lascerebbe la sirena ferma sull'ora dello scan invece che sull'ora corrente.
+  const inboxStale = staleCount(inbox.files, DEFAULT_INBOX_STALE_HOURS, Date.now());
+  const inboxFiles = useMemo(
+    () => selectInboxRows(inboxViewId, inbox.files),
+    [inboxViewId, inbox.files],
+  );
+  const selInbox: InboxFile | null =
+    inboxFiles.find((f) => f.path === selInboxPath) ?? null;
 
   // T100 — le task effettivamente a schermo: la vista principale coincide con
   // `viewTasks` (nessun ricalcolo sul cammino di default), le altre due passano
@@ -352,6 +394,16 @@ export function useDeckModel({
       setSelSessionId(firstSelectableId(sessionRows));
     }
   }, [sessionRows, selSessionId]);
+  // T134 — gemello dei due sopra: un file drenato sparisce dalla coda al primo
+  // scan successivo, e la selezione cade sulla prima riga della lista invece
+  // che su una posizione a caso.
+  useEffect(() => {
+    if (selInboxPath !== null && !inboxFiles.some((f) => f.path === selInboxPath)) {
+      setSelInboxPath(inboxFiles[0]?.path ?? null);
+    } else if (selInboxPath === null && inboxFiles.length > 0) {
+      setSelInboxPath(inboxFiles[0]!.path);
+    }
+  }, [inboxFiles, selInboxPath]);
 
   /** Selezione per INDICE nella vista, riconvertita subito in sentinella o id.
    *  T21 — la chiama anche il click su una riga del pane task. */
@@ -392,9 +444,55 @@ export function useDeckModel({
   // parent delle sessioni che torna a `tutte` è un effetto accettato); sul pane
   // sessioni basta invalidare l'id, e l'effect di validità atterra sulla prima
   // riga selezionabile della vista nuova.
+  function selectInboxView(next: InboxViewId) {
+    if (next === inboxViewId) return;
+    setInboxViewId(next);
+    setSelInboxPath(null);
+    setNote(`vista inbox: ${inboxView(next).label(inboxCounts)}`);
+  }
+
   function cycleView(delta: number) {
     if (focus === 'tasks') selectTaskView(cycleTaskView(taskViewId, delta));
+    else if (focus === 'inbox') selectInboxView(cycleInboxView(inboxViewId, delta));
     else selectSessionView(cycleSessionView(sessionViewId, delta));
+  }
+
+  /** Selezione per INDICE nella finestra visibile: la chiama il click. */
+  function selectInboxRow(index: number) {
+    const f = inboxFiles[index];
+    if (f) setSelInboxPath(f.path);
+  }
+
+  function moveInboxSel(delta: number) {
+    const at = inboxFiles.findIndex((f) => f.path === selInboxPath);
+    if (inboxFiles.length === 0) return;
+    const next = Math.max(0, Math.min(inboxFiles.length - 1, (at < 0 ? 0 : at) + delta));
+    setSelInboxPath(inboxFiles[next]!.path);
+  }
+
+  /**
+   * T134 — `^B` scambia i due pane dello slot destro (D8 preflight).
+   *
+   * Il FOCUS segue il pane: chi stava guardando a destra continua a guardare a
+   * destra, ma quello che c'è adesso è l'altro pane. Lasciarlo su `sessions`
+   * con l'inbox montato darebbe un focus su un pane che non è a schermo, e le
+   * azioni della lista sessioni resterebbero attive su una selezione invisibile.
+   */
+  function toggleInboxPane() {
+    const next: RightPane = rightPane === 'inbox' ? 'sessions' : 'inbox';
+    setRightPane(next);
+    setFocus((f) => (f === 'tasks' ? f : next));
+    setNote(next === 'inbox' ? '^B → pane inbox' : '^B → pane sessioni');
+  }
+
+  /** `esc` in vista normale: torna alle sessioni. Solo in quel verso — `esc`
+   *  dice «esci da dove sei», e sulle sessioni non c'è più niente da cui uscire
+   *  (il tasto resta inerte, come è sempre stato). */
+  function closeInboxPane(): boolean {
+    if (rightPane !== 'inbox') return false;
+    setRightPane('sessions');
+    setFocus((f) => (f === 'inbox' ? 'sessions' : f));
+    return true;
   }
 
   return {
@@ -444,11 +542,26 @@ export function useDeckModel({
     sessionCounts,
     selSessionObj,
     sessionCols,
+    // derivazioni del pane inbox
+    rightPane,
+    inboxScanned: inbox.scanned,
+    inboxOk: inbox.ok,
+    inboxViewId,
+    inboxCounts,
+    inboxStale,
+    inboxFiles,
+    selInboxPath,
+    selInbox,
     // mutatori di navigazione
     selectTaskRow,
     moveTaskSel,
     selectTaskView,
     selectSessionView,
+    selectInboxView,
+    selectInboxRow,
+    moveInboxSel,
+    toggleInboxPane,
+    closeInboxPane,
     cycleView,
   };
 }

@@ -32,11 +32,25 @@ export interface TaskDetail {
   description: string;
 }
 
-// D1 (preflight T20): default docs/tasks.md, override della docs-root via env
-// LOOM_DECK_DOCS_ROOT (es. questo progetto usa `runtime`). No auto-detect.
+/**
+ * Nome della cartella doc del progetto (`docs`, `runtime`, …).
+ *
+ * D1 (preflight T20): override via env `LOOM_DECK_DOCS_ROOT`, nessun
+ * auto-detect e nessuna lettura del file config. Il deck non si lancia mai a
+ * mano — nasce da compass, che legge `docsRoot` dal registry dconf e lo
+ * antepone al comando, o dal custom-command del profilo Ptyxis, che ce l'ha
+ * cablato — quindi l'env c'è sempre nei percorsi di avvio reali.
+ *
+ * T134 — funzione e non più letterale ripetuto: la legge anche lo scan della
+ * coda inbox, e due copie della stessa cascata divergerebbero appena una delle
+ * due imparasse a leggere il file config.
+ */
+export function docsRootName(): string {
+  return process.env.LOOM_DECK_DOCS_ROOT || 'docs';
+}
+
 export function resolveTasksPath(cwd: string = process.cwd()): string {
-  const docsRoot = process.env.LOOM_DECK_DOCS_ROOT || 'docs';
-  return join(cwd, docsRoot, 'tasks.md');
+  return join(cwd, docsRootName(), 'tasks.md');
 }
 
 // I task file vivono in `<docsRoot>/tasks/` — sibling di tasks.md. Derivo la

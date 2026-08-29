@@ -10,6 +10,7 @@ import { discoverProjectSessions, type Session } from './sessions.js';
 import { discoverLiveSessions, liveSig, type LiveSession } from './live-sessions.js';
 import { loadSessionIndex, type SessionIndex } from './task-index.js';
 import { archivableIds, SCAN_INTERVAL_MS } from './archivable.js';
+import { scanInbox, type InboxFile } from './inbox.js';
 import { purgeTargets } from './purge.js';
 import { POLL_MS } from './model.js';
 
@@ -224,6 +225,55 @@ export function useDirtyFolders(idsSig: string, tasksDir: string, projectRoot: s
     return () => clearInterval(id);
   }, [idsSig, tasksDir, projectRoot]);
   return dirty;
+}
+
+/**
+ * T134 — la coda inbox, terzo membro della famiglia degli scan periodici
+ * (`useArchivable`, `useDirtyFolders`): scan read-only su una scala tutta sua,
+ * un contatore sempre a schermo, una funzione che quel contatore abilita.
+ *
+ * Sulla stessa cadenza dei due gemelli (`SCAN_INTERVAL_MS`, D10) e per la
+ * stessa ragione: una coda inbox non si muove al ritmo di un poll da 1,5s, e
+ * ogni giro costa uno spawn di `doc-metrics.sh` che a sua volta invoca
+ * `inbox.sh parse` una volta per file.
+ *
+ * A differenza dello scan del wrap (D4) questo PARTE ALL'AVVIO: legge una
+ * cartella di pochi file, non cammina l'albero del progetto.
+ */
+export interface InboxState {
+  files: InboxFile[];
+  /** L'ultimo tentativo è andato a buon fine. */
+  ok: boolean;
+  /** Almeno un tentativo è stato fatto: distingue «non l'ho ancora misurato»
+   *  da «ho misurato e la coda è vuota», che a schermo sono due cose diverse
+   *  (D2 preflight — `missing` non è un guasto, è lo stato di partenza). */
+  scanned: boolean;
+}
+
+export function useInboxScan(projectRoot: string, docsRoot: string): InboxState {
+  const [state, setState] = useState<InboxState>({ files: [], ok: true, scanned: false });
+  useEffect(() => {
+    let alive = true;
+    const scan = () => {
+      scanInbox(projectRoot, docsRoot).then((res) => {
+        if (!alive) return;
+        // Un tentativo fallito NON butta via l'esito dell'ultimo riuscito: la
+        // lista precedente resta vera e ancora apribile, e il guasto si dice
+        // col glifo di allerta accanto ai contatori. È la stessa regola già
+        // scritta per il project status (`finish` non riscrive la cache).
+        setState((prev) =>
+          res.ok ? { files: res.files, ok: true, scanned: true } : { ...prev, ok: false, scanned: true },
+        );
+      });
+    };
+    scan();
+    const id = setInterval(scan, SCAN_INTERVAL_MS);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [projectRoot, docsRoot]);
+  return state;
 }
 
 // Legge il task file della task selezionata (Q1+B T20). On-id-change: navigare

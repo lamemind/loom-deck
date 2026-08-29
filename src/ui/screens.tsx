@@ -24,6 +24,8 @@
 // primo file di `ui/` a farlo, quindi va detto invece che scoperto a grep.
 import { Box, Text } from 'ink';
 import { rowIndexOfKey, selectedRow } from '../search.js';
+import { cut } from '../width.js';
+import { INDICATOR_SEP, legendWidth, type IndicatorRow } from '../frame.js';
 import { isCompact, searchPreviewCapacity, windowRange } from '../viewport.js';
 import { conversationLabel } from '../layout.js';
 import { taskColumns, type TaskRowData, type ViewState } from '../view.js';
@@ -85,18 +87,28 @@ export function CompactNotice({
  * flusso le sue istruzioni. I modali sostitutivi non arrivano qui — hanno già
  * preso il frame.
  *
- * La legenda di `normal` la calcola il chiamante (`deckLegend` in `frame.ts`),
- * perché dipende da cosa è selezionato; le sette righe dei modali sono testo
- * fisso e vivono qui, accanto alla forma che le rende.
+ * T134 — in `normal` la riga non è più tutta della legenda: divide lo spazio con
+ * gli INDICATORI ancorati a destra, e sono loro ad avere la precedenza sul
+ * budget (D5 preflight). `keyLegend` è già troncabile per costruzione e ciò che
+ * perde si ricorda; un contatore troncato invece mente.
+ *
+ * Dentro un modale in flusso gli indicatori non compaiono, e non è un
+ * nascondimento: la riga è dell'istruzione del modale, che sta a schermo per il
+ * tempo di una domanda. «Mai nascondibile» (D9) dice che non esiste un tasto per
+ * spegnerli, non che ogni riga del frame debba ospitarli.
  */
 export function HintBar({
   mode,
   purge,
   keyLegend,
+  indicators,
+  columns,
 }: {
   mode: Mode;
   purge: PurgeDraft | null;
   keyLegend: string;
+  indicators: IndicatorRow;
+  columns: number;
 }) {
   if (mode === 'create') {
     return (
@@ -154,10 +166,26 @@ export function HintBar({
       </Text>
     );
   }
+  // Riga full-width come la testata: `space-between` la riempie fino al bordo,
+  // quindi il gate di `frame-width.test.ts` continua a misurare esattamente
+  // `columns`. Il taglio della legenda lo fa il deck e non Ink, come ovunque:
+  // la stringa porta emoji e frecce, e `cli-truncate` le conta con un budget in
+  // colonne indicizzando per code point — una colonna di troppo finisce sopra
+  // il bordo destro, che sparisce dalla riga (invariante ③ di width.ts).
   return (
-    <Text dimColor wrap="truncate-end">
-      {keyLegend}
-    </Text>
+    <Box flexDirection="row" justifyContent="space-between">
+      <Text dimColor wrap="truncate-end">
+        {cut(keyLegend, legendWidth(columns, indicators.width))}
+      </Text>
+      <Text>
+        {indicators.segments.map((s, i) => (
+          <Text key={s.key} color="cyan">
+            {i > 0 ? INDICATOR_SEP : ''}
+            {s.text}
+          </Text>
+        ))}
+      </Text>
+    </Box>
   );
 }
 

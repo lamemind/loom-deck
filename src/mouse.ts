@@ -231,6 +231,17 @@ export function hitRegion(regions: Region[], col: number): string | null {
  */
 export const LAUNCH_ROW = 4;
 
+/**
+ * T134 — riga della legenda tasti, che ospita anche gli INDICATORI ancorati a
+ * destra (bottone inbox, contatore hard-wrap). Sta subito sopra la riga launch,
+ * e come lei è incondizionata: bordo superiore, testata, legenda.
+ *
+ * Gli indicatori sono cliccabili, quindi questa riga entra nell'hit-test come la
+ * launch — e come lei il click NON chiama l'azione: rientra dalla porta della
+ * tastiera con la combo che l'indicatore rappresenta.
+ */
+export const HINT_ROW = LAUNCH_ROW - 1;
+
 /** Colonna (1-based) del primo carattere di testo dentro il box esterno:
  *  bordo + `paddingX={1}`. */
 export const FRAME_TEXT_COL = 3;
@@ -316,32 +327,45 @@ export interface ListGeometry {
   /** Regioni delle viste sull'header del pane task (`key` = id della vista). */
   taskHeader: Region[];
   sessionHeader: Region[];
+  /** T134 — regioni delle viste sull'header del pane inbox. */
+  inboxHeader: Region[];
   /** Righe della lista task A SCHERMO, righe meta comprese (0 = `≡ tutte`). */
   taskRows: number;
   /** Righe della lista sessioni a schermo, separatore compreso. */
   sessionRows: number;
+  /** T134 — righe della lista inbox a schermo. */
+  inboxRows: number;
+  /**
+   * T134 — quale pane occupa lo slot destro. Le colonne dei due span non
+   * cambiano (i pane sono affiancati al 50% comunque), ma header e righe da
+   * consultare sì: senza questo campo il click sul pane inbox interrogherebbe
+   * le regioni delle viste sessione, cioè un altro catalogo con altre chiavi.
+   */
+  rightPane: 'sessions' | 'inbox';
 }
 
 export type ListHit =
-  | { pane: 'tasks' | 'sessions'; target: 'view'; key: string }
+  | { pane: 'tasks' | 'sessions' | 'inbox'; target: 'view'; key: string }
   /** `index` è l'indice nella FINESTRA visibile: spetta al chiamante riportarlo
    *  alla lista completa, perché solo lui sa dove la finestra comincia. */
-  | { pane: 'tasks' | 'sessions'; target: 'row'; index: number };
+  | { pane: 'tasks' | 'sessions' | 'inbox'; target: 'row'; index: number };
 
 /** L'elemento di lista sotto il click, o `null` se il click cade su cornice,
  *  riga sort, spazio vuoto sotto la lista o fuori dai pane. */
 export function listHit(ev: { col: number; row: number }, g: ListGeometry): ListHit | null {
   const spans = paneSpans(g.columns);
   const inTasks = ev.col >= spans.tasks.start && ev.col <= spans.tasks.end;
-  const inSessions = ev.col >= spans.sessions.start && ev.col <= spans.sessions.end;
-  if (!inTasks && !inSessions) return null;
-  const pane = inTasks ? 'tasks' : 'sessions';
+  const inRight = ev.col >= spans.sessions.start && ev.col <= spans.sessions.end;
+  if (!inTasks && !inRight) return null;
+  const isInbox = g.rightPane === 'inbox';
+  const pane = inTasks ? 'tasks' : isInbox ? 'inbox' : 'sessions';
+  const rightHeader = isInbox ? g.inboxHeader : g.sessionHeader;
   if (ev.row === PANE_HEADER_ROW) {
-    const key = hitRegion(inTasks ? g.taskHeader : g.sessionHeader, ev.col);
+    const key = hitRegion(inTasks ? g.taskHeader : rightHeader, ev.col);
     return key ? { pane, target: 'view', key } : null;
   }
   const first = inTasks ? TASK_LIST_ROW : PANE_BODY_ROW;
-  const count = inTasks ? g.taskRows : g.sessionRows;
+  const count = inTasks ? g.taskRows : isInbox ? g.inboxRows : g.sessionRows;
   const index = ev.row - first;
   if (index < 0 || index >= count) return null;
   return { pane, target: 'row', index };

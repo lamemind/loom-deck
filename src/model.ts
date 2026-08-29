@@ -51,7 +51,31 @@ export const ROW_SPOT = 1;
 
 export const META_ROWS = 2;
 
-export type Focus = 'tasks' | 'sessions';
+/**
+ * T134 — quale dei due pane occupa lo SLOT DESTRO. Uno è montato e l'altro non
+ * esiste a schermo (D6): con due pane i tipi delle righe restano disgiunti per
+ * costruzione, invece di un'unione discriminata dentro il catalogo delle viste
+ * sessione e di un'azione resa inerte su ogni riga sbagliata.
+ *
+ * VOLATILE come la vista attiva (D6 preflight): non entra in `deck-view.json`,
+ * il deck riapre sempre sulle sessioni. T100 aveva già separato le due nature —
+ * la vista è dove stai guardando adesso, il filtro è una preferenza — e
+ * montare un pane è la prima delle due.
+ */
+export type RightPane = 'sessions' | 'inbox';
+
+/**
+ * Il pane a fuoco. Tre valori e non due più un asse a parte: `inbox` NON è
+ * `sessions` con un contenuto diverso, ed è ciò che tiene vere per costruzione
+ * tutte le guardie già scritte come `focus !== 'sessions'` (pin, nota,
+ * riassegna, fork, resume). Col pane inbox montato quelle azioni non hanno una
+ * riga su cui agire, e nessuna di loro ha dovuto imparare la differenza.
+ *
+ * `←→` restano un binding ASSOLUTO SPAZIALE: `←` porta sempre sui task, `→`
+ * sempre sul pane destro — cioè su `sessions` o `inbox` a seconda di quale sia
+ * montato.
+ */
+export type Focus = 'tasks' | 'sessions' | 'inbox';
 
 // Standard shortcut (T39): MAIUSCOLA apre un modale, minuscola è azione
 // immediata, 1..9 sono le voci launch del file config. I modali catturano tutti

@@ -20,6 +20,7 @@ import {
   type TaskViewCounts,
   type TaskViewId,
 } from './pane-views.js';
+import { INBOX_VIEWS, type InboxViewCounts, type InboxViewId } from './inbox-views.js';
 
 export interface HeaderPart {
   /** Id della vista che la parte seleziona; `null` per le parti non
@@ -100,6 +101,40 @@ export function sessionHeaderParts(
   return finish(
     [
       { key: null, text: 'Sessions', dim: false, active: false },
+      ...views,
+      { key: null, text: above > 0 ? ` · ↑${above}` : '', dim: true, active: false },
+      { key: null, text: below > 0 ? ` · ↓${below}` : '', dim: true, active: false },
+    ],
+    columns,
+  );
+}
+
+/**
+ * T134 — header del pane inbox, terzo gemello: `Inbox` nomina il pane e non si
+ * seleziona, poi le quattro viste del catalogo, poi `↑N`/`↓N`.
+ *
+ * L'attenuazione la decide il catalogo (`v.dim(counts)`) e non il contatore
+ * della voce, a differenza dei due header storici: la voce `Tutti` conta ogni
+ * file in lista ma si grigia sulla somma delle tre nature (D7), perché è quella
+ * a dire se c'è lavoro da prendere.
+ */
+export function inboxHeaderParts(
+  counts: InboxViewCounts,
+  active: InboxViewId,
+  above: number,
+  below: number,
+  columns: number,
+): HeaderParts {
+  const views: HeaderPart[] = INBOX_VIEWS.map((v) => ({
+    key: v.id,
+    text: ` · ${v.label(counts)}`,
+    color: v.color,
+    dim: v.dim(counts),
+    active: v.id === active,
+  }));
+  return finish(
+    [
+      { key: null, text: 'Inbox', dim: false, active: false },
       ...views,
       { key: null, text: above > 0 ? ` · ↑${above}` : '', dim: true, active: false },
       { key: null, text: below > 0 ? ` · ↓${below}` : '', dim: true, active: false },
