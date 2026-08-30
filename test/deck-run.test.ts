@@ -186,6 +186,23 @@ test('--prompt con --no-task: ammesso, e il prompt arriva alla sessione', () => 
   assert.ok(!cmd.includes('LOOM_TASK='), `sessione nuda con un binding task: ${cmd}`);
 });
 
+test('--no-task senza --prompt: sessione nuda e MUTA, nessun default di catalogo', () => {
+  // Regressione di T134/D9: aprendo il PROMPT_ARG anche al ramo nudo, il
+  // default `recap` — che prima veniva risolto e poi scartato a valle — è
+  // arrivato fino alla tab come `/loom-works:recap-status ` con l'id vuoto.
+  // È lo spawn della sessione vuota del deck (`c`), che deve entrare a mani nude.
+  const cmd = inTabCmd(['--no-task']);
+  assert.ok(!cmd.includes('loom-works:'), `sessione vuota con un prompt: ${cmd}`);
+  // Nessun prompt = niente argomento posizionale: il prompt è sempre l'ultimo
+  // elemento ed è single-quoted, quindi la riga non finisce per apice.
+  assert.ok(!cmd.trimEnd().endsWith("'"), `atteso nessun prompt, trovato: ${cmd}`);
+});
+
+test('LOOM_DECK_ENTER_PROMPT resta inerte su --no-task: non ha task da nominare', () => {
+  const cmd = inTabCmd(['--no-task'], { LOOM_DECK_ENTER_PROMPT: 'recap di {TASK}' });
+  assert.ok(!cmd.includes('recap di'), `override d'ambiente entrato in una sessione nuda: ${cmd}`);
+});
+
 test('--prompt-kind con --no-task resta rifiutato: il catalogo nomina un TaskID', () => {
   // L'asimmetria col ramo sopra non è una dimenticanza: un kind senza task
   // produrrebbe `/loom-works:run-task ` con l'id vuoto, cioè una tab che parte

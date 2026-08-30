@@ -486,6 +486,21 @@ _prompt_template() {  # <kind> → template col placeholder {TASK}, o niente
 
 if [[ $PROMPT_GIVEN -eq 1 ]]; then
   PROMPT="$PROMPT_TEXT"
+elif [[ $NO_TASK -eq 1 ]]; then
+  # Sessione nuda senza `--prompt`: nessun prompt iniziale, punto.
+  #
+  # Il default `recap` del catalogo NON si applica qui, e la guardia deve stare
+  # a monte invece che a valle. Finché il ramo `--no-task` scartava il prompt
+  # al momento di comporre il comando in-tab, un `PROMPT` risolto e mai usato
+  # era innocuo; da quando il PROMPT_ARG entra anche in quel ramo (T134/D9,
+  # per il drain e lo srotolamento) il testo del catalogo ci arriva davvero —
+  # e siccome ogni template interpola `{TASK}`, con la task vuota diventa
+  # `/loom-works:recap-status ` con l'id monco: la sessione vuota del deck (`c`)
+  # nasceva su un recap che nessuno ha chiesto.
+  #
+  # Stessa ragione per `LOOM_DECK_ENTER_PROMPT`, che interpola `{TASK}` a sua
+  # volta e qui resta quindi inerte: senza task non ha nulla da nominare.
+  PROMPT=""
 else
   _kind="${PROMPT_KIND:-recap}"
   if [[ "$_kind" == "none" ]]; then
