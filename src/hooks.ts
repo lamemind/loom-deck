@@ -10,7 +10,7 @@ import { discoverProjectSessions, type Session } from './sessions.js';
 import { discoverLiveSessions, liveSig, type LiveSession } from './live-sessions.js';
 import { loadSessionIndex, type SessionIndex } from './task-index.js';
 import { archivableIds, SCAN_INTERVAL_MS } from './archivable.js';
-import { scanInbox, type InboxFile } from './inbox.js';
+import { scanInbox, INBOX_SCAN_INTERVAL_MS, type InboxFile } from './inbox.js';
 import {
   mixedCount,
   readWrapCache,
@@ -241,10 +241,11 @@ export function useDirtyFolders(idsSig: string, tasksDir: string, projectRoot: s
  * (`useArchivable`, `useDirtyFolders`): scan read-only su una scala tutta sua,
  * un contatore sempre a schermo, una funzione che quel contatore abilita.
  *
- * Sulla stessa cadenza dei due gemelli (`SCAN_INTERVAL_MS`, D10) e per la
- * stessa ragione: una coda inbox non si muove al ritmo di un poll da 1,5s, e
- * ogni giro costa uno spawn di `doc-metrics.sh` che a sua volta invoca
- * `inbox.sh parse` una volta per file.
+ * Fuori dal poll da 1,5s come i due gemelli, per la stessa ragione: ogni giro
+ * costa uno spawn di `doc-metrics.sh` che a sua volta invoca `inbox.sh parse`
+ * una volta per file. Ma su una cadenza PROPRIA e più stretta dei loro 6h
+ * (`INBOX_SCAN_INTERVAL_MS`, 30 minuti): la coda si riempie a ogni checkpoint,
+ * non una volta al giorno come l'età di una task.
  *
  * A differenza dello scan del wrap (D4) questo PARTE ALL'AVVIO: legge una
  * cartella di pochi file, non cammina l'albero del progetto.
@@ -276,7 +277,7 @@ export function useInboxScan(projectRoot: string, docsRoot: string): InboxState 
       });
     };
     scan();
-    const id = setInterval(scan, SCAN_INTERVAL_MS);
+    const id = setInterval(scan, INBOX_SCAN_INTERVAL_MS);
     return () => {
       alive = false;
       clearInterval(id);

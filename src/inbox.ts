@@ -20,6 +20,19 @@ const execFileAsync = promisify(execFile);
 
 export const INBOX_METRICS_SCRIPT = 'scripts/docs/doc-metrics.sh';
 
+/**
+ * Ogni 30 minuti — cadenza propria, staccata dai 6h di `SCAN_INTERVAL_MS`.
+ *
+ * Gli altri tre scan periodici misurano dati che si muovono al ritmo del
+ * calendario (l'età di una task) o di una riscrittura di massa (l'hard-wrap dei
+ * `.md`). La coda inbox si muove invece a ogni checkpoint: un file nuovo appare
+ * quando una sessione trasloca le sue nozioni, e con la cadenza a 6h il
+ * contatore resterebbe fermo per l'intera mattina di lavoro che lo ha riempito.
+ * Il costo di un giro resta uno spawn di `doc-metrics.sh` su una cartella di
+ * pochi file, quindi trascurabile anche a questa frequenza.
+ */
+export const INBOX_SCAN_INTERVAL_MS = 30 * 60 * 1000;
+
 /** Le tre nature che una skill sa consumare, più il file che non si parsa. */
 export const NATURE = ['nozioni', 'derivazione', 'sweep'] as const;
 export type Natura = (typeof NATURE)[number];
