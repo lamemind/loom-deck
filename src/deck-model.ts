@@ -482,6 +482,12 @@ export function useDeckModel({
     const next: RightPane = rightPane === 'inbox' ? 'sessions' : 'inbox';
     setRightPane(next);
     setFocus((f) => (f === 'tasks' ? f : next));
+    // Montare il pane RIMISURA la coda. Il periodico resta, come rete per il
+    // deck lasciato aperto sul pane inbox, ma non è più l'unico canale: senza
+    // questa chiamata chi apre il pane guarda l'ultima misura, che può essere
+    // vecchia quanto l'intero intervallo. Non serve il verso opposto — tornare
+    // alle sessioni non guarda la coda, e uno scan lì si pagherebbe per nessuno.
+    if (next === 'inbox') inbox.scan();
     setNote(next === 'inbox' ? '^B → pane inbox' : '^B → pane sessioni');
   }
 

@@ -249,6 +249,17 @@ export function useDirtyFolders(idsSig: string, tasksDir: string, projectRoot: s
  *
  * A differenza dello scan del wrap (D4) questo PARTE ALL'AVVIO: legge una
  * cartella di pochi file, non cammina l'albero del progetto.
+ *
+ * MONTARE IL PANE RIMISURA, e il periodico è una rete, non il canale primario.
+ * Un periodico da solo non basta per costruzione: qualunque cadenza si scelga,
+ * chi apre il pane vede l'ultima misura invece dello stato di adesso, e la
+ * distanza fra le due può arrivare all'intero intervallo. Il caso limite non è
+ * teorico — un deck aperto da nove ore su una cadenza da sei mostrava una coda
+ * ferma a metà mattina, senza i file che i checkpoint del pomeriggio avevano
+ * aggiunto, e nulla a schermo diceva che il numero fosse vecchio. Il costo di
+ * una rimisura è uno spawn di `doc-metrics.sh` su una cartella di pochi file,
+ * quindi legarla al gesto che chiede di guardare la coda la paga solo quando
+ * serve davvero.
  */
 export interface InboxState {
   files: InboxFile[];
@@ -258,32 +269,62 @@ export interface InboxState {
    *  da «ho misurato e la coda è vuota», che a schermo sono due cose diverse
    *  (D2 preflight — `missing` non è un guasto, è lo stato di partenza). */
   scanned: boolean;
+  /** Rimisura adesso e rimanda indietro il timer del periodico. */
+  scan: () => void;
 }
 
 export function useInboxScan(projectRoot: string, docsRoot: string): InboxState {
-  const [state, setState] = useState<InboxState>({ files: [], ok: true, scanned: false });
+  const [state, setState] = useState<Omit<InboxState, 'scan'>>({
+    files: [],
+    ok: true,
+    scanned: false,
+  });
+  const [epoch, setEpoch] = useState(0);
+  // Il flag di corsa sta in un ref e non in stato, come in `useWrapScan`: due
+  // aperture ravvicinate del pane girano nello stesso tick di React, e un
+  // valore di stato arriverebbe al render dopo — cioè troppo tardi per
+  // impedire il secondo spawn.
+  const busy = useRef(false);
+  // `alive` vive fuori dall'effect perché `run` sopravvive al suo giro: la
+  // richiesta on-demand è scatenata da un gesto, non dall'effect che la ospita.
+  const alive = useRef(true);
   useEffect(() => {
-    let alive = true;
-    const scan = () => {
-      scanInbox(projectRoot, docsRoot).then((res) => {
-        if (!alive) return;
-        // Un tentativo fallito NON butta via l'esito dell'ultimo riuscito: la
-        // lista precedente resta vera e ancora apribile, e il guasto si dice
-        // col glifo di allerta accanto ai contatori. È la stessa regola già
-        // scritta per il project status (`finish` non riscrive la cache).
-        setState((prev) =>
-          res.ok ? { files: res.files, ok: true, scanned: true } : { ...prev, ok: false, scanned: true },
-        );
-      });
-    };
-    scan();
-    const id = setInterval(scan, INBOX_SCAN_INTERVAL_MS);
+    alive.current = true;
     return () => {
-      alive = false;
-      clearInterval(id);
+      alive.current = false;
     };
+  }, []);
+
+  const run = useCallback(() => {
+    if (busy.current) return;
+    busy.current = true;
+    scanInbox(projectRoot, docsRoot).then((res) => {
+      busy.current = false;
+      if (!alive.current) return;
+      // Un tentativo fallito NON butta via l'esito dell'ultimo riuscito: la
+      // lista precedente resta vera e ancora apribile, e il guasto si dice
+      // col glifo di allerta accanto ai contatori. È la stessa regola già
+      // scritta per il project status (`finish` non riscrive la cache).
+      setState((prev) =>
+        res.ok ? { files: res.files, ok: true, scanned: true } : { ...prev, ok: false, scanned: true },
+      );
+    });
   }, [projectRoot, docsRoot]);
-  return state;
+
+  useEffect(() => {
+    run();
+    const id = setInterval(run, INBOX_SCAN_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [run, epoch]);
+
+  // Lo scan a richiesta RESETTA il timer, come quello del wrap: senza,
+  // l'intervallo continuerebbe a scorrere dall'ultimo tick automatico e potrebbe
+  // rimisurare pochi istanti dopo un dato appena misurato.
+  const scan = useCallback(() => {
+    setEpoch((e) => e + 1);
+  }, []);
+
+  return { ...state, scan };
 }
 
 /**
