@@ -223,6 +223,27 @@ export function taskIsEpic(id: string, text: string | null): boolean {
   return (parseTaskDetail(id, text).fields['Size'] ?? '').trim().toLowerCase() === 'epic';
 }
 
+/** Primo token `T\d+` dentro `**Parent Task**` — stessa tolleranza di
+ *  `lw_task_children` nel plugin, che ammette una maniglia dopo l'id
+ *  (`T142 (epica sistema documentale)`) e la ignora. */
+const PARENT_TOKEN_RE = /T\d+/;
+
+/**
+ * Il cappello dichiarato dalla FIGLIA via `**Parent Task**`, o `null` se il
+ * campo è assente/vuoto — il caso comune del template, dove significa «nessun
+ * cappello» e non un errore di lettura.
+ *
+ * Riusa `parseTaskDetail` come `taskIsEpic`: una grammatica sola per i bullet
+ * header. La validità del cappello (esiste ancora? è nella vista? non è un
+ * ciclo?) non è compito di questa funzione — la giudica il grouping, che ha la
+ * lista intera sotto gli occhi e questa non ce l'ha.
+ */
+export function taskEpicOf(id: string, text: string | null): string | null {
+  if (!text) return null;
+  const field = parseTaskDetail(id, text).fields['Parent Task'] ?? '';
+  return PARENT_TOKEN_RE.exec(field)?.[0] ?? null;
+}
+
 /**
  * Testo INTEGRALE del task file (T66 · detail).
  *
