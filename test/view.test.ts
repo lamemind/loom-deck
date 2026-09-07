@@ -17,6 +17,7 @@ import {
   taskColumns,
   toggleHidden,
   DEFAULT_VIEW,
+  type SortCtx,
   type SortEntry,
   type TaskRowData,
   type ViewState,
@@ -35,8 +36,10 @@ const t = (id: string, pri: string, prog: string): Task => ({
   rawDesc: id,
 });
 
-const sortOf = (tasks: Task[], sort: SortEntry[]) =>
-  [...tasks].sort((a, b) => compareTasks(a, b, sort)).map((x) => x.id);
+const NO_COMMITS: SortCtx = { commitAt: new Map() };
+
+const sortOf = (tasks: Task[], sort: SortEntry[], ctx: SortCtx = NO_COMMITS) =>
+  [...tasks].sort((a, b) => compareTasks(a, b, sort, ctx)).map((x) => x.id);
 
 test('ordinali: rango decrescente per urgenza, glifo ignoto sotto tutti', () => {
   assert.ok(priRank('🔥') > priRank('⚡'));
@@ -241,10 +244,67 @@ test('sequenza "ppi" produce [pri desc, id asc]', () => {
   assert.equal(describeSort(sort), 'pri↓ id↑');
 });
 
+// ── T136 · chiave `commit` ────────────────────────────────────────────────
+
+test('commit↓: la testa della lista è il commit più recente', () => {
+  const tasks = [t('T1', '⚡', '🔵'), t('T2', '⚡', '🔵'), t('T3', '⚡', '🔵')];
+  const ctx: SortCtx = {
+    commitAt: new Map([
+      ['T1', 100],
+      ['T2', 300],
+      ['T3', 200],
+    ]),
+  };
+  assert.deepEqual(sortOf(tasks, [{ key: 'commit', dir: 'desc' }], ctx), ['T2', 'T3', 'T1']);
+});
+
+test('commit: timestamp assente va in coda sotto `desc`, come il rango ignoto di pri/prog', () => {
+  const tasks = [t('T1', '⚡', '🔵'), t('T2', '⚡', '🔵'), t('T3', '⚡', '🔵')];
+  const ctx: SortCtx = { commitAt: new Map([['T1', 500], ['T3', 100]]) }; // T2 mai committata
+  assert.deepEqual(sortOf(tasks, [{ key: 'commit', dir: 'desc' }], ctx), ['T1', 'T3', 'T2']);
+});
+
+test('commit: componibile in chain — pri decide, commit spareggia a parità', () => {
+  const tasks = [t('T1', '🔥', '🔵'), t('T2', '🔥', '🔵'), t('T3', '⚡', '🔵')];
+  const ctx: SortCtx = {
+    commitAt: new Map([
+      ['T1', 100],
+      ['T2', 900],
+      ['T3', 500],
+    ]),
+  };
+  assert.deepEqual(
+    sortOf(
+      tasks,
+      [
+        { key: 'pri', dir: 'desc' },
+        { key: 'commit', dir: 'desc' },
+      ],
+      ctx,
+    ),
+    ['T2', 'T1', 'T3'],
+  );
+});
+
+test('describeSort rende la chiave `commit`', () => {
+  assert.equal(describeSort([{ key: 'commit', dir: 'desc' }]), 'commit↓');
+});
+
+test('persistenza: la chain con `commit` sopravvive al round-trip', () => {
+  const root = mkdtempSync(join(tmpdir(), 'deck-view-'));
+  const view: ViewState = {
+    sort: [{ key: 'commit', dir: 'desc' }, { key: 'id', dir: 'asc' }],
+    hiddenPri: [],
+    hiddenProg: [],
+  };
+  saveView(root, view);
+  assert.deepEqual(loadView(root), view);
+});
+
 test('filtri: visibili + nascoste = totale', () => {
   const tasks = [t('T1', '🔥', '🔵'), t('T2', '⚡', '✔️'), t('T3', '🔹', '🟡')];
   const view: ViewState = { ...DEFAULT_VIEW, hiddenProg: ['done'] };
-  const { visible, hidden } = applyView(tasks, view);
+  const { visible, hidden } = applyView(tasks, view, NO_COMMITS);
   assert.equal(visible.length + hidden, tasks.length);
   assert.equal(hidden, 1);
   assert.deepEqual(visible.map((x) => x.id), ['T1', 'T3']);
@@ -253,19 +313,19 @@ test('filtri: visibili + nascoste = totale', () => {
 test('filtri componibili in AND su pri e prog', () => {
   const tasks = [t('T1', '🔥', '🔵'), t('T2', '⚡', '✔️'), t('T3', '🔹', '🟡')];
   const view: ViewState = { ...DEFAULT_VIEW, hiddenPri: ['low'], hiddenProg: ['done'] };
-  const { visible } = applyView(tasks, view);
+  const { visible } = applyView(tasks, view, NO_COMMITS);
   assert.deepEqual(visible.map((x) => x.id), ['T1']);
 });
 
 test('un filtro non nasconde mai un glifo che non sa classificare', () => {
   const tasks = [t('T1', '🦄', '🎃')];
   const view: ViewState = { ...DEFAULT_VIEW, hiddenPri: ['high', 'med', 'low'] };
-  assert.equal(applyView(tasks, view).visible.length, 1);
+  assert.equal(applyView(tasks, view, NO_COMMITS).visible.length, 1);
 });
 
 test('applyView non muta l array in ingresso', () => {
   const tasks = [t('T3', '🔹', '🔵'), t('T1', '🔥', '🔵')];
-  applyView(tasks, DEFAULT_VIEW);
+  applyView(tasks, DEFAULT_VIEW, NO_COMMITS);
   assert.deepEqual(tasks.map((x) => x.id), ['T3', 'T1']);
 });
 

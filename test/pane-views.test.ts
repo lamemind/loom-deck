@@ -127,7 +127,7 @@ const TASKS = [task('T1', '🔥'), task('T2', '⚡'), task('T3', '🔹'), task('
 
 test('`nascoste` è il complemento ESATTO dei filtri correnti', () => {
   const view = { ...DEFAULT_VIEW, hiddenPri: ['low' as const] };
-  const ctx = { view, archivable: new Set<string>() };
+  const ctx = { view, archivable: new Set<string>(), commitAt: new Map<string, number>() };
   const shown = selectTasks(TASKS, 'tasks', ctx).map((t) => t.id);
   const hidden = selectTasks(TASKS, 'hidden', ctx).map((t) => t.id);
   assert.deepEqual(hidden, ['T3']);
@@ -136,7 +136,7 @@ test('`nascoste` è il complemento ESATTO dei filtri correnti', () => {
 });
 
 test('senza filtri `nascoste` è vuota, e resta comunque una vista navigabile', () => {
-  const ctx = { view: DEFAULT_VIEW, archivable: new Set<string>() };
+  const ctx = { view: DEFAULT_VIEW, archivable: new Set<string>(), commitAt: new Map<string, number>() };
   assert.deepEqual(selectTasks(TASKS, 'hidden', ctx), []);
   assert.equal(cycleTaskView('tasks', 1), 'hidden', 'a 0 righe la voce si raggiunge lo stesso');
 });
@@ -145,7 +145,7 @@ test('`archiviabili` è CIECA ai filtri: li ignora, non li applica al contrario'
   // La vista nasce da uno scan d'età, non dalla vista corrente: filtrare via le
   // Done e poi chiedere le Done vecchie darebbe sempre zero.
   const view = { ...DEFAULT_VIEW, hiddenProg: ['done' as const] };
-  const ctx = { view, archivable: new Set(['T4']) };
+  const ctx = { view, archivable: new Set(['T4']), commitAt: new Map<string, number>() };
   assert.deepEqual(
     selectTasks(TASKS, 'archivable', ctx).map((t) => t.id),
     ['T4'],
@@ -156,6 +156,7 @@ test('ogni vista eredita la chain di ordinamento: un solo asse di sort', () => {
   const ctx = {
     view: { ...DEFAULT_VIEW, sort: [{ key: 'id' as const, dir: 'desc' as const }] },
     archivable: new Set(['T1', 'T4']),
+    commitAt: new Map<string, number>(),
   };
   assert.deepEqual(
     selectTasks(TASKS, 'archivable', ctx).map((t) => t.id),
