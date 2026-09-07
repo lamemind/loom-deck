@@ -9,7 +9,7 @@ import { EDIT_PRI, EDIT_PROG, type EditDraft, type FilterCursor, type PurgeDraft
 import { PRI_ENTRIES, PROG_ENTRIES, type SortEntry, type SortKey, type ViewState } from '../view.js';
 import { progressText, PRI_GLYPH, PRI_LABEL, PROG_GLYPH } from '../task-edit.js';
 
-export const SORT_UI: Record<SortKey, string> = { pri: 'pri', prog: 'stato', id: 'id' };
+export const SORT_UI: Record<SortKey, string> = { pri: 'pri', prog: 'stato', id: 'id', commit: 'commit' };
 
 // Modali resi IN FLUSSO (come l'input box di create), non in overlay assoluto:
 // spingono giù i pane invece di coprirli, così la lista che stai filtrando

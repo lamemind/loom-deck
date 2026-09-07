@@ -115,7 +115,7 @@ export interface EditDraft {
 
 // Modale sort a grammatica libera: un tasto per chiave, pressioni successive
 // ciclano asc → desc → fuori dalla chain.
-export const SORT_TASTI: Record<string, SortKey> = { p: 'pri', s: 'prog', i: 'id' };
+export const SORT_TASTI: Record<string, SortKey> = { p: 'pri', s: 'prog', i: 'id', c: 'commit' };
 
 // T52 — campi del modale ricerca, ciclati da Tab.
 export type SearchField = 'hash' | 'query';

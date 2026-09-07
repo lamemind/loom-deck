@@ -22,7 +22,7 @@ export function viewFilePath(projectRoot: string): string {
   return join(projectRoot, '.claude', 'loom', 'deck-view.json');
 }
 
-const SORT_KEYS: SortKey[] = ['pri', 'prog', 'id'];
+const SORT_KEYS: SortKey[] = ['pri', 'prog', 'id', 'commit'];
 const PRI_NAMES = PRI_ENTRIES.map((e) => e.name);
 const PROG_NAMES = PROG_ENTRIES.map((e) => e.name);
 

@@ -128,8 +128,8 @@ export function HintBar({
     return (
       <Text dimColor wrap="truncate-end">
         sort · <Text color="yellow">p</Text> pri <Text color="yellow">s</Text> stato{' '}
-        <Text color="yellow">i</Text> id (asc→desc→off) · <Text color="yellow">⏎</Text> ok ·{' '}
-        <Text color="yellow">esc</Text> annulla
+        <Text color="yellow">i</Text> id <Text color="yellow">c</Text> commit (asc→desc→off) ·{' '}
+        <Text color="yellow">⏎</Text> ok · <Text color="yellow">esc</Text> annulla
       </Text>
     );
   }
