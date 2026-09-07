@@ -10,6 +10,7 @@ import { discoverProjectSessions, type Session } from './sessions.js';
 import { discoverLiveSessions, liveSig, type LiveSession } from './live-sessions.js';
 import { loadSessionIndex, type SessionIndex } from './task-index.js';
 import { archivableIds, SCAN_INTERVAL_MS } from './archivable.js';
+import { commitTimes } from './commit-times.js';
 import { scanInbox, INBOX_SCAN_INTERVAL_MS, type InboxFile } from './inbox.js';
 import {
   mixedCount,
@@ -76,6 +77,44 @@ export function useTasks(tasksPath: string) {
   }, [tasksPath]);
 
   return { tasks, loadError };
+}
+
+/**
+ * T136 — data dell'ultimo commit di ogni task file, per la chiave di sort
+ * `commit`. D1 (preflight): sullo STESSO poll di `tasks.md` (`POLL_MS`), non
+ * su una scala propria come `useArchivable` — una passata di `git log` costa
+ * ~33ms ed è UNA invocazione per tick, indipendentemente dal numero di task.
+ *
+ * P5 (preflight): `commitTimes` ritorna una `Map` nuova a ogni tick anche
+ * quando il contenuto non cambia; passata nuda a una `useMemo` a valle ne
+ * romperebbe la memoizzazione ogni 1,5s. Si confronta per FIRMA prima di
+ * aggiornare lo stato, come `lastMtime` in `useTasks` e `lastSig` in
+ * `useSessions`: l'identità della mappa cambia solo dopo un commit vero.
+ */
+export function useCommitTimes(tasksDir: string, projectRoot: string): ReadonlyMap<string, number> {
+  const [commitAt, setCommitAt] = useState<ReadonlyMap<string, number>>(() => new Map());
+
+  useEffect(() => {
+    let lastSig = '';
+    let alive = true;
+    const reload = () => {
+      commitTimes(tasksDir, projectRoot).then((next) => {
+        if (!alive) return;
+        const sig = [...next.entries()].map(([id, ts]) => `${id}:${ts}`).sort().join(',');
+        if (sig === lastSig) return;
+        lastSig = sig;
+        setCommitAt(next);
+      });
+    };
+    reload();
+    const id = setInterval(reload, POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [tasksDir, projectRoot]);
+
+  return commitAt;
 }
 
 // Poll delle sessioni del progetto + binding sidecar. discoverProjectSessions
