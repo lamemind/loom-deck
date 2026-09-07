@@ -41,13 +41,13 @@ const frameHeight = (i: BudgetInput, b: ReturnType<typeof layoutBudget>) => {
   const tasksCol = 6 + b.taskRows;
   const sessionsCol = 3 + b.sessionRows;
   // Blocco preview: 3 chrome (marginTop + 2 bordi) + le righe fisse del suo
-  // contenuto (task: titolo/meta/commit · sessione: titolo + meta) + le
-  // variabili.
+  // contenuto (task: titolo/meta/commit · sessione: titolo + meta + bottoni
+  // modello, T148) + le variabili.
   const preview = !b.preview
     ? 0
     : i.preview === 'task'
       ? 3 + i.detailMetaLines + b.detailLines
-      : 3 + 2 + b.sessionFirstLines + b.sessionLastLines;
+      : 3 + 3 + b.sessionFirstLines + b.sessionLastLines;
   return outer + Math.max(tasksCol, sessionsCol) + preview;
 };
 
@@ -153,8 +153,22 @@ test('layoutBudget: preview sessione su terminale alto → entrambe le anteprime
   assert.equal(b.preview, true);
   assert.equal(b.sessionFirstLines, 3);
   assert.equal(b.sessionLastLines, 3);
-  // Costo intero del blocco: 3 chrome + 2 fisse + 3 first + 3 last.
-  assert.equal(base.sessionRows - b.sessionRows, 11);
+  // Costo intero del blocco: 3 chrome + 3 fisse (T148: + bottoni modello) + 3
+  // first + 3 last.
+  assert.equal(base.sessionRows - b.sessionRows, 12);
+});
+
+// T148 — SESSION_DETAIL_FIXED è salita da 2 a 3 (P4 preflight): la riga
+// bottoni del modello di resume/fork costa una riga fissa in più, sempre
+// presente indipendentemente dalle due anteprime variabili.
+test('layoutBudget: la riga bottoni del modello costa 1 riga fissa in più del blocco pre-T148', () => {
+  const bare = layoutBudget(input({ rows: 60 }));
+  const b = layoutBudget(input({ rows: 60, preview: 'session' }));
+  assert.equal(b.preview, true);
+  assert.equal(b.sessionFirstLines, 0);
+  assert.equal(b.sessionLastLines, 0);
+  // Nessuna anteprima variabile: il costo è tutto e solo chrome (3) + fisse (3).
+  assert.equal(bare.sessionRows - b.sessionRows, 6);
 });
 
 test('layoutBudget: solo ultima risposta (nessun titolo custom) → riservate solo le sue righe', () => {

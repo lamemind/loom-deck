@@ -141,6 +141,9 @@ test('deckLegend: le voci contestuali seguono il pane a fuoco', () => {
   });
   assert.ok(suSessioni.includes('⏎ resume'), 'sul pane sessioni ⏎ fa il resume');
   assert.ok(suSessioni.includes('f fork'), 'il fork vive qui');
+  // T148 — stesso guard del fork: serve un transcript vero (`hasSession`),
+  // non basta una riga selezionata.
+  assert.ok(suSessioni.includes('m modello'), 'il cambio modello vive qui');
 });
 
 test('deckLegend: su una pinnata stale restano pin/titolo/assegna, non il fork', () => {
@@ -157,6 +160,9 @@ test('deckLegend: su una pinnata stale restano pin/titolo/assegna, non il fork',
   assert.ok(legend.includes('p pin'), `il pin deve restare: ${legend}`);
   assert.ok(legend.includes('A assegna'), `l'assegnazione deve restare: ${legend}`);
   assert.ok(!legend.includes('f fork'), `niente da forkare: ${legend}`);
+  // T148 — nessun blocco preview su una pinnata stale: niente bottone da
+  // cambiare, quindi la voce non deve promettere un'azione che non parte.
+  assert.ok(!legend.includes('m modello'), `nessun modello da cambiare: ${legend}`);
 });
 
 // ── launchRow: le colonne cliccabili sono quelle disegnate ────────────────

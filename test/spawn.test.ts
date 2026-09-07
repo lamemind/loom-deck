@@ -90,45 +90,86 @@ test('deckArgs: prompt VUOTO → kind none, non un --prompt a vuoto', () => {
 });
 
 test('resumeArgs scoped porta la task, spot porta --no-task', () => {
-  assert.deepEqual(resumeArgs('T81', 'sid-1'), ['T81', '--resume', 'sid-1']);
-  assert.deepEqual(resumeArgs(null, 'sid-1'), ['--no-task', '--resume', 'sid-1']);
-});
-
-test('resumeArgs aggiunge la nota al titolo solo quando c\'è', () => {
-  assert.deepEqual(resumeArgs('T81', 'sid-1', 'parser'), [
+  assert.deepEqual(resumeArgs('T81', 'sid-1', 'opus'), [
     'T81',
     '--resume',
     'sid-1',
+    '--model',
+    'opus',
+  ]);
+  assert.deepEqual(resumeArgs(null, 'sid-1', 'opus'), [
+    '--no-task',
+    '--resume',
+    'sid-1',
+    '--model',
+    'opus',
+  ]);
+});
+
+test('resumeArgs aggiunge la nota al titolo solo quando c\'è', () => {
+  assert.deepEqual(resumeArgs('T81', 'sid-1', 'opus', 'parser'), [
+    'T81',
+    '--resume',
+    'sid-1',
+    '--model',
+    'opus',
     '--title-note',
     'parser',
   ]);
   // Nota vuota = nessuna nota: un `--title-note ''` metterebbe nel titolo una
   // maniglia che in lista non compare.
-  assert.deepEqual(resumeArgs('T81', 'sid-1', ''), ['T81', '--resume', 'sid-1']);
+  assert.deepEqual(resumeArgs('T81', 'sid-1', 'opus', ''), [
+    'T81',
+    '--resume',
+    'sid-1',
+    '--model',
+    'opus',
+  ]);
 });
 
-test('forkArgs porta insieme --resume e --session-id', () => {
-  // È l'unico punto in cui i due flag convivono: CC apre un id NUOVO invece di
-  // riprendere a scrivere sull'origine — due writer sullo stesso JSONL non
-  // esistono mai, che è l'intero punto del fork.
-  const args = forkArgs('T81', 'origine', 'nuovo');
-  assert.deepEqual(args, ['T81', '--resume', 'origine', '--fork', '--session-id', 'nuovo']);
-  assert.ok(args.includes('--resume') && args.includes('--session-id'));
+// T148 — il modello viaggia SEMPRE nell'argv: un resume senza `--model`
+// lascerebbe `deck-run` risolvere il proprio default fisso invece del valore
+// che il chiamante ha già deciso (P2 preflight).
+test('resumeArgs porta --model con qualunque valore il chiamante scelga', () => {
+  for (const m of ['fable', 'opus', 'sonnet', 'haiku'] as const) {
+    assert.ok(resumeArgs('T81', 'sid-1', m).includes('--model'));
+    assert.ok(resumeArgs('T81', 'sid-1', m).includes(m));
+  }
+});
+
+test('forkArgs porta insieme --resume, --session-id e --model', () => {
+  // È l'unico punto in cui `--resume`/`--session-id` convivono: CC apre un id
+  // NUOVO invece di riprendere a scrivere sull'origine — due writer sullo
+  // stesso JSONL non esistono mai, che è l'intero punto del fork.
+  const args = forkArgs('T81', 'origine', 'nuovo', 'sonnet');
+  assert.deepEqual(args, [
+    'T81',
+    '--resume',
+    'origine',
+    '--fork',
+    '--session-id',
+    'nuovo',
+    '--model',
+    'sonnet',
+  ]);
+  assert.ok(args.includes('--resume') && args.includes('--session-id') && args.includes('--model'));
 });
 
 test('forkArgs senza task resta spot', () => {
-  assert.deepEqual(forkArgs(null, 'origine', 'nuovo'), [
+  assert.deepEqual(forkArgs(null, 'origine', 'nuovo', 'opus'), [
     '--no-task',
     '--resume',
     'origine',
     '--fork',
     '--session-id',
     'nuovo',
+    '--model',
+    'opus',
   ]);
 });
 
 test('il fork non eredita la nota dell\'origine', () => {
-  assert.ok(!forkArgs('T81', 'origine', 'nuovo').includes('--title-note'));
+  assert.ok(!forkArgs('T81', 'origine', 'nuovo', 'opus').includes('--title-note'));
 });
 
 test('terminalArgs titola la tab quando il progetto ha un\'identità', () => {
