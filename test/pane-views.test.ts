@@ -125,19 +125,28 @@ test('N passi avanti tornano al punto di partenza (nessuna voce irraggiungibile)
 
 const TASKS = [task('T1', '🔥'), task('T2', '⚡'), task('T3', '🔹'), task('T4', '⚡', '✔️')];
 
+// Nessuna epica in gioco in questi test: il grouping gerarchico di T67 è
+// coperto da `test/view.test.ts`, qui si torna la lista piatta come prima.
+const NO_EPICS = { epicOf: new Map<string, string>(), epics: new Set<string>() };
+
 test('`nascoste` è il complemento ESATTO dei filtri correnti', () => {
   const view = { ...DEFAULT_VIEW, hiddenPri: ['low' as const] };
-  const ctx = { view, archivable: new Set<string>(), commitAt: new Map<string, number>() };
-  const shown = selectTasks(TASKS, 'tasks', ctx).map((t) => t.id);
-  const hidden = selectTasks(TASKS, 'hidden', ctx).map((t) => t.id);
+  const ctx = { view, archivable: new Set<string>(), commitAt: new Map<string, number>(), ...NO_EPICS };
+  const shown = selectTasks(TASKS, 'tasks', ctx).tasks.map((t) => t.id);
+  const hidden = selectTasks(TASKS, 'hidden', ctx).tasks.map((t) => t.id);
   assert.deepEqual(hidden, ['T3']);
   assert.equal(shown.length + hidden.length, TASKS.length, 'unione = lista intera');
   assert.equal(shown.filter((id) => hidden.includes(id)).length, 0, 'intersezione vuota');
 });
 
 test('senza filtri `nascoste` è vuota, e resta comunque una vista navigabile', () => {
-  const ctx = { view: DEFAULT_VIEW, archivable: new Set<string>(), commitAt: new Map<string, number>() };
-  assert.deepEqual(selectTasks(TASKS, 'hidden', ctx), []);
+  const ctx = {
+    view: DEFAULT_VIEW,
+    archivable: new Set<string>(),
+    commitAt: new Map<string, number>(),
+    ...NO_EPICS,
+  };
+  assert.deepEqual(selectTasks(TASKS, 'hidden', ctx).tasks, []);
   assert.equal(cycleTaskView('tasks', 1), 'hidden', 'a 0 righe la voce si raggiunge lo stesso');
 });
 
@@ -145,9 +154,9 @@ test('`archiviabili` è CIECA ai filtri: li ignora, non li applica al contrario'
   // La vista nasce da uno scan d'età, non dalla vista corrente: filtrare via le
   // Done e poi chiedere le Done vecchie darebbe sempre zero.
   const view = { ...DEFAULT_VIEW, hiddenProg: ['done' as const] };
-  const ctx = { view, archivable: new Set(['T4']), commitAt: new Map<string, number>() };
+  const ctx = { view, archivable: new Set(['T4']), commitAt: new Map<string, number>(), ...NO_EPICS };
   assert.deepEqual(
-    selectTasks(TASKS, 'archivable', ctx).map((t) => t.id),
+    selectTasks(TASKS, 'archivable', ctx).tasks.map((t) => t.id),
     ['T4'],
   );
 });
@@ -157,9 +166,10 @@ test('ogni vista eredita la chain di ordinamento: un solo asse di sort', () => {
     view: { ...DEFAULT_VIEW, sort: [{ key: 'id' as const, dir: 'desc' as const }] },
     archivable: new Set(['T1', 'T4']),
     commitAt: new Map<string, number>(),
+    ...NO_EPICS,
   };
   assert.deepEqual(
-    selectTasks(TASKS, 'archivable', ctx).map((t) => t.id),
+    selectTasks(TASKS, 'archivable', ctx).tasks.map((t) => t.id),
     ['T4', 'T1'],
   );
 });

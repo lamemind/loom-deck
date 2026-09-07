@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTasks, parseTaskDetail, headerColumns, taskIsEpic } from '../src/tasks.js';
+import { parseTasks, parseTaskDetail, headerColumns, taskEpicOf, taskIsEpic } from '../src/tasks.js';
 import { sanitize } from '../src/width.js';
 
 const TASKS_MD = `# Tasks
@@ -122,6 +122,24 @@ Il marker si scrive cosi:
 - **Size**: Epic
 `;
   assert.equal(taskIsEpic('T113', citante), false);
+});
+
+// ── T67 · taskEpicOf ─────────────────────────────────────────────────────
+
+test('taskEpicOf: T142 (maniglia) → primo token, la maniglia si ignora', () => {
+  const md = '# Task: Figlia\n\n- **ID**: T99\n- **Parent Task**: T142 (epica sistema documentale)\n';
+  assert.equal(taskEpicOf('T99', md), 'T142');
+});
+
+test('taskEpicOf: campo assente o vuoto → nessun cappello', () => {
+  assert.equal(taskEpicOf('T99', '# Task: Senza parent\n\n- **ID**: T99\n'), null);
+  assert.equal(taskEpicOf('T99', '# Task: Vuoto\n\n- **ID**: T99\n- **Parent Task**: \n'), null);
+  assert.equal(taskEpicOf('T99', null), null);
+});
+
+test('taskEpicOf: le cifre del token sono greedy — T74 non si legge T7', () => {
+  const md = '# Task: Figlia\n\n- **ID**: T7\n- **Parent Task**: T74\n';
+  assert.equal(taskEpicOf('T7', md), 'T74');
 });
 
 test('parseTaskDetail strippa il cappello H1', () => {

@@ -8,6 +8,8 @@ import {
   compareTasks,
   cycleSort,
   describeSort,
+  epicRollup,
+  groupHierarchy,
   idColumnWidth,
   idNum,
   padId,
@@ -22,7 +24,7 @@ import {
   type TaskRowData,
   type ViewState,
 } from '../src/view.js';
-import { taskTail } from '../src/glyphs.js';
+import { epicTail, taskTail } from '../src/glyphs.js';
 import { termWidth } from '../src/width.js';
 import { loadView, saveView, parseView } from '../src/view-store.js';
 import { cellWidth, launchLegend, parseIdentity, parseLaunch } from '../src/config.js';
@@ -36,7 +38,11 @@ const t = (id: string, pri: string, prog: string): Task => ({
   rawDesc: id,
 });
 
-const NO_COMMITS: SortCtx = { commitAt: new Map() };
+const NO_COMMITS: SortCtx = { commitAt: new Map(), epicOf: new Map(), epics: new Set() };
+
+// `TaskRowData` senza nessuna epica: il caso comune dei test pre-T67, così le
+// firme restano leggibili come prima con uno spread invece che tre righe in più.
+const NO_EPIC_DATA = { epics: new Set<string>(), epicRollup: new Map() };
 
 const sortOf = (tasks: Task[], sort: SortEntry[], ctx: SortCtx = NO_COMMITS) =>
   [...tasks].sort((a, b) => compareTasks(a, b, sort, ctx)).map((x) => x.id);
@@ -117,6 +123,7 @@ test('taskColumns: la coda è il massimo della popolazione, più il proprio gutt
     childCount: new Map([['T9', 3], ['T90', 12]]),
     live: new Map([['T90', { count: 2, status: 'busy' }]]),
     dirty: new Set<string>(),
+    ...NO_EPIC_DATA,
   };
   // `(2/12` è la più larga: 5 colonne, più 1 di gutter.
   assert.equal(taskColumns(list, data).tail, termWidth(taskTail(2, 12, false)) + 1);
@@ -132,6 +139,7 @@ test('taskColumns: coda a zero quando nessuna riga scrive niente', () => {
     childCount: new Map(),
     live: new Map(),
     dirty: new Set<string>(),
+    ...NO_EPIC_DATA,
   };
   assert.equal(taskColumns(list, empty).tail, 0);
   // Basta però una sola folder sporca ad accenderla, senza nessun contatore.
@@ -145,7 +153,7 @@ test('taskColumns: coda a zero quando nessuna riga scrive niente', () => {
 // stabilmente la larghezza del caso più largo.
 test('taskColumns: accendere una viva qualsiasi allarga la colonna di 2 celle', () => {
   const list = [t('T9', '⚡', '🔵'), t('T90', '⚡', '🔵')];
-  const base = { childCount: new Map([['T9', 5], ['T90', 5]]), dirty: new Set<string>() };
+  const base = { childCount: new Map([['T9', 5], ['T90', 5]]), dirty: new Set<string>(), ...NO_EPIC_DATA };
   const spenta = taskColumns(list, { ...base, live: new Map() }).tail;
   const accesa = taskColumns(list, {
     ...base,
@@ -254,19 +262,22 @@ test('commit↓: la testa della lista è il commit più recente', () => {
       ['T2', 300],
       ['T3', 200],
     ]),
+    epicOf: new Map(),
+    epics: new Set(),
   };
   assert.deepEqual(sortOf(tasks, [{ key: 'commit', dir: 'desc' }], ctx), ['T2', 'T3', 'T1']);
 });
 
 test('commit: timestamp assente va in coda sotto `desc`, come il rango ignoto di pri/prog', () => {
   const tasks = [t('T1', '⚡', '🔵'), t('T2', '⚡', '🔵'), t('T3', '⚡', '🔵')];
-  const ctx: SortCtx = { commitAt: new Map([['T1', 500], ['T3', 100]]) }; // T2 mai committata
+  const ctx: SortCtx = { ...NO_COMMITS, commitAt: new Map([['T1', 500], ['T3', 100]]) }; // T2 mai committata
   assert.deepEqual(sortOf(tasks, [{ key: 'commit', dir: 'desc' }], ctx), ['T1', 'T3', 'T2']);
 });
 
 test('commit: componibile in chain — pri decide, commit spareggia a parità', () => {
   const tasks = [t('T1', '🔥', '🔵'), t('T2', '🔥', '🔵'), t('T3', '⚡', '🔵')];
   const ctx: SortCtx = {
+    ...NO_COMMITS,
     commitAt: new Map([
       ['T1', 100],
       ['T2', 900],
@@ -299,6 +310,115 @@ test('persistenza: la chain con `commit` sopravvive al round-trip', () => {
   };
   saveView(root, view);
   assert.deepEqual(loadView(root), view);
+});
+
+// ── T67 · grouping gerarchico (cappello + figlie) ───────────────────────────
+
+const epicCtx = (
+  epicOf: Record<string, string>,
+  epics: string[] = [],
+  commitAt = new Map<string, number>(),
+): SortCtx => ({ commitAt, epicOf: new Map(Object.entries(epicOf)), epics: new Set(epics) });
+
+test('groupHierarchy: le figlie sparse nell input finiscono tutte sotto la mamma, in blocco', () => {
+  const tasks = [t('T5', '⚡', '🔵'), t('T1', '⚡', '🔵'), t('T3', '⚡', '🔵'), t('T2', '⚡', '🔵')];
+  const ctx = epicCtx({ T2: 'T1', T3: 'T1', T5: 'T1' }, ['T1']);
+  const { tasks: order, blockMark } = groupHierarchy(tasks, [{ key: 'id', dir: 'asc' }], ctx);
+  assert.deepEqual(order.map((x) => x.id), ['T1', 'T2', 'T3', 'T5']);
+  assert.equal(blockMark.get('T1'), '┌');
+  assert.equal(blockMark.get('T2'), '│');
+  assert.equal(blockMark.get('T3'), '│');
+  assert.equal(blockMark.get('T5'), '└', 'ultima del blocco, non della sola lista in ingresso');
+});
+
+test('groupHierarchy: il blocco segue la mamma su qualunque chain, chiave `commit` compresa', () => {
+  const tasks = [t('T1', '⚡', '🔵'), t('T2', '⚡', '🔵'), t('T3', '🔥', '🔵'), t('T4', '⚡', '🔵')];
+  const ctx = epicCtx({ T4: 'T3' }, ['T3'], new Map([['T3', 100], ['T1', 900]]));
+  // pri decide: T3 (🔥) in testa col suo blocco, benché T1 abbia il commit più recente.
+  const byPri = groupHierarchy(
+    tasks,
+    [{ key: 'pri', dir: 'desc' }, { key: 'id', dir: 'asc' }],
+    ctx,
+  );
+  assert.deepEqual(byPri.tasks.map((x) => x.id), ['T3', 'T4', 'T1', 'T2']);
+  // stessa mamma, chain `commit`: il blocco si sposta insieme a lei.
+  const byCommit = groupHierarchy(tasks, [{ key: 'commit', dir: 'desc' }], ctx);
+  assert.deepEqual(byCommit.tasks.map((x) => x.id), ['T1', 'T3', 'T4', 'T2']);
+});
+
+test('groupHierarchy: capo-blocco quando il cappello non è nella lista passata (inesistente o fuori vista)', () => {
+  // Stessa regola per un cappello mai esistito e per uno filtrato via altrove
+  // (P6): la funzione vede solo l'array che riceve.
+  const tasks = [t('T9', '⚡', '🔵'), t('T1', '⚡', '🔵')];
+  const ctx = epicCtx({ T9: 'T34' });
+  const { tasks: order, blockMark } = groupHierarchy(tasks, [{ key: 'id', dir: 'asc' }], ctx);
+  assert.deepEqual(order.map((x) => x.id), ['T1', 'T9']);
+  assert.equal(blockMark.has('T9'), false, 'nessun blocco da disegnare: T9 è sola');
+});
+
+test('applyView: figlia nascosta dal filtro, mamma visibile → resta capo-blocco quando la si guarda da sola', () => {
+  const tasks = [t('T1', '🔥', '🔵'), t('T2', '⚡', '✔️')]; // T2 è figlia di T1, Done
+  const ctx = epicCtx({ T2: 'T1' }, ['T1']);
+  const view: ViewState = { ...DEFAULT_VIEW, hiddenProg: ['done'] };
+  const shown = applyView(tasks, view, ctx);
+  assert.deepEqual(shown.visible.map((x) => x.id), ['T1']);
+  assert.equal(shown.blockMark.size, 0, 'T1 senza T2 in vista non ha nessun blocco da disegnare');
+  // Come farebbe `selectTasks('hidden', …)`: solo i task esclusi dal filtro.
+  const { blockMark } = groupHierarchy(
+    tasks.filter((x) => x.id === 'T2'),
+    view.sort,
+    ctx,
+  );
+  assert.equal(blockMark.has('T2'), false, 'T1 non è in questa lista: T2 diventa capo-blocco');
+});
+
+test('groupHierarchy: ciclo A→B→A — entrambi capi-blocco, nessuna task sparisce', () => {
+  const tasks = [t('A', '⚡', '🔵'), t('B', '⚡', '🔵'), t('C', '⚡', '🔵')];
+  const ctx = epicCtx({ A: 'B', B: 'A', C: 'A' });
+  const { tasks: order, blockMark } = groupHierarchy(tasks, [{ key: 'id', dir: 'asc' }], ctx);
+  assert.deepEqual(order.map((x) => x.id).sort(), ['A', 'B', 'C']);
+  // Rotto il ciclo, A resta un capo-blocco valido per C (che non ne faceva parte).
+  assert.equal(blockMark.get('A'), '┌');
+  assert.equal(blockMark.get('C'), '└');
+  assert.equal(blockMark.has('B'), false, 'B è root senza figlie: nessun blocco');
+});
+
+test('groupHierarchy: epica annidata — porta le proprie figlie subito sotto di sé, senza chiudere il blocco', () => {
+  // Fixture sintetica (Description): il repo non ha più un esemplare reale da
+  // quando T141 è stata resa una task normale, ma il contratto la ammette.
+  const tasks = [t('A', '⚡', '🔵'), t('B', '⚡', '🔵'), t('C', '⚡', '🔵'), t('D', '⚡', '🔵')];
+  const ctx = epicCtx({ B: 'A', C: 'A', D: 'B' }, ['A', 'B']);
+  const { tasks: order, blockMark } = groupHierarchy(tasks, [{ key: 'id', dir: 'asc' }], ctx);
+  assert.deepEqual(order.map((x) => x.id), ['A', 'B', 'D', 'C']);
+  assert.equal(blockMark.get('A'), '┌');
+  // B è epica ma qui è FIGLIA: porta la spina di figlia, non un secondo '┌'
+  // (D4) — la si riconosce come cappello dalla cella di stato vuota, altrove.
+  assert.equal(blockMark.get('B'), '│');
+  assert.equal(blockMark.get('D'), '│');
+  assert.equal(blockMark.get('C'), '└', 'ultima dell intero sottoalbero, non della sola lista figli di A');
+});
+
+test('groupHierarchy: cappello Done con figlie Done affonda in blocco quando si ordina per stato', () => {
+  const tasks = [t('T10', '⚡', '✔️'), t('T1', '⚡', '🟡'), t('T11', '⚡', '✔️')];
+  const ctx = epicCtx({ T11: 'T10' }, ['T10']);
+  const { tasks: order } = groupHierarchy(tasks, [{ key: 'prog', dir: 'desc' }], ctx);
+  assert.deepEqual(order.map((x) => x.id), ['T1', 'T10', 'T11']);
+});
+
+test('epicRollup: conta tutte le figlie dichiarate, chiuse comprese', () => {
+  const tasks = [t('T1', '⚡', '🔵'), t('T2', '⚡', '✔️'), t('T3', '⚡', '🟡')];
+  const rollup = epicRollup(tasks, new Map([['T2', 'T1'], ['T3', 'T1']]));
+  assert.deepEqual(rollup.get('T1'), { closed: 1, total: 2 });
+});
+
+test('epicRollup: un cappello senza figlie non compare nella mappa', () => {
+  assert.equal(epicRollup([t('T1', '⚡', '🔵')], new Map()).has('T1'), false);
+});
+
+test('epicTail: coda vuota senza figlie, graffa senza chiusa altrimenti', () => {
+  assert.equal(epicTail(undefined), '');
+  assert.equal(epicTail({ closed: 0, total: 0 }), '', 'P9 — mai {0/0}');
+  assert.equal(epicTail({ closed: 3, total: 11 }), '{3/11');
 });
 
 test('filtri: visibili + nascoste = totale', () => {
