@@ -1,7 +1,7 @@
 // T39 — Core della vista: ordinali, sort chain multi-chiave, filtri.
 // Modulo PURO: nessun import da ink/react, nessun I/O → testabile senza terminale.
 
-import { taskTail } from './glyphs.js';
+import { epicTail, taskTail } from './glyphs.js';
 import { termWidth } from './width.js';
 import type { TaskLive } from './live-sessions.js';
 import type { Task } from './tasks.js';
@@ -20,9 +20,19 @@ export interface SortEntry {
  * prenderla da sé. Obbligatorio in `rankOf`/`compareTasks`/`applyView`: un
  * parametro opzionale farebbe compilare i chiamanti esistenti senza toccarli,
  * e la chiave nuova ordinerebbe male in silenzio.
+ *
+ * T67 — `epicOf`/`epics` viaggiano nello STESSO contesto e non in un parametro
+ * a parte, per lo stesso motivo di `commitAt`: un dato esterno al comparator
+ * (qui il filesystem dei task file, non `tasks.md`) che il grouping deve poter
+ * leggere da entrambi i siti di sort (`applyView`, `selectTasks`).
  */
 export interface SortCtx {
   commitAt: ReadonlyMap<string, number>;
+  /** figlia → cappello dichiarato, grezzo (non filtrato su esistenza/ciclo: lo
+   *  fa `groupHierarchy`, che ha la lista intera sotto gli occhi). */
+  epicOf: ReadonlyMap<string, string>;
+  /** id il cui task file porta `Size: Epic`. */
+  epics: ReadonlySet<string>;
 }
 
 export type PriName = 'high' | 'med' | 'low';
@@ -152,6 +162,12 @@ export interface TaskRowData {
   childCount: ReadonlyMap<string, number>;
   live: ReadonlyMap<string, TaskLive>;
   dirty: ReadonlySet<string>;
+  /** T67 — id il cui task file porta `Size: Epic`: cella di stato vuota (D4) e
+   *  coda sostituita dal rollup (P9), invece del contatore conversazioni. */
+  epics: ReadonlySet<string>;
+  /** T67/P9 — rollup {chiuse/totali} delle figlie dichiarate di un cappello,
+   *  cieco a filtri e viste: chiave = id del cappello. */
+  epicRollup: ReadonlyMap<string, { closed: number; total: number }>;
 }
 
 /**
@@ -172,12 +188,14 @@ export function taskColumns(
 ): { id: number; tail: number } {
   let tail = 0;
   for (const t of tasks) {
-    tail = Math.max(
-      tail,
-      termWidth(
-        taskTail(data.live.get(t.id)?.count ?? 0, data.childCount.get(t.id) ?? 0, data.dirty.has(t.id)),
-      ),
-    );
+    // T67 — un cappello scrive il rollup ({chiuse/totali}) al posto del
+    // contatore conversazioni: due formattazioni diverse, quindi la colonna
+    // deve misurare quella che la riga disegna DAVVERO per quel task, non
+    // sempre `taskTail`.
+    const cell = data.epics.has(t.id)
+      ? epicTail(data.epicRollup.get(t.id))
+      : taskTail(data.live.get(t.id)?.count ?? 0, data.childCount.get(t.id) ?? 0, data.dirty.has(t.id));
+    tail = Math.max(tail, termWidth(cell));
   }
   return { id: idColumnWidth(tasks), tail: tail > 0 ? tail + 1 : 0 };
 }
@@ -241,16 +259,141 @@ export function isVisible(task: Task, view: ViewState): boolean {
   return true;
 }
 
+// ── T67 · grouping gerarchico (cappello + figlie) ───────────────────────────
+//
+// NON è una chiave di sort in più: `compareTasks` resta un comparator piatto,
+// e sopra ci sta un LIVELLO — si ordinano i capi-blocco con la chain, poi le
+// figlie di ognuno con la STESSA chain, poi si appiattisce in preordine. Una
+// chiave gerarchica dentro `compareTasks` produrrebbe un ordine corretto solo
+// per la chain di default e sbagliato per tutte le altre (Description).
+
+/** Glifo della spina di blocco (D3 preflight): assente = task normale, che
+ *  NON riserva le 2 colonne davanti alla descrizione. */
+export type BlockMark = '┌' | '│' | '└';
+
+/**
+ * Cappello → id normalizzati a un albero valido: entrate scartate quando il
+ * cappello non è NELLA LISTA passata (P6 — capo-blocco, non sparizione), punta
+ * a se stesso, o chiude un ciclo.
+ *
+ * Rilevamento ciclo sul grafo ORIGINALE (mai su una versione già potata): per
+ * ogni id si cammina la catena fino a `raw.size` passi. Se la catena rivede
+ * l'id di PARTENZA, quell'id è membro di un ciclo e perde il proprio arco — chi
+ * punta a lui da fuori il ciclo mantiene invece il proprio, e finisce agganciato
+ * a un capo-blocco valido (l'ex membro del ciclo, ora orfano). Implementation
+ * Notes: «i membri del ciclo diventano capi-blocco, nessuno sparisce».
+ */
+function resolveParents(tasks: Task[], epicOf: ReadonlyMap<string, string>): ReadonlyMap<string, string> {
+  const byId = new Set(tasks.map((t) => t.id));
+  const raw = new Map<string, string>();
+  for (const t of tasks) {
+    const p = epicOf.get(t.id);
+    if (p && p !== t.id && byId.has(p)) raw.set(t.id, p);
+  }
+  const cyclic = new Set<string>();
+  for (const id of raw.keys()) {
+    let cur = raw.get(id);
+    let steps = 0;
+    while (cur !== undefined && steps <= raw.size) {
+      if (cur === id) {
+        cyclic.add(id);
+        break;
+      }
+      cur = raw.get(cur);
+      steps++;
+    }
+  }
+  const parentOf = new Map<string, string>();
+  for (const [id, p] of raw) if (!cyclic.has(id)) parentOf.set(id, p);
+  return parentOf;
+}
+
+export interface HierarchyResult {
+  tasks: Task[];
+  blockMark: ReadonlyMap<string, BlockMark>;
+}
+
+/**
+ * Riordina `tasks` in blocchi cappello+figlie e li appiattisce in un unico
+ * array: i capi-blocco (cappelli + task senza cappello valido, P6) si ordinano
+ * fra loro con `sort`, poi le figlie di ognuno si ordinano fra loro con lo
+ * STESSO `sort` e si appiattiscono in preordine sotto la propria mamma —
+ * ricorsivo, non un livello solo (P7), così un'epica annidata porta le proprie
+ * figlie subito sotto di sé.
+ *
+ * `blockMark` marca SOLO le righe che fanno parte di un blocco: `┌` sul
+ * cappello (un capo-blocco con almeno una figlia in lista), `│`/`└` sulle
+ * figlie (`└` sull'ultima dell'INTERO sottoalbero, non della sola lista
+ * immediata — un'epica annidata non chiude il blocco, ci sono ancora le sue
+ * figlie sotto). Una task normale non compare nella mappa: niente cella (D3).
+ */
+export function groupHierarchy(tasks: Task[], sort: SortEntry[], ctx: SortCtx): HierarchyResult {
+  const parentOf = resolveParents(tasks, ctx.epicOf);
+  const childrenOf = new Map<string, Task[]>();
+  for (const t of tasks) {
+    const p = parentOf.get(t.id);
+    if (!p) continue;
+    if (!childrenOf.has(p)) childrenOf.set(p, []);
+    childrenOf.get(p)!.push(t);
+  }
+  const roots = tasks.filter((t) => !parentOf.has(t.id));
+  roots.sort((a, b) => compareTasks(a, b, sort, ctx));
+
+  function flatten(task: Task): Task[] {
+    const kids = [...(childrenOf.get(task.id) ?? [])].sort((a, b) => compareTasks(a, b, sort, ctx));
+    const sub = [task];
+    for (const kid of kids) sub.push(...flatten(kid));
+    return sub;
+  }
+
+  const order: Task[] = [];
+  const blockMark = new Map<string, BlockMark>();
+  for (const root of roots) {
+    const block = flatten(root);
+    if (block.length > 1) blockMark.set(root.id, '┌');
+    for (let i = 1; i < block.length; i++) {
+      blockMark.set(block[i]!.id, i === block.length - 1 ? '└' : '│');
+    }
+    order.push(...block);
+  }
+  return { tasks: order, blockMark };
+}
+
+/**
+ * Rollup {chiuse/totali} delle figlie DICHIARATE di ogni cappello — cieco a
+ * filtri e viste (P9): conta su TUTTE le task passate, non sulla vista
+ * corrente, o il numero cambierebbe filtrando senza che nessuna figlia sia
+ * davvero comparsa o sparita.
+ */
+export function epicRollup(
+  tasks: Task[],
+  epicOf: ReadonlyMap<string, string>,
+): ReadonlyMap<string, { closed: number; total: number }> {
+  const parentOf = resolveParents(tasks, epicOf);
+  const rollup = new Map<string, { closed: number; total: number }>();
+  for (const t of tasks) {
+    const p = parentOf.get(t.id);
+    if (!p) continue;
+    const entry = rollup.get(p) ?? { closed: 0, total: 0 };
+    entry.total++;
+    if (progName(t.prog) === 'done') entry.closed++;
+    rollup.set(p, entry);
+  }
+  return rollup;
+}
+
 export interface ViewResult {
   visible: Task[];
   hidden: number;
+  blockMark: ReadonlyMap<string, BlockMark>;
 }
 
-/** Filtra poi ordina. Non muta l'input: il polling di tasks.md resta ignaro. */
+/** Filtra, ordina, raggruppa in blocchi. Non muta l'input: il polling di
+ *  tasks.md resta ignaro. */
 export function applyView(tasks: Task[], view: ViewState, ctx: SortCtx): ViewResult {
-  const visible = tasks.filter((t) => isVisible(t, view));
-  visible.sort((a, b) => compareTasks(a, b, view.sort, ctx));
-  return { visible, hidden: tasks.length - visible.length };
+  const filtered = tasks.filter((t) => isVisible(t, view));
+  const { tasks: visible, blockMark } = groupHierarchy(filtered, view.sort, ctx);
+  return { visible, hidden: tasks.length - filtered.length, blockMark };
 }
 
 export const PRI_ENTRIES = PRI_TABLE.map((e) => ({ name: e.name, glyph: e.glyph }));

@@ -23,7 +23,7 @@
 
 import type { Task } from './tasks.js';
 import type { AssembledList, SessionRow } from './session-list.js';
-import { isVisible, compareTasks, type ViewState } from './view.js';
+import { isVisible, groupHierarchy, type BlockMark, type ViewState } from './view.js';
 
 export type TaskViewId = 'tasks' | 'hidden' | 'archivable';
 export type SessionViewId = 'context' | 'live' | 'pinned' | 'older';
@@ -53,8 +53,12 @@ export interface TaskViewCtx {
   archivable: ReadonlySet<string>;
   /** T136 — data dell'ultimo commit di ogni task file, per la chiave `commit`
    *  della chain: `compareTasks` la vuole come `SortCtx`, e questo oggetto la
-   *  porta già come terzo campo accanto a `view`. */
+   *  porta già come campo accanto a `view`. */
   commitAt: ReadonlyMap<string, number>;
+  /** T67 — cappello/figlie per il grouping gerarchico: stessi due campi di
+   *  `SortCtx`, portati sciolti come `commitAt` invece che annidati. */
+  epicOf: ReadonlyMap<string, string>;
+  epics: ReadonlySet<string>;
 }
 
 export interface TaskViewEntry extends Styling {
@@ -96,17 +100,26 @@ export const TASK_VIEWS: readonly TaskViewEntry[] = [
   },
 ];
 
+export interface SelectedTasks {
+  tasks: Task[];
+  blockMark: ReadonlyMap<string, BlockMark>;
+}
+
 /**
- * Le task della vista `id`, filtrate col predicato e ordinate con la chain
- * corrente. L'ordinamento vale per ogni vista, non solo la principale: una lista
- * di task ordinata in un modo e l'altra in un altro sarebbe un secondo asse che
- * si muove da solo.
+ * Le task della vista `id`, filtrate col predicato e raggruppate con la STESSA
+ * chain e lo stesso livello gerarchico di `applyView` (`groupHierarchy`): un
+ * sito solo per il sort, o una vista raggrupperebbe e l'altra no (T67). Vale
+ * per ogni vista, non solo la principale — una lista ordinata in un modo e
+ * l'altra in un altro sarebbe un secondo asse che si muove da solo.
  */
-export function selectTasks(tasks: Task[], id: TaskViewId, ctx: TaskViewCtx): Task[] {
+export function selectTasks(tasks: Task[], id: TaskViewId, ctx: TaskViewCtx): SelectedTasks {
   const entry = taskView(id);
   const picked = tasks.filter((t) => entry.has(t, ctx));
-  picked.sort((a, b) => compareTasks(a, b, ctx.view.sort, ctx));
-  return picked;
+  return groupHierarchy(picked, ctx.view.sort, {
+    commitAt: ctx.commitAt,
+    epicOf: ctx.epicOf,
+    epics: ctx.epics,
+  });
 }
 
 // ── pane sessioni ──────────────────────────────────────────────────────────

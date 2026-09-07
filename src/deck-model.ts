@@ -18,6 +18,7 @@ import {
   useArchivable,
   useCommitTimes,
   useDirtyFolders,
+  useEpicHierarchy,
   useInboxScan,
   useSessions,
   useTaskDetail,
@@ -66,7 +67,7 @@ import {
   type Parent,
   type RightPane,
 } from './model.js';
-import { applyView, taskColumns, type TaskRowData, type ViewState } from './view.js';
+import { applyView, epicRollup, taskColumns, type TaskRowData, type ViewState } from './view.js';
 import { loadView } from './view-store.js';
 import { termWidth } from './width.js';
 import { MODELS, MODEL_DEFAULT, type ModelKind } from './spawn.js';
@@ -248,12 +249,32 @@ export function useDeckModel({
   // T136 — data dell'ultimo commit di ogni task file, per la chiave `commit`
   // della chain di sort.
   const commitAt = useCommitTimes(tasksDir, cwd);
+  // T67 — cappello/figlie (`**Parent Task**`, `Size: Epic`) per il grouping
+  // gerarchico del Tasks pane, sullo stesso poll di `commitAt`.
+  const epicHierarchy = useEpicHierarchy(tasksDir);
+  // T67/P9 — rollup {chiuse/totali} di ogni cappello: sulla lista GREZZA come
+  // `doneSig` più sotto, cieco a filtri e viste — altrimenti il numero
+  // cambierebbe filtrando senza che nessuna figlia sia davvero comparsa o
+  // sparita.
+  const epicRollupMap = useMemo(
+    () => epicRollup(tasks, epicHierarchy.epicOf),
+    [tasks, epicHierarchy],
+  );
 
   // La vista è una trasformazione DERIVATA, applicata a valle del load: il
   // polling di tasks.md continua a funzionare senza saperne nulla.
-  const { visible: viewTasks, hidden: hiddenTasks } = useMemo(
-    () => applyView(tasks, view, { commitAt }),
-    [tasks, view, commitAt],
+  const {
+    visible: viewTasks,
+    hidden: hiddenTasks,
+    blockMark: viewBlockMark,
+  } = useMemo(
+    () =>
+      applyView(tasks, view, {
+        commitAt,
+        epicOf: epicHierarchy.epicOf,
+        epics: epicHierarchy.epics,
+      }),
+    [tasks, view, commitAt, epicHierarchy],
   );
 
   // T61 — il conteggio guarda la lista GREZZA, non `viewTasks`: le Done fuori
@@ -303,13 +324,21 @@ export function useDeckModel({
     hidden: hiddenTasks,
     archivable: archivable.size,
   };
-  const paneTasks = useMemo(
-    () =>
-      taskViewId === 'tasks'
-        ? viewTasks
-        : selectTasks(tasks, taskViewId, { view, archivable, commitAt }),
-    [taskViewId, viewTasks, tasks, view, archivable, commitAt],
-  );
+  // T67 — la vista `tasks` riusa `viewTasks`/`viewBlockMark` già calcolati
+  // sopra (nessun ricalcolo sul cammino di default); le altre due passano da
+  // `selectTasks`, che raggruppa con lo STESSO livello gerarchico (un sito
+  // solo per il sort, come già per la sola chain prima di T67).
+  const { paneTasks, paneBlockMark } = useMemo(() => {
+    if (taskViewId === 'tasks') return { paneTasks: viewTasks, paneBlockMark: viewBlockMark };
+    const selected = selectTasks(tasks, taskViewId, {
+      view,
+      archivable,
+      commitAt,
+      epicOf: epicHierarchy.epicOf,
+      epics: epicHierarchy.epics,
+    });
+    return { paneTasks: selected.tasks, paneBlockMark: selected.blockMark };
+  }, [taskViewId, viewTasks, viewBlockMark, tasks, view, archivable, commitAt, epicHierarchy]);
 
   const isSpot = sel === SPOT;
   const isAll = sel === ALL;
@@ -337,7 +366,13 @@ export function useDeckModel({
   const parentLabel = isAll ? 'tutte' : isSpot ? 'spot' : selectedTaskId ?? '—';
 
   const { childCount, taskLive, spotCount } = rollupChildren(sessions, bindings, live);
-  const taskRowData: TaskRowData = { childCount, live: taskLive, dirty: dirtyFolders };
+  const taskRowData: TaskRowData = {
+    childCount,
+    live: taskLive,
+    dirty: dirtyFolders,
+    epics: epicHierarchy.epics,
+    epicRollup: epicRollupMap,
+  };
 
   // T118 — colonne fisse della lista task, misurate su `paneTasks` (la vista
   // attiva INTERA) e non sulla finestra visibile: gemelle di `sessionCols` e
@@ -568,6 +603,7 @@ export function useDeckModel({
     hiddenTasks,
     taskCounts,
     paneTasks,
+    blockMark: paneBlockMark,
     isSpot,
     isAll,
     purgeBulk,
