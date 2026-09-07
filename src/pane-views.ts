@@ -51,6 +51,10 @@ export interface TaskViewCounts {
 export interface TaskViewCtx {
   view: ViewState;
   archivable: ReadonlySet<string>;
+  /** T136 — data dell'ultimo commit di ogni task file, per la chiave `commit`
+   *  della chain: `compareTasks` la vuole come `SortCtx`, e questo oggetto la
+   *  porta già come terzo campo accanto a `view`. */
+  commitAt: ReadonlyMap<string, number>;
 }
 
 export interface TaskViewEntry extends Styling {
@@ -101,7 +105,7 @@ export const TASK_VIEWS: readonly TaskViewEntry[] = [
 export function selectTasks(tasks: Task[], id: TaskViewId, ctx: TaskViewCtx): Task[] {
   const entry = taskView(id);
   const picked = tasks.filter((t) => entry.has(t, ctx));
-  picked.sort((a, b) => compareTasks(a, b, ctx.view.sort));
+  picked.sort((a, b) => compareTasks(a, b, ctx.view.sort, ctx));
   return picked;
 }
 

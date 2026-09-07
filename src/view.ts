@@ -6,12 +6,23 @@ import { termWidth } from './width.js';
 import type { TaskLive } from './live-sessions.js';
 import type { Task } from './tasks.js';
 
-export type SortKey = 'pri' | 'prog' | 'id';
+export type SortKey = 'pri' | 'prog' | 'id' | 'commit';
 export type SortDir = 'asc' | 'desc';
 
 export interface SortEntry {
   key: SortKey;
   dir: SortDir;
+}
+
+/**
+ * T136 — contesto esterno per la chiave `commit`: la data viene da `git log`,
+ * non da una cella di `tasks.md`, e un comparator PURO non può andare a
+ * prenderla da sé. Obbligatorio in `rankOf`/`compareTasks`/`applyView`: un
+ * parametro opzionale farebbe compilare i chiamanti esistenti senza toccarli,
+ * e la chiave nuova ordinerebbe male in silenzio.
+ */
+export interface SortCtx {
+  commitAt: ReadonlyMap<string, number>;
 }
 
 export type PriName = 'high' | 'med' | 'low';
@@ -171,9 +182,13 @@ export function taskColumns(
   return { id: idColumnWidth(tasks), tail: tail > 0 ? tail + 1 : 0 };
 }
 
-function rankOf(task: Task, key: SortKey): number {
+// La chiave `commit` non ha un glifo: il rango è l'epoch stesso. Assente →
+// UNKNOWN_RANK (0), sempre più basso di un epoch reale → coda sotto `desc`,
+// stessa semantica del glifo non riconosciuto per `pri`/`prog`.
+function rankOf(task: Task, key: SortKey, ctx: SortCtx): number {
   if (key === 'pri') return priRank(task.pri);
   if (key === 'prog') return progRank(task.prog);
+  if (key === 'commit') return ctx.commitAt.get(task.id) ?? UNKNOWN_RANK;
   return idNum(task.id);
 }
 
@@ -183,9 +198,9 @@ function rankOf(task: Task, key: SortKey): number {
  * SEMPRE deterministico (mai instabile fra re-render). Se `id` è già una chiave
  * esplicita della chain il fallback non serve: l'id è unico, la parità è totale.
  */
-export function compareTasks(a: Task, b: Task, sort: SortEntry[]): number {
+export function compareTasks(a: Task, b: Task, sort: SortEntry[], ctx: SortCtx): number {
   for (const entry of sort) {
-    const diff = rankOf(a, entry.key) - rankOf(b, entry.key);
+    const diff = rankOf(a, entry.key, ctx) - rankOf(b, entry.key, ctx);
     if (diff !== 0) return entry.dir === 'asc' ? diff : -diff;
   }
   if (sort.some((e) => e.key === 'id')) return 0;
@@ -232,16 +247,16 @@ export interface ViewResult {
 }
 
 /** Filtra poi ordina. Non muta l'input: il polling di tasks.md resta ignaro. */
-export function applyView(tasks: Task[], view: ViewState): ViewResult {
+export function applyView(tasks: Task[], view: ViewState, ctx: SortCtx): ViewResult {
   const visible = tasks.filter((t) => isVisible(t, view));
-  visible.sort((a, b) => compareTasks(a, b, view.sort));
+  visible.sort((a, b) => compareTasks(a, b, view.sort, ctx));
   return { visible, hidden: tasks.length - visible.length };
 }
 
 export const PRI_ENTRIES = PRI_TABLE.map((e) => ({ name: e.name, glyph: e.glyph }));
 export const PROG_ENTRIES = PROG_TABLE.map((e) => ({ name: e.name, glyph: e.glyph }));
 
-const SORT_LABEL: Record<SortKey, string> = { pri: 'pri', prog: 'stato', id: 'id' };
+const SORT_LABEL: Record<SortKey, string> = { pri: 'pri', prog: 'stato', id: 'id', commit: 'commit' };
 
 /** Riassunto della chain per l'header ("pri↓ id↑"); vuota → "—". */
 export function describeSort(sort: SortEntry[]): string {

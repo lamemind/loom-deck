@@ -16,6 +16,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { loadArchivableDays, loadIdentity, loadLaunch } from './config.js';
 import {
   useArchivable,
+  useCommitTimes,
   useDirtyFolders,
   useInboxScan,
   useSessions,
@@ -237,11 +238,15 @@ export function useDeckModel({
   const projectCore = identity ? identity.name : null;
   const projectName = cwd.split('/').pop() || cwd;
 
+  // T136 — data dell'ultimo commit di ogni task file, per la chiave `commit`
+  // della chain di sort.
+  const commitAt = useCommitTimes(tasksDir, cwd);
+
   // La vista è una trasformazione DERIVATA, applicata a valle del load: il
   // polling di tasks.md continua a funzionare senza saperne nulla.
   const { visible: viewTasks, hidden: hiddenTasks } = useMemo(
-    () => applyView(tasks, view),
-    [tasks, view],
+    () => applyView(tasks, view, { commitAt }),
+    [tasks, view, commitAt],
   );
 
   // T61 — il conteggio guarda la lista GREZZA, non `viewTasks`: le Done fuori
@@ -293,8 +298,10 @@ export function useDeckModel({
   };
   const paneTasks = useMemo(
     () =>
-      taskViewId === 'tasks' ? viewTasks : selectTasks(tasks, taskViewId, { view, archivable }),
-    [taskViewId, viewTasks, tasks, view, archivable],
+      taskViewId === 'tasks'
+        ? viewTasks
+        : selectTasks(tasks, taskViewId, { view, archivable, commitAt }),
+    [taskViewId, viewTasks, tasks, view, archivable, commitAt],
   );
 
   const isSpot = sel === SPOT;
