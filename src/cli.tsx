@@ -18,6 +18,8 @@ import { resolveTasksPath, resolveTasksDir } from './tasks.js';
 import { LAUNCH_SEP } from './config.js';
 import { anchorFrame, enableMouse } from './mouse.js';
 import { sanitize } from './width.js';
+import { modelAlias } from './glyphs.js';
+import { MODEL_DEFAULT } from './spawn.js';
 import { type Mode } from './model.js';
 import { deckLegend, frameGeometry, headlineWidth, indicatorRow, launchRow } from './frame.js';
 import { useDeckModel } from './deck-model.js';
@@ -75,7 +77,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     hasNote: Boolean(note),
     setMode,
     setNote,
-    onResume: (row) => actions.resumeSession(row.session.sessionId),
+    // T148/D1 — nessun selettore nella ricerca: il modello è quello ereditato
+    // dalla conversazione, senza superficie di scelta.
+    onResume: (row) =>
+      actions.resumeSession(row.session.sessionId, modelAlias(row.session.model) ?? MODEL_DEFAULT),
   });
 
   // T121 — il project status. Non è solo un overlay come i tre sopra: il suo
@@ -419,6 +424,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           origin={model.forkOf.get(model.selSessionObj.sessionId) ?? null}
           note={model.sessionNotes.get(model.selSessionObj.sessionId) ?? ''}
           live={model.live.get(model.selSessionObj.sessionId) ?? null}
+          resumeModel={model.resumeModel}
         />
       ) : null}
       {note ? <Text color="green" wrap="truncate-end">{sanitize(note)}</Text> : null}

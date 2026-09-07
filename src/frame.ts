@@ -104,7 +104,7 @@ export function deckLegend(state: {
       // apertura: una legenda che annunciasse «tutte» dove il tasto ne pota una
       // sola sarebbe peggio di nessuna legenda.
       ...(state.focus === 'tasks' ? [state.purgeBulk ? 'CANC elimina tutte' : 'CANC elimina'] : []),
-      ...(canResume ? ['f fork'] : []),
+      ...(canResume ? ['f fork', 'm modello'] : []),
       // T117 · D3 — «titolo» anche qui: è lo stesso valore che il detail chiede
       // allo spawn, e due nomi per una cosa sola li paga chi legge le due
       // schermate. Rename di sola ETICHETTA: il dato resta `note` nel sidecar e

@@ -1,6 +1,10 @@
 // Glifi letterali del frame e formatter di display. Fase VISTA, ma senza JSX:
 // tutto qui è puro e testabile, e nessun sito di render scrive un glifo nudo.
 import { sanitize } from './width.js';
+// T148/P3 — costo accettato: la fase vista importa un TIPO dalla fase effetti
+// esterni. `import type` si cancella alla compilazione, quindi non introduce
+// una dipendenza runtime né un ciclo — `spawn.ts` non importa questo file.
+import type { ModelKind } from './spawn.js';
 
 // Glifi LETTERALI del JSX. I dati passano dai loader, che sanificano al
 // confine; questi no — quindi passano da `sanitize` una volta qui, così nessun
@@ -55,6 +59,22 @@ export function modelShort(id: string): string {
     if (lower.includes(family)) return short;
   }
   return MODEL_UNKNOWN;
+}
+
+/**
+ * T148/P3 — id di modello → alias del CLI, stesso catalogo di `modelShort`
+ * (`MODEL_SHORT`): un id vuoto o fuori famiglia (gli stessi due casi che qui
+ * rendono `·` e `?`) torna `null` invece di un valore inventato — il chiamante
+ * degrada a `MODEL_DEFAULT` senza marcare nessun bottone come provenienza,
+ * perché su quei due casi non c'è una provenienza vera da dichiarare.
+ */
+export function modelAlias(id: string): ModelKind | null {
+  if (!id) return null;
+  const lower = id.toLowerCase();
+  for (const family of Object.keys(MODEL_SHORT)) {
+    if (lower.includes(family)) return family as ModelKind;
+  }
+  return null;
 }
 
 // T62 — colonna liveness, larga 1, incollata al sessionId senza gutter proprio:

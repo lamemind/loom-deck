@@ -34,7 +34,7 @@ import {
 } from './inbox-views.js';
 import { docsRootName } from './tasks.js';
 import { isDone } from './layout.js';
-import { TASK_EMPTY, relTime } from './glyphs.js';
+import { TASK_EMPTY, modelAlias, relTime } from './glyphs.js';
 import {
   assembleSessionList,
   firstSelectableId,
@@ -69,6 +69,7 @@ import {
 import { applyView, taskColumns, type TaskRowData, type ViewState } from './view.js';
 import { loadView } from './view-store.js';
 import { termWidth } from './width.js';
+import { MODELS, MODEL_DEFAULT, type ModelKind } from './spawn.js';
 import type { TaskLive } from './live-sessions.js';
 import type { Session } from './sessions.js';
 
@@ -201,6 +202,12 @@ export function useDeckModel({
   // a due gruppi + separatore è una vista trasformata, un indice grezzo punterebbe
   // alla riga sbagliata dopo un pin o un cambio di contesto (stesso trap T39).
   const [selSessionId, setSelSessionId] = useState<string | null>(null);
+  // T148/P8 — il modello con cui la riga selezionata riprenderà (resume/fork).
+  // UN SOLO valore, non una mappa sessionId → scelta: si ri-inizializza a ogni
+  // cambio di riga (l'effect qui sotto, keyed su `selSessionId`), quindi
+  // tornare su una riga già visitata NON ricorda la scelta fatta lì — è lo
+  // stesso costo che T108 ha già accettato per il selettore del detail.
+  const [resumeModel, setResumeModel] = useState<ModelKind>(MODEL_DEFAULT);
   // T39 — vista corrente (filtri + sort). Vive nel modello e non nell'hook dei
   // modali che la editano: è ciò che `applyView` consuma per produrre la lista,
   // è persistita su disco e la rilegge il tasto `w`. È stato del modello che due
@@ -401,6 +408,17 @@ export function useDeckModel({
       setSelSessionId(firstSelectableId(sessionRows));
     }
   }, [sessionRows, selSessionId]);
+  // T148/P8 — reset del selettore modello all'evento «la riga selezionata è
+  // cambiata». Il selettore del detail (T108) si azzera all'APERTURA
+  // dell'overlay; questo blocco non apre e non chiude mai, quindi il suo
+  // evento equivalente è il cambio di `selSessionId`. Keyed SOLO su quello (non
+  // su `selSessionObj`, che cambia identità a ogni poll delle sessioni anche
+  // quando la riga selezionata resta la stessa): un'altra dipendenza
+  // resetterebbe la scelta dell'utente sotto un timer invece che sotto un
+  // movimento del cursore.
+  useEffect(() => {
+    setResumeModel(modelAlias(selSessionObj?.model ?? '') ?? MODEL_DEFAULT);
+  }, [selSessionId]);
   // T134 — gemello dei due sopra: un file drenato sparisce dalla coda al primo
   // scan successivo, e la selezione cade sulla prima riga della lista invece
   // che su una posizione a caso.
@@ -475,6 +493,16 @@ export function useDeckModel({
     if (inboxFiles.length === 0) return;
     const next = Math.max(0, Math.min(inboxFiles.length - 1, (at < 0 ? 0 : at) + delta));
     setSelInboxPath(inboxFiles[next]!.path);
+  }
+
+  /** T148 — `m` scorre il selettore modello della riga sessione selezionata al
+   *  valore SUCCESSIVO del catalogo (ciclico), gemella di `cycleView` ma su un
+   *  asse diverso: qui non c'è una vista da cambiare, solo un valore da far
+   *  avanzare. Il guard (nessuna sessione, focus altrove) sta nell'attuatore
+   *  `actions.ts`, come per `f`/`p`: qui c'è solo la meccanica dello stato. */
+  function cycleResumeModel() {
+    const next = MODELS[(MODELS.indexOf(resumeModel) + 1) % MODELS.length]!;
+    setResumeModel(next);
   }
 
   /**
@@ -555,6 +583,8 @@ export function useDeckModel({
     sessionCounts,
     selSessionObj,
     sessionCols,
+    resumeModel,
+    cycleResumeModel,
     // derivazioni del pane inbox
     rightPane,
     inboxScanned: inbox.scanned,

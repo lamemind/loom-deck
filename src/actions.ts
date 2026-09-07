@@ -186,13 +186,45 @@ export function useDeckActions({
   // T49 — resume di una conversazione in una nuova tab. Unico punto: lo chiamano
   // il `⏎` della lista sessioni e quello sulla riga-sessione della ricerca, che
   // devono restare la stessa azione.
-  function resumeSession(sessionId: string) {
+  // T148 — il modello lo decide il CHIAMANTE, non questa funzione: la lista
+  // principale passa il selettore della preview (`model.resumeModel`), la
+  // ricerca passa il modello ereditato dalla sessione senza superficie di
+  // scelta (D1 preflight). I due chiamanti restano la stessa azione perché è
+  // lo spawn a essere identico, non la sorgente del valore.
+  function resumeSession(sessionId: string, modelKind: ModelKind) {
     const bound = model.bindings.get(sessionId) ?? null;
-    const spawned = spawnDeckResume(bound, cwd, sessionId, model.sessionNotes.get(sessionId));
+    const spawned = spawnDeckResume(
+      bound,
+      cwd,
+      sessionId,
+      modelKind,
+      model.sessionNotes.get(sessionId),
+    );
     spawned.child.on('error', () => setNote(`⚠ resume fallito (${DECK_RUN})`));
     noteSpawn(spawned);
   }
 
+  /** T148 — `m`: scorre il modello con cui la sessione selezionata riprenderà
+   *  al successivo del catalogo. Stesso guard di `f` (serve un transcript
+   *  vero, non basta una riga selezionata): su una pinnata stale il blocco
+   *  preview non esiste — non c'è un bottone da cambiare. Nessuna nota di
+   *  conferma sul successo — il feedback è il bottone stesso, già a schermo
+   *  nella preview. */
+  function cycleResumeModel() {
+    if (model.focus !== 'sessions') {
+      setNote('m → modello: seleziona una sessione (→ per il pane)');
+      return;
+    }
+    if (!model.selSessionObj) {
+      setNote(
+        model.selSessionId
+          ? 'm → pin stale: nessun modello da cambiare'
+          : 'm → nessuna sessione selezionata',
+      );
+      return;
+    }
+    model.cycleResumeModel();
+  }
 
   // T53 — scrive il sidecar e ricarica subito, senza attendere il tick del poll
   // (stesso feedback immediato del pin).
@@ -270,7 +302,10 @@ export function useDeckActions({
       ...(bound ? { taskId: bound } : {}),
       forkOf: s.sessionId,
     });
-    const spawned = spawnDeckFork(bound, cwd, s.sessionId, newId);
+    // T148 — il fork è l'altra continuità che condivide la stessa riga
+    // selezionata: porta via lo stesso `model.resumeModel` del resume, non un
+    // default fisso (P2 preflight).
+    const spawned = spawnDeckFork(bound, cwd, s.sessionId, newId, model.resumeModel);
     spawned.child.on('error', () => setNote(`⚠ fork fallito (${DECK_RUN})`));
     noteSpawn(spawned);
   }
@@ -386,6 +421,7 @@ export function useDeckActions({
     spawnForTask,
     spawnTaskSession,
     resumeSession,
+    cycleResumeModel,
     writeNote,
     assignSession,
     forkSession,

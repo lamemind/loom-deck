@@ -1,10 +1,10 @@
 // Detail della task (T66): quarta schermata sostitutiva, col markdown reso in
 // span tipizzati (T75) e la ricerca interna (T91).
 import { Box, Text } from 'ink';
-import { cut, cutParts, type WrappedLine } from '../width.js';
+import { cut, type WrappedLine } from '../width.js';
 import { sliceLine, type Occurrence } from '../text-search.js';
 import { sliceSpans, type Span, type SpanKind } from '../markdown.js';
-import { FieldText } from './fields.js';
+import { ChoiceRow, FieldText, LABEL_W } from './fields.js';
 import { DETAIL_ACTIONS, MODELS, type ModelKind } from '../spawn.js';
 import { DROW } from '../overlays/sheet.js';
 import type { FieldsCursor } from '../fields.js';
@@ -96,66 +96,6 @@ const PROMPT_HINT = ' · nessun prompt iniziale';
  *  che nessuno ci ripassi — un'etichetta che nomina dei tasti a mano è accoppiata
  *  al binding, e resta indietro appena il binding cambia. */
 const ACTION_KEYS = DETAIL_ACTIONS.map((a) => a.label[0]).join(' ');
-
-/** Prefisso incolonnato delle quattro righe dell'area di compilazione: le
- *  etichette si leggono una sotto l'altra, quindi la larghezza è quella della
- *  più lunga. Entra nel budget di ogni campo, da cui la costante. */
-const LABEL_W = 8;
-
-/** Una riga a SCELTA dell'area di compilazione: bottoni affiancati, voce attiva
- *  in video inverso.
- *
- * Due passate di `cutParts`: la seconda serve SOLO quando qualcosa cade, e
- * riserva le colonne del contatore. Riservarle sempre costerebbe 6 colonne su
- * ogni terminale largo per un avviso che lì non comparirà mai.
- *
- * `priority` sulla voce SELEZIONATA e non sulla prima: qui il troncamento
- * cancellerebbe l'unica informazione che la riga esiste per dare — quale valore
- * sta per essere usato.
- */
-function ChoiceRow({
-  label,
-  values,
-  index,
-  focused,
-  width,
-}: {
-  label: string;
-  values: readonly string[];
-  index: number;
-  focused: boolean;
-  width: number;
-}) {
-  const segs = values.map((v) => `[ ${v} ]`);
-  const parts: string[] = [];
-  segs.forEach((s, i) => {
-    if (i > 0) parts.push('  ');
-    parts.push(s);
-  });
-  const avail = Math.max(0, width - LABEL_W - CARET_OFF.length);
-  let shown = cutParts(parts, avail, index * 2);
-  const dropped = (v: string[]) => segs.filter((s, i) => v[i * 2] !== s).length;
-  if (dropped(shown) > 0) shown = cutParts(parts, Math.max(0, avail - 6), index * 2);
-  const cut = dropped(shown);
-  return (
-    <Text wrap="truncate-end">
-      {focused ? CARET : CARET_OFF}
-      <Text dimColor>{label.padEnd(LABEL_W)}</Text>
-      {shown.map((part, i) =>
-        i % 2 === 1 ? (
-          <Text key={i}>{part}</Text>
-        ) : (
-          <Text key={i} inverse={i / 2 === index} color={i / 2 === index ? 'green' : 'gray'}>
-            {part}
-          </Text>
-        ),
-      )}
-      {/* Troncamento mai silenzioso, come le liste: un bottone che sparisce su
-          un terminale stretto non deve sembrare un valore che non esiste. */}
-      {cut > 0 ? <Text color="yellow"> · +{cut}</Text> : null}
-    </Text>
-  );
-}
 
 /**
  * Detail della task (T66): il task file scrollabile più l'area di compilazione.

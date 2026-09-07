@@ -43,9 +43,11 @@ const SESSIONS_PANE_CHROME = 3; // 2 bordi + header "Sessions · …"
 const PREVIEW_CHROME = 3; // marginTop + 2 bordi
 
 /** Preview sessione: righe fisse = titolo + riga meta (size · turni · ultima
- *  attività · branch). Le due anteprime (primo prompt + ultima risposta) sono
- *  variabili, ciascuna al più MAX_SESSION_PREVIEW righe. */
-const SESSION_DETAIL_FIXED = 2;
+ *  attività · branch) + riga bottoni del modello di resume/fork (T148/P4). Le
+ *  due anteprime (primo prompt + ultima risposta) sono variabili, ciascuna al
+ *  più MAX_SESSION_PREVIEW righe. Conseguenza accettata: su un terminale basso
+ *  il blocco sparisce con una riga di anticipo rispetto a prima di T148. */
+const SESSION_DETAIL_FIXED = 3;
 const MAX_SESSION_PREVIEW = 3;
 
 /** T134 — preview inbox: nome del file + riga meta (natura, marcatori, branch,

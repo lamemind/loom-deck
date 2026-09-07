@@ -457,7 +457,7 @@ export function useDeckInput({
               : 'nessuna sessione da riprendere',
           );
         } else {
-          actions.resumeSession(s.sessionId);
+          actions.resumeSession(s.sessionId, model.resumeModel);
         }
       }
     } else if (key.delete) {
@@ -501,6 +501,10 @@ export function useDeckInput({
       // T50 — pin/unpin, gemella di `f`: azione immediata sulla riga
       // selezionata del pane sessioni.
       actions.togglePin();
+    } else if (input === 'm') {
+      // T148 — scorre il modello di resume/fork della riga selezionata,
+      // gemella di `f`/`p`: azione immediata, nessun modale.
+      actions.cycleResumeModel();
     } else if (input === 'N') {
       // T53 — nota sulla conversazione selezionata. MAIUSCOLA perché apre un
       // modale: nel deck le minuscole sono azioni immediate (`f` fork, `p` pin,

@@ -3,8 +3,18 @@
 import { Box, Text } from 'ink';
 import { cut, wrapLines } from '../width.js';
 import { previewTextWidth } from '../layout.js';
-import { LIVE_BUSY, LIVE_IDLE, META_KEYS, SID_CHARS, fmtDateTime, fmtSize } from '../glyphs.js';
+import {
+  LIVE_BUSY,
+  LIVE_IDLE,
+  META_KEYS,
+  SID_CHARS,
+  fmtDateTime,
+  fmtSize,
+  modelAlias,
+} from '../glyphs.js';
 import { NATURA_SHORT, inboxMark, type InboxFile } from '../inbox.js';
+import { ChoiceRow } from './fields.js';
+import { MODELS, type ModelKind } from '../spawn.js';
 import type { TaskDetail } from '../tasks.js';
 import type { Session } from '../sessions.js';
 import type { LiveSession } from '../live-sessions.js';
@@ -39,6 +49,8 @@ export type PreviewProps =
       note: string;
       /** T62 — processo vivo che sta scrivendo questo transcript; null = chiuso. */
       live: LiveSession | null;
+      /** T148 — modello selezionato per il prossimo resume/fork di questa riga. */
+      resumeModel: ModelKind;
     }
   /** T134 — il file inbox selezionato. Nessun parametro di righe: il blocco è
    *  tutto a righe fisse (INBOX_DETAIL_FIXED), quindi non c'è una capienza da
@@ -67,6 +79,7 @@ export function PreviewPane(p: PreviewProps) {
           origin={p.origin}
           note={p.note}
           live={p.live}
+          resumeModel={p.resumeModel}
         />
       )}
     </Box>
@@ -127,6 +140,7 @@ export function SessionPreview({
   origin,
   note,
   live,
+  resumeModel,
 }: {
   s: Session;
   firstLines: number;
@@ -135,6 +149,7 @@ export function SessionPreview({
   origin: string | null;
   note: string;
   live: LiveSession | null;
+  resumeModel: ModelKind;
 }) {
   // Il prefisso `» `/`« ` è largo 2 e sta SULLA riga: va tolto dal budget di
   // wrap, o una riga piena esce dal box di quelle due colonne e a raccoglierla
@@ -147,6 +162,11 @@ export function SessionPreview({
   const width = previewTextWidth(columns) - PREVIEW_PREFIX_W;
   const first = s.customTitle && firstLines > 0 ? wrapLines(s.firstPrompt, width, firstLines) : [];
   const last = s.lastReply && lastLines > 0 ? wrapLines(s.lastReply, width, lastLines) : [];
+  // T148/P3 — l'alias del modello D'ORIGINE, per la sottolineatura (P5):
+  // `undefined` quando l'id non mappa su nessuna famiglia nota, cioè quando
+  // non c'è una provenienza vera da dichiarare.
+  const originAlias = modelAlias(s.model);
+  const originIndex = originAlias ? MODELS.indexOf(originAlias) : undefined;
   return (
     <>
       {/* T53 — la nota va sulla riga del titolo, non su una propria: le righe
@@ -188,6 +208,22 @@ export function SessionPreview({
           </Text>
         ) : null}
       </Text>
+      {/* T148 — riga FISSA (SESSION_DETAIL_FIXED, ora 3): quale modello
+          riceveranno `⏎` resume e `f` fork su questa riga. Stesso componente
+          `ChoiceRow` del detail (P7 preflight), `focused` false perché qui non
+          c'è un cursore fra più righe — la riga stessa È il selettore, e `m`
+          agisce su di lei da qualunque punto del pane sessioni. La
+          sottolineatura marca il modello D'ORIGINE (P5): assente quando
+          `originIndex` è `undefined`, cioè quando l'id non mappa su nessuna
+          famiglia nota. */}
+      <ChoiceRow
+        label="modello"
+        values={MODELS}
+        index={Math.max(0, MODELS.indexOf(resumeModel))}
+        focused={false}
+        width={previewTextWidth(columns)}
+        originIndex={originIndex}
+      />
       {first.map((line, i) => (
         <Text key={`f${i}`} dimColor wrap="truncate-end">
           {i === 0 ? '» ' : '  '}

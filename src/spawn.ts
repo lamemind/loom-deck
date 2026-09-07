@@ -291,8 +291,21 @@ export function spawnDeck(
 // `.claude/loom-works.json`): tenerlo così evita di dare al primitive un secondo
 // file da conoscere. Il titolo si congela qui — `claude --name` lo setta una
 // volta sola, quindi una nota cambiata DOPO non ri-titola la tab già aperta.
-export function resumeArgs(taskId: string | null, sessionId: string, note?: string): string[] {
+//
+// T148 — il modello viaggia SEMPRE, come in `deckArgs`: senza `--model`
+// `deck-run` risolve il proprio default fisso (`opus`) e lo passa comunque al
+// CLI, quindi una conversazione haiku ripresa senza il flag ripartirebbe in
+// opus (P2 preflight). Qui però non c'è un default fisso da cablare: chi
+// chiama ha già risolto il valore — il modello della conversazione d'origine,
+// o quello scelto al suo posto — e lo passa come argomento obbligatorio.
+export function resumeArgs(
+  taskId: string | null,
+  sessionId: string,
+  model: ModelKind,
+  note?: string,
+): string[] {
   const args = taskId ? [taskId, '--resume', sessionId] : ['--no-task', '--resume', sessionId];
+  args.push('--model', model);
   if (note) args.push('--title-note', note);
   return args;
 }
@@ -301,9 +314,10 @@ export function spawnDeckResume(
   taskId: string | null,
   cwd: string,
   sessionId: string,
+  model: ModelKind,
   note?: string,
 ): Spawned {
-  return launchDeckRun(resumeArgs(taskId, sessionId, note), cwd);
+  return launchDeckRun(resumeArgs(taskId, sessionId, model, note), cwd);
 }
 
 // T28 — FORK: `deck-run <task|--no-task> --resume <origine> --fork --session-id
@@ -318,7 +332,16 @@ export function spawnDeckResume(
 // nota nel sidecar — ereditare quella dell'origine metterebbe nel titolo una
 // maniglia che nella lista non compare, cioè una promessa falsa. Il fork si
 // distingue col suo marcatore, `· fork`.
-export function forkArgs(taskId: string | null, originId: string, newId: string): string[] {
+//
+// T148 — stesso obbligo di `resumeArgs`: il fork è un'altra forma di
+// continuità, quindi eredita anch'esso il modello dell'origine invece del
+// default fisso di uno spawn nuovo (P2 preflight).
+export function forkArgs(
+  taskId: string | null,
+  originId: string,
+  newId: string,
+  model: ModelKind,
+): string[] {
   return [
     ...(taskId ? [taskId] : ['--no-task']),
     '--resume',
@@ -326,6 +349,8 @@ export function forkArgs(taskId: string | null, originId: string, newId: string)
     '--fork',
     '--session-id',
     newId,
+    '--model',
+    model,
   ];
 }
 
@@ -334,8 +359,9 @@ export function spawnDeckFork(
   cwd: string,
   originId: string,
   newId: string,
+  model: ModelKind,
 ): Spawned {
-  return launchDeckRun(forkArgs(taskId, originId, newId), cwd);
+  return launchDeckRun(forkArgs(taskId, originId, newId, model), cwd);
 }
 
 // T42 — sessione Claude NUDA: nessuna task, nessun prompt iniziale, nessun
