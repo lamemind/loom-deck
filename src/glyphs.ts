@@ -128,8 +128,13 @@ export const INBOX_MARK_W = 2;
 // `isDone()` e le lookup di `view.ts` ci confrontano sopra, e `task-edit` lo
 // riscrive sul file: è una chiave semantica, non testo. Qui `sanitize` lo
 // traduce nel suo gemello concorde (`✅`) solo per finire nel frame.
-export function displayProg(prog: string): string {
-  return sanitize(prog);
+//
+// T67/D4 — `blank` spegne la cella su un'epica: il glifo di stato descrive il
+// cappello, che non si esegue, non le task che ne realizzano il piano. Due
+// spazi e non stringa vuota, o la colonna successiva slitterebbe di 2 sulle
+// sole righe cappello.
+export function displayProg(prog: string, blank = false): string {
+  return blank ? '  ' : sanitize(prog);
 }
 
 /**
@@ -164,6 +169,44 @@ export function taskTail(live: number, total: number, dirty: boolean): string {
   const count = total > 0 ? (live > 0 ? `(${live}/${total}` : `(${total}`) : '';
   if (!dirty) return count;
   return count ? `${WARN} ${count}` : WARN;
+}
+
+/**
+ * T67/P9 — coda della riga CAPPELLO: rollup delle figlie dichiarate, cieco a
+ * filtri e viste (come `total` di `taskTail` sopra) — cieco anche a quale
+ * cappello sta guardando la selezione, perché conta TUTTE le figlie dichiarate
+ * ovunque nel progetto, non solo quelle nella vista corrente.
+ *
+ * Graffa e non tonda, per non confondersi col contatore conversazioni che
+ * questa cella SOSTITUISCE sul cappello (D2 preflight). Nessuna chiusa, come
+ * `taskTail`: la colonna è ancorata a destra, il bordo del pane chiude già il
+ * gruppo. Un cappello senza figlie (`total === 0`) rende coda VUOTA — non
+ * `{0/0}`, che scriverebbe uno zero rumoroso su ogni epica ancora senza figlie
+ * (P9).
+ */
+export function epicTail(rollup: { closed: number; total: number } | undefined): string {
+  if (!rollup || rollup.total === 0) return '';
+  return `{${rollup.closed}/${rollup.total}`;
+}
+
+/**
+ * T67/D3 — spina di blocco: connette visivamente cappello e figlie nel Tasks
+ * pane. Tratti di box (`┌ │ └`), non nell'alfabeto concorde dichiarato in testa
+ * al file ma verificati concordi a sé (`agrees()` vale per tutti e tre) —
+ * `sanitize` qui è quindi un no-op, applicato per la stessa disciplina delle
+ * altre costanti di questo file: nessun sito di render scrive un glifo nudo.
+ */
+const BLOCK_GLYPH: Record<'┌' | '│' | '└', string> = {
+  '┌': sanitize('┌ '),
+  '│': sanitize('│ '),
+  '└': sanitize('└ '),
+};
+
+/** Cella della spina per una riga: vuota per una task normale, che NON
+ *  riserva le 2 colonne (D3 — la lista ha due punti di partenza della
+ *  descrizione, uno per le righe di blocco e uno per le altre). */
+export function blockCell(mark: '┌' | '│' | '└' | undefined): string {
+  return mark ? BLOCK_GLYPH[mark] : '';
 }
 
 /** T124 — contatore di una riga META del pane task (`≡ tutte`, `○ spot`), che

@@ -360,6 +360,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           below={model.paneTasks.length - frame.taskWin.end}
           columns={columns}
           data={model.taskRowData}
+          blockMark={model.blockMark}
         />
         {/* T134 — lo slot destro ospita UNO dei due pane (D6): con due riquadri
             i tipi delle righe restano disgiunti, e ogni azione della lista

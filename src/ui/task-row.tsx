@@ -20,10 +20,12 @@ import {
   LIVE_BUSY,
   LIVE_IDLE,
   LIVE_NONE,
+  blockCell,
   displayProg,
+  epicTail,
   taskTail,
 } from '../glyphs.js';
-import { padId, type TaskRowData } from '../view.js';
+import { padId, type BlockMark, type TaskRowData } from '../view.js';
 import type { Task } from '../tasks.js';
 
 export function TaskRow({
@@ -34,6 +36,7 @@ export function TaskRow({
   idW,
   tailW,
   data,
+  blockMark,
 }: {
   task: Task;
   sel: boolean;
@@ -47,6 +50,11 @@ export function TaskRow({
   idW: number;
   tailW: number;
   data: TaskRowData;
+  /** T67 — spina di blocco per id, SOLO dal Tasks pane (D3): la schermata di
+   *  assegnazione filtra su una popolazione diversa, dove `└` (ultimo del
+   *  blocco) non avrebbe più il significato posizionale che porta in lista.
+   *  Assente = nessuna riga marcata, resa identica a prima di T67. */
+  blockMark?: ReadonlyMap<string, BlockMark>;
 }) {
   // T124 — il predicato è UNO e si valuta qui una volta sola: da lui dipendono
   // tutte e tre le evidenze (id in grassetto+colore, glifo, numeratore in coda).
@@ -62,7 +70,13 @@ export function TaskRow({
   // spazi verso Pri, quindi la riga non si allarga di una cella quando si
   // accende — `LIVE_NONE` è uno spazio, e tutti e tre sono larghi 1.
   const glyph = live ? (live.status === 'busy' ? LIVE_BUSY : LIVE_IDLE) : LIVE_NONE;
-  const tail = taskTail(live?.count ?? 0, data.childCount.get(task.id) ?? 0, data.dirty.has(task.id));
+  // T67/D4 — su un cappello la cella di stato descrive il cappello (non
+  // eseguibile) e non le figlie, quindi resta vuota; D2/P9 — la coda diventa il
+  // rollup delle figlie invece del contatore conversazioni.
+  const isEpic = data.epics.has(task.id);
+  const tail = isEpic
+    ? epicTail(data.epicRollup.get(task.id))
+    : taskTail(live?.count ?? 0, data.childCount.get(task.id) ?? 0, data.dirty.has(task.id));
   const id = padId(task.id, idW);
   // Invariante ③: la descrizione è l'unico pezzo a lunghezza libera, e si taglia
   // QUI sul budget che resta dopo le colonne fisse. Lasciarlo fare a
@@ -70,7 +84,7 @@ export function TaskRow({
   // più larga del pane (una colonna per emoji) e quindi scrive sopra il bordo.
   // Le parti fisse si misurano con `termWidth`: i due glifi Pri/Prog valgono 2
   // ciascuno.
-  const head = `${CARET_OFF}${id}${glyph} ${sanitize(task.pri)}  ${displayProg(task.prog)}  `;
+  const head = `${CARET_OFF}${id}${glyph} ${sanitize(task.pri)}  ${displayProg(task.prog, isEpic)}  `;
   // T118 — la colonna della coda si riserva PRIMA di tagliare la descrizione, e
   // per la stessa larghezza su ogni riga: appesa dopo, entrava nel budget solo
   // dove c'era qualcosa da scrivere, e la descrizione si tagliava a una colonna
@@ -79,10 +93,17 @@ export function TaskRow({
   // Pavimento `0` su tutte e tre le misure e non un minimo di cortesia: il
   // budget è un TETTO. Un pavimento sopra lo spazio reale fa uscire la riga dal
   // pane e le mangia il bordo. `reserve` si clampa su ciò che avanza, così
-  // `head + desc + coda` sta sempre dentro la sede.
+  // `head + spina + desc + coda` sta sempre dentro la sede.
   const avail = Math.max(0, width - termWidth(head));
   const reserve = Math.min(tailW, avail);
-  const descW = avail - reserve;
+  // T67/D3 — spina di blocco DAVANTI alla descrizione, non prima dell'id: `id`
+  // resta l'ancora di `padId`, e una task normale non riserva le 2 colonne (la
+  // cella è assente, non vuota — vedi `blockCell`). Un glifo atomico: su un
+  // pane troppo stretto per ospitarlo intero cade del tutto, non a metà — la
+  // stessa disciplina di `reserve` applicata a una cella che non si può tagliare.
+  const spinaFull = blockCell(blockMark?.get(task.id));
+  const spina = termWidth(spinaFull) <= avail - reserve ? spinaFull : '';
+  const descW = Math.max(0, avail - reserve - termWidth(spina));
   const desc = cut(task.desc, descW);
   return (
     <Text
@@ -96,7 +117,7 @@ export function TaskRow({
         {id}
         {glyph}
       </Text>
-      {` ${sanitize(task.pri)}  ${displayProg(task.prog)}  ${desc}`}
+      {` ${sanitize(task.pri)}  ${displayProg(task.prog, isEpic)}  ${spina}${desc}`}
       {' '.repeat(Math.max(0, descW - termWidth(desc)))}
       {pad(tail, reserve, 'right')}
     </Text>

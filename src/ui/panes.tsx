@@ -47,6 +47,7 @@ import {
   describeSort,
   PRI_ENTRIES,
   PROG_ENTRIES,
+  type BlockMark,
   type TaskRowData,
   type ViewState,
 } from '../view.js';
@@ -136,6 +137,7 @@ export function TasksPane({
   below,
   columns,
   data,
+  blockMark,
 }: {
   /** Solo la finestra visibile, non la lista completa. */
   tasks: Task[];
@@ -171,6 +173,10 @@ export function TasksPane({
    *  vive, folder che `git rm` non svuoterebbe. Viaggiano insieme perché insieme
    *  li misura `taskColumns` e insieme li consuma `TaskRow`. */
   data: TaskRowData;
+  /** T67 — spina di blocco per id, misurata sulla stessa `paneTasks` di `idW`/
+   *  `tailW` (D3): il Tasks pane è l'unico consumer, la schermata di
+   *  assegnazione non la riceve (vedi `TaskRow`). */
+  blockMark: ReadonlyMap<string, BlockMark>;
 }) {
   const allSelected = selected === ROW_ALL;
   const spotSelected = selected === ROW_SPOT;
@@ -266,6 +272,7 @@ export function TasksPane({
             idW={idW}
             tailW={tailW}
             data={data}
+            blockMark={blockMark}
           />
         ))
       )}
