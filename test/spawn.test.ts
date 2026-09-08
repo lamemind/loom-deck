@@ -3,10 +3,14 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type { ChildProcess } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   cleanTasksArgs,
   cleanTasksPrompt,
   deckArgs,
+  fallbackTitle,
   forkArgs,
   onInTabCommand,
   resumeArgs,
@@ -265,6 +269,72 @@ test('specializeRecap: solo `recap` si sdoppia, gli altri kind passano intatti',
   // Idempotente: un kind già specializzato non si ri-specializza.
   assert.equal(specializeRecap('recap-epic', false), 'recap-epic');
   assert.equal(specializeRecap('recap-task', true), 'recap-task');
+});
+
+// ── T150 · titolo di fallback quando il campo nota è vuoto ────────────────
+
+function withTaskFiles(files: Record<string, string>, run: (dir: string) => void) {
+  const dir = mkdtempSync(join(tmpdir(), 'deck-fallback-title-'));
+  try {
+    mkdirSync(dir, { recursive: true });
+    for (const [name, content] of Object.entries(files)) {
+      writeFileSync(join(dir, name), content);
+    }
+    run(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('fallbackTitle: ogni azione del detail produce un titolo distinto', () => {
+  withTaskFiles({ 'T150-deck-titolo-conversazione-auto.md': '# Task: x\n' }, (dir) => {
+    const titles = DETAIL_ACTIONS.map((a) => fallbackTitle(dir, 'T150', a.kind));
+    assert.deepEqual(titles, [
+      'deck titolo conversazione auto',
+      'PREFL deck titolo conversazione auto',
+      'RUN deck titolo conversazione auto',
+      'RECAP deck titolo conversazione auto',
+      'CHKPOINT deck titolo conversazione auto',
+    ]);
+    // Cinque azioni, cinque titoli: nessuna collisione.
+    assert.equal(new Set(titles).size, titles.length);
+  });
+});
+
+test('fallbackTitle: `open` (kind `none`) è il solo slug, senza parola in maiuscolo (D2/P7)', () => {
+  withTaskFiles({ 'T99-drop-di-tag.md': '# Task: x\n' }, (dir) => {
+    assert.equal(fallbackTitle(dir, 'T99', 'none'), 'drop di tag');
+  });
+});
+
+test('fallbackTitle: le tre varianti di recap condividono la stessa parola (P3)', () => {
+  withTaskFiles({ 'T81-fix-deck.md': '# Task: x\n' }, (dir) => {
+    const recap = fallbackTitle(dir, 'T81', 'recap');
+    assert.equal(recap, 'RECAP fix deck');
+    assert.equal(fallbackTitle(dir, 'T81', 'recap-task'), recap);
+    assert.equal(fallbackTitle(dir, 'T81', 'recap-epic'), recap);
+  });
+});
+
+test('fallbackTitle: lo slug viene dal NOME del file, non dalla descrizione — apici e `/` non esistono da saldare', () => {
+  withTaskFiles({ 'T16-valutare-integrazione-obsidian-viewer.md': '# Task: x\n' }, (dir) => {
+    assert.equal(fallbackTitle(dir, 'T16', 'run'), 'RUN valutare integrazione obsidian viewer');
+  });
+});
+
+test('fallbackTitle: task file assente → null, il chiamante decide il ripiego', () => {
+  withTaskFiles({}, (dir) => {
+    assert.equal(fallbackTitle(dir, 'T404', 'run'), null);
+  });
+});
+
+test('fallbackTitle → deckArgs: il fallback sostituisce la nota vuota e porta --title-note', () => {
+  withTaskFiles({ 'T150-deck-titolo-conversazione-auto.md': '# Task: x\n' }, (dir) => {
+    const note = fallbackTitle(dir, 'T150', 'run') ?? '';
+    const args = deckArgs('T150', 'sid-1', 'run', 'opus', note);
+    assert.ok(args.includes('--title-note'));
+    assert.equal(args[args.indexOf('--title-note') + 1], 'RUN deck titolo conversazione auto');
+  });
 });
 
 // ── il comando esatto nella riga di stato ─────────────────────────────────
