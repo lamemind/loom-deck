@@ -30,7 +30,7 @@ import {
 } from '../spawn.js';
 import { taskIsEpic } from '../tasks.js';
 import { fieldsKey, type FieldSpec, type FieldsCursor, type FieldsIO } from '../fields.js';
-import { loadPromptCatalog, promptFor } from '../prompt-catalog.js';
+import { loadPromptCatalog, modelFor, promptFor } from '../prompt-catalog.js';
 import type { Mode } from '../model.js';
 
 export interface Sheet {
@@ -164,13 +164,18 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     // Calcolato qui e usato subito: `setEpic` non ha ancora aggiornato lo stato
     // quando `setPrompt` gira, quindi il valore locale è l'unico leggibile ora.
     const isEpic = taskIsEpic(next.id, next.text);
+    const kind = specializeRecap(DETAIL_ACTIONS[0]!.kind, isEpic);
     setSheet(next);
     setTop(0);
     setAction(0);
     setEpic(isEpic);
-    setModel(MODEL_DEFAULT);
+    // T152 — il modello segue l'azione iniziale, come già il prompt: su una
+    // task Epic la prima azione specializza a `recap-epic`, che nel catalogo
+    // può portare un modello diverso da `recap`. Nessun kind fuori catalogo →
+    // MODEL_DEFAULT, lo stesso fallback che vale ovunque nel deck.
+    setModel(modelFor(catalog, kind) ?? MODEL_DEFAULT);
     setSpawnNote('');
-    setPrompt(promptFor(catalog, specializeRecap(DETAIL_ACTIONS[0]!.kind, isEpic), next.id));
+    setPrompt(promptFor(catalog, kind, next.id));
     setCursor({ row: DROW.action, caret: 0 });
     setFind(null);
     setOccIdx(0);
@@ -178,18 +183,20 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     setMode('detail');
   }
 
-  /** Cambia l'azione e RISCRIVE il prompt col default del nuovo kind (D2).
+  /** Cambia l'azione e RISCRIVE prompt e modello col default del nuovo kind (D2).
    *
-   *  Nessuna preservazione del testo modificato a mano, e non è una svista: la
-   *  regola `initialDetail` del modale edit protegge da un cambio di sorgente
-   *  ACCIDENTALE, e col fuoco per riga quel caso non esiste — `←→` cambiano
-   *  azione solo dalla riga azione, mentre sul campo prompt muovono il caret.
-   *  Senza il cambio accidentale la preservazione difenderebbe da nulla, e
-   *  costerebbe un campo che non torna più al default. */
+   *  Nessuna preservazione della scelta manuale di modello, per la stessa
+   *  ragione già scritta sul prompt: col fuoco per riga un cambio di azione
+   *  ACCIDENTALE non esiste — `←→` cambiano azione solo dalla riga azione —
+   *  quindi la preservazione difenderebbe da nulla e costerebbe un campo che
+   *  non torna più al default della nuova azione (T152). */
   function selectAction(index: number) {
     setAction(index);
     const id = sheet?.id;
-    if (id) setPrompt(promptFor(catalog, specializeRecap(DETAIL_ACTIONS[index]!.kind, epic), id));
+    if (!id) return;
+    const kind = specializeRecap(DETAIL_ACTIONS[index]!.kind, epic);
+    setPrompt(promptFor(catalog, kind, id));
+    setModel(modelFor(catalog, kind) ?? MODEL_DEFAULT);
   }
 
   // Il ponte fra le quattro righe e i quattro stati. Le righe restano

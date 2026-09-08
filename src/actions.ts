@@ -15,9 +15,10 @@
 // `test/modes-smoke.test.ts` (`seleziona una task`, `terminale su`, `deck-run`,
 // `nessun push`, `eliminare N task?`, `scartate`): si copiano verbatim, non si
 // migliorano di passaggio.
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { randomUUID } from 'node:crypto';
 import { loadTasks, type Task } from './tasks.js';
+import { loadPromptCatalog, modelFor } from './prompt-catalog.js';
 import {
   appendNote,
   appendPin,
@@ -104,6 +105,10 @@ export function useDeckActions({
   // prima dell'exec), ed è anche il comando da ripetere a mano per vedere
   // l'errore. Il salto fra le due dura i millisecondi che `deck-run` impiega a
   // comporre.
+  // T152 — stessa fonte del detail (sheet.ts): un file di sei righe accanto al
+  // codice, letto una volta per vita del deck.
+  const catalog = useMemo(() => loadPromptCatalog(), []);
+
   const spawnSeq = useRef(0);
   function noteSpawn(spawned: Spawned) {
     noteCommand(spawned.cmd);
@@ -188,7 +193,10 @@ export function useDeckActions({
   // invece deve restare vivo.
   function spawnTaskSession(kind: PromptKind, keyLabel: string) {
     const task = selectedTaskOr(keyLabel, 'spawnare');
-    if (task) spawnForTask(task.id, kind, MODEL_DEFAULT);
+    // T152 — stesso catalogo del detail: senza, `^R` partirebbe sul default
+    // fisso mentre l'azione `run` del detail parte sul modello del kind, e le
+    // due superfici divergerebbero sullo stesso comando.
+    if (task) spawnForTask(task.id, kind, modelFor(catalog, kind) ?? MODEL_DEFAULT);
   }
 
   // T49 — resume di una conversazione in una nuova tab. Unico punto: lo chiamano

@@ -188,12 +188,25 @@ export type ModelKind = 'fable' | 'opus' | 'sonnet' | 'haiku';
 // anche il binding delle cifre `1`-`4`, passate poi al campo nota.
 export const MODELS: readonly ModelKind[] = ['fable', 'opus', 'sonnet', 'haiku'];
 
-// Default del selettore e di ogni percorso di spawn che non passa da lui
-// (`^K`/`^P`/`^R` dalla lista, resume, fork). Duplicato del default di deck-run
-// e non letto da lì: il deck deve poter MOSTRARE la selezione iniziale prima di
-// spawnare alcunché, e un valore che si conosce solo a spawn avvenuto non è
-// mostrabile.
+// Default del selettore e FALLBACK per ogni kind fuori catalogo (kind `none`,
+// o un catalogo mutilo). Duplicato del default di deck-run e non letto da lì:
+// il deck deve poter MOSTRARE la selezione iniziale prima di spawnare
+// alcunché, e un valore che si conosce solo a spawn avvenuto non è mostrabile.
+//
+// T152 — non è più IL default di `^K`/`^P`/`^R` dalla lista: quei percorsi
+// leggono il catalogo come il detail (`modelFor`), e cadono qui solo quando il
+// kind non ha una riga. Resta l'unico default che resume e fork usano per
+// intero, perché lì il modello non è mai una funzione del kind — è quello
+// della conversazione d'origine (T148).
 export const MODEL_DEFAULT: ModelKind = 'opus';
+
+// T152 — `recap-status-project` non è una chiave del catalogo (§Doc Impact,
+// "le chiavi del catalogo sono i valori di --prompt-kind"): lo spawn headless
+// non passa mai --prompt-kind, quindi una riga lì sarebbe irraggiungibile da
+// ogni chiamante. Il default vive qui, accanto a MODEL_DEFAULT, e non nel
+// catalogo. Valore = copia del frontmatter `model: opus` che la skill portava
+// prima di T152 (P4 preflight), nessuna ri-taratura.
+export const PROJECT_STATUS_MODEL: ModelKind = 'opus';
 
 // T66 — le azioni del detail. Non sono un catalogo nuovo: ognuna è un
 // `--prompt-kind` già esistente più `checkpoint`, e tutte passano dallo stesso
@@ -633,6 +646,8 @@ export function spawnProjectStatus(
   return spawnSkill('/loom-works:recap-status-project', cwd, sessionId, onResult, [
     '--permission-mode',
     'auto',
+    '--model',
+    PROJECT_STATUS_MODEL,
   ]);
 }
 
