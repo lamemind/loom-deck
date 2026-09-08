@@ -6,10 +6,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { commitTimes, parseCommitLog } from '../src/commit-times.js';
+import { commitLogSpawnCount, commitTimes, parseCommitLog } from '../src/commit-times.js';
 
 // Forma reale di `git log --format=#%ct --name-only`: riga di formato, riga
 // vuota (anche qui, non solo a fine blocco), i path, un'altra riga vuota prima
@@ -67,4 +68,55 @@ test('commitTimes: repo assente → mappa vuota, mai un throw', async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+function git(cwd: string, ...args: string[]): void {
+  execFileSync('git', args, { cwd, stdio: 'ignore' });
+}
+
+/** Repo REALE con UN commit che tocca `tasks/`: il gate T153 gira su
+ *  `rev-parse HEAD`, che su un repo finto (senza `.git`) fallirebbe sempre e
+ *  non proverebbe niente sul CACHE-HIT. */
+async function withRealRepo(run: (repoRoot: string, tasksDir: string) => Promise<void>) {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'deck-commits-repo-'));
+  try {
+    git(repoRoot, 'init', '-q');
+    git(repoRoot, 'config', 'user.email', 'test@test.local');
+    git(repoRoot, 'config', 'user.name', 'test');
+    const tasksDir = join(repoRoot, 'tasks');
+    mkdirSync(tasksDir, { recursive: true });
+    writeFileSync(join(tasksDir, 'T1-uno.md'), '# T1\n');
+    git(repoRoot, 'add', '-A');
+    git(repoRoot, 'commit', '-q', '-m', 'first');
+    await run(repoRoot, tasksDir);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+}
+
+// T153/DLV6 — no-op del gate: a HEAD fermo lo spawn COSTOSO (`git log`) parte
+// una volta sola, non a ogni chiamata; dopo un nuovo commit che tocca
+// `tasksDir` riparte. Delta sul contatore, non valore assoluto: il modulo è
+// condiviso da tutto il file di test, altre chiamate altrove lo avanzano.
+test('commitTimes: a HEAD fermo il gate evita un secondo spawn di `git log`', async () => {
+  await withRealRepo(async (repoRoot, tasksDir) => {
+    const before = commitLogSpawnCount();
+    const first = await commitTimes(tasksDir, repoRoot);
+    assert.equal(commitLogSpawnCount(), before + 1, 'prima chiamata: cache vuota, un log spawnato');
+    assert.ok(first.get('T1'), 'la mappa riflette il commit reale, non solo il conteggio spawn');
+
+    const second = await commitTimes(tasksDir, repoRoot);
+    assert.equal(commitLogSpawnCount(), before + 1, 'HEAD invariato: nessun secondo spawn');
+    assert.strictEqual(second, first, 'HEAD invariato: stessa istanza di mappa, non ricostruita');
+
+    writeFileSync(join(tasksDir, 'T2-due.md'), '# T2\n');
+    git(repoRoot, 'add', '-A');
+    git(repoRoot, 'commit', '-q', '-m', 'second');
+
+    const third = await commitTimes(tasksDir, repoRoot);
+    assert.equal(commitLogSpawnCount(), before + 2, 'HEAD mosso: il log riparte');
+    assert.notStrictEqual(third, first, 'HEAD mosso: nuova istanza');
+    assert.ok(third.get('T2'), 'il nuovo commit compare nella mappa ricostruita');
+    assert.equal(third.get('T1'), first.get('T1'), 'la voce vecchia resta, la mappa non è un cap sulla storia');
+  });
 });
