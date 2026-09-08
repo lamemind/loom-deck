@@ -21,6 +21,7 @@ import {
   DETAIL_ACTIONS,
   specializeRecap,
   INTAB_MARKER,
+  MODEL_DEFAULT,
 } from '../src/spawn.js';
 
 // La forma degli argv È il contratto col primitive `deck-run`, e finora non la
@@ -32,6 +33,10 @@ test('deckArgs pinna il sessionId e dichiara sempre il kind', () => {
   // Il modello sì (T108): i percorsi che non passano dal selettore del detail
   // non hanno un intento da dichiarare, e il loro unico valore sensato è quello
   // che il selettore stesso mostra all'apertura.
+  // Il VALORE del default non si ricopia qui: quale sia lo decide `spawn.ts`, e
+  // una cifra cablata in questa asserzione sarebbe una seconda dichiarazione da
+  // tenere allineata a mano. Sotto misura c'è che il flag ci sia e porti IL
+  // default, non quale modello sia il default oggi.
   assert.deepEqual(deckArgs('T104', 'sid-1', 'run'), [
     'T104',
     '--session-id',
@@ -39,7 +44,7 @@ test('deckArgs pinna il sessionId e dichiara sempre il kind', () => {
     '--prompt-kind',
     'run',
     '--model',
-    'opus',
+    MODEL_DEFAULT,
   ]);
   assert.deepEqual(deckArgs('T104', 'sid-1', 'run', 'sonnet').slice(-2), ['--model', 'sonnet']);
 });

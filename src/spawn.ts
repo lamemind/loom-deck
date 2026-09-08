@@ -198,14 +198,16 @@ export const MODELS: readonly ModelKind[] = ['fable', 'opus', 'sonnet', 'haiku']
 // kind non ha una riga. Resta l'unico default che resume e fork usano per
 // intero, perché lì il modello non è mai una funzione del kind — è quello
 // della conversazione d'origine (T148).
-export const MODEL_DEFAULT: ModelKind = 'opus';
+export const MODEL_DEFAULT: ModelKind = 'fable';
 
 // T152 — `recap-status-project` non è una chiave del catalogo (§Doc Impact,
 // "le chiavi del catalogo sono i valori di --prompt-kind"): lo spawn headless
 // non passa mai --prompt-kind, quindi una riga lì sarebbe irraggiungibile da
 // ogni chiamante. Il default vive qui, accanto a MODEL_DEFAULT, e non nel
-// catalogo. Valore = copia del frontmatter `model: opus` che la skill portava
-// prima di T152 (P4 preflight), nessuna ri-taratura.
+// catalogo. Resta `opus` mentre i tre recap del catalogo stanno su fable: è
+// l'unico recap che gira in headless (`-p`), senza nessuno che ne legga
+// l'esito mentre si forma e possa rilanciarlo — il testo prodotto è il
+// deliverable, e viene riletto da disco anche giorni dopo.
 export const PROJECT_STATUS_MODEL: ModelKind = 'opus';
 
 // T66 — le azioni del detail. Non sono un catalogo nuovo: ognuna è un
@@ -345,9 +347,9 @@ export function spawnDeck(
 // volta sola, quindi una nota cambiata DOPO non ri-titola la tab già aperta.
 //
 // T148 — il modello viaggia SEMPRE, come in `deckArgs`: senza `--model`
-// `deck-run` risolve il proprio default fisso (`opus`) e lo passa comunque al
-// CLI, quindi una conversazione haiku ripresa senza il flag ripartirebbe in
-// opus (P2 preflight). Qui però non c'è un default fisso da cablare: chi
+// `deck-run` risolve il proprio default (`MODEL_DEFAULT`) e lo passa comunque
+// al CLI, quindi una conversazione haiku ripresa senza il flag ripartirebbe sul
+// default (P2 preflight). Qui però non c'è un default da cablare: chi
 // chiama ha già risolto il valore — il modello della conversazione d'origine,
 // o quello scelto al suo posto — e lo passa come argomento obbligatorio.
 export function resumeArgs(

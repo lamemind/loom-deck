@@ -389,10 +389,12 @@ for (const m of MODELS) {
   });
 }
 
-test('--model senza flag: default opus, passato comunque', () => {
+test('--model senza flag: il modello del kind implicito, passato comunque', () => {
   // Passato SEMPRE, anche sul default: lo spawn resta leggibile nel process tree
   // invece di dipendere dal default del CLI, che cambia fra versioni.
-  assert.match(inTabCmd(['T108']), /--model opus\b/);
+  // Senza `--prompt-kind` il kind implicito è `recap`, quindi il valore non
+  // viene dal fallback ma dalla sua riga di catalogo.
+  assert.match(inTabCmd(['T108']), /--model fable\b/);
 });
 
 test('--model viaggia anche su --no-task e su --resume', () => {
@@ -400,13 +402,13 @@ test('--model viaggia anche su --no-task e su --resume', () => {
   assert.match(inTabCmd(['T108', '--resume', SID, '--model', 'sonnet']), /--model sonnet\b/);
 });
 
-test('--model ignoto: fallback opus con avviso, mai una tab rotta', () => {
+test('--model ignoto: fallback sul default con avviso, mai una tab rotta', () => {
   // Regime opposto a --prompt-kind: quel valore si ferma dentro lo script, il
   // modello arriverebbe al CLI e produrrebbe un comando che fallisce all'avvio.
   const r = deckRun(['T108', '--model', 'bogus']);
   assert.equal(r.ok, true);
   const cmd = r.out.trimEnd().split('\n').pop() ?? '';
-  assert.match(cmd, /--model opus\b/, `fallback non applicato: ${cmd}`);
+  assert.match(cmd, /--model fable\b/, `fallback non applicato: ${cmd}`);
   assert.ok(!cmd.includes('bogus'), `valore ignoto passato in-tab: ${cmd}`);
   assert.match(r.err, /modello ignoto: 'bogus'/);
 });
@@ -422,11 +424,11 @@ test('LOOM_DECK_MODEL: default d’ambiente, il flag esplicito vince', () => {
 // T152 — il default del modello viaggia col KIND, letto dal catalogo, non più
 // un valore unico per tutta la famiglia: il frontmatter delle skill non
 // riscrive più il modello di sessione, quindi senza questo default `run`
-// partirebbe su opus come `preflight`.
-test('--prompt-kind run senza --model: il default è quello del catalogo (sonnet)', () => {
+// partirebbe sul fallback come un kind qualunque.
+test('--prompt-kind run senza --model: il default è quello del catalogo (opus)', () => {
   assert.match(
     inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'run']),
-    /--model sonnet\b/,
+    /--model opus\b/,
   );
 });
 
@@ -437,37 +439,41 @@ test('--prompt-kind run con --model esplicito: il flag vince sul catalogo', () =
   );
 });
 
-test('--prompt-kind preflight senza --model: il default del catalogo è opus', () => {
+test('--prompt-kind preflight senza --model: il default del catalogo è fable', () => {
   assert.match(
     inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'preflight']),
-    /--model opus\b/,
-  );
-});
-
-test('LOOM_DECK_MODEL batte il catalogo, non solo il default fisso', () => {
-  assert.match(
-    inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'run'], { LOOM_DECK_MODEL: 'fable' }),
     /--model fable\b/,
   );
 });
 
-test('--prompt-kind none: nessuna riga di catalogo da consultare, fallback opus', () => {
+test('LOOM_DECK_MODEL batte il catalogo, non solo il default fisso', () => {
+  // `sonnet` non è né il modello di `run` in catalogo né il fallback: se lo
+  // fosse, il test resterebbe verde anche con la precedenza rotta.
   assert.match(
-    inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'none']),
-    /--model opus\b/,
+    inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'run'], { LOOM_DECK_MODEL: 'sonnet' }),
+    /--model sonnet\b/,
   );
 });
 
-test('--no-task senza --model: nessun kind di catalogo, fallback opus', () => {
-  assert.match(inTabCmd(['--no-task']), /--model opus\b/);
+test('--prompt-kind none: nessuna riga di catalogo da consultare, fallback sul default', () => {
+  assert.match(
+    inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'none']),
+    /--model fable\b/,
+  );
 });
 
-test('catalogo illeggibile: il modello degrada a opus come il prompt', () => {
+test('--no-task senza --model: nessun kind di catalogo, fallback sul default', () => {
+  assert.match(inTabCmd(['--no-task']), /--model fable\b/);
+});
+
+test('catalogo illeggibile: il modello degrada al default come il prompt', () => {
+  // Il kind è `run`, che in catalogo porta opus: leggere fable qui è la prova
+  // che il catalogo non è stato letto affatto.
   assert.match(
     inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'run'], {
       LOOM_DECK_PROMPT_CATALOG: '/non/esiste/affatto',
     }),
-    /--model opus\b/,
+    /--model fable\b/,
   );
 });
 

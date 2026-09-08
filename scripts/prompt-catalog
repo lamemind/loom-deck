@@ -20,18 +20,19 @@
 # nel comando passato a `bash -lc`, e questo file è committato — un apice qui
 # sarebbe un errore di scrittura, non un input da quotare.
 #
-# Il modello è la copia esatta del `model:` che il frontmatter delle sei skill
-# portava prima di T152 — non una ri-taratura: nasce da un difetto di canale
-# (il frontmatter vinceva sempre su `--model`, rendendo il selettore del detail
-# inerte), non da un giudizio su quale modello convenga a quale skill.
+# Il criterio della colonna modello: lettura e conversazione stanno su fable
+# (i tre recap, il preflight), la scrittura presidiata su opus (run e
+# checkpoint, che toccano codice e committano). Cambiare una parola qui cambia
+# il costo di OGNI sessione aperta su quel kind, da ogni superficie del deck —
+# non è una preferenza di questo progetto, è il default di famiglia.
 # `recap` è il DISPATCHER: risolve la task, ne legge il Size e passa da sé alla
 # sotto-skill. Lo usa chi non sa se la task è un cappello — gli acceleratori
 # della lista, dove il deck ha in mano solo tasks.md, che il Size non ce l'ha.
 # Le due voci `recap-task`/`recap-epic` saltano quel giro: le sceglie il DETAIL,
 # che il task file l'ha già aperto e quindi il Size lo conosce.
-recap	/loom-works:recap-status {TASK}	opus
-recap-task	/loom-works:recap-status-task {TASK}	opus
-recap-epic	/loom-works:recap-status-epic {TASK}	opus
-preflight	/loom-works:preflight-task {TASK}	opus
-run	/loom-works:run-task {TASK}	sonnet
-checkpoint	/loom-works:checkpoint-task {TASK}	sonnet
+recap	/loom-works:recap-status {TASK}	fable
+recap-task	/loom-works:recap-status-task {TASK}	fable
+recap-epic	/loom-works:recap-status-epic {TASK}	fable
+preflight	/loom-works:preflight-task {TASK}	fable
+run	/loom-works:run-task {TASK}	opus
+checkpoint	/loom-works:checkpoint-task {TASK}	opus

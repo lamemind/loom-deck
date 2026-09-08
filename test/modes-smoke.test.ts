@@ -240,7 +240,7 @@ test('detail: una cifra sulla riga azione è inerte, non finisce in un campo', {
   // fuoco su una riga a scelta non esiste un campo dove ricadere.
   const frame = lastFrame(capture('DD\r2\r', spawnProject));
   assert.doesNotMatch(frame, /--title-note/, `la cifra è finita nel titolo: ${frame}`);
-  assert.match(frame, /--model opus/, `il modello è cambiato con una cifra: ${frame}`);
+  assert.match(frame, /--model fable/, `il modello è cambiato con una cifra: ${frame}`);
 });
 
 test('detail: le lettere entrano nel campo solo quando la sua riga è in fuoco', {
@@ -274,19 +274,20 @@ test('detail: tab non è più il canale del modello', { skip: !CAN_RUN }, () => 
   // `T` = tab nel mapping del pty. Il modello si cambia con `←→` dalla sua riga;
   // `tab` resta senza binding e non deve muovere nulla di nascosto.
   const frame = lastFrame(capture('DD\rT\r', spawnProject));
-  assert.match(frame, /--model opus/, `tab ha cambiato modello: ${frame}`);
+  assert.match(frame, /--model fable/, `tab ha cambiato modello: ${frame}`);
 });
 
 test('detail: la riga modello risponde a ←→ quando è in fuoco', { skip: !CAN_RUN }, () => {
-  // Due `D` portano dalla riga azione a quella modello; `R` (→) avanza da `opus`
-  // a `sonnet`.
+  // Due `D` portano dalla riga azione a quella modello; `R` (→) avanza di una
+  // voce nel giro di `MODELS`, cioè da `fable` (il modello dell'azione
+  // iniziale `open`, che una riga di catalogo non ce l'ha) a `opus`.
   const frame = lastFrame(capture('DD\rDDR\r', spawnProject));
-  assert.match(frame, /--model sonnet/, `←→ non ha cambiato modello: ${frame}`);
+  assert.match(frame, /--model opus/, `←→ non ha cambiato modello: ${frame}`);
 });
 
 test('detail: la riga hint non nomina i tasti standard', { skip: !CAN_RUN }, () => {
   const frame = lastFrame(capture('DD\r'));
-  assert.match(frame, /\[ opus \]/, `riga modello non renderizzata: ${frame}`);
+  assert.match(frame, /\[ fable \]/, `riga modello non renderizzata: ${frame}`);
   // L'asserzione negativa vive sulla SOLA riga hint, non sul frame: sotto c'è il
   // testo del task file, che di quei glifi può parlare quanto vuole.
   const hint = frame.split('\n').find((l) => l.includes('PgUp/PgDn'));

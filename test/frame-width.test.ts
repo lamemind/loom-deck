@@ -415,7 +415,7 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // T108 — la riga del selettore modello, con selezionata la voce più larga
   // (`sonnet`): è quella che `cutParts` deve tenere a schermo per prima, quindi
   // il caso in cui il taglio prioritario può sfondare la riga. T117 — due `D`
-  // portano il fuoco sulla riga modello, `R` avanza da `opus` a `sonnet`.
+  // portano il fuoco sulla riga modello, `R` avanza di una voce nel giro.
   ['detail · modello sonnet', 'DD\rDDR', [100, 176]],
   // T117 — il campo PROMPT pieno: è pre-riempito da un template (`checkpoint`,
   // il più lungo) e per giunta editabile, quindi l'unica riga dell'area che

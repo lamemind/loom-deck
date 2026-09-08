@@ -9,7 +9,7 @@
 // Molto più magro dello sheet: nessuna area di compilazione. Lo sheet ha
 // quattro righe perché quattro parametri dello spawn sono una scelta (azione,
 // prompt, modello, titolo); qui non ce n'è nessuna — la skill la decide la
-// natura (D8), il modello è `opus` per tutte e tre (D11 preflight), la sessione
+// natura (D8), il modello è `MODEL_DEFAULT` per tutte e tre (D11 preflight), la sessione
 // nasce nuda (D10 preflight). Restano la lettura e un tasto.
 //
 // Lo spawn NON sta qui: arriva come callback `onDrain`, per lo stesso confine

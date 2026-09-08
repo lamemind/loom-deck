@@ -60,7 +60,7 @@
 #   LOOM_DECK_STATE_PROFILE  PTYXIS_PROFILE annunciata a compass (default: bindings/claude
 #                            del progetto, letto da dconf; settata a vuoto = nessun annuncio)
 #   LOOM_DECK_PERMISSION_MODE  override del permissionMode del file config (default: campo file, poi 'manual')
-#   LOOM_DECK_MODEL        modello quando --model non è passato (batte il catalogo, default: opus)
+#   LOOM_DECK_MODEL        modello quando --model non è passato (batte il catalogo, default: fable)
 #
 set -euo pipefail
 
@@ -181,7 +181,7 @@ USAGE="uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <kind>] [--sessio
                  ha una task da nominare, a differenza dei kind del catalogo
 
   --model        modello della sessione: fable|opus|sonnet|haiku
-                 (default: il modello del kind in catalogo, o 'opus' fuori catalogo)
+                 (default: il modello del kind in catalogo, o 'fable' fuori catalogo)
                  valore ignoto → fallback sul default, con avviso su stderr
 
   --title-note   nota della conversazione, appesa al titolo tab
@@ -356,7 +356,12 @@ MODE_FLAG="--permission-mode ${PERM_MODE} "
 
 # ── modello (T108 + T152) ────────────────────────────────────────────────────
 # Precedenza: --model > env LOOM_DECK_MODEL > modello del kind nel catalogo >
-# 'opus'. Fino a T152 il default era un valore unico per tutta la famiglia,
+# 'fable'. L'ultimo gradino è il gemello bash di `MODEL_DEFAULT` in spawn.ts e
+# va tenuto allineato a mano: i due lati non si leggono a vicenda (il deck deve
+# poter MOSTRARE la selezione iniziale prima che deck-run esista come processo),
+# quindi un cambio qui senza l'altro fa partire dalla lista un modello diverso
+# da quello che il detail aveva scritto a schermo.
+# Fino a T152 il default era un valore unico per tutta la famiglia,
 # perché il frontmatter `model:` delle skill riscriveva comunque il modello di
 # sessione — un default configurabile qui non sarebbe servito a nulla. Da
 # quando le skill non dichiarano più `model:`, il default DEVE viaggiare col
@@ -395,9 +400,9 @@ if [[ -z "$MODEL" && -n "$CATALOG_KIND" && "$CATALOG_KIND" != "none" ]]; then
 fi
 case "${MODEL:-}" in
   fable|opus|sonnet|haiku) ;;
-  '') MODEL="opus" ;;
-  *)  echo "modello ignoto: '${MODEL}' → fallback 'opus' (usa fable|opus|sonnet|haiku)" >&2
-      MODEL="opus" ;;
+  '') MODEL="fable" ;;
+  *)  echo "modello ignoto: '${MODEL}' → fallback 'fable' (usa fable|opus|sonnet|haiku)" >&2
+      MODEL="fable" ;;
 esac
 MODEL_FLAG="--model ${MODEL} "
 

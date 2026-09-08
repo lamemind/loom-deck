@@ -370,8 +370,8 @@ export function useDeckActions({
    * il giorno in cui una natura nuova apre la skill sbagliata.
    *
    * Sessione NUDA e modello esplicito: il drain lavora sulla doc, non sulla
-   * task (D10 preflight), e `opus` passa nell'argv anche essendo il default,
-   * come `permissionMode`.
+   * task (D10 preflight), e `MODEL_DEFAULT` passa nell'argv anche essendo il
+   * default, come `permissionMode`.
    */
   function drainInbox(file: InboxFile, prompt: string) {
     const spawned = spawnBare(cwd, prompt, MODEL_DEFAULT);
