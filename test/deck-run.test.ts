@@ -419,6 +419,58 @@ test('LOOM_DECK_MODEL: default d’ambiente, il flag esplicito vince', () => {
   );
 });
 
+// T152 — il default del modello viaggia col KIND, letto dal catalogo, non più
+// un valore unico per tutta la famiglia: il frontmatter delle skill non
+// riscrive più il modello di sessione, quindi senza questo default `run`
+// partirebbe su opus come `preflight`.
+test('--prompt-kind run senza --model: il default è quello del catalogo (sonnet)', () => {
+  assert.match(
+    inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'run']),
+    /--model sonnet\b/,
+  );
+});
+
+test('--prompt-kind run con --model esplicito: il flag vince sul catalogo', () => {
+  assert.match(
+    inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'run', '--model', 'haiku']),
+    /--model haiku\b/,
+  );
+});
+
+test('--prompt-kind preflight senza --model: il default del catalogo è opus', () => {
+  assert.match(
+    inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'preflight']),
+    /--model opus\b/,
+  );
+});
+
+test('LOOM_DECK_MODEL batte il catalogo, non solo il default fisso', () => {
+  assert.match(
+    inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'run'], { LOOM_DECK_MODEL: 'fable' }),
+    /--model fable\b/,
+  );
+});
+
+test('--prompt-kind none: nessuna riga di catalogo da consultare, fallback opus', () => {
+  assert.match(
+    inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'none']),
+    /--model opus\b/,
+  );
+});
+
+test('--no-task senza --model: nessun kind di catalogo, fallback opus', () => {
+  assert.match(inTabCmd(['--no-task']), /--model opus\b/);
+});
+
+test('catalogo illeggibile: il modello degrada a opus come il prompt', () => {
+  assert.match(
+    inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'run'], {
+      LOOM_DECK_PROMPT_CATALOG: '/non/esiste/affatto',
+    }),
+    /--model opus\b/,
+  );
+});
+
 // ── annuncio del comando in-tab ───────────────────────────────────────────
 
 test('deck-run annuncia su stdout il comando che eseguirà nella tab', () => {

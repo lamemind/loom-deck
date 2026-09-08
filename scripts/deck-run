@@ -60,7 +60,7 @@
 #   LOOM_DECK_STATE_PROFILE  PTYXIS_PROFILE annunciata a compass (default: bindings/claude
 #                            del progetto, letto da dconf; settata a vuoto = nessun annuncio)
 #   LOOM_DECK_PERMISSION_MODE  override del permissionMode del file config (default: campo file, poi 'manual')
-#   LOOM_DECK_MODEL        modello quando --model non è passato (default: opus)
+#   LOOM_DECK_MODEL        modello quando --model non è passato (batte il catalogo, default: opus)
 #
 set -euo pipefail
 
@@ -180,7 +180,8 @@ USAGE="uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <kind>] [--sessio
                  prompt. Ammesso anche con --no-task: un testo già scritto non
                  ha una task da nominare, a differenza dei kind del catalogo
 
-  --model        modello della sessione: fable|opus|sonnet|haiku (default: opus)
+  --model        modello della sessione: fable|opus|sonnet|haiku
+                 (default: il modello del kind in catalogo, o 'opus' fuori catalogo)
                  valore ignoto → fallback sul default, con avviso su stderr
 
   --title-note   nota della conversazione, appesa al titolo tab
@@ -353,11 +354,16 @@ case "${PERM_MODE:-}" in
 esac
 MODE_FLAG="--permission-mode ${PERM_MODE} "
 
-# ── modello (T108) ───────────────────────────────────────────────────────────
-# Precedenza: --model > env LOOM_DECK_MODEL > 'opus'. Nessun campo nel file
-# config: il default è unico per tutta la famiglia, e uno scalare per-progetto
-# aggiungerebbe una chiave allo schema del plugin per un valore che il selettore
-# del deck sovrascrive a ogni spawn.
+# ── modello (T108 + T152) ────────────────────────────────────────────────────
+# Precedenza: --model > env LOOM_DECK_MODEL > modello del kind nel catalogo >
+# 'opus'. Fino a T152 il default era un valore unico per tutta la famiglia,
+# perché il frontmatter `model:` delle skill riscriveva comunque il modello di
+# sessione — un default configurabile qui non sarebbe servito a nulla. Da
+# quando le skill non dichiarano più `model:`, il default DEVE viaggiare col
+# kind: `run` costa quanto `preflight` solo se «vuole sonnet» è scritto da
+# qualche parte che deck-run consulta, e quella parte è il catalogo che il
+# deck TUI legge già per il testo del prompt (T117) — stessa fonte, stesso
+# `kind`, niente seconda copia.
 # Il flag è passato SEMPRE, anche sul default, per la stessa ragione di
 # permissionMode: lo spawn resta leggibile nel process tree invece di dipendere
 # dal default del CLI, che cambia fra versioni.
@@ -366,7 +372,27 @@ MODE_FLAG="--permission-mode ${PERM_MODE} "
 # ferma DENTRO lo script (nessun template da scegliere, l'errore è del deck),
 # un modello ignoto arriverebbe al CLI e produrrebbe una tab con un comando che
 # fallisce all'avvio — cioè il guasto che permissionMode evita degradando.
+_model_for_kind() {  # <kind> → modello dichiarato in catalogo (3ª colonna), o niente
+  local want="$1" k t m
+  [[ -n "$want" && -f "$PROMPT_CATALOG" ]] || return 1
+  while IFS=$'\t' read -r k t m || [[ -n "$k" ]]; do
+    [[ -z "$k" || "$k" == \#* ]] && continue
+    [[ "$k" == "$want" && -n "$m" ]] && { printf '%s' "$m"; return 0; }
+  done < "$PROMPT_CATALOG"
+  return 1
+}
+# Kind di catalogo effettivo: SOLO quando la sessione è bound e senza prompt
+# letterale — le due strade (--no-task, --prompt) non hanno una riga di
+# catalogo da consultare, né per il prompt (sotto) né per il modello (qui).
+# Riusato tal quale nella composizione del prompt: stesso guard, stesso valore.
+CATALOG_KIND=""
+if [[ $PROMPT_GIVEN -eq 0 && $NO_TASK -eq 0 ]]; then
+  CATALOG_KIND="${PROMPT_KIND:-recap}"
+fi
 MODEL="${MODEL:-${LOOM_DECK_MODEL:-}}"
+if [[ -z "$MODEL" && -n "$CATALOG_KIND" && "$CATALOG_KIND" != "none" ]]; then
+  MODEL="$(_model_for_kind "$CATALOG_KIND" || true)"
+fi
 case "${MODEL:-}" in
   fable|opus|sonnet|haiku) ;;
   '') MODEL="opus" ;;
@@ -476,9 +502,12 @@ FORK_FLAG=""
 # (`T`, unico prefisso del contratto loom), quindi nessun prompt discrimina sulla
 # forma dell'id.
 _prompt_template() {  # <kind> → template col placeholder {TASK}, o niente
-  local want="$1" k t
+  local want="$1" k t m
   [[ -f "$PROMPT_CATALOG" ]] || return 1
-  while IFS=$'\t' read -r k t || [[ -n "$k" ]]; do
+  # 3 variabili, non 2 (T152): da quando il catalogo porta una 3ª colonna
+  # modello, un `read -r k t` a due si mangerebbe il tab separatore e il
+  # modello dentro `t`, che è esattamente il template passato al CLI.
+  while IFS=$'\t' read -r k t m || [[ -n "$k" ]]; do
     [[ -z "$k" || "$k" == \#* ]] && continue
     [[ "$k" == "$want" ]] && { printf '%s' "$t"; return 0; }
   done < "$PROMPT_CATALOG"
@@ -503,7 +532,7 @@ elif [[ $NO_TASK -eq 1 ]]; then
   # volta e qui resta quindi inerte: senza task non ha nulla da nominare.
   PROMPT=""
 else
-  _kind="${PROMPT_KIND:-recap}"
+  _kind="$CATALOG_KIND"
   if [[ "$_kind" == "none" ]]; then
     PROMPT=""
   else
