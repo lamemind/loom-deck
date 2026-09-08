@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadPromptCatalog, promptFor, PROMPT_CATALOG } from '../src/prompt-catalog.js';
+import { loadPromptCatalog, modelFor, promptFor, PROMPT_CATALOG } from '../src/prompt-catalog.js';
 import { DETAIL_ACTIONS } from '../src/spawn.js';
 
 test('il catalogo esiste dove il deck lo risolve', () => {
@@ -70,4 +70,43 @@ test('{TASK} si interpola ovunque compaia, non solo la prima volta', () => {
   const f = join(dir, 'cat');
   writeFileSync(f, 'run\t{TASK} poi ancora {TASK}\n');
   assert.equal(promptFor(loadPromptCatalog(f), 'run', 'T9'), 'T9 poi ancora T9');
+});
+
+// T152 — la colonna modello, terza e opzionale.
+test('modelFor: riga a tre colonne restituisce il modello, a due colonne niente', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'catalog-'));
+  const f = join(dir, 'cat');
+  writeFileSync(f, ['run\t/loom-works:run-task {TASK}\tsonnet', 'preflight\tfai {TASK}'].join('\n'));
+  const c = loadPromptCatalog(f);
+  assert.equal(modelFor(c, 'run'), 'sonnet');
+  assert.equal(modelFor(c, 'preflight'), undefined);
+  // Il template non deve portarsi dietro il tab del modello (T152 — il parser
+  // taglia sull'ULTIMO tab, non sul primo).
+  assert.equal(promptFor(c, 'run', 'T9'), '/loom-works:run-task T9');
+});
+
+test('modelFor: un modello fuori enum è come se la colonna non ci fosse', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'catalog-'));
+  const f = join(dir, 'cat');
+  writeFileSync(f, 'run\tfai {TASK}\tclaude-opus-5\n');
+  assert.equal(modelFor(loadPromptCatalog(f), 'run'), undefined);
+});
+
+test('modelFor: kind fuori catalogo → niente', () => {
+  const c = loadPromptCatalog('/non/esiste/affatto');
+  assert.equal(modelFor(c, 'run'), undefined);
+});
+
+// Copia esatta del frontmatter pre-T152 (P3 preflight): un cambio qui è un
+// cambio di comportamento per ogni sessione che spawna quel kind, non solo
+// per questo test — se questa asserzione deve muoversi, muove con essa la
+// riga del catalogo E la ragione per cui si muove.
+test('catalogo reale: modello di ogni kind = copia del frontmatter pre-T152', () => {
+  const catalog = loadPromptCatalog();
+  assert.equal(modelFor(catalog, 'recap'), 'opus');
+  assert.equal(modelFor(catalog, 'recap-task'), 'opus');
+  assert.equal(modelFor(catalog, 'recap-epic'), 'opus');
+  assert.equal(modelFor(catalog, 'preflight'), 'opus');
+  assert.equal(modelFor(catalog, 'run'), 'sonnet');
+  assert.equal(modelFor(catalog, 'checkpoint'), 'sonnet');
 });

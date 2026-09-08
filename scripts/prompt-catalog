@@ -1,28 +1,37 @@
 # Catalogo dei prompt iniziali di una sessione Claude aperta dal deck.
 #
-# Formato a righe: <kind><TAB><template>, con `{TASK}` interpolato col TaskID.
-# Righe vuote e righe che iniziano con `#` sono commenti.
+# Formato a righe: <kind><TAB><template><TAB><modello>, con `{TASK}`
+# interpolato col TaskID. Righe vuote e righe che iniziano con `#` sono
+# commenti. Il modello è OPZIONALE: una riga a due colonne resta leggibile e
+# chi la consulta cade sul proprio default (`MODEL_DEFAULT`/`opus`) — il campo
+# esiste per i kind bound a una skill (T152), non per ogni riga del file.
 #
 # Perché un file dati e non un `case` dentro deck-run: due lati hanno bisogno
 # dello stesso testo — deck-run per comporre il comando in-tab, il deck TUI per
-# pre-riempire il campo prompt del detail con ciò che sta per essere eseguito.
-# Come codice, il secondo lato dovrebbe riscriverlo, e le due copie divergono
-# alla prima voce aggiunta da una parte sola.
+# pre-riempire il campo prompt (e ora anche il modello) del detail con ciò che
+# sta per essere eseguito. Come codice, il secondo lato dovrebbe riscriverlo, e
+# le due copie divergono alla prima voce aggiunta da una parte sola.
 #
 # `none` non compare: nessun prompt non è un template vuoto, è l'assenza della
-# voce. Chi chiede un kind fuori da questo file riceve un prompt vuoto.
+# voce. Chi chiede un kind fuori da questo file riceve un prompt vuoto e nessun
+# modello (fallback sul default del chiamante).
 #
 # Vincolo sui template: nessun apice singolo. Il testo finisce dentro `'...'`
 # nel comando passato a `bash -lc`, e questo file è committato — un apice qui
 # sarebbe un errore di scrittura, non un input da quotare.
+#
+# Il modello è la copia esatta del `model:` che il frontmatter delle sei skill
+# portava prima di T152 — non una ri-taratura: nasce da un difetto di canale
+# (il frontmatter vinceva sempre su `--model`, rendendo il selettore del detail
+# inerte), non da un giudizio su quale modello convenga a quale skill.
 # `recap` è il DISPATCHER: risolve la task, ne legge il Size e passa da sé alla
 # sotto-skill. Lo usa chi non sa se la task è un cappello — gli acceleratori
 # della lista, dove il deck ha in mano solo tasks.md, che il Size non ce l'ha.
 # Le due voci `recap-task`/`recap-epic` saltano quel giro: le sceglie il DETAIL,
 # che il task file l'ha già aperto e quindi il Size lo conosce.
-recap	/loom-works:recap-status {TASK}
-recap-task	/loom-works:recap-status-task {TASK}
-recap-epic	/loom-works:recap-status-epic {TASK}
-preflight	/loom-works:preflight-task {TASK}
-run	/loom-works:run-task {TASK}
-checkpoint	/loom-works:checkpoint-task {TASK}
+recap	/loom-works:recap-status {TASK}	opus
+recap-task	/loom-works:recap-status-task {TASK}	opus
+recap-epic	/loom-works:recap-status-epic {TASK}	opus
+preflight	/loom-works:preflight-task {TASK}	opus
+run	/loom-works:run-task {TASK}	sonnet
+checkpoint	/loom-works:checkpoint-task {TASK}	sonnet
