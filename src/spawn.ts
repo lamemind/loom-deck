@@ -3,9 +3,10 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { LaunchEntry } from './config.js';
 import type { IgnoredMode } from './purge.js';
+import { findTaskFile } from './tasks.js';
 
 // scripts/deck-run è un sibling della dir del bundle: src/ (dev, tsx) e dist/
 // (build, node) stanno entrambi sotto la package root → risalita di un livello.
@@ -220,6 +221,44 @@ export const DETAIL_ACTIONS: ReadonlyArray<{ kind: PromptKind; label: string }> 
 export const ACTION_HOTKEYS: Readonly<Record<string, number>> = Object.fromEntries(
   DETAIL_ACTIONS.map((a, i) => [a.label[0]!, i]),
 );
+
+// T150 — titolo di fallback quando il campo nota è vuoto, derivato dall'AZIONE
+// e dal task. Mappa sul KIND, non sulla label (P2 preflight): alla sede del
+// fallback (`spawnForTask` in actions.ts) arriva il kind — già specializzato
+// quando la chiamata viene dal detail (`recap-task`/`recap-epic`) — mai la
+// label del catalogo.
+// D2/P7 — `none` (label "open") non ha una parola: è "nessuna azione", e
+// inventargliene una contraddirebbe l'intenzione dell'utente.
+// P3 — le tre varianti di recap condividono la parola: la specializzazione
+// sceglie quale skill parte, non cosa l'utente sta chiedendo.
+const ACTION_WORD: Readonly<Partial<Record<PromptKind, string>>> = {
+  preflight: 'PREFL',
+  run: 'RUN',
+  recap: 'RECAP',
+  'recap-task': 'RECAP',
+  'recap-epic': 'RECAP',
+  checkpoint: 'CHKPOINT',
+};
+
+/**
+ * Titolo di fallback per una conversazione con nota vuota: `{AZIONE} {slug}`,
+ * o il solo slug per `none` (D1/D2 preflight). Lo slug viene dal NOME del
+ * task file (`findTaskFile`), non dalla descrizione di `tasks.md`: il nome è
+ * già dentro l'alfabeto di `_sane_note` per costruzione — minuscolo, separato
+ * da trattini, senza punteggiatura — mentre la descrizione porta apostrofi e
+ * `/` che la riduzione toglie senza sostituto, saldando le parole (D1
+ * razionale).
+ *
+ * `null` quando il task file non si trova: il chiamante decide se ripiegare
+ * su nota vuota o su un altro fallback.
+ */
+export function fallbackTitle(tasksDir: string, id: string, kind: PromptKind): string | null {
+  const path = findTaskFile(tasksDir, id);
+  if (!path) return null;
+  const slug = basename(path, '.md').slice(id.length + 1).replace(/-/g, ' ');
+  const word = ACTION_WORD[kind];
+  return word ? `${word} ${slug}` : slug;
+}
 
 // Spawn detached: il deck spawna ma NON contiene la sessione (la possiede
 // ptyxis-agent). unref + stdio ignore → ritorna subito, la TUI resta viva.
