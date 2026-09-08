@@ -21,6 +21,35 @@ const FORMAT_RE = /^#(\d+)$/;
 // e non `TASK_ID_RE` di tasks.ts (ancorata all'id nudo, non matcha `T136-x.md`).
 const TASK_FILE_RE = /^(T\d+)-.*\.md$/;
 
+const EMPTY_MAP: ReadonlyMap<string, number> = new Map();
+
+/**
+ * T153 — gate module-level: `git log` gira solo se lo sha di HEAD è cambiato
+ * dall'ultima chiamata su questa stessa coppia (tasksDir, projectRoot). Le
+ * date di ultimo commit cambiano SOLO se HEAD si muove (§Implementation
+ * Notes T153): un rev-parse fallito degrada come degradava il log, mai un
+ * throw. `key` tiene le due coppie separate — un test che passa tmpdir
+ * diversi a chiamate successive non deve leggere la cache dell'altro.
+ */
+let cache: { key: string; sha: string; map: ReadonlyMap<string, number> } | null = null;
+let logSpawns = 0;
+
+/** T153/DLV6 — quante volte è partito lo spawn COSTOSO (`git log`), non il
+ *  gate. Il gate (`rev-parse`) gira a ogni chiamata per costruzione: contarlo
+ *  renderebbe il numero inutile a dimostrare il no-op. */
+export function commitLogSpawnCount(): number {
+  return logSpawns;
+}
+
+async function headSha(projectRoot: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: projectRoot });
+    return stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Parsing puro dell'output `git log --format=#%ct --name-only`. Isolato da
  * `commitTimes` perché è l'unica parte che vale la pena collaudare: invocare
@@ -55,19 +84,39 @@ export function parseCommitLog(output: string): Map<string, number> {
  * incompleta proprio per le task vecchie mai più toccate, quelle che sotto
  * `desc` finiscono in coda — dove un timestamp assente e uno vecchio si
  * confonderebbero.
+ *
+ * T153 — gate su `rev-parse HEAD` (un ordine di grandezza più economico
+ * dello spawn del log che sostituisce, cifre misurate nel Progress Log): a
+ * sha invariato torna la STESSA istanza di mappa, non una ricostruita — è
+ * ciò che rende inutile il confronto per firma in `useCommitTimes` (P1
+ * preflight).
  */
 export async function commitTimes(
   tasksDir: string,
   projectRoot: string,
-): Promise<Map<string, number>> {
+): Promise<ReadonlyMap<string, number>> {
+  const key = `${projectRoot}\u0000${tasksDir}`;
+  const sha = await headSha(projectRoot);
+  if (sha !== null && cache && cache.key === key && cache.sha === sha) {
+    return cache.map;
+  }
+  let map: ReadonlyMap<string, number>;
   try {
+    // Il contatore sale PRIMA dell'await: conta gli spawn partiti, e uno
+    // spawn fallito costa comunque la fork del processo.
+    logSpawns++;
     const { stdout } = await execFileAsync(
       'git',
       ['log', '--format=#%ct', '--name-only', '--', tasksDir],
       { cwd: projectRoot },
     );
-    return parseCommitLog(stdout);
+    map = parseCommitLog(stdout);
   } catch {
-    return new Map();
+    map = EMPTY_MAP;
   }
+  // sha === null (git muto): non si cachea uno stato che il prossimo giro
+  // potrebbe smentire in silenzio (repo che ricompare) senza mai vedersi
+  // ricontrollato.
+  cache = sha !== null ? { key, sha, map } : null;
+  return map;
 }

@@ -83,27 +83,25 @@ export function useTasks(tasksPath: string) {
 /**
  * T136 — data dell'ultimo commit di ogni task file, per la chiave di sort
  * `commit`. D1 (preflight): sullo STESSO poll di `tasks.md` (`POLL_MS`), non
- * su una scala propria come `useArchivable` — una passata di `git log` costa
- * ~33ms ed è UNA invocazione per tick, indipendentemente dal numero di task.
+ * su una scala propria come `useArchivable`.
  *
- * P5 (preflight): `commitTimes` ritorna una `Map` nuova a ogni tick anche
- * quando il contenuto non cambia; passata nuda a una `useMemo` a valle ne
- * romperebbe la memoizzazione ogni 1,5s. Si confronta per FIRMA prima di
- * aggiornare lo stato, come `lastMtime` in `useTasks` e `lastSig` in
- * `useSessions`: l'identità della mappa cambia solo dopo un commit vero.
+ * T153 — `commitTimes` gatea da sé su `rev-parse HEAD` (davanti allo spawn
+ * caro del log, vedi `commit-times.ts`) e a sha invariato torna la STESSA
+ * istanza di mappa. L'hook confronta quindi per IDENTITÀ, non più per firma
+ * ricostruita: la firma evitava solo il re-render, il gate a monte evita il
+ * lavoro. `lastMtime` in `useTasks` resta il gemello sullo stesso schema.
  */
 export function useCommitTimes(tasksDir: string, projectRoot: string): ReadonlyMap<string, number> {
   const [commitAt, setCommitAt] = useState<ReadonlyMap<string, number>>(() => new Map());
 
   useEffect(() => {
-    let lastSig = '';
+    let last: ReadonlyMap<string, number> | null = null;
     let alive = true;
     const reload = () => {
       commitTimes(tasksDir, projectRoot).then((next) => {
         if (!alive) return;
-        const sig = [...next.entries()].map(([id, ts]) => `${id}:${ts}`).sort().join(',');
-        if (sig === lastSig) return;
-        lastSig = sig;
+        if (next === last) return; // stessa istanza → il gate non è scattato
+        last = next;
         setCommitAt(next);
       });
     };
