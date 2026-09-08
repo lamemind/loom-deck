@@ -189,24 +189,54 @@ function splitRegions(lines: string[]): Array<Array<{ line: string; i: number }>
   return [main, full].filter((r) => r.length > 0);
 }
 
+/** Colonne della STRUTTURA su una riga d'apertura o chiusura di box: i bordi
+ *  verticali della cornice più gli angoli, che cadono esattamente sulle stesse
+ *  colonne dei `│` delle righe interne. */
+function structuralColumns(line: string): number[] {
+  const out: number[] = [];
+  let col = 0;
+  for (const ch of line) {
+    if ('│┌┐└┘╭╮╰╯├┤'.includes(ch)) out.push(col);
+    col += termWidth(ch);
+  }
+  return out;
+}
+
+/** La riga che DICHIARA la struttura della regione: la sua apertura, cioè la
+ *  prima riga che porta un angolo subito dopo la cornice esterna (`│ ┌`, `│ ╭`).
+ *  L'ancora `^│ [┌╭]` è ciò che la distingue da una riga di CONTENUTO che porta
+ *  gli stessi glifi in mezzo al testo. */
+function openerColumns(region: Array<{ line: string; i: number }>): number[] | null {
+  const opener = region.find((r) => /^│ [┌╭]/.test(r.line));
+  return opener ? structuralColumns(opener.line) : null;
+}
+
 /**
  * Una riga più larga del suo box non allunga la riga composta — Ink la scrive su
  * una griglia a celle fisse — ma copre le celle del vicino, e la prima a sparire
  * è la colonna del bordo. Il controllo di larghezza da solo non lo vede: serve
- * confrontare le colonne dei bordi con quelle della struttura più ricorrente
- * della regione.
+ * confrontare le colonne dei bordi con quelle della struttura della regione.
+ *
+ * La struttura si legge dalla riga di APERTURA della regione, non da un voto di
+ * maggioranza sulle righe interne. Il voto sembra equivalente e non lo è: i
+ * glifi di raggruppamento delle epiche (`┌ │ └` che legano un cappello alle sue
+ * figlie, T67) sono CONTENUTO di una riga task, ma restano `│` come i bordi —
+ * quando un'epica con molte figlie riempie il pane, quelle righe diventano la
+ * maggioranza e la loro colonna di bracket entra nella forma attesa. Da lì ogni
+ * riga che il bracket non ce l'ha — l'header del pane, una task senza cappello —
+ * risulta col «bordo mangiato» senza che niente sia fuori posto. È un falso
+ * positivo che dipende dai DATI del progetto su cui gira il gate, quindi compare
+ * e sparisce da solo al variare della lista task.
  *
  * Si guardano SOLO le righe interne ai box — quelle con bordi oltre i due della
  * cornice esterna. Header, riga di navigazione e cornici orizzontali hanno una
  * forma propria e non dicono nulla sull'allineamento.
  */
 function assertBordersHold(region: Array<{ line: string; i: number }>, label: string) {
-  const inner = region.map((r) => borderColumns(r.line)).filter((cols_) => cols_.length > 2);
-  if (inner.length === 0) return;
-  const byShape = new Map<string, number>();
-  for (const cols_ of inner) byShape.set(cols_.join(','), (byShape.get(cols_.join(',')) ?? 0) + 1);
-  const [common] = [...byShape.entries()].sort((a, b) => b[1] - a[1])[0]!;
-  const expected = common.split(',').map(Number);
+  const expected = openerColumns(region);
+  // Nessuna apertura nella regione (cattura parziale, regione di sole righe
+  // piatte): non c'è una struttura dichiarata contro cui misurare.
+  if (!expected || expected.length <= 2) return;
   for (const { line, i } of region) {
     const got = borderColumns(line);
     if (got.length <= 2) continue;
@@ -221,6 +251,52 @@ function assertBordersHold(region: Array<{ line: string; i: number }>, label: st
     );
   }
 }
+
+// ── il gate del gate ────────────────────────────────────────────────────────
+// `assertBordersHold` è l'unico pezzo di questo file che decide da sé cosa sia
+// «struttura», e la decisione è già stata sbagliata una volta: dedotta a voto
+// di maggioranza sulle righe, prendeva per bordo il bracket delle epiche (T67)
+// e bocciava l'header del pane. Un falso positivo così non si vede finché i
+// DATI del progetto non lo scatenano — serve quindi un banco che non dipenda
+// da tasks.md né dal pty, e che tenga i DUE lati: non deve bocciare una riga
+// sana, deve bocciare una riga che il bordo lo mangia davvero.
+const REG = (lines: string[]) => lines.map((line, i) => ({ line, i }));
+const holds = (lines: string[]) => {
+  try {
+    assertBordersHold(REG(lines), 'banco');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+test('il gate legge la struttura dall’apertura, non a maggioranza', () => {
+  // Il bracket epica (`┌ │ └` come CONTENUTO, colonna 18) sta sulla
+  // maggioranza delle righe: la sua colonna NON deve entrare fra le attese, o
+  // l'header del pane — che il bracket non ce l'ha — risulta col bordo
+  // mangiato senza che niente sia fuori posto.
+  const conBracket = [
+    '│ ┌──────────────────────────┐ ┌──────────────┐ │',
+    '│ │ Tasks (12/105) · 93 nasc │ │ Sessions (12)│ │',
+    '│ │   T142  🔥  ┌ cappello   │ │   sessione 1 │ │',
+    '│ │   T141  🔥  │ figlia uno │ │   sessione 2 │ │',
+    '│ │   T140  ⚡  └ figlia due │ │   sessione 3 │ │',
+    '│ └──────────────────────────┘ └──────────────┘ │',
+  ];
+  assert.equal(holds(conBracket), true, 'header bocciato dal bracket delle epiche');
+});
+
+test('il gate morde ancora: una riga che copre il bordo del pane fallisce', () => {
+  // Stessa struttura, ma la riga lunga ha coperto la colonna del bordo destro
+  // del primo pane: è esattamente il guasto che il gate esiste per prendere.
+  const bordoMangiato = [
+    '│ ┌──────────────────────────┐ ┌──────────────┐ │',
+    '│ │ Tasks (12/105) · 93 nasc │ │ Sessions (12)│ │',
+    '│ │ riga lunghissima che sfonda  │ │ sessione 1 │ │',
+    '│ └──────────────────────────┘ └──────────────┘ │',
+  ];
+  assert.equal(holds(bordoMangiato), false, 'un bordo coperto non viene più rilevato');
+});
 
 const CTRL_F = String.fromCharCode(6);
 const CTRL_A = String.fromCharCode(1);
