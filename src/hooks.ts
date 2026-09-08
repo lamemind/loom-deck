@@ -118,30 +118,24 @@ export function useCommitTimes(tasksDir: string, projectRoot: string): ReadonlyM
 
 /**
  * T67 — mappa cappello/figlie (`**Parent Task**`, `Size: Epic`), sullo STESSO
- * poll di `tasks.md` e non su una scala propria: P2 (preflight) misura 7,86 ms
- * per il read+parse di 106 task file, meno dei ~33 ms di `git log` che
- * `useCommitTimes` paga già ogni tick. La parentela si edita anche a mano su
- * un task file già in tabella — un trigger sulla sola firma degli id, come
- * `useArchivable`, non vedrebbe quell'edit e lo lascerebbe stale fino al
- * prossimo giro largo.
+ * poll di `tasks.md` e non su una scala propria.
  *
- * Firma prima di `setState`, gemella di `lastSig`/`lastMtime` degli altri
- * poll: senza, la mappa cambia identità a ogni tick e rompe le `useMemo` a
- * valle che la consumano (`applyView`, `selectTasks`).
+ * T153 — `scanEpicHierarchy` gatea da sé sulla mtime massima dei task file
+ * (davanti al read+parse caro, vedi `epic-hierarchy.ts`) e a mtime invariata
+ * torna la STESSA istanza: la parentela editata a mano dentro un file già in
+ * tabella resta vista, perché il gate è sulla mtime e non sugli id. L'hook
+ * confronta quindi per IDENTITÀ, non più per firma ricostruita, gemello di
+ * `useCommitTimes` per lo stesso motivo (P1 preflight).
  */
 export function useEpicHierarchy(tasksDir: string): EpicHierarchy {
   const [hierarchy, setHierarchy] = useState<EpicHierarchy>(EMPTY_EPIC_HIERARCHY);
 
   useEffect(() => {
-    let lastSig = '';
+    let last: EpicHierarchy | null = null;
     const reload = () => {
       const next = scanEpicHierarchy(tasksDir);
-      const sig =
-        [...next.epicOf.entries()].map(([c, p]) => `${c}<${p}`).sort().join(',') +
-        '#' +
-        [...next.epics].sort().join(',');
-      if (sig === lastSig) return;
-      lastSig = sig;
+      if (next === last) return; // stessa istanza → il gate non è scattato
+      last = next;
       setHierarchy(next);
     };
     reload();

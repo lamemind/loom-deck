@@ -8,7 +8,7 @@
 // parentela si edita anche a mano dentro un task file già in tabella, non solo
 // alla nascita di una riga: un trigger sulla sola firma degli id (come
 // `useArchivable`) lascerebbe quell'edit stale fino al prossimo giro largo.
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { taskEpicOf, taskIsEpic } from './tasks.js';
 
@@ -29,24 +29,56 @@ export interface EpicHierarchy {
 export const EMPTY_EPIC_HIERARCHY: EpicHierarchy = { epicOf: new Map(), epics: new Set() };
 
 /**
- * Lettura SINCRONA di tutti i task file sotto `tasksDir`: costo misurato in P2,
- * accettabile sul poll da 1,5s. Cartella illeggibile o singolo file non
- * apribile → entry saltata, mai un throw — un dato di rendering non può
- * rompere il deck, stessa regola di `archivableIds`/`commitTimes`.
+ * T153 — gate module-level: il read+parse dei task file gira solo se la mtime
+ * MASSIMA fra i file `T<N>-*.md` di `tasksDir` è cambiata da ultima chiamata
+ * (un ordine di grandezza più economico del parse pieno che sostituisce,
+ * cifre misurate nel Progress Log). Sulla SOLA mtime e non su una firma
+ * degli id: deve intercettare un edit a mano di
+ * `**Parent Task**` DENTRO un file già in tabella, che non aggiunge né toglie
+ * nessun id (Testing Notes T153). A gate scattato torna la STESSA istanza —
+ * `useEpicHierarchy` non ha più bisogno di una firma propria per lo stesso
+ * motivo di `useCommitTimes` (P1 preflight).
+ */
+let cache: { key: string; maxMtime: number; hierarchy: EpicHierarchy } | null = null;
+
+/**
+ * Lettura SINCRONA di tutti i task file sotto `tasksDir`: costo del gate
+ * accettabile sul poll da 1,5s anche a scan pieno (mai il caso in regime).
+ * Cartella illeggibile o singolo file non apribile → entry saltata, mai un
+ * throw — un dato di rendering non può rompere il deck, stessa regola di
+ * `archivableIds`/`commitTimes`.
  */
 export function scanEpicHierarchy(tasksDir: string): EpicHierarchy {
   let entries: string[];
   try {
     entries = readdirSync(tasksDir);
   } catch {
+    cache = null;
     return EMPTY_EPIC_HIERARCHY;
   }
+
+  let maxMtime = 0;
+  const files: string[] = [];
+  for (const file of entries) {
+    if (!TASK_FILE_RE.test(file)) continue;
+    let mtime: number;
+    try {
+      mtime = statSync(join(tasksDir, file)).mtimeMs;
+    } catch {
+      continue;
+    }
+    files.push(file);
+    if (mtime > maxMtime) maxMtime = mtime;
+  }
+
+  if (cache && cache.key === tasksDir && cache.maxMtime === maxMtime) {
+    return cache.hierarchy;
+  }
+
   const epicOf = new Map<string, string>();
   const epics = new Set<string>();
-  for (const file of entries) {
-    const m = TASK_FILE_RE.exec(file);
-    if (!m) continue;
-    const id = m[1]!;
+  for (const file of files) {
+    const id = TASK_FILE_RE.exec(file)![1]!;
     let content: string;
     try {
       content = readFileSync(join(tasksDir, file), 'utf8');
@@ -57,5 +89,7 @@ export function scanEpicHierarchy(tasksDir: string): EpicHierarchy {
     const parent = taskEpicOf(id, content);
     if (parent) epicOf.set(id, parent);
   }
-  return { epicOf, epics };
+  const hierarchy = { epicOf, epics };
+  cache = { key: tasksDir, maxMtime, hierarchy };
+  return hierarchy;
 }
