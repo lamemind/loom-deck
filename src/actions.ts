@@ -43,6 +43,7 @@ import {
   spawnDeckFork,
   spawnDeckResume,
   spawnTerminal,
+  fallbackTitle,
   CLAUDE_CMD,
   DECK_RUN,
   MODEL_DEFAULT,
@@ -153,6 +154,12 @@ export function useDeckActions({
   // il campo è editabile: quello che l'utente legge è quello che parte. Assente
   // per gli acceleratori della lista, che non hanno un campo da cui prenderlo e
   // viaggiano col simbolo.
+  // T150 — il vuoto si riempie QUI, prima che i due canali si separino: il
+  // sidecar (`appendNote`, sotto) e il titolo tab (`--title-note`, dentro
+  // `spawnDeck`) devono vedere lo STESSO valore, o le due superfici mostrano
+  // nomi diversi per la stessa conversazione. Vale anche sugli acceleratori
+  // della lista (^K/^P/^R), che passano di qui con `spawnNote` sul proprio
+  // default '' (P1 preflight) — nascono quindi titolati anche loro.
   function spawnForTask(
     id: string,
     kind: PromptKind,
@@ -161,9 +168,10 @@ export function useDeckActions({
     prompt?: string,
   ) {
     const sid = randomUUID();
+    const note = spawnNote || fallbackTitle(tasksDir, id, kind) || '';
     appendTaskBinding(cwd, sid, id);
-    if (spawnNote) appendNote(cwd, sid, spawnNote);
-    const spawned = spawnDeck(id, cwd, sid, kind, modelKind, spawnNote, prompt);
+    if (note) appendNote(cwd, sid, note);
+    const spawned = spawnDeck(id, cwd, sid, kind, modelKind, note, prompt);
     spawned.child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
     // Il modello resta SEMPRE visibile anche quando è il default, perché è un
     // argomento esplicito del comando (T108): gli acceleratori della lista non
