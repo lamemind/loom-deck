@@ -176,7 +176,7 @@ export function SessionPreview({
           blocco lo spazio c'è e il prefisso non si ripete su N righe. */}
       <Text bold wrap="truncate-end">
         <Text color="cyan">{s.sessionId.slice(0, SID_CHARS)}</Text>{' '}
-        {note ? <Text color="yellow">«{note}» </Text> : null}
+        {note ? <Text color="yellow">{note} </Text> : null}
         <Text dimColor={Boolean(note)}>{s.title}</Text>
       </Text>
       {/* La provenienza va IN CODA alla riga meta esistente, non su una riga

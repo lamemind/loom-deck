@@ -279,11 +279,11 @@ test('titolo tab senza task: solo la label, nessun suffisso', () => {
 // è l'unico testo libero che entra in un titolo destinato a viaggiare dentro
 // apici singoli in `bash -lc`, quindi un apice che sopravvive non è un titolo
 // brutto, è un comando in-tab rotto.
-test('--title-note: suffisso «nota» dopo la task, label intatta in testa', () => {
+test('--title-note: suffisso nota dopo la task, label intatta in testa', () => {
   const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', 'Puppa'], {
     LOOM_DECK_WORKDIR: labeledWd,
   });
-  assert.ok(cmd.includes("--name '🧵 demo · T64 «Puppa»'"), `titolo inatteso: ${cmd}`);
+  assert.ok(cmd.includes("--name '🧵 demo · T64 Puppa'"), `titolo inatteso: ${cmd}`);
 });
 
 test('--title-note: alfabeto ridotto, apici e metacaratteri spariti', () => {
@@ -294,25 +294,24 @@ test('--title-note: alfabeto ridotto, apici e metacaratteri spariti', () => {
   const title = cmd.match(/--name '([^']*)'/)?.[1];
   assert.ok(title, `titolo non estraibile (apice sopravvissuto?): ${cmd}`);
   // Solo lettere/cifre/accentate/spazio/-/_ , spazi collassati.
-  assert.equal(title, '🧵 demo · T64 «lordine conta id x rm -rf àèéìòù spazi__ok»');
+  assert.equal(title, '🧵 demo · T64 lordine conta id x rm -rf àèéìòù spazi__ok');
   // Il comando resta una riga sola: nessun `;` o `&` che spezzi in due comandi.
   assert.ok(!/[;&`$]/.test(title!), `metacarattere superstite: ${title}`);
 });
 
-test('--title-note: nota tutta scartata → nessun «» a vuoto', () => {
+test('--title-note: nota tutta scartata → nessun suffisso a vuoto', () => {
   const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', '🔥🔥 !!! 🔥'], {
     LOOM_DECK_WORKDIR: labeledWd,
   });
   assert.ok(cmd.includes("--name '🧵 demo · T64'"), `titolo inatteso: ${cmd}`);
-  assert.ok(!cmd.includes('«'), `suffisso vuoto emesso: ${cmd}`);
 });
 
 test('--title-note: cap a 60 caratteri, taglio non a metà di un multibyte', () => {
   const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', 'à'.repeat(80)], {
     LOOM_DECK_WORKDIR: labeledWd,
   });
-  const nota = cmd.match(/«([^»]*)»/)?.[1] ?? '';
-  assert.equal(nota, 'à'.repeat(60));
+  const title = cmd.match(/--name '([^']*)'/)?.[1] ?? '';
+  assert.equal(title, `🧵 demo · T64 ${'à'.repeat(60)}`);
 });
 
 // T111 — la nota alla NASCITA. Fino a qui ogni caso `--title-note` passava da
@@ -325,7 +324,7 @@ test('--title-note su sessione nuova: titolo annotato e prompt della task intatt
     ['T111', '--session-id', SID, '--prompt-kind', 'preflight', '--title-note', 'baluba'],
     { LOOM_DECK_WORKDIR: labeledWd },
   );
-  assert.ok(cmd.includes("--name '🧵 demo · T111 «baluba»'"), `titolo inatteso: ${cmd}`);
+  assert.ok(cmd.includes("--name '🧵 demo · T111 baluba'"), `titolo inatteso: ${cmd}`);
   // La label resta in TESTA: il match compass è un `.includes` sulla chiave, e
   // una nota che si infilasse prima la spezzerebbe.
   assert.ok(cmd.includes("--name '🧵 demo · "), `label spostata: ${cmd}`);
@@ -338,7 +337,7 @@ test('--title-note con --fork: il suffisso fork resta in coda', () => {
     ['T64', '--resume', SID, '--fork', '--title-note', 'ramo'],
     { LOOM_DECK_WORKDIR: labeledWd },
   );
-  assert.ok(cmd.includes("--name '🧵 demo · T64 «ramo» · fork'"), `titolo inatteso: ${cmd}`);
+  assert.ok(cmd.includes("--name '🧵 demo · T64 ramo · fork'"), `titolo inatteso: ${cmd}`);
 });
 
 // Profilo di stato per compass. Il canale è invisibile al resto della suite: il

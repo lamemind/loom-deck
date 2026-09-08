@@ -129,9 +129,11 @@ const MIN_NOTE = 14;
 export function rowLabel(text: string, note: string | undefined, budget: number): RowLabel {
   if (!note) return { note: '', rest: cut(text, Math.max(0, budget)) };
 
-  // 2 colonne per i caporali « », 1 per lo spazio prima del residuo.
+  // 1 colonna per lo spazio prima del residuo (T150 — la nota non porta più i
+  // caporali « » che decoravano il render, quindi non riserva più le loro 2
+  // colonne).
   const rest = text;
-  const noteBudget = Math.max(0, budget - 2);
+  const noteBudget = Math.max(0, budget);
   if (!rest) return { note: cut(note, noteBudget), rest: '' };
 
   // Il `min` col budget totale non è ridondante: su un pane strettissimo

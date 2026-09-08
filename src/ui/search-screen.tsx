@@ -191,14 +191,15 @@ export function SearchScreen({
             const bound = bindings.get(s.sessionId);
             const rowNote = sessionNotes.get(s.sessionId);
             const noteShown = rowNote ? cut(rowNote, 24) : '';
-            // `+3` = i due caporali e lo spazio che li separa dall'etichetta.
-            // Il pavimento non è cosmetico: senza, un terminale stretto manda
-            // l'argomento di `cut` sotto zero, cioè un budget negativo.
-            // La nota si misura con `termWidth`, non con `.length`: contiene
-            // testo umano, emoji compresi.
+            // `+1` = lo spazio che separa la nota dall'etichetta (T150 — niente
+            // più caporali « » a decorarla). Il pavimento non è cosmetico:
+            // senza, un terminale stretto manda l'argomento di `cut` sotto
+            // zero, cioè un budget negativo. La nota si misura con
+            // `termWidth`, non con `.length`: contiene testo umano, emoji
+            // compresi.
             const restWidth = Math.max(
               8,
-              searchTitleWidth(columns) - (noteShown ? termWidth(noteShown) + 3 : 0),
+              searchTitleWidth(columns) - (noteShown ? termWidth(noteShown) + 1 : 0),
             );
             return (
               <Text key={row.key} inverse={sel} wrap="truncate-end">
@@ -212,7 +213,7 @@ export function SearchScreen({
                     è perché è il nome con cui riconosci quella conversazione, e
                     non ritrovarla qui col nome che ha in lista sarebbe il
                     difetto peggiore proprio dentro la ricerca. */}
-                {noteShown ? <Text color="yellow" bold>«{noteShown}» </Text> : null}
+                {noteShown ? <Text color="yellow" bold>{noteShown} </Text> : null}
                 <Text dimColor={Boolean(noteShown)}>
                   {cut(conversationLabel(s, projectCore, bound), restWidth)}
                 </Text>

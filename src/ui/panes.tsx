@@ -596,7 +596,7 @@ export function SessionsPane({
                   termWidth(`${WARN} pin stale `) +
                   SID_CHARS +
                   (staleTask ? termWidth(staleTask) + 1 : 0) +
-                  3 /* spazio + caporali */),
+                  1 /* spazio prima della nota */),
             );
             return (
               <Text
@@ -613,7 +613,7 @@ export function SessionsPane({
                 {/* T53 — su una riga stale la nota è l'UNICA cosa rimasta che
                     dica cosa fosse quella conversazione: il transcript non c'è
                     più, quindi non esiste titolo né primo prompt da mostrare. */}
-                {staleNote ? <Text color="yellow"> «{cut(staleNote, staleW)}»</Text> : null}
+                {staleNote ? <Text color="yellow"> {cut(staleNote, staleW)}</Text> : null}
               </Text>
             );
           }
@@ -682,7 +682,7 @@ export function SessionsPane({
             inner,
           );
           const used =
-            (label.note ? termWidth(label.note) + 2 : 0) +
+            (label.note ? termWidth(label.note) : 0) +
             (label.note && label.rest ? 1 : 0) +
             termWidth(label.rest);
           return (
@@ -718,7 +718,7 @@ export function SessionsPane({
               ) : null}
               {forkMark ? <Text color="magenta">{forkMark}</Text> : null}
               {label.note ? (
-                <Text color="yellow" bold>«{label.note}»</Text>
+                <Text color="yellow" bold>{label.note}</Text>
               ) : null}
               {label.note && label.rest ? ' ' : null}
               {label.rest ? <Text dimColor={Boolean(label.note)}>{label.rest}</Text> : null}

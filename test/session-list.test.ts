@@ -157,15 +157,17 @@ test('con nota e nessun resto: la nota prende tutto il budget', () => {
 });
 
 test('budget stretto: il resto sparisce invece di ridursi a un moncone', () => {
-  const l = rowLabel('T52', 'una nota parecchio lunga da mostrare', 22);
+  const l = rowLabel('T52', 'una nota parecchio lunga da mostrare', 20);
   assert.equal(l.rest, '', 'sotto MIN_REST il resto non vale la riga');
-  assert.ok(l.note.length <= 20, `nota entro budget-2, invece ${l.note.length}`);
+  assert.ok(l.note.length <= 20, `nota entro budget, invece ${l.note.length}`);
 });
 
-test('budget stretto: nota + caporali non superano MAI il budget (riga a capo = altezza sforata)', () => {
+// T150 — la nota non porta più i caporali « » (decorazione del render, tolta
+// dal budget): resta solo lo spazio che la separa dal residuo.
+test('budget stretto: nota + spazio di separazione non superano MAI il budget (riga a capo = altezza sforata)', () => {
   for (const budget of [0, 1, 2, 4, 8, 12, 16, 30, 44]) {
     const l = rowLabel('T52', 'nota molto molto lunga che non entra', budget);
-    const used = (l.note ? l.note.length + 2 : 0) + (l.rest ? l.rest.length + 1 : 0);
+    const used = (l.note ? l.note.length : 0) + (l.rest ? l.rest.length + 1 : 0);
     assert.ok(used <= budget, `budget ${budget}: usate ${used} colonne`);
   }
 });

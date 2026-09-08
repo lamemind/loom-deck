@@ -183,7 +183,7 @@ USAGE="uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <kind>] [--sessio
   --model        modello della sessione: fable|opus|sonnet|haiku (default: opus)
                  valore ignoto → fallback sul default, con avviso su stderr
 
-  --title-note   nota della conversazione, appesa al titolo tab come «nota»
+  --title-note   nota della conversazione, appesa al titolo tab
                  (ridotta a lettere/cifre/spazi/-/_, cap 60 char)"
 
 if [[ $NO_TASK -eq 1 && -n "$TASK" ]]; then
@@ -317,15 +317,16 @@ if [[ -n "$_cfg" ]]; then
 fi
 # Suffisso nota (T64): distingue fra loro le tab di più conversazioni sulla
 # STESSA task, che altrimenti condividono un titolo identico (`label · T81`) —
-# la nota è già la maniglia con cui l'utente le distingue in lista, e le stesse
-# `«…»` della lista la rendono riconoscibile a colpo d'occhio anche nella tab
-# bar. In coda per la solita ragione degli altri suffissi: il match compass è
-# `.includes(label)`, la label deve restare intatta in TESTA.
-# Nota ridotta a vuoto (era tutta emoji/punteggiatura) → nessun suffisso, non
-# `«»` a vuoto.
+# la nota è già la maniglia con cui l'utente le distingue in lista. In coda per
+# la solita ragione degli altri suffissi: il match compass è `.includes(label)`,
+# la label deve restare intatta in TESTA.
+# T150 — nudo, senza i caporali `«…»` che lo decoravano: la nota di fallback
+# generata dal deck quando il campo è vuoto passa dallo stesso alfabeto ridotto
+# e non ha bisogno di una cornice per distinguersi da un titolo scritto a mano.
+# Nota ridotta a vuoto (era tutta emoji/punteggiatura) → nessun suffisso.
 if [[ -n "$TITLE_NOTE" ]]; then
   _note="$(_sane_note "$TITLE_NOTE")"
-  [[ -n "$_note" ]] && TITLE="${TITLE} «${_note}»"
+  [[ -n "$_note" ]] && TITLE="${TITLE} ${_note}"
 fi
 # Suffisso fork (T28): un ramo eredita task e label dell'origine, quindi senza
 # marcatore le due tab risulterebbero omonime nella stessa window. Suffisso e
