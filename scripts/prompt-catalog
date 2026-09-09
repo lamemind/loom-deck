@@ -3,7 +3,7 @@
 # Formato a righe: <kind><TAB><template><TAB><modello>, con `{TASK}`
 # interpolato col TaskID. Righe vuote e righe che iniziano con `#` sono
 # commenti. Il modello è OPZIONALE: una riga a due colonne resta leggibile e
-# chi la consulta cade sul proprio default (`MODEL_DEFAULT`/`opus`) — il campo
+# chi la consulta cade sul proprio default (`MODEL_DEFAULT`/`fable`) — il campo
 # esiste per i kind bound a una skill (T152), non per ogni riga del file.
 #
 # Perché un file dati e non un `case` dentro deck-run: due lati hanno bisogno
