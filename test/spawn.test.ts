@@ -10,6 +10,7 @@ import {
   cleanTasksArgs,
   cleanTasksPrompt,
   deckArgs,
+  emptyArgs,
   fallbackTitle,
   forkArgs,
   onInTabCommand,
@@ -143,6 +144,14 @@ test('resumeArgs porta --model con qualunque valore il chiamante scelga', () => 
   for (const m of ['fable', 'opus', 'sonnet', 'haiku'] as const) {
     assert.ok(resumeArgs('T81', 'sid-1', m).includes('--model'));
     assert.ok(resumeArgs('T81', 'sid-1', m).includes(m));
+  }
+});
+
+// T154 — la nuda (`c`) porta il modello SEMPRE, come deckArgs/resumeArgs/forkArgs.
+test('emptyArgs porta sempre --model, anche sul valore di default', () => {
+  assert.deepEqual(emptyArgs('fable'), ['--no-task', '--model', 'fable']);
+  for (const m of ['fable', 'opus', 'sonnet', 'haiku'] as const) {
+    assert.deepEqual(emptyArgs(m), ['--no-task', '--model', m]);
   }
 });
 

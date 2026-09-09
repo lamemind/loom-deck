@@ -220,26 +220,31 @@ export function useDeckActions({
     noteSpawn(spawned);
   }
 
-  /** T148 — `m`: scorre il modello con cui la sessione selezionata riprenderà
-   *  al successivo del catalogo. Stesso guard di `f` (serve un transcript
-   *  vero, non basta una riga selezionata): su una pinnata stale il blocco
-   *  preview non esiste — non c'è un bottone da cambiare. Nessuna nota di
-   *  conferma sul successo — il feedback è il bottone stesso, già a schermo
-   *  nella preview. */
+  /** T148/T154(P2,P3) — `m` col bersaglio RESUME: `input.ts` instrada qui solo
+   *  quando il focus è sulle sessioni E una riga è selezionata (P2), quindi il
+   *  solo caso residuo è il pin STALE — l'id c'è ma il transcript no, quindi
+   *  non c'è un bottone da cambiare (P3): resta sul selettore di resume con la
+   *  propria nota, invece di spostare di soppiatto il selettore della nuda
+   *  mentre il caret è su una riga sessione.
+   *
+   *  La nota sul SUCCESSO nomina bersaglio e valore (`m → resume: opus`, P2):
+   *  rovescia la scelta di T148 di non scriverne nessuna, perché lì `m` aveva
+   *  un bersaglio solo e il bottone che cambiava era l'unico a schermo — da
+   *  T154 i due selettori possono stare a schermo insieme. */
   function cycleResumeModel() {
-    if (model.focus !== 'sessions') {
-      setNote('m → modello: seleziona una sessione (→ per il pane)');
-      return;
-    }
     if (!model.selSessionObj) {
-      setNote(
-        model.selSessionId
-          ? 'm → pin stale: nessun modello da cambiare'
-          : 'm → nessuna sessione selezionata',
-      );
+      setNote('m → pin stale: nessun modello da cambiare');
       return;
     }
-    model.cycleResumeModel();
+    const next = model.cycleResumeModel();
+    setNote(`m → resume: ${next}`);
+  }
+
+  /** T154 — `m` col bersaglio NUDA (`c`): il selettore che governa sta sempre
+   *  a schermo sulla riga launch, quindi il tasto non è mai inerte qui. */
+  function cycleBareModel() {
+    const next = model.cycleBareModel();
+    setNote(`m → nuda: ${next}`);
   }
 
   // T53 — scrive il sidecar e ricarica subito, senza attendere il tick del poll
@@ -394,9 +399,11 @@ export function useDeckActions({
     noteSpawn(spawned);
   }
 
-  /** `c` — sessione claude a mani nude, senza task e senza prompt. */
+  /** `c` — sessione claude a mani nude, senza task e senza prompt. T154 — il
+   *  modello è quello del selettore proprio della nuda (`model.bareModel`),
+   *  passato SEMPRE nell'argv anche sul default. */
   function openClaude() {
-    const spawned = spawnClaudeEmpty(cwd);
+    const spawned = spawnClaudeEmpty(cwd, model.bareModel);
     spawned.child.on('error', () => setNote(`⚠ c → spawn claude fallito (${DECK_RUN})`));
     noteSpawn(spawned);
   }
@@ -438,6 +445,7 @@ export function useDeckActions({
     spawnTaskSession,
     resumeSession,
     cycleResumeModel,
+    cycleBareModel,
     writeNote,
     assignSession,
     forkSession,

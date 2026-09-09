@@ -424,8 +424,18 @@ export function spawnDeckFork(
 // di spawnDeck: i tre argomenti mancano tutti insieme, un `if` per ciascuno
 // sporcherebbe il percorso bound. Il titolo tab resta la label loom — lo mette
 // deck-run, perché il match compass è window-level e non sa nulla di task.
-export function spawnClaudeEmpty(cwd: string): Spawned {
-  return launchDeckRun(['--no-task'], cwd);
+//
+// T154 — il modello viaggia SEMPRE nell'argv (`emptyArgs`), anche sul default:
+// prima di questa task il tasto `c` non lo passava affatto, e chi lo premeva
+// non sceglieva né vedeva quale modello `deck-run` avrebbe risolto da sé.
+// Estratta come i suoi fratelli (`deckArgs`/`resumeArgs`/`forkArgs`): tutti i
+// costruttori di argv con un test proprio lo sono (P4 preflight).
+export function emptyArgs(model: ModelKind): string[] {
+  return ['--no-task', '--model', model];
+}
+
+export function spawnClaudeEmpty(cwd: string, model: ModelKind): Spawned {
+  return launchDeckRun(emptyArgs(model), cwd);
 }
 
 /**

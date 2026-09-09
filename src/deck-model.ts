@@ -209,6 +209,12 @@ export function useDeckModel({
   // tornare su una riga già visitata NON ricorda la scelta fatta lì — è lo
   // stesso costo che T108 ha già accettato per il selettore del detail.
   const [resumeModel, setResumeModel] = useState<ModelKind>(MODEL_DEFAULT);
+  // T154 — il modello con cui la sessione NUDA (`c`) apre. Stato PROPRIO,
+  // indipendente da `resumeModel`: non segue nessuna riga selezionata (`c` non
+  // ha una riga, è un'azione sulla surface del cappello) e quindi non si
+  // azzera mai — resta quello scelto finché non si sceglie altro, per tutta la
+  // vita del deck.
+  const [bareModel, setBareModel] = useState<ModelKind>(MODEL_DEFAULT);
   // T39 — vista corrente (filtri + sort). Vive nel modello e non nell'hook dei
   // modali che la editano: è ciò che `applyView` consuma per produrre la lista,
   // è persistita su disco e la rilegge il tasto `w`. È stato del modello che due
@@ -534,10 +540,23 @@ export function useDeckModel({
    *  valore SUCCESSIVO del catalogo (ciclico), gemella di `cycleView` ma su un
    *  asse diverso: qui non c'è una vista da cambiare, solo un valore da far
    *  avanzare. Il guard (nessuna sessione, focus altrove) sta nell'attuatore
-   *  `actions.ts`, come per `f`/`p`: qui c'è solo la meccanica dello stato. */
-  function cycleResumeModel() {
+   *  `actions.ts`, come per `f`/`p`: qui c'è solo la meccanica dello stato.
+   *  T154/P2 — ritorna il valore NUOVO: il chiamante lo scrive nella nota di
+   *  conferma prima che il render con lo stato aggiornato arrivi. */
+  function cycleResumeModel(): ModelKind {
     const next = MODELS[(MODELS.indexOf(resumeModel) + 1) % MODELS.length]!;
     setResumeModel(next);
+    return next;
+  }
+
+  /** T154 — gemella di `cycleResumeModel`, sullo stato della sessione NUDA:
+   *  `m` ci finisce quando il focus non è su una riga sessione vera (P2, D4/D5
+   *  degli AC). Nessun guard qui: il bersaglio non è mai inerte — il selettore
+   *  che governa è sempre a schermo sulla riga launch. */
+  function cycleBareModel(): ModelKind {
+    const next = MODELS[(MODELS.indexOf(bareModel) + 1) % MODELS.length]!;
+    setBareModel(next);
+    return next;
   }
 
   /**
@@ -621,6 +640,8 @@ export function useDeckModel({
     sessionCols,
     resumeModel,
     cycleResumeModel,
+    bareModel,
+    cycleBareModel,
     // derivazioni del pane inbox
     rightPane,
     inboxScanned: inbox.scanned,

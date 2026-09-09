@@ -502,9 +502,15 @@ export function useDeckInput({
       // selezionata del pane sessioni.
       actions.togglePin();
     } else if (input === 'm') {
-      // T148 — scorre il modello di resume/fork della riga selezionata,
-      // gemella di `f`/`p`: azione immediata, nessun modale.
-      actions.cycleResumeModel();
+      // T148/T154 — bersaglio deciso dal focus E dalla selezione (P2): con
+      // una riga sessioni selezionata (stale compresa, P3) scorre il modello
+      // di resume/fork di quella riga; altrove (focus task, focus inbox,
+      // pane sessioni senza selezione) scorre il modello della sessione nuda.
+      if (model.focus === 'sessions' && model.selSessionId) {
+        actions.cycleResumeModel();
+      } else {
+        actions.cycleBareModel();
+      }
     } else if (input === 'N') {
       // T53 — nota sulla conversazione selezionata. MAIUSCOLA perché apre un
       // modale: nel deck le minuscole sono azioni immediate (`f` fork, `p` pin,
