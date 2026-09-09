@@ -74,7 +74,7 @@ Regola unica, senza eccezioni — pensata per reggere l'aggiunta di nuove azioni
 | `⏎` | azione primaria del pane | Tasks → apre il **detail** della task selezionata · Sessions → riprende (`claude --resume`) la sessione selezionata |
 | **MAIUSCOLA** | **apre un modale** | cattura tutti i tasti; `esc` annulla, non esce |
 | minuscola | azione immediata, one-shot | |
-| `CTRL`+lettera | idiomi universali, toggle dentro i modali di testo, varianti di un'azione | `^F` = find, come ovunque · `^K`/`^P`/`^R` = spawn con un altro prompt · `^G`/`^O` = genera/apri il project status |
+| `CTRL`+lettera | idiomi universali, toggle dentro i modali di testo, varianti di un'azione | `^F` = find, come ovunque · `^K`/`^P`/`^R` = spawn con un altro prompt · `^G`/`^O` = genera/apri il project status · `^U` = update del gitlink |
 | `1`…`9` | voce `launch` n-esima del progetto | da `.claude/loom-works.json` |
 | `esc` | chiude l'overlay aperto | in modalità normale è inerte: **nessuna lettera chiude il deck** |
 | `^C` `^C` | chiude il deck | la prima pressione avverte in riga di stato, la seconda entro **5 secondi** esce; passata la finestra si riparte dall'avviso. Da dentro un modale il primo `^C` riporta alla lista — l'avviso vive nella riga di stato, che le schermate a pieno frame non disegnano |
@@ -96,6 +96,7 @@ Assegnazioni correnti:
 | modale | `CANC` | **elimina** — la task selezionata; su una riga meta della vista `archiviabili`, l'intero insieme |
 | modale | `^O` | apre il **project status** in cache (viewer fullscreen) |
 | immediata | `^G` | **genera** il project status (skill headless, dura minuti) |
+| immediata | `^U` | **bumpa il gitlink** dei submodule idonei (solo su un progetto con `.gitmodules`) |
 | immediata | `^K` | spawna la task selezionata col prompt di **recap** |
 | immediata | `^P` | spawna la task selezionata sul **preflight** |
 | immediata | `^R` | spawna la task selezionata in **esecuzione** |
@@ -108,7 +109,7 @@ Assegnazioni correnti:
 Il footer è **due righe con due nature diverse**:
 
 ```
-⏎ detail · ^K/^P/^R spawn · ^G genera status · ^O apri status · ^F cerca · C nuova · E edit · S sort · F filtri · w salva
+⏎ detail · ^K/^P/^R spawn · ^G genera status · ^O apri status · ^U bumpa gitlink · ^F cerca · C nuova · E edit · S sort · F filtri · w salva
 t 💻 · c 🤖 · 1 📝 codium · 2 ☕ idea
 ```
 
@@ -273,6 +274,38 @@ Il recap vive in un file markdown sotto `/tmp/loom-deck-status-<uid>/`, col nome
 `^O` apre un **viewer fullscreen** con lo stesso markdown reso del detail della task: `↑↓` riga, `PgUp`/`PgDn` pagina, `g`/`G` estremi, `esc` chiude. Aperto mentre una generazione gira, mostra la versione precedente e lo **dichiara** nella riga meta — il viewer è una fotografia e non si aggiorna da sé quando la generazione finisce.
 
 A generazione finita arriva una notifica desktop (`notify-send`): la generazione dura minuti e nel frattempo si guarda altrove, e la notifica di GNOME persiste nel cassetto — cosa che un suono non farebbe. Senza `notify-send` installato non succede **niente**: nessuna riga, nessun messaggio. L'assenza di un binario è una proprietà stabile della macchina, non un evento, e segnalarla a ogni generazione sarebbe rumore ripetuto su una funzione accessoria mentre il deliverable vero è arrivato comunque.
+
+### `^U` — il gitlink dei submodule
+
+Su un progetto **cappello** (un repo che aggrega altri repo come submodule) ogni membro è pinnato a un commit fisso. Quando il membro avanza — un commit nel deck, nel plugin — quel puntatore resta indietro finché qualcuno non lo bumpa, e il gesto vive nella memoria di chi committa. Il deck lo mette sotto gli occhi e lo rende un tasto.
+
+L'indicatore sta in coda alla riga della legenda, accanto agli altri due:
+
+```
+gitlink 2   wrap 77   [ Inbox 📄 3/1/2 ]
+```
+
+| Corpo | Significato |
+|---|---|
+| _(assente)_ | il progetto non ha `.gitmodules`: nessun timer, nessuno spawn, nessuna colonna spesa |
+| `missing` | prima misura non ancora tornata |
+| `?` | plugin loom-works non installato su questa macchina, o script in errore |
+| `ok` | ogni membro coincide col proprio gitlink |
+| `2` | due membri col checkout diverso dal gitlink |
+| `⚠` in coda | l'ultimo bump è fallito, **oppure** un membro richiede un gesto che il bump non fa |
+
+Nel numero entrano solo i membri che un bump può sistemare. Un submodule non inizializzato o in conflitto di merge resta fuori e si dice col glifo: sommarlo darebbe un contatore che il tasto non porta mai a zero, e un contatore così smette di essere letto.
+
+**`^U` bumpa**, senza conferma: il commit è locale e si annulla con un `git reset` che non tocca nessun remote. Il deck non pusha il cappello — quel gesto resta al flusso normale, perché un gitlink pushato per sbaglio è già nella copia di chiunque abbia pullato.
+
+Il deck **non classifica da sé**: spawna `bump-gitlink.sh` del plugin (in `--dry-run` per la misura, nudo per il bump) e mostra il TSV che ne esce. Nessuna sessione Claude in mezzo — è un `execFile` con esito sincrono, come il contatore inbox e lo scan hard-wrap. Lo stesso script si lancia a mano da shell, ed è lì che vivono le due guardie che rendono il bump sicuro:
+
+- **il verso** — `git submodule status` marca con `+` un checkout diverso dal gitlink **in entrambi i versi**, senza distinguerli. Un cappello pullato senza `git submodule update` ha il checkout più vecchio del gitlink e porta lo stesso `+`: bumparlo pinnerebbe il cappello a un commit precedente. Quel membro si salta, e la riga di stato nomina `git submodule update`.
+- **il remote** — il cappello può pinnare solo commit già raggiungibili dal remote del membro. Un gitlink verso un commit locale produce un cappello che si clona ma non si ricostruisce, e il difetto è invisibile a chi lo introduce: nella sua copia quel commit esiste. Quel membro si salta, e la riga di stato nomina `git -C <membro> push`.
+
+La riga di stato dopo il tasto riporta **un esito per membro**, non un totale: nel caso misto — uno pushato, uno no — un riassunto direbbe «1 bumpato» e lascerebbe fuori proprio il comando che sblocca l'altro.
+
+La misura gira ogni 30 secondi e subito dopo un bump. Il `--dry-run` non contatta la rete: il `fetch` che precede la guardia sul remote gira solo nel bump, quindi il contatore può dire «bumpabile» di un commit che il bump poi salta perché sparito dal remote. La guardia sta sull'azione, e un contatore non è un'autorizzazione.
 
 ## Vista: filtri e ordinamenti
 
