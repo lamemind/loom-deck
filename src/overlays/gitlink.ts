@@ -9,7 +9,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   attentionCount,
   bumpableCount,
+  bumpGitlink,
   disalignedCount,
+  gitlinkNote,
   GITLINK_SCAN_INTERVAL_MS,
   hasGitmodules,
   scanGitlink,
@@ -19,10 +21,11 @@ import {
 export interface GitlinkDeps {
   /** Project root: la radice su cui gira `git submodule status`. */
   cwd: string;
+  setNote: (s: string) => void;
 }
 
 export function useGitlink(deps: GitlinkDeps) {
-  const { cwd } = deps;
+  const { cwd, setNote } = deps;
 
   /**
    * IL GATE. Senza `.gitmodules` il progetto non ha submodule, quindi non c'è
@@ -43,6 +46,12 @@ export function useGitlink(deps: GitlinkDeps) {
    *  «ho misurato e sono tutti allineati», che a schermo sono due cose diverse. */
   const [scanned, setScanned] = useState(false);
   const [epoch, setEpoch] = useState(0);
+  const [bumping, setBumping] = useState(false);
+  /** L'ultimo bump si è fermato prima di committare. STICKY: un giro di misura
+   *  riuscito non lo azzera — dice com'è andata l'ultima AZIONE, che è un fatto
+   *  diverso da com'è andata l'ultima misura, e i due restano entrambi veri.
+   *  Stessa regola del `failed` del project status. */
+  const [failed, setFailed] = useState(false);
 
   // Il flag di corsa sta in un ref e non in stato, come in `useInboxScan`: due
   // richieste ravvicinate girano nello stesso tick di React, e un valore di
@@ -93,14 +102,75 @@ export function useGitlink(deps: GitlinkDeps) {
     setEpoch((e) => e + 1);
   }, []);
 
+  const count = disalignedCount(members);
+  const bumpable = bumpableCount(members);
+
+  /**
+   * Il bump vero — l'unica azione del sensore.
+   *
+   * NESSUNA CONFERMA (P6 preflight): il commit è locale e si annulla con un
+   * `git reset` che non tocca nessun remote, e lo script non pusha il cappello.
+   * È la stessa forma di `^G`, che genera senza chiedere.
+   *
+   * I quattro rifiuti dicono SEMPRE perché (AC: il tasto su zero disallineati
+   * non spawna niente e lo dice). Un tasto che non facesse niente in silenzio
+   * sarebbe indistinguibile da un binding mancante.
+   */
+  function bump() {
+    if (!enabled) {
+      setNote('^U → questo progetto non ha submodule: nessun gitlink da bumpare');
+      return;
+    }
+    if (busy.current || bumping) {
+      setNote('^U → bump del gitlink già in corso');
+      return;
+    }
+    if (!scanned) {
+      setNote('^U → gitlink non ancora misurato');
+      return;
+    }
+    if (bumpable === 0) {
+      const why = gitlinkNote(members);
+      setNote(
+        count === 0
+          ? '^U → gitlink già allineato: niente da bumpare'
+          : `^U → nessun membro bumpabile · ${why}`,
+      );
+      return;
+    }
+    busy.current = true;
+    setBumping(true);
+    setNote(`⏳ bump del gitlink su ${bumpable} membro${bumpable > 1 ? 'i' : ''}…`);
+    bumpGitlink(cwd).then((res) => {
+      busy.current = false;
+      if (!alive.current) return;
+      setBumping(false);
+      setOk(res.ok);
+      setScanned(true);
+      setFailed(!res.ok);
+      if (res.members.length > 0) setMembers(res.members);
+      const note = gitlinkNote(res.members);
+      setNote(note || (res.ok ? '✔ gitlink: nessun membro bumpato' : '⚠ bump del gitlink fallito'));
+      // Rimisura: l'output del bump porta già gli stati nuovi, ma il giro
+      // successivo li conferma da `git submodule status` invece che dalla
+      // memoria di ciò che si è appena fatto — ed è ciò che fa scendere il
+      // contatore senza riavviare il deck anche quando il commit ha toccato più
+      // di quanto lo script credeva.
+      refresh();
+    });
+  }
+
   return {
     enabled,
     members,
     ok,
     scanned,
-    count: disalignedCount(members),
-    bumpable: bumpableCount(members),
+    bumping,
+    failed,
+    count,
+    bumpable,
     attention: attentionCount(members),
+    bump,
     refresh,
   };
 }

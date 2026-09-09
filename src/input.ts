@@ -46,6 +46,7 @@ import type { useSearchOverlay } from './overlays/search.js';
 import type { useProjectStatus } from './overlays/status.js';
 import type { useInboxOverlay } from './overlays/inbox.js';
 import type { useWrapOverlay } from './overlays/wrap.js';
+import type { useGitlink } from './overlays/gitlink.js';
 import type { usePurgeOverlay } from './overlays/purge.js';
 import type { useTextModals, useViewModals } from './overlays/modals.js';
 
@@ -84,6 +85,9 @@ export type DeckOverlays = {
   status: ReturnType<typeof useProjectStatus>;
   inbox: ReturnType<typeof useInboxOverlay>;
   wrap: ReturnType<typeof useWrapOverlay>;
+  /** T155 — non è un modo: non compare in `MODE_KEYS` perché non cattura
+   *  niente. Sta fra gli overlay per il solo `^U`. */
+  gitlink: ReturnType<typeof useGitlink>;
   purge: ReturnType<typeof usePurgeOverlay>;
   view: ReturnType<typeof useViewModals>;
   text: ReturnType<typeof useTextModals>;
@@ -377,6 +381,18 @@ export function useDeckInput({
         overlays.wrap.open();
       } else if (input === 'e') {
         overlays.wrap.scan();
+      } else if (input === 'u') {
+        // T155/P5 preflight — `^U` (update del gitlink) bumpa i submodule
+        // idonei. Non è la coppia genera/apri di `^G`/`^O` e `^W`/`^E`: qui non
+        // c'è nessuna schermata da aprire, la misura gira da sé ogni 30 secondi
+        // e l'unico gesto è l'azione. Nessuna conferma, perché il commit è
+        // locale e reversibile (P6).
+        //
+        // `^B` era la mnemonica migliore per «bump» ed è di T134 (scambia i due
+        // pane dello slot destro). `^U` svuota un campo dentro i modi capturing,
+        // ma quelli consumano l'input per intero e non vedono mai questo ramo —
+        // stesso doppio significato per contesto già in esercizio su `^F`.
+        overlays.gitlink.bump();
       } else if (input === 'b') {
         // T134/D8 preflight — `^B` (box/bacheca) scambia i due pane dello slot
         // destro. Non è un modale né una schermata: il pane resta uno dei due

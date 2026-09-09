@@ -147,6 +147,36 @@ export function attentionCount(members: readonly GitlinkMember[]): number {
 }
 
 /**
+ * Gli stati che il bump ha SALTATO: il membro è disallineato ma una delle due
+ * guardie l'ha fermato, e il rimedio non è un bump ma il gesto che il dettaglio
+ * nomina.
+ */
+const SKIPPED = new Set<GitlinkState>(['indietro', 'non-pushato', 'remote-irraggiungibile']);
+
+/**
+ * La riga di stato dopo un bump: un esito per membro, non un totale.
+ *
+ * Il caso che rende necessario nominarli è il MISTO — un membro pushato e uno
+ * no. Lì un messaggio riassuntivo direbbe «1 bumpato» e lascerebbe fuori proprio
+ * l'informazione che serve ad agire: quale membro è rimasto indietro e con quale
+ * comando lo si sblocca. Il gesto arriva già scritto dallo script, che è dove la
+ * guardia lo ha deciso: comporlo qui darebbe due frasi da tenere allineate.
+ *
+ * I bumpati vengono per primi — è l'esito che il tasto prometteva — e i saltati
+ * dopo, ognuno col proprio glifo di allerta. I membri allineati non compaiono:
+ * la riga di stato dice cosa è successo, non cosa esiste.
+ */
+export function gitlinkNote(members: readonly GitlinkMember[]): string {
+  const done = members
+    .filter((m) => m.state === 'bumpato')
+    .map((m) => `✔ ${m.path} ${m.detail}`.trim());
+  const skipped = members
+    .filter((m) => SKIPPED.has(m.state))
+    .map((m) => `⚠ ${m.path}: ${m.detail}`);
+  return [...done, ...skipped].join(' · ');
+}
+
+/**
  * Il progetto ha submodule da misurare.
  *
  * È il gate di ATTIVAZIONE dell'intero sensore (DLV2): senza `.gitmodules` non

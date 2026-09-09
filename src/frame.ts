@@ -109,6 +109,10 @@ export function deckLegend(state: {
   inboxPane: boolean;
   /** T134 — c'è una riga inbox selezionata da aprire. */
   hasInbox: boolean;
+  /** T155 — il progetto ha submodule: senza, `^U` non ha bersaglio e la voce
+   *  non si annuncia. Stessa regola delle voci contestuali sopra — un tasto
+   *  inerte non occupa colonne per dirlo. */
+  gitlink: boolean;
 }): string {
   const canSpawn = state.focus === 'tasks' && state.hasTask;
   const canResume = state.focus === 'sessions' && state.hasSession;
@@ -141,6 +145,9 @@ export function deckLegend(state: {
       // cosa e sta a due voci di distanza.
       '^G genera status',
       '^O apri status',
+      // T155 — la voce nomina il GESTO, come le due sopra: «gitlink» da solo
+      // direbbe l'oggetto e non che il tasto lo allinea con un commit.
+      ...(state.gitlink ? ['^U bumpa gitlink'] : []),
       // T134 — la voce nomina il pane che il tasto MONTA, non quello montato:
       // `^B` scambia i due, e annunciare quello che si sta già guardando
       // direbbe il contrario di ciò che il tasto fa. Stessa regola di `CANC

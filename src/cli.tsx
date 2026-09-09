@@ -133,7 +133,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // normale, dopo il project status e l'hard-wrap: qui però non c'è nessuna
   // schermata da aprire — l'unica superficie è l'indicatore, e l'unica azione
   // committa.
-  const gitlink = useGitlink({ cwd });
+  const gitlink = useGitlink({ cwd, setNote });
 
   const purge = usePurgeOverlay({
     setMode,
@@ -167,6 +167,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     status,
     inbox,
     wrap,
+    gitlink,
     purge,
     view: viewModals,
     text: textModals,
@@ -217,7 +218,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
             attention: gitlink.attention,
             scanned: gitlink.scanned,
             ok: gitlink.ok,
-            failed: false,
+            failed: gitlink.failed,
           }
         : null,
       inbox: {
@@ -338,6 +339,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           purgeBulk: model.purgeBulk,
           inboxPane: model.rightPane === 'inbox',
           hasInbox: model.selInbox !== null,
+          gitlink: gitlink.enabled,
         })}
         indicators={indicators}
         columns={columns}
