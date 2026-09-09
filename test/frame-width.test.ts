@@ -355,6 +355,41 @@ function wrapCacheFileFixture(): string {
   return path;
 }
 
+/**
+ * T155 — una cache del plugin FINTA con uno stub di `bump-gitlink.sh`.
+ *
+ * Il sensore del gitlink non classifica da sé: spawna lo script del plugin e
+ * mostra il TSV che ne esce. Farlo girare sul plugin vero legherebbe il gate a
+ * quale versione sia installata su questa macchina e a quanto siano allineati i
+ * submodule del cappello in questo istante — cioè a due cose che cambiano da
+ * sole, e con loro la larghezza dell'indicatore.
+ *
+ * La cartella di versione dev'essere una directory VERA: `resolvePluginCache`
+ * filtra le entry con `isDirectory()`, che su un symlink a cartella è falso.
+ *
+ * Il TSV porta tutti i casi insieme, che è la forma più larga dell'indicatore:
+ * tre disallineati (il numero) più un membro che nessun bump sistema (il glifo
+ * di allerta accanto).
+ */
+function gitlinkCacheRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), 'deck-gitlink-'));
+  const dir = join(root, '99.0.0', 'scripts', 'utils');
+  mkdirSync(dir, { recursive: true });
+  const rows = [
+    'loom-compass\\tallineato\\t-',
+    'loom-deck\\tavanti\\tcf1df3b→19bb984 riga di dettaglio lunga come un subject vero',
+    'loom-works-plugin\\tnon-pushato\\tgit -C loom-works-plugin push',
+    'vendor/stale\\tindietro\\tgit submodule update -- vendor/stale',
+    'vendor/mai-inizializzato\\tnon-inizializzato\\tgit submodule update --init -- vendor/mai-inizializzato',
+  ];
+  writeFileSync(
+    join(dir, 'bump-gitlink.sh'),
+    ['#!/bin/bash', ...rows.map((r) => `printf '${r}\\n'`), ''].join('\n'),
+    { mode: 0o755 },
+  );
+  return root;
+}
+
 /** Modale edit aperto sulla riga titolo (3 `D` dopo `E`), con due incollaggi da
  *  60 caratteri in coda: è il campo che porta dentro il box un testo di lunghezza
  *  arbitraria, cioè l'unico che può sfondarlo, e a 120 caratteri sfora il budget
@@ -511,6 +546,28 @@ for (const cols of [80, 100, 176]) {
   test(`gate larghezza · lista hard-wrap @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
     const raw = capture(cols, 38, CTRL_W, { LOOM_DECK_WRAP_FILE: wrapCacheFileFixture() });
     assertFrameFits(raw, cols, `lista hard-wrap@${cols}`);
+  });
+}
+
+// T155 — l'indicatore del gitlink accanto agli altri due, nella sua forma più
+// larga. Fuori da `SCENARIOS` per la stessa ragione del project status: la cache
+// finta va scritta prima, e un temporaneo creato al modulo sarebbe condiviso da
+// scenari che non lo usano.
+//
+// `W` non batte nulla: fa passare 0,7s, il tempo perché lo spawn del sensore
+// torni e il frame si ridisegni col numero al posto di `missing`.
+for (const cols of [80, 100, 176]) {
+  test(`gate larghezza · indicatore gitlink @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+    const raw = capture(cols, 38, 'WW', { LOOM_DECK_PLUGIN_CACHE_ROOT: gitlinkCacheRoot() });
+    assertFrameFits(raw, cols, `indicatore gitlink@${cols}`);
+    // Il numero deve esserci davvero: senza, il gate misurerebbe la larghezza
+    // di `gitlink missing` e passerebbe senza aver mai visto il caso vero.
+    if (cols >= 100) {
+      assert.ok(
+        lastFrame(raw).join('\n').includes('gitlink 3'),
+        'indicatore assente o con un conteggio diverso da 3',
+      );
+    }
   });
 }
 
