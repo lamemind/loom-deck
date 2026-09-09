@@ -9,7 +9,14 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deckLegend, frameGeometry, headlineWidth, launchRow, SURFACE_SEGMENTS } from '../src/frame.js';
+import {
+  BARE_LABEL,
+  deckLegend,
+  frameGeometry,
+  headlineWidth,
+  launchRow,
+  SURFACE_SEGMENTS,
+} from '../src/frame.js';
 import { META_ROWS } from '../src/model.js';
 import { termWidth } from '../src/width.js';
 import type { LaunchEntry } from '../src/config.js';
@@ -167,10 +174,17 @@ test('deckLegend: su una pinnata stale restano pin/titolo/assegna, non il fork',
 
 // ── launchRow: le colonne cliccabili sono quelle disegnate ────────────────
 
-test('launchRow: senza voci configurate restano le due surface built-in', () => {
+test('launchRow: senza voci configurate resta la sola surface `t`', () => {
+  // T154/P9 — `c` non è più fra i segmenti di sinistra: è l'etichetta del
+  // blocco a destra, che porta la propria region ma non un proprio segmento.
   const { segments, regions } = launchRow([], 120);
   assert.equal(segments.length, SURFACE_SEGMENTS.length);
-  assert.equal(regions.length, segments.length, 'una regione per segmento disegnato');
+  assert.equal(
+    regions.length,
+    segments.length + 1,
+    'le regioni sono i segmenti di sinistra più la label del blocco a destra',
+  );
+  assert.ok(regions.some((r) => r.key === BARE_LABEL.key), 'la label `c 🤖` deve essere cliccabile');
 });
 
 test('launchRow: ogni voce presa porta il proprio tasto-cifra', () => {
@@ -180,7 +194,29 @@ test('launchRow: ogni voce presa porta il proprio tasto-cifra', () => {
   ];
   const { segments } = launchRow(entries, 200);
   const keys = segments.map((s) => s.key);
-  assert.deepEqual(keys, ['t', 'c', '1', '2'], 'le cifre partono da 1 dopo le due surface');
+  assert.deepEqual(keys, ['t', '1', '2'], 'le cifre partono da 1 dopo la surface `t`');
+});
+
+// ── T154 · il blocco selettore della nuda, ancorato a destra ─────────────
+
+test('launchRow: il blocco a destra non sfonda il bordo, con qualunque riempimento', () => {
+  for (const columns of [60, 80, 100, 120, 176]) {
+    const { segments, filler, regions } = launchRow([], columns);
+    const leftWidth = termWidth(segments.map((s) => s.text).join(' · '));
+    const bare = regions.find((r) => r.key === BARE_LABEL.key)!;
+    assert.ok(bare, `nessuna region per la label a ${columns} colonne`);
+    // La label comincia esattamente dove finiscono sinistra + riempimento: un
+    // conto sbagliato sposterebbe il bersaglio del click senza spostare il
+    // disegno, o viceversa.
+    assert.equal(bare.start, 3 + leftWidth + termWidth(filler));
+    assert.ok(termWidth(filler) >= 1, `nessun riempimento a ${columns} colonne`);
+  }
+});
+
+test('launchRow: il riempimento non è mai negativo su un terminale strettissimo', () => {
+  // `repeat` lancia su un numero negativo: il pavimento a 1 (P5) deve tenere
+  // anche quando sinistra + blocco eccedono la larghezza disponibile.
+  assert.doesNotThrow(() => launchRow([], 20));
 });
 
 test('launchRow: la riga non sfonda la larghezza del terminale', () => {

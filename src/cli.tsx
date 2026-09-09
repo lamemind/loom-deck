@@ -18,10 +18,19 @@ import { resolveTasksPath, resolveTasksDir } from './tasks.js';
 import { LAUNCH_SEP } from './config.js';
 import { anchorFrame, enableMouse } from './mouse.js';
 import { sanitize } from './width.js';
-import { modelAlias } from './glyphs.js';
-import { MODEL_DEFAULT } from './spawn.js';
+import { MODEL_SHORT_LIST, modelAlias } from './glyphs.js';
+import { MODEL_DEFAULT, MODELS } from './spawn.js';
 import { type Mode } from './model.js';
-import { deckLegend, frameGeometry, headlineWidth, indicatorRow, launchRow } from './frame.js';
+import {
+  BARE_BUTTONS_WIDTH,
+  BARE_LABEL,
+  deckLegend,
+  frameGeometry,
+  headlineWidth,
+  indicatorRow,
+  launchRow,
+} from './frame.js';
+import { choiceButtons } from './ui/fields.js';
 import { useDeckModel } from './deck-model.js';
 import { useDeckActions } from './actions.js';
 import { useDeckInput } from './input.js';
@@ -178,6 +187,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const detailParts = model.detail ? detailMetaOf(model.detail) : null;
 
   const launch = launchRow(model.launch, columns);
+  // T154 — i bottoni del blocco selettore della nuda: stessa primitiva
+  // (`choiceButtons`) del selettore di resume/fork, sulle SHORT (D1) e con
+  // `avail` pari alla larghezza naturale del gruppo, così `cutParts` non
+  // taglia mai (il blocco è riservato, non conteso — vedi `launchRow`).
+  const bareButtons = choiceButtons(
+    MODEL_SHORT_LIST,
+    MODELS.indexOf(model.bareModel),
+    BARE_BUTTONS_WIDTH,
+    MODELS.indexOf(MODEL_DEFAULT),
+  );
   // T134 — gli indicatori ancorati a destra della riga legenda. Si compongono
   // PRIMA della legenda perché è la loro larghezza a decidere quanto ne resta:
   // hanno la precedenza sul budget (D5 preflight).
@@ -305,10 +324,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         indicators={indicators}
         columns={columns}
       />
-      {/* T43 — riga delle surface: prima le due built-in (`t`/`c`), poi la mappa
-          indice→launch del progetto. Presente in tutta la modalità normale, non
-          più solo con voci configurate: `t` e `c` esistono ovunque, quindi la
-          riga non è mai vuota. */}
+      {/* T43 — riga delle surface: la built-in `t`, poi la mappa indice→launch
+          del progetto. Presente in tutta la modalità normale, non più solo
+          con voci configurate: `t` esiste ovunque, quindi la riga non è mai
+          vuota. T154/P9 — il blocco selettore della nuda (`c`) sta ANCORATO A
+          DESTRA sulla stessa riga: il filler già calcolato da `launchRow`
+          rende la riga un `<Text>` unico (P5), niente `Box space-between`. */}
       {frame.launchLine ? (
         <Text dimColor wrap="truncate-end">
           {launch.segments.map((s) => s.text).join(LAUNCH_SEP)}
@@ -318,6 +339,9 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           {launch.unreachable > 0 ? (
             <Text color="yellow"> · {launch.unreachable} oltre la 9ª (non raggiungibili)</Text>
           ) : null}
+          {launch.filler}
+          {BARE_LABEL.text}{' '}
+          {bareButtons.nodes}
         </Text>
       ) : null}
       {mode === 'create' ? <TextBox glyph="C" value={textModals.draft} /> : null}

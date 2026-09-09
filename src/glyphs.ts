@@ -1,10 +1,11 @@
 // Glifi letterali del frame e formatter di display. Fase VISTA, ma senza JSX:
 // tutto qui è puro e testabile, e nessun sito di render scrive un glifo nudo.
 import { sanitize } from './width.js';
-// T148/P3 — costo accettato: la fase vista importa un TIPO dalla fase effetti
-// esterni. `import type` si cancella alla compilazione, quindi non introduce
-// una dipendenza runtime né un ciclo — `spawn.ts` non importa questo file.
-import type { ModelKind } from './spawn.js';
+// T148/P3 — costo accettato: la fase vista importa dalla fase effetti esterni.
+// Il TIPO si cancella alla compilazione (nessuna dipendenza runtime); T154
+// aggiunge MODELS come VALORE — una dipendenza runtime vera, ma senza ciclo:
+// `spawn.ts` non importa questo file, quindi il verso resta uno solo.
+import { MODELS, type ModelKind } from './spawn.js';
 
 // Glifi LETTERALI del JSX. I dati passano dai loader, che sanificano al
 // confine; questi no — quindi passano da `sanitize` una volta qui, così nessun
@@ -51,6 +52,13 @@ export const MODEL_EMPTY = TASK_EMPTY;
  *  legge come una riga normale e si scorre senza notarla; l'id per intero sta
  *  nel blocco preview. */
 export const MODEL_UNKNOWN = '?';
+
+/** T154 — le short di `MODEL_SHORT` nell'ordine POSIZIONALE di `MODELS`, non
+ *  quello di inserimento dell'oggetto sopra: il blocco selettore della nuda
+ *  sulla riga launch cicla su questo elenco, e `index`/`originIndex` restano
+ *  indici in `MODELS` — derivarlo da lì invece di scriverlo a mano evita una
+ *  seconda lista capace di disallinearsi al primo modello aggiunto. */
+export const MODEL_SHORT_LIST: readonly string[] = MODELS.map((m) => MODEL_SHORT[m]!);
 
 export function modelShort(id: string): string {
   if (!id) return MODEL_EMPTY;

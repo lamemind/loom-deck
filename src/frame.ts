@@ -31,7 +31,7 @@ import {
 import { cellWidth, launchLegend, LAUNCH_SEP, type LaunchEntry } from './config.js';
 import { layoutBudget, windowRange, type Budget, type PreviewKind } from './viewport.js';
 import { sanitize, termWidth } from './width.js';
-import { WARN } from './glyphs.js';
+import { MODEL_SHORT_LIST, WARN } from './glyphs.js';
 import { STATUS_MISSING } from './project-status.js';
 import { META_ROWS, type Focus, type Mode, type RightPane } from './model.js';
 import type { SessionViewCounts, SessionViewId, TaskViewCounts, TaskViewId } from './pane-views.js';
@@ -41,12 +41,10 @@ import { rowIndexOf, type SessionRow } from './session-list.js';
 import type { Task } from './tasks.js';
 import { VERSION } from './version.js';
 
-// Le due surface built-in del cappello, in testa alla riga launch. Non stanno
-// fra i tasti perché hanno la stessa natura delle voci `launch` — fire-once,
-// cwd = project root, nessuno stato — e la differenza è solo che sono
-// universali (nessun progetto le dichiara) invece che custom. Emoji del menu
-// compass: 🤖 = nuova sessione claude. Per il terminale compass usa 🖥️, che nel
-// frame Ink NON passa — `sanitize` lo sostituisce (VTE lo disegna largo 1,
+// La surface built-in del cappello, in testa alla riga launch. Non sta fra i
+// tasti perché ha la stessa natura delle voci `launch` — fire-once, cwd =
+// project root, nessuno stato. Per il terminale compass usa 🖥️, che nel frame
+// Ink NON passa — `sanitize` lo sostituisce (VTE lo disegna largo 1,
 // string-width dice 2: discordante, invariante ① di width.ts) e resterebbe un
 // `·` muto. 💻 è il gemello concorde; il `sanitize` qui rende il vincolo
 // automatico invece che da ricordare.
@@ -54,10 +52,38 @@ import { VERSION } from './version.js';
 // T21 — `key` è il tasto che la superficie rappresenta: un click su di essa
 // entra nell'handler di tastiera con quel tasto, invece di chiamare l'azione
 // per conto proprio. È ciò che tiene click e tasto per costruzione allineati.
-export const SURFACE_SEGMENTS: readonly Segment[] = [
-  { key: 't', text: sanitize('t 💻') },
-  { key: 'c', text: sanitize('c 🤖') },
-];
+//
+// T154/P9 — `c` non vive più qui: la surface trasloca a destra come etichetta
+// del blocco selettore della nuda (`BARE_LABEL` sotto), adiacente ai bottoni
+// col modello con cui apre invece che sull'estremo opposto della riga.
+export const SURFACE_SEGMENTS: readonly Segment[] = [{ key: 't', text: sanitize('t 💻') }];
+
+// T154/P9 — l'etichetta del blocco selettore della nuda: unico segmento
+// cliccabile del blocco (nessun tasto nomina un modello, `m` cicla e non
+// seleziona — i bottoni non lo sono).
+export const BARE_LABEL: Segment = { key: 'c', text: sanitize('c 🤖') };
+
+// T154/D1 — i bottoni usano le SHORT (`fab`/`ops`/`son`/`hak`), non i nomi
+// interi del selettore di resume/fork: la riga launch compete per spazio con
+// la legenda delle voci custom, e le short sono già il vocabolario compatto
+// che la colonna modello della lista sessioni usa per lo stesso motivo.
+const BARE_BUTTONS_TEXT = MODEL_SHORT_LIST.map((s) => `[ ${s} ]`).join('  ');
+/** Larghezza dei soli bottoni, in celle: passata come `avail` a
+ *  `choiceButtons` — esattamente la larghezza naturale, così `cutParts` non
+ *  taglia mai (il blocco è RISERVATO, D1/P8: a cedere sono le voci `launch`,
+ *  mai il selettore). */
+export const BARE_BUTTONS_WIDTH = termWidth(BARE_BUTTONS_TEXT);
+/** Spazio fra l'etichetta `c 🤖` e il primo bottone. */
+const BARE_LABEL_GAP = ' ';
+/** Larghezza FISSA del blocco intero (etichetta + spazio + bottoni): non
+ *  dipende da quale modello sia selezionato né dal default — ogni short è
+ *  larga uguale (3 lettere) — quindi la geometria non ha bisogno di saperli;
+ *  la STILATURA sì, e la fa il chiamante con `choiceButtons` sugli stessi
+ *  valori (`MODEL_SHORT_LIST`). 39 celle con l'attuale `MODELS` a 4 voci
+ *  (D1 preflight).
+ */
+const BARE_BLOCK_WIDTH =
+  termWidth(BARE_LABEL.text) + termWidth(BARE_LABEL_GAP) + BARE_BUTTONS_WIDTH;
 
 /**
  * La legenda della modalità normale. Elenca SOLO i tasti che fanno qualcosa qui
@@ -131,14 +157,25 @@ export function deckLegend(state: {
 }
 
 export type LaunchRow = {
-  /** I segmenti nell'ordine in cui si disegnano: le due surface, poi le voci. */
+  /** I segmenti di SINISTRA, nell'ordine in cui si disegnano: la surface `t`,
+   *  poi le voci. Il blocco selettore della nuda non è fra questi (P9): sta a
+   *  destra, ancorato al bordo, e la sua sola parte cliccabile (`BARE_LABEL`)
+   *  entra in `regions` ma non in `segments`. */
   segments: Segment[];
-  /** Le colonne cliccabili degli stessi segmenti, per l'hit-test. */
+  /** Le colonne cliccabili: quelle dei segmenti di sinistra più quella
+   *  dell'etichetta del blocco a destra — non una regione per bottone, perché
+   *  nessun tasto nomina un modello (`m` cicla, non seleziona). */
   regions: Region[];
   /** Voci che non entrano nella riga. */
   overflow: number;
   /** Voci oltre la nona, quindi senza un tasto-cifra che le raggiunga. */
   unreachable: number;
+  /** T154/P5 — il riempimento fra i segmenti di sinistra e il blocco a destra,
+   *  già calcolato in spazi: la riga resta un `<Text>` unico (un `Box
+   *  space-between` con figli `Text` annidati non si stira alla larghezza del
+   *  box, misurato su `IndicatorRow`), quindi l'ancoraggio a destra si ottiene
+   *  inserendo questo riempimento nel testo, non con un layout a due colonne. */
+  filler: string;
 };
 
 /**
@@ -147,21 +184,47 @@ export type LaunchRow = {
  * seconde ri-splittando il primo sarebbe un conto parallelo, che diverge alla
  * prima label che contenga il separatore.
  *
- * Le celle delle surface (più il ` · ` che le separa dalle voci) sono già spese
- * sulla riga → vanno riservate, o le voci launch la sfonderebbero di quel tanto.
+ * Le celle della surface (più il ` · ` che la separa dalle voci) sono già spese
+ * sulla riga → vanno riservate, o le voci launch la sfonderebbero di quel
+ * tanto. T154/P8 — il blocco selettore della nuda entra nella STESSA riserva:
+ * su un progetto con molte voci `launch` a cedere per prima è una voce custom,
+ * mai il selettore (un bottone di modello troncato sarebbe indistinguibile da
+ * un modello che non esiste, una voce launch resta raggiungibile col suo
+ * tasto-cifra anche quando non è scritta in riga).
  */
 export function launchRow(launch: LaunchEntry[], columns: number): LaunchRow {
   const surfaceLegend = SURFACE_SEGMENTS.map((s) => s.text).join(LAUNCH_SEP);
-  const legend = launchLegend(launch, columns, cellWidth(surfaceLegend) + cellWidth(LAUNCH_SEP));
+  const reserved = cellWidth(surfaceLegend) + cellWidth(LAUNCH_SEP) + BARE_BLOCK_WIDTH;
+  const legend = launchLegend(launch, columns, reserved);
   const segments: Segment[] = [
     ...SURFACE_SEGMENTS,
     ...legend.taken.map((text, i) => ({ key: String(i + 1), text })),
   ];
+  // Larghezza REALE della sinistra, testo di overflow/irraggiungibili incluso:
+  // sono loro a decidere quanto riempimento serve, non solo i segmenti.
+  const leftWidth =
+    termWidth(segments.map((s) => s.text).join(LAUNCH_SEP)) +
+    (legend.overflow > 0 ? termWidth(` · +${legend.overflow} fuori riga`) : 0) +
+    (legend.unreachable > 0
+      ? termWidth(` · ${legend.unreachable} oltre la 9ª (non raggiungibili)`)
+      : 0);
+  // T154/P5 — la formula dell'ancoraggio: colonne del bordo esterno, meno la
+  // sinistra già disegnata, meno il blocco che deve starci per intero. Un
+  // pavimento di 1 tiene sempre almeno uno spazio fra le due metà, invece di
+  // farle toccare quando lo schermo è troppo stretto per il resto.
+  const filler = ' '.repeat(Math.max(1, columns - 6 - leftWidth - BARE_BLOCK_WIDTH));
+  const bareCol = FRAME_TEXT_COL + leftWidth + termWidth(filler);
+  const bareRegion: Region = {
+    key: BARE_LABEL.key,
+    start: bareCol,
+    end: bareCol + termWidth(BARE_LABEL.text) - 1,
+  };
   return {
     segments,
-    regions: rowRegions(segments, LAUNCH_SEP, FRAME_TEXT_COL),
+    regions: [...rowRegions(segments, LAUNCH_SEP, FRAME_TEXT_COL), bareRegion],
     overflow: legend.overflow,
     unreachable: legend.unreachable,
+    filler,
   };
 }
 

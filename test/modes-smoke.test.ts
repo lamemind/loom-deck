@@ -17,6 +17,8 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadLaunch } from '../src/config.js';
+import { launchRow } from '../src/frame.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = dirname(HERE);
@@ -225,8 +227,99 @@ if (CAN_RUN) {
   copyFileSync(TASKS, join(spawnProject, 'runtime', 'tasks.md'));
 }
 
+/**
+ * T154 — progetto SINTETICO con una sola conversazione, di modello NOTO e
+ * deterministico: i test sul bersaglio RESUME di `m` non possono appoggiarsi
+ * al cappello vero, la cui storia di sessioni cambia a ogni conversazione
+ * lanciata su di esso — un modello «oggi» diventerebbe un calco che scade alla
+ * prima sessione nuova. `HOME` dirottato con la cwd, come per il progetto a id
+ * misti di `frame-width.test.ts`: la lista sessioni si legge da
+ * `~/.claude/projects/<hash della cwd>`.
+ */
+function singleSessionProject(): { proj: string; env: NodeJS.ProcessEnv } {
+  const root = mkdtempSync(join(tmpdir(), 'loom-deck-onesession-'));
+  const proj = join(root, 'proj');
+  mkdirSync(join(proj, 'runtime', 'tasks'), { recursive: true });
+  writeFileSync(
+    join(proj, 'runtime', 'tasks.md'),
+    ['# Tasks', '', '## Tasks Overview', '', '| ID | Pri | Prog | Task |', '| --- | --- | --- | --- |'].join(
+      '\n',
+    ) + '\n',
+  );
+  const projects = join(root, 'home', '.claude', 'projects', proj.replace(/[^a-zA-Z0-9]/g, '-'));
+  mkdirSync(projects, { recursive: true });
+  writeFileSync(
+    join(projects, 'sid1.jsonl'),
+    [
+      JSON.stringify({
+        type: 'user',
+        sessionId: 'sid1',
+        cwd: proj,
+        message: { role: 'user', content: 'ciao' },
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        sessionId: 'sid1',
+        cwd: proj,
+        message: { role: 'assistant', model: 'claude-fable-5-1', content: [{ type: 'text', text: 'ok' }] },
+      }),
+    ].join('\n') + '\n',
+  );
+  return { proj, env: { HOME: join(root, 'home') } };
+}
+
 /** Il detail si apre sulla riga azione; `D` (↓) scende di una riga. */
 const DETAIL_TITLE_ROW = '\rDDD';
+
+// ── T154 · il selettore della nuda e il tasto `m` bifronte ───────────────
+
+test('c senza toccare il selettore apre comunque su un modello esplicito (il default)', {
+  skip: !CAN_RUN,
+}, () => {
+  const frame = lastFrame(capture('c', spawnProject));
+  assert.match(frame, /--no-task/, `c non ha spawnato la nuda: ${frame}`);
+  assert.match(frame, /--model fable/, `il default non è stato passato esplicitamente: ${frame}`);
+});
+
+test('m senza una riga sessione in fuoco cicla il modello della nuda: c la spawna col valore ciclato', {
+  skip: !CAN_RUN,
+}, () => {
+  // Focus di apertura è `tasks` (D4): `m` deve cadere sul bersaglio nuda.
+  const frame = lastFrame(capture('mc', spawnProject));
+  assert.match(frame, /--no-task/, `c non ha spawnato la nuda: ${frame}`);
+  assert.match(frame, /--model opus/, `m fuori dal pane sessioni non ha cambiato la nuda: ${frame}`);
+});
+
+test('m con una riga sessione selezionata cicla il modello di resume, non quello della nuda', {
+  skip: !CAN_RUN,
+}, () => {
+  const { proj, env } = singleSessionProject();
+  // `R` porta il focus sul pane sessioni, sulla sola riga esistente. Il suo
+  // modello d'origine è `fable`: `m` deve avanzare quella riga a `opus`, e
+  // `⏎` (resume) lo porta nell'argv.
+  const frame = lastFrame(capture('Rm\r', proj, env));
+  assert.match(frame, /--resume/, `⏎ non ha fatto resume: ${frame}`);
+  assert.match(frame, /--model opus/, `m sulla riga sessione non ha cambiato il resume: ${frame}`);
+});
+
+test('i due selettori non si contaminano: la nuda ciclata non muove il resume', { skip: !CAN_RUN }, () => {
+  const { proj, env } = singleSessionProject();
+  // `m` (nuda → opus) col focus ancora sui task, poi `R` porta il focus sulla
+  // riga sessione e `⏎` fa resume: se i due stati fossero lo stesso, il
+  // resume partirebbe già su `opus` invece che sul modello d'origine (`fable`).
+  const frame = lastFrame(capture('mR\r', proj, env));
+  assert.match(frame, /--model fable/, `il resume ha ereditato il modello della nuda: ${frame}`);
+});
+
+test('i due selettori non si contaminano: il resume ciclato non muove la nuda', { skip: !CAN_RUN }, () => {
+  const { proj, env } = singleSessionProject();
+  // `R` seleziona la riga sessione, `m` cicla il suo resume a `opus`; `L`
+  // torna sul pane task e `c` apre la nuda: se i due stati fossero lo stesso,
+  // aprirebbe già su `opus` invece che sul proprio default (`fable`).
+  const frame = lastFrame(capture('RmLc', proj, env));
+  assert.match(frame, /--no-task/, `c non ha spawnato la nuda: ${frame}`);
+  assert.match(frame, /--model fable/, `la nuda ha ereditato il modello del resume: ${frame}`);
+});
 
 test('detail: la riga azione risponde alle lettere e riscrive il prompt', { skip: !CAN_RUN }, () => {
   const frame = lastFrame(capture(`DD\rr\r`, spawnProject));
@@ -507,13 +600,17 @@ for (const m of MODES.filter((x) => x.name !== 'normal')) {
 /**
  * Click su una colonna della riga launch, che sta a riga 4 del terminale.
  *
- * Le colonne non sono indovinate: la riga comincia a colonna 3 (bordo +
- * padding) e i segmenti si susseguono separati da ` · ` — `t 💻` occupa 3..6,
- * `c 🤖` occupa 10..13. Scritte qui come numeri sono un CALCO che scade se la
- * riga cambia composizione, e per questo ogni scenario asserisce anche l'esito
- * dell'azione: un bersaglio spostato non passa silenziosamente.
+ * `t 💻` comincia a colonna 3 (bordo + padding) — quella non si muove. `c 🤖`
+ * invece è il blocco selettore della nuda, ancorato al bordo DESTRO (T154/P9):
+ * la sua colonna dipende dalle voci `launch` del progetto e dalla larghezza
+ * del terminale, quindi si CALCOLA con la stessa `launchRow` che il deck usa,
+ * non si indovina — un bersaglio spostato non passa silenziosamente solo
+ * perché ogni scenario asserisce anche l'esito dell'azione.
  */
 const clickLaunch = (col: number) => `@${col},4;`;
+
+// 120 colonne: la stessa dimensione fissa con cui `captureRaw` apre il pty.
+const projectLaunchRow = () => launchRow(loadLaunch(PROJECT), 120);
 
 test('click su `t 💻` apre il terminale, come il tasto t', { skip: !CAN_RUN }, () => {
   const captured = capture(clickLaunch(4));
@@ -522,16 +619,30 @@ test('click su `t 💻` apre il terminale, come il tasto t', { skip: !CAN_RUN },
 });
 
 test('click su `c 🤖` spawna la sessione, come il tasto c', { skip: !CAN_RUN }, () => {
-  const frame = lastFrame(capture(clickLaunch(11)));
+  const bareCol = projectLaunchRow().regions.find((r) => r.key === 'c')!.start;
+  const frame = lastFrame(capture(clickLaunch(bareCol)));
   assert.match(frame, /deck-run/, `il click non ha attivato la surface c: ${frame}`);
 });
 
+test('un click su un bottone modello del blocco nuda è inerte: nessun tasto lo nomina', {
+  skip: !CAN_RUN,
+}, () => {
+  // P9 — solo l'etichetta `c 🤖` è cliccabile: `m` cicla, non seleziona, quindi
+  // un bottone non ha un tasto da sintetizzare.
+  const bare = projectLaunchRow().regions.find((r) => r.key === 'c')!;
+  const frame = lastFrame(capture(clickLaunch(bare.end + 2)));
+  assert.doesNotMatch(frame, /deck-run|terminale su/i, `un bottone ha risposto al click: ${frame}`);
+});
+
 test('lo spazio fra due superfici non attiva la vicina', { skip: !CAN_RUN }, () => {
-  // Colonna 8: il separatore fra `t 💻` e `c 🤖`. Un hit-test che arrotondasse
-  // al segmento più vicino lancerebbe un terminale che nessuno ha chiesto.
+  // Colonna 8: il separatore fra `t 💻` e la prima voce `launch`. Un hit-test
+  // che arrotondasse al segmento più vicino lancerebbe un'azione che nessuno
+  // ha chiesto. La voce `codium` compare comunque nella riga launch STATICA —
+  // l'asserzione deve leggere la nota di un'azione partita, non il testo della
+  // legenda che è sempre a schermo.
   const frame = lastFrame(capture(clickLaunch(8)));
   assert.doesNotMatch(frame, /terminale su/i, `il separatore ha attivato t: ${frame}`);
-  assert.doesNotMatch(frame, /deck-run/, `il separatore ha attivato c: ${frame}`);
+  assert.doesNotMatch(frame, /→ codium su/i, `il separatore ha attivato la voce launch: ${frame}`);
 });
 
 test('un click fuori dalla riga launch è inerte', { skip: !CAN_RUN }, () => {

@@ -8,6 +8,7 @@
 // il marker di riga, il detail dentro un prefisso incolonnato). Tolta di mezzo,
 // dei due gemelli resta una cosa sola.
 import { Text } from 'ink';
+import type { ReactNode } from 'react';
 import { caretWindow, cutParts, sanitize } from '../width.js';
 import { cpLen } from '../layout.js';
 import { CARET, CARET_OFF } from '../glyphs.js';
@@ -46,8 +47,8 @@ export function FieldText({
 export const LABEL_W = 8;
 
 /**
- * T117 — una riga a SCELTA di un'area di compilazione: bottoni affiancati,
- * voce attiva in video inverso.
+ * T117 — i soli BOTTONI di una riga a scelta: valore per valore, già tagliati
+ * al budget e stilati (voce attiva in video inverso, origine sottolineata).
  *
  * Due passate di `cutParts`: la seconda serve SOLO quando qualcosa cade, e
  * riserva le colonne del contatore. Riservarle sempre costerebbe 6 colonne su
@@ -56,6 +57,50 @@ export const LABEL_W = 8;
  * `priority` sulla voce SELEZIONATA e non sulla prima: qui il troncamento
  * cancellerebbe l'unica informazione che la riga esiste per dare — quale valore
  * sta per essere usato.
+ *
+ * T154/P6 — estratta da `ChoiceRow`, che ne resta il primo chiamante: un
+ * secondo (il blocco selettore della nuda sulla riga launch) ha bisogno dei
+ * soli bottoni dentro una cornice propria (nessun caret, un'etichetta diversa
+ * da `label.padEnd`), e riscriverne la resa produrrebbe la seconda copia della
+ * regola di troncamento e sottolineatura — quella che diverge al primo modello
+ * aggiunto a `MODELS`.
+ */
+export function choiceButtons(
+  values: readonly string[],
+  index: number,
+  avail: number,
+  originIndex?: number,
+): { nodes: ReactNode[]; cut: number } {
+  const segs = values.map((v) => `[ ${v} ]`);
+  const parts: string[] = [];
+  segs.forEach((s, i) => {
+    if (i > 0) parts.push('  ');
+    parts.push(s);
+  });
+  let shown = cutParts(parts, avail, index * 2);
+  const dropped = (v: string[]) => segs.filter((s, i) => v[i * 2] !== s).length;
+  if (dropped(shown) > 0) shown = cutParts(parts, Math.max(0, avail - 6), index * 2);
+  const cut = dropped(shown);
+  const nodes = shown.map((part, i) =>
+    i % 2 === 1 ? (
+      <Text key={i}>{part}</Text>
+    ) : (
+      <Text
+        key={i}
+        inverse={i / 2 === index}
+        underline={i / 2 === originIndex}
+        color={i / 2 === index ? 'green' : 'gray'}
+      >
+        {part}
+      </Text>
+    ),
+  );
+  return { nodes, cut };
+}
+
+/**
+ * T117 — una riga a SCELTA di un'area di compilazione: caret + etichetta +
+ * bottoni di `choiceButtons`.
  *
  * T148 — estratto dal detail della task perché un secondo chiamante (il
  * selettore modello della preview sessione) ne riusa la stessa resa a quadre,
@@ -80,35 +125,13 @@ export function ChoiceRow({
    *  modello di un nuovo spawn nel detail). */
   originIndex?: number;
 }) {
-  const segs = values.map((v) => `[ ${v} ]`);
-  const parts: string[] = [];
-  segs.forEach((s, i) => {
-    if (i > 0) parts.push('  ');
-    parts.push(s);
-  });
   const avail = Math.max(0, width - LABEL_W - CARET_OFF.length);
-  let shown = cutParts(parts, avail, index * 2);
-  const dropped = (v: string[]) => segs.filter((s, i) => v[i * 2] !== s).length;
-  if (dropped(shown) > 0) shown = cutParts(parts, Math.max(0, avail - 6), index * 2);
-  const cut = dropped(shown);
+  const { nodes, cut } = choiceButtons(values, index, avail, originIndex);
   return (
     <Text wrap="truncate-end">
       {focused ? CARET : CARET_OFF}
       <Text dimColor>{label.padEnd(LABEL_W)}</Text>
-      {shown.map((part, i) =>
-        i % 2 === 1 ? (
-          <Text key={i}>{part}</Text>
-        ) : (
-          <Text
-            key={i}
-            inverse={i / 2 === index}
-            underline={i / 2 === originIndex}
-            color={i / 2 === index ? 'green' : 'gray'}
-          >
-            {part}
-          </Text>
-        ),
-      )}
+      {nodes}
       {/* Troncamento mai silenzioso, come le liste: un bottone che sparisce su
           un terminale stretto non deve sembrare un valore che non esiste. */}
       {cut > 0 ? <Text color="yellow"> · +{cut}</Text> : null}
