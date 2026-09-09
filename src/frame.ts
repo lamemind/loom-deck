@@ -324,17 +324,64 @@ export function wrapIndicator(state: {
   return sanitize(`wrap ${body}${state.ok ? '' : ` ${WARN}`}`);
 }
 
+/**
+ * T155 — l'indicatore del gitlink: `gitlink 2`.
+ *
+ * Conta i membri il cui checkout NON coincide col gitlink registrato, in
+ * entrambi i versi (`disalignedCount` in `gitlink.ts`). Fuori dal numero restano
+ * i membri che nessun bump sistema — non inizializzati, in conflitto — perché un
+ * contatore che il tasto non può portare a zero smette di essere letto: è la
+ * stessa regola per cui `misto` non entra nel contatore dell'hard-wrap.
+ *
+ * Quattro corpi distinti, come per gli altri due indicatori: `missing` finché la
+ * prima misura non è tornata, `?` quando lo script non è raggiungibile (plugin
+ * non installato su questa macchina, o uscito male), il numero quando c'è
+ * qualcosa da bumpare, `ok` quando tutti i membri coincidono.
+ *
+ * Il glifo di allerta si AGGIUNGE al corpo invece di sostituirlo, e copre i due
+ * fatti che il numero non dice: l'ultimo bump è fallito, oppure un membro
+ * richiede un gesto che il bump non fa. Entrambi restano veri accanto al
+ * conteggio, e chi lo vede preme il tasto per leggere la riga di stato, che
+ * nomina i membri.
+ */
+export function gitlinkIndicator(state: {
+  count: number;
+  attention: number;
+  scanned: boolean;
+  ok: boolean;
+  /** L'ultimo bump si è fermato prima di committare. */
+  failed: boolean;
+}): string {
+  const body = !state.scanned
+    ? STATUS_MISSING
+    : !state.ok
+      ? '?'
+      : state.count > 0
+        ? String(state.count)
+        : 'ok';
+  const warn = state.failed || state.attention > 0 ? ` ${WARN}` : '';
+  return sanitize(`gitlink ${body}${warn}`);
+}
+
 export function indicatorRow(
   state: {
+    /** T155 — `null` = il progetto non ha `.gitmodules`: nessun segmento, non
+     *  uno che dice «0». La riga legenda riceve indietro quelle colonne. */
+    gitlink: Parameters<typeof gitlinkIndicator>[0] | null;
     inbox: Parameters<typeof inboxButton>[0];
     wrap: Parameters<typeof wrapIndicator>[0];
   },
   columns: number,
 ): IndicatorRow {
-  // Ordine di lettura: l'indicatore, poi il bottone. Il bottone sta all'estremo
-  // destro perché è l'unico dei due che MONTA qualcosa restando in vista
-  // normale — la lista del wrap è una schermata che si apre e si chiude.
+  // Ordine di lettura: gli indicatori, poi il bottone. Il bottone sta
+  // all'estremo destro perché è l'unico dei tre che MONTA qualcosa restando in
+  // vista normale — la lista del wrap è una schermata che si apre e si chiude.
+  //
+  // Il gitlink sta in TESTA al blocco, che è ancorato al bordo destro: è l'unico
+  // segmento che può mancare del tutto (il gate su `.gitmodules`), e da lì la
+  // sua assenza non sposta gli altri due.
   const segments: Segment[] = [
+    ...(state.gitlink ? [{ key: '^u', text: gitlinkIndicator(state.gitlink) }] : []),
     { key: '^w', text: wrapIndicator(state.wrap) },
     { key: '^b', text: inboxButton(state.inbox) },
   ];

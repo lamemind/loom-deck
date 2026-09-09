@@ -40,6 +40,7 @@ import { useAssignOverlay } from './overlays/assign.js';
 import { useProjectStatus } from './overlays/status.js';
 import { useInboxOverlay } from './overlays/inbox.js';
 import { useWrapOverlay } from './overlays/wrap.js';
+import { useGitlink } from './overlays/gitlink.js';
 import { usePurgeOverlay } from './overlays/purge.js';
 import { useTextModals, useViewModals } from './overlays/modals.js';
 import { useTerminalSize } from './hooks.js';
@@ -128,6 +129,12 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     onApply: actions.unwrapPath,
   });
 
+  // T155 — il gitlink dei submodule. Terzo sensore con lo stato in vista
+  // normale, dopo il project status e l'hard-wrap: qui però non c'è nessuna
+  // schermata da aprire — l'unica superficie è l'indicatore, e l'unica azione
+  // committa.
+  const gitlink = useGitlink({ cwd });
+
   const purge = usePurgeOverlay({
     setMode,
     setNote,
@@ -202,6 +209,17 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // hanno la precedenza sul budget (D5 preflight).
   const indicators = indicatorRow(
     {
+      // T155 — `null` chiude il gate: su un progetto senza `.gitmodules` il
+      // segmento non esiste, e la riga legenda si riprende quelle colonne.
+      gitlink: gitlink.enabled
+        ? {
+            count: gitlink.count,
+            attention: gitlink.attention,
+            scanned: gitlink.scanned,
+            ok: gitlink.ok,
+            failed: false,
+          }
+        : null,
       inbox: {
         counts: model.inboxCounts,
         stale: model.inboxStale,
