@@ -35,7 +35,11 @@ type Run = { ok: boolean; out: string; err: string };
 // spawnSync e non execFileSync: quest'ultimo espone lo stderr solo lanciando,
 // cioè solo sui fallimenti — ma deck-run avvisa su stderr anche quando riesce
 // (valore scartato con fallback), e quella riga è essa stessa sotto gate.
-function deckRun(args: string[], env: Record<string, string> = {}): Run {
+// `undefined` come valore TOGLIE la chiave dall'env del figlio (Node omette le
+// chiavi undefined), che è diverso dal passarla vuota: alcune variabili di
+// locale cambiano comportamento a seconda che siano assenti o presenti-e-vuote,
+// e un test che vuole l'assenza non può esprimerla con la stringa vuota.
+function deckRun(args: string[], env: Record<string, string | undefined> = {}): Run {
   const r = spawnSync('bash', [DECK_RUN, ...args], {
     encoding: 'utf8',
     env: {
@@ -60,7 +64,7 @@ function deckRun(args: string[], env: Record<string, string> = {}): Run {
 }
 
 /** Ultimo argv dello shim = il comando passato a `bash -lc` dentro la tab. */
-function inTabCmd(args: string[], env: Record<string, string> = {}): string {
+function inTabCmd(args: string[], env: Record<string, string | undefined> = {}): string {
   const r = deckRun(args, env);
   assert.ok(r.ok, `deck-run ${args.join(' ')} è fallito: ${r.err}`);
   const lines = r.out.trimEnd().split('\n');
@@ -304,6 +308,64 @@ test('--title-note: nota tutta scartata → nessun suffisso a vuoto', () => {
     LOOM_DECK_WORKDIR: labeledWd,
   });
   assert.ok(cmd.includes("--name '🧵 demo · T64'"), `titolo inatteso: ${cmd}`);
+});
+
+// T156 — il titolo di FALLBACK che il deck compone quando il campo nota è vuoto
+// (`[ 🚀 ] slug`, `ACTION_EMOJI` in `src/spawn.ts`) deve arrivare qui intero.
+// Prima di questa task le quadre e l'emoji cadevano nella riduzione: la tab
+// mostrava il solo slug mentre la lista del deck, che riceve la nota grezza dal
+// sidecar, mostrava il prefisso — due titoli per la stessa conversazione, senza
+// nessun errore a segnalarlo.
+for (const [kind, emoji] of [
+  ['preflight', '📐'],
+  ['run', '🚀'],
+  ['recap', '📊'],
+  ['checkpoint', '🏁'],
+] as const) {
+  test(`--title-note: il prefisso di fallback \`[ ${emoji} ]\` (${kind}) sopravvive alla riduzione`, () => {
+    const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', `[ ${emoji} ] prova`], {
+      LOOM_DECK_WORKDIR: labeledWd,
+    });
+    assert.ok(cmd.includes(`--name '🧵 demo · T64 [ ${emoji} ] prova'`), `titolo inatteso: ${cmd}`);
+  });
+}
+
+// P1 — la locale va imposta SUL `sed`, non ereditata dalla funzione: un `local
+// LC_ALL` non porta l'attributo export quando `LC_ALL` non era già esportata,
+// quindi `sed` ricadrebbe su `LANG`. Sotto una locale `C` lavora a byte, e un
+// carattere multibyte fuori whitelist lascia dietro i byte che coincidono con
+// quelli ammessi — le emoji astrali condividono i primi due (`f0 9f`) e ne
+// lasciano sempre due, cioè UTF-8 rotto dentro il titolo della tab.
+//
+// `LC_ALL: undefined` toglie la chiave dall'env del figlio, e la RIMOZIONE è
+// ciò che rende il caso riproducibile: una `LC_ALL` già esportata — anche VUOTA
+// — fa sì che il `local` della funzione ne erediti l'attributo export, e allora
+// `sed` riceve `C.UTF-8` anche senza il fix. Misurato in entrambi i versi: con
+// la variabile presente il titolo esce pulito comunque, con la variabile tolta
+// esce rotto se il `sed` non porta la propria locale.
+test('--title-note: prefisso e riduzione reggono anche sotto una locale non-UTF-8', () => {
+  const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', '[ 🚀 ] prova 🔥 fuoco'], {
+    LOOM_DECK_WORKDIR: labeledWd,
+    LANG: 'C',
+    LC_ALL: undefined,
+  });
+  const title = cmd.match(/--name '([^']*)'/)?.[1] ?? '';
+  // Il prefisso in whitelist passa intero; 🔥, che non ci sta, sparisce SENZA
+  // lasciare byte orfani — il titolo resta UTF-8 valido.
+  assert.equal(title, '🧵 demo · T64 [ 🚀 ] prova fuoco');
+  assert.ok(!/[�]/.test(title), `sequenza UTF-8 rotta nel titolo: ${title}`);
+});
+
+// P2 — la whitelist è una LISTA CHIUSA, non una classe di emoji. Un'emoji fuori
+// elenco deve ancora cadere, anche quando è astrale come le quattro ammesse:
+// 🗺️ passa `_sane_note` solo se la whitelist si allargasse per intervallo, e nel
+// deck `sanitize` la renderebbe comunque `·` — riaprendo la divergenza fra i due
+// titoli nel verso opposto.
+test('--title-note: un\'emoji fuori whitelist cade ancora, astrale compresa', () => {
+  const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', '[ 🗺️ ] mappa'], {
+    LOOM_DECK_WORKDIR: labeledWd,
+  });
+  assert.ok(cmd.includes("--name '🧵 demo · T64 [ ] mappa'"), `titolo inatteso: ${cmd}`);
 });
 
 test('--title-note: cap a 60 caratteri, taglio non a metà di un multibyte', () => {

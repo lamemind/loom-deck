@@ -24,6 +24,7 @@ import {
   INTAB_MARKER,
   MODEL_DEFAULT,
 } from '../src/spawn.js';
+import { sanitize } from '../src/width.js';
 
 // La forma degli argv È il contratto col primitive `deck-run`, e finora non la
 // fissava nulla: un flag rinominato da un lato si scopriva solo aprendo una tab.
@@ -117,15 +118,26 @@ test('resumeArgs scoped porta la task, spot porta --no-task', () => {
 });
 
 test('resumeArgs aggiunge la nota al titolo solo quando c\'è', () => {
+  // La nota sta PRIMA di `--resume`, e la posizione è sotto misura quanto la
+  // presenza: la riga di stato taglia il comando al mezzo tenendo la coda, e un
+  // `--title-note` in fondo — l'unico argomento a lunghezza libera — spinge
+  // fuori `--resume <uuid>`, cioè l'unica cosa che distingue una ripresa da
+  // un'altra. Con la nota qui la coda porta sempre sessione e modello.
   assert.deepEqual(resumeArgs('T81', 'sid-1', 'opus', 'parser'), [
     'T81',
+    '--title-note',
+    'parser',
     '--resume',
     'sid-1',
     '--model',
     'opus',
-    '--title-note',
-    'parser',
   ]);
+  // La coda dell'argv resta identica con e senza nota: è l'invariante che tiene
+  // la riga di stato leggibile su un titolo di qualunque lunghezza.
+  assert.deepEqual(
+    resumeArgs('T81', 'sid-1', 'opus', 'x'.repeat(200)).slice(-4),
+    resumeArgs('T81', 'sid-1', 'opus').slice(-4),
+  );
   // Nota vuota = nessuna nota: un `--title-note ''` metterebbe nel titolo una
   // maniglia che in lista non compare.
   assert.deepEqual(resumeArgs('T81', 'sid-1', 'opus', ''), [
@@ -305,26 +317,47 @@ test('fallbackTitle: ogni azione del detail produce un titolo distinto', () => {
     const titles = DETAIL_ACTIONS.map((a) => fallbackTitle(dir, 'T150', a.kind));
     assert.deepEqual(titles, [
       'deck titolo conversazione auto',
-      'PREFL deck titolo conversazione auto',
-      'RUN deck titolo conversazione auto',
-      'RECAP deck titolo conversazione auto',
-      'CHKPOINT deck titolo conversazione auto',
+      '[ 📐 ] deck titolo conversazione auto',
+      '[ 🚀 ] deck titolo conversazione auto',
+      '[ 📊 ] deck titolo conversazione auto',
+      '[ 🏁 ] deck titolo conversazione auto',
     ]);
     // Cinque azioni, cinque titoli: nessuna collisione.
     assert.equal(new Set(titles).size, titles.length);
   });
 });
 
-test('fallbackTitle: `open` (kind `none`) è il solo slug, senza parola in maiuscolo (D2/P7)', () => {
+// T156 — il prefisso è fatto di caratteri che `_sane_note` toglierebbe, se non
+// li avesse in whitelist: senza l'altra metà della modifica il titolo della tab
+// perderebbe il prefisso mentre la lista del deck lo tiene. Il gate che lo
+// misura sul vero script bash sta in `deck-run.test.ts`; qui si fissa la FORMA
+// che quel gate si aspetta, così un cambio di formato fatto da un lato solo
+// rompe subito invece di produrre due titoli divergenti in silenzio.
+test('fallbackTitle: il prefisso è `[ emoji ]` con spazi interni, e lo slug lo segue', () => {
+  withTaskFiles({ 'T150-deck-titolo-conversazione-auto.md': '# Task: x\n' }, (dir) => {
+    for (const kind of ['preflight', 'run', 'recap', 'checkpoint'] as const) {
+      const title = fallbackTitle(dir, 'T150', kind) ?? '';
+      // Flag `u`: `\p{Extended_Pictographic}` è UN code point anche per
+      // un'emoji astrale, che senza il flag conterebbe come due unità UTF-16.
+      assert.match(
+        title,
+        /^\[ \p{Extended_Pictographic} \] deck titolo/u,
+        `formato del prefisso: ${title}`,
+      );
+    }
+  });
+});
+
+test('fallbackTitle: `open` (kind `none`) è il solo slug, senza prefisso (D2/P7)', () => {
   withTaskFiles({ 'T99-drop-di-tag.md': '# Task: x\n' }, (dir) => {
     assert.equal(fallbackTitle(dir, 'T99', 'none'), 'drop di tag');
   });
 });
 
-test('fallbackTitle: le tre varianti di recap condividono la stessa parola (P3)', () => {
+test('fallbackTitle: le tre varianti di recap condividono lo stesso prefisso (P3)', () => {
   withTaskFiles({ 'T81-fix-deck.md': '# Task: x\n' }, (dir) => {
     const recap = fallbackTitle(dir, 'T81', 'recap');
-    assert.equal(recap, 'RECAP fix deck');
+    assert.equal(recap, '[ 📊 ] fix deck');
     assert.equal(fallbackTitle(dir, 'T81', 'recap-task'), recap);
     assert.equal(fallbackTitle(dir, 'T81', 'recap-epic'), recap);
   });
@@ -332,7 +365,10 @@ test('fallbackTitle: le tre varianti di recap condividono la stessa parola (P3)'
 
 test('fallbackTitle: lo slug viene dal NOME del file, non dalla descrizione — apici e `/` non esistono da saldare', () => {
   withTaskFiles({ 'T16-valutare-integrazione-obsidian-viewer.md': '# Task: x\n' }, (dir) => {
-    assert.equal(fallbackTitle(dir, 'T16', 'run'), 'RUN valutare integrazione obsidian viewer');
+    assert.equal(
+      fallbackTitle(dir, 'T16', 'run'),
+      '[ 🚀 ] valutare integrazione obsidian viewer',
+    );
   });
 });
 
@@ -347,7 +383,23 @@ test('fallbackTitle → deckArgs: il fallback sostituisce la nota vuota e porta 
     const note = fallbackTitle(dir, 'T150', 'run') ?? '';
     const args = deckArgs('T150', 'sid-1', 'run', 'opus', note);
     assert.ok(args.includes('--title-note'));
-    assert.equal(args[args.indexOf('--title-note') + 1], 'RUN deck titolo conversazione auto');
+    assert.equal(args[args.indexOf('--title-note') + 1], '[ 🚀 ] deck titolo conversazione auto');
+  });
+});
+
+// Le quattro emoji del prefisso sono ASTRALI per necessità: `sanitize` rende
+// `·` ogni glifo su cui string-width e la larghezza del terminale divergono, e
+// le emoji del BMP a presentazione testo divergono sempre. Un'emoji che non
+// sopravvive qui arriverebbe intera nella tab Ptyxis (la whitelist di
+// `_sane_note` la nomina) e `·` nella lista del deck: la stessa divergenza fra
+// i due titoli che T156 chiude, nel verso opposto.
+test('fallbackTitle: le emoji del prefisso sopravvivono a sanitize', () => {
+  withTaskFiles({ 'T150-deck-titolo-conversazione-auto.md': '# Task: x\n' }, (dir) => {
+    for (const kind of ['preflight', 'run', 'recap', 'checkpoint'] as const) {
+      const title = fallbackTitle(dir, 'T150', kind) ?? '';
+      assert.equal(sanitize(title), title, `sanitize ha toccato il prefisso: ${title}`);
+      assert.ok(!sanitize(title).includes('·'), `emoji ridotta a ·: ${title}`);
+    }
   });
 });
 
