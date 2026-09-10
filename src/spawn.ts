@@ -242,27 +242,46 @@ export const ACTION_HOTKEYS: Readonly<Record<string, number>> = Object.fromEntri
 // fallback (`spawnForTask` in actions.ts) arriva il kind — già specializzato
 // quando la chiamata viene dal detail (`recap-task`/`recap-epic`) — mai la
 // label del catalogo.
-// D2/P7 — `none` (label "open") non ha una parola: è "nessuna azione", e
-// inventargliene una contraddirebbe l'intenzione dell'utente.
-// P3 — le tre varianti di recap condividono la parola: la specializzazione
+// D2/P7 — `none` (label "open") non ha un prefisso: è "nessuna azione", e
+// inventargliene uno contraddirebbe l'intenzione dell'utente.
+// P3 — le tre varianti di recap condividono il prefisso: la specializzazione
 // sceglie quale skill parte, non cosa l'utente sta chiedendo.
-const ACTION_WORD: Readonly<Partial<Record<PromptKind, string>>> = {
-  preflight: 'PREFL',
-  run: 'RUN',
-  recap: 'RECAP',
-  'recap-task': 'RECAP',
-  'recap-epic': 'RECAP',
-  checkpoint: 'CHKPOINT',
+//
+// T156 — emoji invece della parola in maiuscolo (`PREFL`, `RUN`, …): il titolo
+// si legge in lista deck e nella tab Ptyxis, dove l'azione va riconosciuta a
+// colpo d'occhio e non letta.
+// Le quattro sono ASTRALI (code point ≥ U+10000) per necessità, non per gusto:
+// `sanitize` (`src/width.ts`) sostituisce con `·` ogni glifo su cui le due
+// contabilità di larghezza divergono, e le emoji del BMP a presentazione testo
+// (⚙️ ⏱️ 🛠️ …) divergono sempre — string-width le conta 2, VTE ne disegna 1, e
+// il VS16 non sposta nessuno dei due verdetti. Un'emoji aggiunta qui va prima
+// passata in `sanitize` per vedere se sopravvive.
+// Le stesse quattro sono anche l'unica classe di emoji che `_sane_note` di
+// `deck-run` lascia passare nel titolo della tab: la whitelist è una lista
+// chiusa che nomina questi code point (P2 preflight), quindi cambiare una voce
+// qui e non là riapre la divergenza fra titolo in lista e titolo in tab.
+const ACTION_EMOJI: Readonly<Partial<Record<PromptKind, string>>> = {
+  preflight: '📐',
+  run: '🚀',
+  recap: '📊',
+  'recap-task': '📊',
+  'recap-epic': '📊',
+  checkpoint: '🏁',
 };
 
 /**
- * Titolo di fallback per una conversazione con nota vuota: `{AZIONE} {slug}`,
+ * Titolo di fallback per una conversazione con nota vuota: `[ {emoji} ] {slug}`,
  * o il solo slug per `none` (D1/D2 preflight). Lo slug viene dal NOME del
  * task file (`findTaskFile`), non dalla descrizione di `tasks.md`: il nome è
  * già dentro l'alfabeto di `_sane_note` per costruzione — minuscolo, separato
  * da trattini, senza punteggiatura — mentre la descrizione porta apostrofi e
  * `/` che la riduzione toglie senza sostituto, saldando le parole (D1
  * razionale).
+ *
+ * Il PREFISSO invece nell'alfabeto non ci sta per costruzione: emoji e quadre
+ * ci entrano solo perché la whitelist di `_sane_note` le nomina una per una
+ * (T156). È l'unica parte del titolo di fallback che dipende da una modifica
+ * fatta dall'altro lato.
  *
  * `null` quando il task file non si trova: il chiamante decide se ripiegare
  * su nota vuota o su un altro fallback.
@@ -271,8 +290,8 @@ export function fallbackTitle(tasksDir: string, id: string, kind: PromptKind): s
   const path = findTaskFile(tasksDir, id);
   if (!path) return null;
   const slug = basename(path, '.md').slice(id.length + 1).replace(/-/g, ' ');
-  const word = ACTION_WORD[kind];
-  return word ? `${word} ${slug}` : slug;
+  const emoji = ACTION_EMOJI[kind];
+  return emoji ? `[ ${emoji} ] ${slug}` : slug;
 }
 
 // Spawn detached: il deck spawna ma NON contiene la sessione (la possiede
@@ -352,15 +371,28 @@ export function spawnDeck(
 // default (P2 preflight). Qui però non c'è un default da cablare: chi
 // chiama ha già risolto il valore — il modello della conversazione d'origine,
 // o quello scelto al suo posto — e lo passa come argomento obbligatorio.
+// La NOTA sta PRIMA di `--resume`, non in coda, ed è l'unico argomento di questa
+// forma che non segue l'ordine di lettura. La ragione è la riga di stato: il
+// comando ci arriva tagliato al mezzo (`noteCommand`, che tiene un terzo di
+// testa e due terzi di coda), e `--title-note` è l'unico argomento a lunghezza
+// LIBERA — porta il titolo della conversazione, che l'utente scrive come vuole.
+// In coda si mangia i due terzi riservati, e a spingere fuori è proprio
+// `--resume <uuid>`, cioè l'unica cosa che distingue una ripresa da un'altra: su
+// una conversazione dal titolo lungo la riga di stato finiva per dire quale
+// modello e quale titolo, mai quale conversazione. Spostata qui, la coda porta
+// sempre `--resume <uuid> --model <alias>` — sessanta colonne su un budget di
+// settantasei, indipendenti dal titolo. `deck-run` legge i flag in qualunque
+// ordine (un solo posizionale, il TaskID), quindi lo spostamento non cambia
+// niente per chi esegue.
 export function resumeArgs(
   taskId: string | null,
   sessionId: string,
   model: ModelKind,
   note?: string,
 ): string[] {
-  const args = taskId ? [taskId, '--resume', sessionId] : ['--no-task', '--resume', sessionId];
-  args.push('--model', model);
+  const args = taskId ? [taskId] : ['--no-task'];
   if (note) args.push('--title-note', note);
+  args.push('--resume', sessionId, '--model', model);
   return args;
 }
 
