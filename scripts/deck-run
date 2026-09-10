@@ -116,7 +116,9 @@ MODEL=""
 # tab. È l'UNICO ingresso di testo libero nel titolo — gli altri componenti
 # (emoji/name dal file committato, TaskID) sono controllati — quindi il testo non
 # si quota, si RIDUCE a un alfabeto sicuro (vedi _sane_note): tutto ciò che non
-# ci rientra sparisce, apici inclusi.
+# ci rientra sparisce, apici inclusi. L'alfabeto ammette le quadre e quattro
+# emoji (T156) perché il deck ci fa passare il prefisso del titolo di fallback
+# (`[ 🚀 ] slug`); ogni altra emoji cade ancora.
 # --model <fable|opus|sonnet|haiku> (T108): modello della sessione. Enum e non
 # stringa libera perché il valore finisce dentro `bash -lc` e un refuso
 # produrrebbe una tab con un comando che il CLI rifiuta. Le voci sono ALIAS e
@@ -267,8 +269,23 @@ WORKDIR="${LOOM_DECK_WORKDIR:-$PWD}"
 # titolo finisce dentro apici singoli in `bash -lc "claude --name '…'"`, e la
 # nota è testo digitato a mano — enumerare i caratteri pericolosi significa
 # sbagliarne uno, enumerare quelli ammessi no. Restano lettere, cifre, accentate
-# italiane, spazio, trattino, underscore; tutto il resto (apici, backslash,
-# `$`, backtick, `;`, emoji…) cade.
+# italiane, spazio, trattino, underscore, le quadre e quattro emoji (sotto);
+# tutto il resto (apici, backslash, `$`, backtick, `;`, ogni altra emoji…) cade.
+#
+# T156 — le quadre e le quattro emoji entrano per il PREFISSO del titolo di
+# fallback che il deck genera quando il campo nota è vuoto (`[ 🚀 ] slug`,
+# `ACTION_EMOJI` in `src/spawn.ts`). Senza di loro il prefisso spariva qui e
+# restava nella lista del deck, che riceve la nota grezza dal sidecar
+# `session-tasks.jsonl`: la stessa conversazione portava due titoli diversi,
+# senza errore.
+# La whitelist le nomina una per una e NON apre un intervallo di code point. Due
+# ragioni: un'emoji arriva nella tab solo se il deck la mostra identica in lista,
+# cioè se `sanitize` (`src/width.ts`) la lascia passare invece di renderla `·`, e
+# quel verdetto si verifica un glifo alla volta (🗺️ è astrale e finisce comunque
+# in `·`); e l'ordine di un intervallo dentro un bracket expression segue la
+# collazione della locale, non i code point.
+# `]` sta per PRIMO nel set negato, dove chiude la classe invece di aprirla.
+#
 # Il cap a 60 CHARACTER è largo di proposito: una tab che sfora tronca a destra
 # da sola, quindi il limite serve solo a non spingere fuori vista la parte del
 # titolo che compass matcha, non a far stare la nota nella tab.
@@ -278,8 +295,17 @@ _sane_note() {  # <raw> → nota ridotta, spazi collassati, cap 60 char
   # titolo). L'assegnazione rifà setlocale, l'uscita dalla funzione lo ripristina.
   local LC_ALL=C.UTF-8
   local s
+  # La locale va rimessa SUL `sed`, non ereditata da qui: `local LC_ALL` non
+  # porta l'attributo export quando `LC_ALL` non era già esportata nell'ambiente
+  # (misurato: il figlio la vede vuota), quindi `sed` ricade su `LANG` — sotto
+  # una locale `C` lavora a byte e un carattere multibyte fuori whitelist lascia
+  # nel titolo i byte che coincidono con quelli ammessi. Le emoji astrali, che
+  # condividono i primi due byte `f0 9f`, ne lasciano sempre due: `🔥 fuoco`
+  # diventa `\xf0\x9f fuoco`, cioè UTF-8 rotto dentro il titolo della tab.
+  # `tr` non ne ha bisogno: squeeza uno spazio ASCII, e 0x20 non compare mai
+  # come byte di continuazione di una sequenza UTF-8.
   s="$(printf '%s' "$1" \
-       | sed 's/[^A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ-]//g' \
+       | LC_ALL=C.UTF-8 sed 's/[^]A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ[📐🚀📊🏁-]//g' \
        | tr -s ' ')"
   s="${s# }"; s="${s% }"
   printf '%s' "${s:0:60}"
