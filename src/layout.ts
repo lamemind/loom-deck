@@ -3,6 +3,7 @@
 // da scalare va tolta in un posto solo, o due chiamanti tolgono cose diverse
 // dalla stessa larghezza e il bordo viene mangiato.
 import { stripProjectCore } from './session-list.js';
+import { SID_CHARS } from './glyphs.js';
 import type { Session } from './sessions.js';
 
 /**
@@ -104,6 +105,23 @@ export function assignTextWidth(columns: number): number {
  */
 export function previewTextWidth(columns: number) {
   return Math.max(10, (columns || 80) - 8);
+}
+
+/**
+ * I tre pezzi della riga d'apertura del blocco preview di una conversazione —
+ * sid, nota, titolo — ognuno col proprio separatore in coda, pronti per
+ * `cutParts` sul budget di `previewTextWidth`.
+ *
+ * Esistono come funzione, e il taglio passa da `cutParts`, per l'invariante ③
+ * (§`assignTextWidth` sopra): lasciare la riga a `wrap="truncate-end"` la fa
+ * tagliare da `cli-truncate`, che sfora di una colonna per emoji e mangia il
+ * bordo destro del box. Due dei tre pezzi portano testo libero — la nota la
+ * scrive l'utente, e un titolo di conversazione auto-generato apre col prefisso
+ * `[ <emoji> ]` — quindi le emoji su questa riga sono il caso normale, non il
+ * limite.
+ */
+export function previewTitleParts(sessionId: string, note: string, title: string): string[] {
+  return [`${sessionId.slice(0, SID_CHARS)} `, note ? `${note} ` : '', title];
 }
 
 /**

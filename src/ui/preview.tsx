@@ -1,8 +1,8 @@
 // Blocco preview a piena larghezza sotto i due pane: mostra la task o la
 // conversazione selezionata a seconda del pane a fuoco.
 import { Box, Text } from 'ink';
-import { cut, wrapLines } from '../width.js';
-import { previewTextWidth } from '../layout.js';
+import { cut, cutParts, wrapLines } from '../width.js';
+import { previewTextWidth, previewTitleParts } from '../layout.js';
 import {
   LIVE_BUSY,
   LIVE_IDLE,
@@ -167,6 +167,14 @@ export function SessionPreview({
   // non c'è una provenienza vera da dichiarare.
   const originAlias = modelAlias(s.model);
   const originIndex = originAlias ? MODELS.indexOf(originAlias) : undefined;
+  // La riga del titolo si taglia QUI, con la contabilità del deck, invece di
+  // lasciarla a `wrap="truncate-end"`: Ink taglia con `cli-truncate`, che sfora
+  // di una colonna per emoji (invariante ③ di width.ts) e mangia il bordo del
+  // box. Pezzi e ragione stanno in `previewTitleParts`.
+  const [sidPart, notePart, titlePart] = cutParts(
+    previewTitleParts(s.sessionId, note, s.title),
+    previewTextWidth(columns),
+  );
   return (
     <>
       {/* T53 — la nota va sulla riga del titolo, non su una propria: le righe
@@ -175,9 +183,9 @@ export function SessionPreview({
           titolo resta INTERO anche con la nota — a differenza della lista, nel
           blocco lo spazio c'è e il prefisso non si ripete su N righe. */}
       <Text bold wrap="truncate-end">
-        <Text color="cyan">{s.sessionId.slice(0, SID_CHARS)}</Text>{' '}
-        {note ? <Text color="yellow">{note} </Text> : null}
-        <Text dimColor={Boolean(note)}>{s.title}</Text>
+        <Text color="cyan">{sidPart}</Text>
+        {notePart ? <Text color="yellow">{notePart}</Text> : null}
+        <Text dimColor={Boolean(note)}>{titlePart}</Text>
       </Text>
       {/* La provenienza va IN CODA alla riga meta esistente, non su una riga
           propria: il budget d'altezza conta le righe fisse del blocco e una

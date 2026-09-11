@@ -8,10 +8,12 @@ import {
   isDone,
   paneTextWidth,
   previewTextWidth,
+  previewTitleParts,
   removeAt,
   searchExcerptWidth,
   searchTitleWidth,
 } from '../src/layout.js';
+import { cutParts, termWidth } from '../src/width.js';
 import type { Session } from '../src/sessions.js';
 
 test('cpLen conta code point, non code unit UTF-16', () => {
@@ -59,6 +61,31 @@ test('le larghezze derivate restano sotto le colonne e sopra il minimo', () => {
   assert.equal(previewTextWidth(200), 192);
   // Il pane sta al 50%, quindi la sua larghezza è circa la metà.
   assert.ok(paneTextWidth(200) < previewTextWidth(200) / 2 + 4);
+});
+
+// T155 — la riga d'apertura del blocco preview di una conversazione: sid, nota
+// facoltativa e titolo tagliato dal deck. Il gate pty la misura solo quando una
+// conversazione VIVA sul disco porta un titolo abbastanza lungo con dentro
+// un'emoji, cioè quando capita; qui la somma si misura sempre.
+test('sid + nota + titolo stanno nel testo del blocco preview', () => {
+  // Il titolo auto-generato porta il prefisso `[ <emoji> ]`, e l'emoji è il
+  // carattere su cui `cli-truncate` sfora: se il taglio lo facesse Ink questa
+  // somma uscirebbe di due colonne e mangerebbe il bordo destro del box.
+  const titolo = '[ 📊 ] deck sensore gitlink disallineato 🧵 loom-works · T155 '.repeat(3);
+  for (const cols of [0, 1, 40, 80, 100, 176]) {
+    for (const nota of ['', '[ 🔬 ]', 'una nota lunga scritta a mano 🧵 con emoji in coda']) {
+      const parti = cutParts(previewTitleParts('dbae82fe-9983', nota, titolo), previewTextWidth(cols));
+      const larghezza = parti.reduce((w, p) => w + termWidth(p), 0);
+      assert.ok(
+        larghezza <= previewTextWidth(cols),
+        `cols=${cols} nota=${JSON.stringify(nota)}: ${larghezza} > ${previewTextWidth(cols)}`,
+      );
+    }
+  }
+  // La sid non cade mai per prima: è la coordinata con cui si riprende la
+  // conversazione, e una riga che perde lei tiene a schermo solo del testo.
+  const parti = cutParts(previewTitleParts('dbae82fe-9983', '', 'un titolo qualunque'), 80);
+  assert.equal(parti[0], 'dbae82fe ');
 });
 
 test('colonne a 0 (stdout non tty) ricadono sul default 80', () => {

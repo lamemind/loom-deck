@@ -770,11 +770,30 @@ const selectedTask = (f: string) => {
   return m[1];
 };
 
+/**
+ * La riga `n` (1-based) porta il caret del pane TASK, cioè una task selezionata.
+ *
+ * L'ancora è il bordo del pane (`│ │`) subito prima del caret: il pane sessioni
+ * disegna il proprio caret sulla stessa riga di schermo, e un `▸` cercato nudo
+ * matcherebbe quello.
+ *
+ * Serve a misurare la selezione DENTRO un solo frame. Confrontare la task
+ * selezionata dopo il click con quella letta in una cattura PRECEDENTE lega
+ * l'esito a due deck diversi: la lista è ordinata anche per data di commit
+ * (`useCommitTimes`), che arriva da uno spawn di `git log` asincrono, quindi
+ * fra i due avvii l'ordine può differire e la riga 13 portare un'altra task.
+ * Non è un difetto del click, ed è un rosso che compare solo quando la macchina
+ * è carica — cioè quando la suite intera gira in parallelo.
+ */
+function assertTaskCaretAtRow(frame: string, n: number, what: string) {
+  const line = frame.split('\n')[n - 1] ?? '';
+  assert.match(line, /^│ │ *▸ *T ?\d+/, `${what} (riga ${n}): ${frame}`);
+}
+
 test('click su una riga task la seleziona senza aprire il detail', { skip: !CAN_RUN }, () => {
   // Riga 13 = terza task della finestra (9 `≡`, 10 `○`, 11 prima task).
-  const target = taskIdAtRow(lastFrame(capture('')), 13);
   const after = lastFrame(capture('@10,13;'));
-  assert.equal(selectedTask(after), target, `il caret non è sulla riga cliccata: ${after}`);
+  assertTaskCaretAtRow(after, 13, 'il caret non è sulla riga cliccata');
   // D2: solo fuoco. La lista è ancora a schermo e `⏎` aprirebbe il detail ora.
   assert.match(after, /t 💻/, `il click ha lasciato la lista: ${after}`);
   assert.match(after, /⏎ detail/, `il fuoco non è sul pane task: ${after}`);
@@ -787,16 +806,18 @@ test('click su una riga meta riporta la selezione su di lei', { skip: !CAN_RUN }
 });
 
 test('click sulla riga sort del pane task è inerte', { skip: !CAN_RUN }, () => {
-  const base = selectedTask(lastFrame(capture('DDD')));
-  assert.equal(selectedTask(lastFrame(capture('DDD@10,8;'))), base);
+  // Tre `↓` da `≡` (riga 9) portano il caret a riga 12; il click sulla riga
+  // `sort:` non deve spostarlo. Si misura la RIGA e non l'id della task: quale
+  // task ci sia a riga 12 dipende dall'ordinamento, che il click non tocca.
+  assertTaskCaretAtRow(lastFrame(capture('DDD@10,8;')), 12, 'il click sulla riga sort ha mosso il caret');
 });
 
 test('click su una conversazione porta fuoco e selezione sul pane sessioni', { skip: !CAN_RUN }, () => {
   // Riga 10 = terza conversazione (il corpo del pane sessioni parte da riga 8).
   // Colonna 70: dentro il pane destro a qualunque larghezza ≥ 100.
-  const target = sessionAtRow(lastFrame(capture('')), 10);
   const after = lastFrame(capture('@70,10;'));
-  const line = after.split('\n').find((l) => l.includes(target)) ?? '';
+  const line = after.split('\n')[9] ?? '';
+  const target = sessionAtRow(after, 10);
   // Il caret precede l'hash sulla stessa riga senza un bordo in mezzo: il
   // caret del pane task, a sinistra, è separato da `│ │`.
   assert.match(line, new RegExp(`▸[^│]*${target}`), `il caret non è sulla conversazione cliccata: ${line}`);
@@ -817,8 +838,7 @@ test('click su una voce dell\'header attiva quella vista', { skip: !CAN_RUN }, (
 test('click sulla vista già attiva non muove la selezione', { skip: !CAN_RUN }, () => {
   // `Tasks` comincia a colonna 5 (bordo + padding del pane): un click lì con
   // una task selezionata deve lasciarla dov'è, non riportarla su `≡ tutte`.
-  const base = selectedTask(lastFrame(capture('DDD')));
-  assert.equal(selectedTask(lastFrame(capture('DDD@6,7;'))), base);
+  assertTaskCaretAtRow(lastFrame(capture('DDD@6,7;')), 12, 'il click sulla vista attiva ha mosso il caret');
 });
 
 test('secondo click sulla task già selezionata apre il detail, come ⏎', { skip: !CAN_RUN }, () => {
@@ -832,8 +852,17 @@ test('secondo click sulla task già selezionata apre il detail, come ⏎', { ski
 });
 
 test('secondo click sulla conversazione già selezionata fa il resume, come ⏎', { skip: !CAN_RUN }, () => {
-  const target = sessionAtRow(lastFrame(capture('')), 10);
+  // Il bersaglio si legge dallo STESSO frame in cui si misura l'esito: la lista
+  // conversazioni è ordinata su dati che arrivano asincroni, quindi la riga 10
+  // di un secondo avvio del deck può portare un'altra conversazione.
+  //
+  // L'hash sopravvive nella riga di stato perché `resumeArgs` tiene
+  // `--resume <uuid>` in CODA all'argv, dove il taglio al mezzo non arriva. Con
+  // `--title-note` in fondo — argomento a lunghezza libera — bastava un titolo
+  // di conversazione lungo perché l'elisione si mangiasse proprio l'hash, e il
+  // test cadeva su un resume partito correttamente.
   const after = lastFrame(capture('@70,10;@70,10;'));
+  const target = sessionAtRow(after, 10);
   assert.match(
     after,
     new RegExp(`--resume ${target}`),

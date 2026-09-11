@@ -132,7 +132,77 @@ def pump(seconds):
                 return
 
 
+def echo_on():
+    """L'eco del pty e' ancora acceso, cioe' nessuno ha messo il tty in raw mode.
+
+    La termios appartiene alla COPPIA master/slave, quindi si legge dal master
+    senza toccare il processo figlio.
+    """
+    try:
+        return bool(termios.tcgetattr(master)[3] & termios.ECHO)
+    except OSError:
+        return False
+
+
+def pump_until_raw(seconds):
+    global buf
+    deadline = time.time() + seconds
+    while echo_on() and time.time() < deadline:
+        ready, _, _ = select.select([master], [], [], 0.05)
+        if ready:
+            try:
+                buf += os.read(master, 65536)
+            except OSError:
+                return
+    return
+
+
+def pump_until_quiet(idle, cap):
+    """Aspetta che il deck smetta di ridisegnare: `idle` secondi senza un byte.
+
+    Un deck fermo non scrive nulla — i poll hanno un gate a monte e ridisegnano
+    solo quando il dato cambia — quindi la quiete e' raggiungibile e significa
+    che i dati asincroni dell'avvio sono arrivati tutti.
+    """
+    global buf
+    deadline = time.time() + cap
+    last = time.time()
+    while time.time() < deadline and time.time() - last < idle:
+        ready, _, _ = select.select([master], [], [], 0.05)
+        if ready:
+            try:
+                chunk = os.read(master, 65536)
+            except OSError:
+                return
+            if chunk:
+                buf += chunk
+                last = time.time()
+
+
 pump(4)
+# I tasti si scrivono solo dopo che il tty e' in RAW MODE, non dopo un'attesa
+# fissa. Finche' non lo e', il pty ECHEGGIA quello che gli si scrive: un `^O`
+# finisce nel buffer come testo, la riga catturata esce di due colonne e il gate
+# rosseggia su una larghezza che il deck non ha mai disegnato.
+#
+# Il frame non e' il segnale: il deck CHIUDE il primo frame molto prima di
+# entrare in raw mode (misurato: 0,9s contro 3,5s), perche' Ink monta `useInput`
+# dopo il primo paint. Quattro secondi coprono quel divario a macchina scarica e
+# non lo coprono quando la suite gira in parallelo su 37 file, da cui un rosso
+# che compariva solo sotto carico e spariva rilanciando il singolo test.
+#
+# Il segnale vero e' il flag ECHO della termios, che si legge dal master. Il
+# tetto e' generoso perche' l'attesa non costa: chi e' gia' in raw mode esce
+# subito, e chi non ci entra mai fallisce comunque a valle, sul frame mancante.
+pump_until_raw(20)
+# E dopo la raw mode, la QUIETE: i dati che il deck carica in asincrono (le date
+# di ultimo commit dei task file, i sensori) arrivano dopo il primo frame e
+# RIORDINANO le liste. Una sequenza che clicca due volte la stessa riga di
+# schermo aspettandosi lo stesso oggetto misura allora due oggetti diversi — il
+# secondo click risulta il primo su una riga nuova, e l'azione che si voleva
+# provare non parte. Anche qui il rosso compare solo a macchina carica, dove il
+# riordino cade dopo il primo tasto invece che prima.
+pump_until_quiet(0.5, 10)
 for chunk in tokenize(keys):
     os.write(master, chunk)
     pump(0.7)
