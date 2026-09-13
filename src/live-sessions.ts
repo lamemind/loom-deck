@@ -118,6 +118,19 @@ export function parseLiveEntry(
   // non si può stabilire la liveness, e assumerla sarebbe il falso positivo che
   // il guard esiste per escludere), `cwd` è il filtro di progetto.
   if (!sessionId || !procStart || !cwd) return null;
+  // Il registry tiene un file anche per i processi che NON sono una
+  // conversazione dell'utente: subagent SDK, fork parkeggiati in background,
+  // spare pty host. Hanno lo stesso `cwd` del progetto e un pid davvero vivo —
+  // quindi `isAlive` non li scarta — ma nessuna tab a cui tornare: elencarli
+  // conta più conversazioni di quante ne siano aperte, e `--resume` su una di
+  // esse non riporta l'utente da nessuna parte.
+  //
+  // Servono DUE campi perché uno solo non discrimina: un job in background di
+  // Claude Code scrive `entrypoint:"cli"` come una sessione vera e si distingue
+  // solo per `kind:"bg"`. Entrambi assenti valgono come sessione interattiva —
+  // una versione del CLI che non li scrivesse non deve svuotare la lista.
+  if ((typeof d.entrypoint === 'string' ? d.entrypoint : 'cli') !== 'cli') return null;
+  if ((typeof d.kind === 'string' ? d.kind : 'interactive') !== 'interactive') return null;
   return {
     entry: {
       sessionId,

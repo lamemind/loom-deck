@@ -69,6 +69,24 @@ test('parseLiveEntry: senza sessionId o cwd → null', () => {
   assert.equal(parseLiveEntry(JSON.stringify({ procStart: '1', sessionId: 'a' }), 1), null);
 });
 
+test('parseLiveEntry: un job in background non è una conversazione', () => {
+  // Fork parkeggiato / spare pty host: pid vivo, stesso cwd del progetto,
+  // `entrypoint:"cli"` come una sessione vera — l'unico campo che discrimina è
+  // `kind`. Elencarlo conta una tab che non esiste.
+  const bg = JSON.stringify({ ...JSON.parse(ENTRY), kind: 'bg', entrypoint: 'cli' });
+  assert.equal(parseLiveEntry(bg, 10358), null);
+  // Il gemello vecchio: uno spawn dell'SDK, che si dichiara sull'entrypoint.
+  const sdk = JSON.stringify({ ...JSON.parse(ENTRY), entrypoint: 'sdk' });
+  assert.equal(parseLiveEntry(sdk, 10358), null);
+});
+
+test('parseLiveEntry: kind ed entrypoint assenti valgono interattiva', () => {
+  // Una versione del CLI che non scrivesse i due campi non deve svuotare la lista.
+  const p = parseLiveEntry(JSON.stringify({ ...JSON.parse(ENTRY), kind: 'interactive' }), 1);
+  assert.ok(p);
+  assert.ok(parseLiveEntry(ENTRY, 1));
+});
+
 test('parseLiveEntry: JSON rotto → null, mai un throw', () => {
   // Il file può essere letto mentre il CLI lo riscrive.
   assert.equal(parseLiveEntry('{"pid":1,', 1), null);
