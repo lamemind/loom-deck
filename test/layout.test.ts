@@ -68,10 +68,10 @@ test('le larghezze derivate restano sotto le colonne e sopra il minimo', () => {
 // conversazione VIVA sul disco porta un titolo abbastanza lungo con dentro
 // un'emoji, cioè quando capita; qui la somma si misura sempre.
 test('sid + nota + titolo stanno nel testo del blocco preview', () => {
-  // Il titolo auto-generato porta il prefisso `[ <emoji> ]`, e l'emoji è il
+  // Il titolo auto-generato apre con l'emoji dell'azione, e l'emoji è il
   // carattere su cui `cli-truncate` sfora: se il taglio lo facesse Ink questa
   // somma uscirebbe di due colonne e mangerebbe il bordo destro del box.
-  const titolo = '[ 📊 ] deck sensore gitlink disallineato 🧵 loom-works · T155 '.repeat(3);
+  const titolo = '📊 deck sensore gitlink disallineato 🧵 loom-works · T155 '.repeat(3);
   for (const cols of [0, 1, 40, 80, 100, 176]) {
     for (const nota of ['', '[ 🔬 ]', 'una nota lunga scritta a mano 🧵 con emoji in coda']) {
       const parti = cutParts(previewTitleParts('dbae82fe-9983', nota, titolo), previewTextWidth(cols));

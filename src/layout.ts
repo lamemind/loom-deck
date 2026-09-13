@@ -116,8 +116,8 @@ export function previewTextWidth(columns: number) {
  * (§`assignTextWidth` sopra): lasciare la riga a `wrap="truncate-end"` la fa
  * tagliare da `cli-truncate`, che sfora di una colonna per emoji e mangia il
  * bordo destro del box. Due dei tre pezzi portano testo libero — la nota la
- * scrive l'utente, e un titolo di conversazione auto-generato apre col prefisso
- * `[ <emoji> ]` — quindi le emoji su questa riga sono il caso normale, non il
+ * scrive l'utente, e un titolo di conversazione auto-generato apre con l'emoji
+ * dell'azione — quindi le emoji su questa riga sono il caso normale, non il
  * limite.
  */
 export function previewTitleParts(sessionId: string, note: string, title: string): string[] {

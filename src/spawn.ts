@@ -260,6 +260,8 @@ export const ACTION_HOTKEYS: Readonly<Record<string, number>> = Object.fromEntri
 // `deck-run` lascia passare nel titolo della tab: la whitelist è una lista
 // chiusa che nomina questi code point (P2 preflight), quindi cambiare una voce
 // qui e non là riapre la divergenza fra titolo in lista e titolo in tab.
+// Le quadre che delimitavano il prefisso sono cadute: l'emoji da sola si stacca
+// già dallo slug, e con lei sono uscite dalla whitelist di `_sane_note`.
 const ACTION_EMOJI: Readonly<Partial<Record<PromptKind, string>>> = {
   preflight: '📐',
   run: '🚀',
@@ -270,7 +272,7 @@ const ACTION_EMOJI: Readonly<Partial<Record<PromptKind, string>>> = {
 };
 
 /**
- * Titolo di fallback per una conversazione con nota vuota: `[ {emoji} ] {slug}`,
+ * Titolo di fallback per una conversazione con nota vuota: `{emoji} {slug}`,
  * o il solo slug per `none` (D1/D2 preflight). Lo slug viene dal NOME del
  * task file (`findTaskFile`), non dalla descrizione di `tasks.md`: il nome è
  * già dentro l'alfabeto di `_sane_note` per costruzione — minuscolo, separato
@@ -278,10 +280,10 @@ const ACTION_EMOJI: Readonly<Partial<Record<PromptKind, string>>> = {
  * `/` che la riduzione toglie senza sostituto, saldando le parole (D1
  * razionale).
  *
- * Il PREFISSO invece nell'alfabeto non ci sta per costruzione: emoji e quadre
- * ci entrano solo perché la whitelist di `_sane_note` le nomina una per una
- * (T156). È l'unica parte del titolo di fallback che dipende da una modifica
- * fatta dall'altro lato.
+ * Il PREFISSO invece nell'alfabeto non ci sta per costruzione: l'emoji ci entra
+ * solo perché la whitelist di `_sane_note` le nomina una per una (T156). È
+ * l'unica parte del titolo di fallback che dipende da una modifica fatta
+ * dall'altro lato.
  *
  * `null` quando il task file non si trova: il chiamante decide se ripiegare
  * su nota vuota o su un altro fallback.
@@ -291,7 +293,7 @@ export function fallbackTitle(tasksDir: string, id: string, kind: PromptKind): s
   if (!path) return null;
   const slug = basename(path, '.md').slice(id.length + 1).replace(/-/g, ' ');
   const emoji = ACTION_EMOJI[kind];
-  return emoji ? `[ ${emoji} ] ${slug}` : slug;
+  return emoji ? `${emoji} ${slug}` : slug;
 }
 
 // Spawn detached: il deck spawna ma NON contiene la sessione (la possiede

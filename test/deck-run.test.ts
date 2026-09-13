@@ -311,22 +311,22 @@ test('--title-note: nota tutta scartata → nessun suffisso a vuoto', () => {
 });
 
 // T156 — il titolo di FALLBACK che il deck compone quando il campo nota è vuoto
-// (`[ 🚀 ] slug`, `ACTION_EMOJI` in `src/spawn.ts`) deve arrivare qui intero.
-// Prima di questa task le quadre e l'emoji cadevano nella riduzione: la tab
-// mostrava il solo slug mentre la lista del deck, che riceve la nota grezza dal
-// sidecar, mostrava il prefisso — due titoli per la stessa conversazione, senza
-// nessun errore a segnalarlo.
+// (`🚀 slug`, `ACTION_EMOJI` in `src/spawn.ts`) deve arrivare qui intero.
+// Prima di questa task l'emoji cadeva nella riduzione: la tab mostrava il solo
+// slug mentre la lista del deck, che riceve la nota grezza dal sidecar,
+// mostrava il prefisso — due titoli per la stessa conversazione, senza nessun
+// errore a segnalarlo.
 for (const [kind, emoji] of [
   ['preflight', '📐'],
   ['run', '🚀'],
   ['recap', '📊'],
   ['checkpoint', '🏁'],
 ] as const) {
-  test(`--title-note: il prefisso di fallback \`[ ${emoji} ]\` (${kind}) sopravvive alla riduzione`, () => {
-    const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', `[ ${emoji} ] prova`], {
+  test(`--title-note: il prefisso di fallback \`${emoji}\` (${kind}) sopravvive alla riduzione`, () => {
+    const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', `${emoji} prova`], {
       LOOM_DECK_WORKDIR: labeledWd,
     });
-    assert.ok(cmd.includes(`--name '🧵 demo · T64 [ ${emoji} ] prova'`), `titolo inatteso: ${cmd}`);
+    assert.ok(cmd.includes(`--name '🧵 demo · T64 ${emoji} prova'`), `titolo inatteso: ${cmd}`);
   });
 }
 
@@ -344,7 +344,7 @@ for (const [kind, emoji] of [
 // la variabile presente il titolo esce pulito comunque, con la variabile tolta
 // esce rotto se il `sed` non porta la propria locale.
 test('--title-note: prefisso e riduzione reggono anche sotto una locale non-UTF-8', () => {
-  const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', '[ 🚀 ] prova 🔥 fuoco'], {
+  const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', '🚀 prova 🔥 fuoco'], {
     LOOM_DECK_WORKDIR: labeledWd,
     LANG: 'C',
     LC_ALL: undefined,
@@ -352,7 +352,7 @@ test('--title-note: prefisso e riduzione reggono anche sotto una locale non-UTF-
   const title = cmd.match(/--name '([^']*)'/)?.[1] ?? '';
   // Il prefisso in whitelist passa intero; 🔥, che non ci sta, sparisce SENZA
   // lasciare byte orfani — il titolo resta UTF-8 valido.
-  assert.equal(title, '🧵 demo · T64 [ 🚀 ] prova fuoco');
+  assert.equal(title, '🧵 demo · T64 🚀 prova fuoco');
   assert.ok(!/[�]/.test(title), `sequenza UTF-8 rotta nel titolo: ${title}`);
 });
 
@@ -362,10 +362,10 @@ test('--title-note: prefisso e riduzione reggono anche sotto una locale non-UTF-
 // deck `sanitize` la renderebbe comunque `·` — riaprendo la divergenza fra i due
 // titoli nel verso opposto.
 test('--title-note: un\'emoji fuori whitelist cade ancora, astrale compresa', () => {
-  const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', '[ 🗺️ ] mappa'], {
+  const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', '🗺️ mappa'], {
     LOOM_DECK_WORKDIR: labeledWd,
   });
-  assert.ok(cmd.includes("--name '🧵 demo · T64 [ ] mappa'"), `titolo inatteso: ${cmd}`);
+  assert.ok(cmd.includes("--name '🧵 demo · T64 mappa'"), `titolo inatteso: ${cmd}`);
 });
 
 test('--title-note: cap a 60 caratteri, taglio non a metà di un multibyte', () => {

@@ -317,10 +317,10 @@ test('fallbackTitle: ogni azione del detail produce un titolo distinto', () => {
     const titles = DETAIL_ACTIONS.map((a) => fallbackTitle(dir, 'T150', a.kind));
     assert.deepEqual(titles, [
       'deck titolo conversazione auto',
-      '[ 📐 ] deck titolo conversazione auto',
-      '[ 🚀 ] deck titolo conversazione auto',
-      '[ 📊 ] deck titolo conversazione auto',
-      '[ 🏁 ] deck titolo conversazione auto',
+      '📐 deck titolo conversazione auto',
+      '🚀 deck titolo conversazione auto',
+      '📊 deck titolo conversazione auto',
+      '🏁 deck titolo conversazione auto',
     ]);
     // Cinque azioni, cinque titoli: nessuna collisione.
     assert.equal(new Set(titles).size, titles.length);
@@ -333,7 +333,7 @@ test('fallbackTitle: ogni azione del detail produce un titolo distinto', () => {
 // misura sul vero script bash sta in `deck-run.test.ts`; qui si fissa la FORMA
 // che quel gate si aspetta, così un cambio di formato fatto da un lato solo
 // rompe subito invece di produrre due titoli divergenti in silenzio.
-test('fallbackTitle: il prefisso è `[ emoji ]` con spazi interni, e lo slug lo segue', () => {
+test('fallbackTitle: il prefisso è la sola emoji, staccata dallo slug da uno spazio', () => {
   withTaskFiles({ 'T150-deck-titolo-conversazione-auto.md': '# Task: x\n' }, (dir) => {
     for (const kind of ['preflight', 'run', 'recap', 'checkpoint'] as const) {
       const title = fallbackTitle(dir, 'T150', kind) ?? '';
@@ -341,7 +341,7 @@ test('fallbackTitle: il prefisso è `[ emoji ]` con spazi interni, e lo slug lo 
       // un'emoji astrale, che senza il flag conterebbe come due unità UTF-16.
       assert.match(
         title,
-        /^\[ \p{Extended_Pictographic} \] deck titolo/u,
+        /^\p{Extended_Pictographic} deck titolo/u,
         `formato del prefisso: ${title}`,
       );
     }
@@ -357,7 +357,7 @@ test('fallbackTitle: `open` (kind `none`) è il solo slug, senza prefisso (D2/P7
 test('fallbackTitle: le tre varianti di recap condividono lo stesso prefisso (P3)', () => {
   withTaskFiles({ 'T81-fix-deck.md': '# Task: x\n' }, (dir) => {
     const recap = fallbackTitle(dir, 'T81', 'recap');
-    assert.equal(recap, '[ 📊 ] fix deck');
+    assert.equal(recap, '📊 fix deck');
     assert.equal(fallbackTitle(dir, 'T81', 'recap-task'), recap);
     assert.equal(fallbackTitle(dir, 'T81', 'recap-epic'), recap);
   });
@@ -367,7 +367,7 @@ test('fallbackTitle: lo slug viene dal NOME del file, non dalla descrizione — 
   withTaskFiles({ 'T16-valutare-integrazione-obsidian-viewer.md': '# Task: x\n' }, (dir) => {
     assert.equal(
       fallbackTitle(dir, 'T16', 'run'),
-      '[ 🚀 ] valutare integrazione obsidian viewer',
+      '🚀 valutare integrazione obsidian viewer',
     );
   });
 });
@@ -383,7 +383,7 @@ test('fallbackTitle → deckArgs: il fallback sostituisce la nota vuota e porta 
     const note = fallbackTitle(dir, 'T150', 'run') ?? '';
     const args = deckArgs('T150', 'sid-1', 'run', 'opus', note);
     assert.ok(args.includes('--title-note'));
-    assert.equal(args[args.indexOf('--title-note') + 1], '[ 🚀 ] deck titolo conversazione auto');
+    assert.equal(args[args.indexOf('--title-note') + 1], '🚀 deck titolo conversazione auto');
   });
 });
 
