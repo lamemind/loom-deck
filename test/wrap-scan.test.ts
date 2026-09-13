@@ -16,8 +16,10 @@ import {
   wrapCacheFile,
   wrapCount,
   wrapPrompt,
+  wrapTitle,
   WRAP_DEFAULT_PATH,
 } from '../src/wrap-scan.js';
+import { sanitize } from '../src/width.js';
 
 const TSV = [
   'WRAP\truntime/reference/doc-system/doc-system-topology.md\tcol=93\tratio=0.82\tbreaks=41\tprose=50',
@@ -87,6 +89,30 @@ test('wrapPrompt: testo cablato, col path sostituito', () => {
 test('wrapPrompt: campo vuoto → project root intera, non un comando monco', () => {
   assert.equal(wrapPrompt(''), wrapPrompt(WRAP_DEFAULT_PATH));
   assert.equal(wrapPrompt('   '), wrapPrompt(WRAP_DEFAULT_PATH));
+});
+
+test('wrapTitle: il path diventa parole, senza barre né estensione', () => {
+  // L'alfabeto di `_sane_note` (deck-run) non ha `/` né `.`: lasciandoceli
+  // cadere le parole si salderebbero (`runtimereferencedoc-systemmd`) e il
+  // titolo della tab divergerebbe da quello che la lista legge dal sidecar.
+  assert.equal(wrapTitle('runtime/reference'), '📏 runtime reference');
+  assert.equal(
+    wrapTitle('runtime/reference/doc-system/doc-system-topology.md'),
+    '📏 runtime reference doc-system doc-system-topology',
+  );
+  assert.equal(wrapTitle('./CLAUDE.md'), '📏 CLAUDE');
+});
+
+test('wrapTitle: la project root intera è una frase, non un prefisso nudo', () => {
+  assert.equal(wrapTitle(WRAP_DEFAULT_PATH), '📏 tutto il progetto');
+  assert.equal(wrapTitle(''), wrapTitle(WRAP_DEFAULT_PATH));
+  assert.equal(wrapTitle('   '), wrapTitle(WRAP_DEFAULT_PATH));
+});
+
+test('wrapTitle: il prefisso sopravvive a sanitize', () => {
+  for (const p of ['.', 'runtime/reference', 'CLAUDE.md']) {
+    assert.equal(sanitize(wrapTitle(p)), wrapTitle(p));
+  }
 });
 
 test('la cache è per-progetto e sotto una cartella per-utente', () => {

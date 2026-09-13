@@ -7,6 +7,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  bareArgs,
   cleanTasksArgs,
   cleanTasksPrompt,
   deckArgs,
@@ -165,6 +166,39 @@ test('emptyArgs porta sempre --model, anche sul valore di default', () => {
   for (const m of ['fable', 'opus', 'sonnet', 'haiku'] as const) {
     assert.deepEqual(emptyArgs(m), ['--no-task', '--model', m]);
   }
+});
+
+test('bareArgs: senza titolo resta la forma minima, col titolo arriva anche il sessionId', () => {
+  // Nuda col solo prompt: nessun id pinnato, nessuna nota — è la forma con cui
+  // il drain girava prima di avere un nome.
+  assert.deepEqual(bareArgs('drena', 'fable'), [
+    '--no-task',
+    '--prompt',
+    'drena',
+    '--model',
+    'fable',
+  ]);
+  // Titolo e id viaggiano insieme: la tab lo legge da `--title-note`, la lista
+  // del deck dalla nota nel sidecar, che è keyed sul sessionId.
+  assert.deepEqual(bareArgs('drena', 'sonnet', 'sid-9', '🧹 T158-prova'), [
+    '--no-task',
+    '--title-note',
+    '🧹 T158-prova',
+    '--session-id',
+    'sid-9',
+    '--prompt',
+    'drena',
+    '--model',
+    'sonnet',
+  ]);
+});
+
+test('bareArgs: il titolo sta PRIMA del prompt', () => {
+  // Il prompt è l'argomento più lungo (quello cablato dello srotolamento supera
+  // le cento colonne) e la riga di stato taglia il comando al mezzo: in coda al
+  // titolo lo spingerebbe fuori vista.
+  const args = bareArgs('x'.repeat(200), 'sonnet', 'sid-9', '📏 runtime reference');
+  assert.ok(args.indexOf('--title-note') < args.indexOf('--prompt'));
 });
 
 test('forkArgs porta insieme --resume, --session-id e --model', () => {

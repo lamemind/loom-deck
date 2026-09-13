@@ -54,7 +54,8 @@ import {
   type Spawned,
 } from './spawn.js';
 import { useTaskOps } from './task-ops.js';
-import type { InboxFile } from './inbox.js';
+import { inboxTitle, type InboxFile } from './inbox.js';
+import { wrapTitle } from './wrap-scan.js';
 import type { DeckModel } from './deck-model.js';
 
 export function useDeckActions({
@@ -415,9 +416,18 @@ export function useDeckActions({
    * Sessione NUDA e modello esplicito: il drain lavora sulla doc, non sulla
    * task (D10 preflight), e `MODEL_DEFAULT` passa nell'argv anche essendo il
    * default, come `permissionMode`.
+   *
+   * Il TITOLO lo deriva `inboxTitle` dal file, e serve un `sessionId` pinnato
+   * per scriverlo nel sidecar — senza, la nota non avrebbe una chiave e la riga
+   * in lista resterebbe nuda mentre la tab porta un nome. Le due scritture
+   * stanno qui accanto per la stessa ragione di `spawnForTask`: il nome che le
+   * due superfici mostrano nasce da un valore solo.
    */
   function drainInbox(file: InboxFile, prompt: string) {
-    const spawned = spawnBare(cwd, prompt, MODEL_DEFAULT);
+    const sid = randomUUID();
+    const title = inboxTitle(file);
+    appendNote(cwd, sid, title);
+    const spawned = spawnBare(cwd, prompt, MODEL_DEFAULT, sid, title);
     spawned.child.on('error', () => setNote(`⚠ drain ${file.basename} fallito (${DECK_RUN})`));
     noteSpawn(spawned);
   }
@@ -432,7 +442,10 @@ export function useDeckActions({
    * decidere se committarlo — non progettare niente.
    */
   function unwrapPath(path: string, prompt: string) {
-    const spawned = spawnBare(cwd, prompt, 'sonnet');
+    const sid = randomUUID();
+    const title = wrapTitle(path);
+    appendNote(cwd, sid, title);
+    const spawned = spawnBare(cwd, prompt, 'sonnet', sid, title);
     spawned.child.on('error', () => setNote(`⚠ srotolamento ${path} fallito (${DECK_RUN})`));
     noteSpawn(spawned);
   }

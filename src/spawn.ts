@@ -256,10 +256,12 @@ export const ACTION_HOTKEYS: Readonly<Record<string, number>> = Object.fromEntri
 // (⚙️ ⏱️ 🛠️ …) divergono sempre — string-width le conta 2, VTE ne disegna 1, e
 // il VS16 non sposta nessuno dei due verdetti. Un'emoji aggiunta qui va prima
 // passata in `sanitize` per vedere se sopravvive.
-// Le stesse quattro sono anche l'unica classe di emoji che `_sane_note` di
-// `deck-run` lascia passare nel titolo della tab: la whitelist è una lista
-// chiusa che nomina questi code point (P2 preflight), quindi cambiare una voce
-// qui e non là riapre la divergenza fra titolo in lista e titolo in tab.
+// Le stesse quattro stanno anche nella whitelist di `_sane_note` in `deck-run`,
+// che è una lista chiusa di code point (P2 preflight): cambiare una voce qui e
+// non là riapre la divergenza fra titolo in lista e titolo in tab. La whitelist
+// è più larga di questa tabella — porta anche le emoji dei titoli che non
+// nascono da un'azione su task (🧹 drain di un file inbox, `src/inbox.ts`; 📏
+// srotolamento di un path, `src/wrap-scan.ts`).
 // Le quadre che delimitavano il prefisso sono cadute: l'emoji da sola si stacca
 // già dallo slug, e con lei sono uscite dalla whitelist di `_sane_note`.
 const ACTION_EMOJI: Readonly<Partial<Record<PromptKind, string>>> = {
@@ -495,9 +497,40 @@ export function spawnClaudeEmpty(cwd: string, model: ModelKind): Spawned {
  * Il modello è passato SEMPRE, anche sul default, per la stessa ragione di
  * `permissionMode`: lo spawn resta deterministico e leggibile nel process tree
  * invece di dipendere da un default che può cambiare fra versioni.
+ *
+ * `sessionId` e `title` viaggiano INSIEME o non viaggiano: il titolo lo mostrano
+ * due superfici — la tab Ptyxis (via `--title-note`) e la riga della lista
+ * sessioni (via la nota nel sidecar, che è keyed sul sessionId) — e senza un id
+ * pinnato la seconda non ha una chiave su cui scrivere. Pinnarlo è quindi ciò
+ * che rende il titolo visibile in entrambe, non un binding task: una sessione
+ * `--no-task` non ne ha uno, ma un NOME ce l'ha.
+ *
+ * Il titolo sta in TESTA all'argv, prima del prompt: la riga di stato del deck
+ * taglia il comando al mezzo, e il prompt (specialmente quello cablato dello
+ * srotolamento) è l'argomento più lungo — in coda al titolo lo spingerebbe
+ * fuori vista. Stessa ragione dell'ordine di `resumeArgs`.
  */
-export function spawnBare(cwd: string, prompt: string, model: ModelKind): Spawned {
-  return launchDeckRun(['--no-task', '--prompt', prompt, '--model', model], cwd);
+export function bareArgs(
+  prompt: string,
+  model: ModelKind,
+  sessionId?: string,
+  title?: string,
+): string[] {
+  const args = ['--no-task'];
+  if (title) args.push('--title-note', title);
+  if (sessionId) args.push('--session-id', sessionId);
+  args.push('--prompt', prompt, '--model', model);
+  return args;
+}
+
+export function spawnBare(
+  cwd: string,
+  prompt: string,
+  model: ModelKind,
+  sessionId?: string,
+  title?: string,
+): Spawned {
+  return launchDeckRun(bareArgs(prompt, model, sessionId, title), cwd);
 }
 
 // T39/T32: voce `launch` custom del file config, eseguita con cwd = project root.

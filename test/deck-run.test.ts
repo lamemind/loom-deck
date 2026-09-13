@@ -279,6 +279,30 @@ test('titolo tab senza task: solo la label, nessun suffisso', () => {
   assert.ok(cmd.includes("--name '🧵 demo'"), `titolo inatteso: ${cmd}`);
 });
 
+test('una sessione nuda può avere titolo e sessionId insieme al prompt', () => {
+  // La forma che il deck compone per drain e srotolamento (`bareArgs`): nessuna
+  // guardia rifiuta `--title-note` né `--session-id` per l'assenza di una task —
+  // il binding manca, il NOME no.
+  const cmd = inTabCmd(
+    [
+      '--no-task',
+      '--title-note',
+      '🧹 T158-conversazione-prioritaria',
+      '--session-id',
+      SID,
+      '--prompt',
+      '/loom-works:drain-notions T158-conversazione-prioritaria.md',
+    ],
+    { LOOM_DECK_WORKDIR: labeledWd },
+  );
+  assert.ok(
+    cmd.includes("--name '🧵 demo 🧹 T158-conversazione-prioritaria'"),
+    `titolo inatteso: ${cmd}`,
+  );
+  assert.ok(cmd.includes(`--session-id ${SID}`), `sessionId non pinnato: ${cmd}`);
+  assert.ok(!cmd.includes('LOOM_TASK='), `sessione nuda con un binding task: ${cmd}`);
+});
+
 // T64 — nota nel titolo. Il gate vero non è il formato ma la RIDUZIONE: la nota
 // è l'unico testo libero che entra in un titolo destinato a viaggiare dentro
 // apici singoli in `bash -lc`, quindi un apice che sopravvive non è un titolo
@@ -316,11 +340,16 @@ test('--title-note: nota tutta scartata → nessun suffisso a vuoto', () => {
 // slug mentre la lista del deck, che riceve la nota grezza dal sidecar,
 // mostrava il prefisso — due titoli per la stessa conversazione, senza nessun
 // errore a segnalarlo.
+// Le due in coda non vengono da `ACTION_EMOJI`: nominano l'oggetto di una
+// sessione senza task — il file inbox che si drena (`inboxTitle`) e il path che
+// si srotola (`wrapTitle`). Stessa whitelist, stessa divergenza se cade.
 for (const [kind, emoji] of [
   ['preflight', '📐'],
   ['run', '🚀'],
   ['recap', '📊'],
   ['checkpoint', '🏁'],
+  ['drain', '🧹'],
+  ['unwrap', '📏'],
 ] as const) {
   test(`--title-note: il prefisso di fallback \`${emoji}\` (${kind}) sopravvive alla riduzione`, () => {
     const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', `${emoji} prova`], {

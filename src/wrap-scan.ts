@@ -123,6 +123,32 @@ export function wrapPrompt(path: string): string {
   );
 }
 
+/** Prefisso del titolo di una sessione di srotolamento. Astrale, come le altre
+ *  emoji che finiscono in un titolo: le BMP `sanitize` (`src/width.ts`) le rende
+ *  `·`. Va tenuta allineata alla whitelist di `_sane_note` in `deck-run`. */
+const WRAP_EMOJI = '📏';
+
+/**
+ * Il titolo della sessione che srotola un path: `📏 <path a parole>`.
+ *
+ * Le barre diventano spazi e l'estensione cade PRIMA di `_sane_note`, il cui
+ * alfabeto non ha né `/` né `.`: lasciandoceli cadere le parole si salderebbero
+ * (`runtimereferencedoc-systemmd`), e il titolo della tab divergerebbe da quello
+ * che la lista del deck legge dal sidecar.
+ *
+ * Il path di default (`.`, la project root intera) non ha parole da mostrare e
+ * diventa una frase: un titolo `📏 ` sarebbe il solo prefisso.
+ */
+export function wrapTitle(path: string): string {
+  const target = path.trim() || WRAP_DEFAULT_PATH;
+  if (target === WRAP_DEFAULT_PATH) return `${WRAP_EMOJI} tutto il progetto`;
+  const words = target
+    .replace(/\.md$/i, '')
+    .replace(/[./]+/g, ' ')
+    .trim();
+  return `${WRAP_EMOJI} ${words}`;
+}
+
 /**
  * Cartella della cache, una per utente e con `mode 0700` — stessa ragione del
  * project status: `/tmp` è condivisa, e un file a nome prevedibile può essere

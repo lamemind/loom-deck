@@ -269,16 +269,20 @@ WORKDIR="${LOOM_DECK_WORKDIR:-$PWD}"
 # titolo finisce dentro apici singoli in `bash -lc "claude --name '…'"`, e la
 # nota è testo digitato a mano — enumerare i caratteri pericolosi significa
 # sbagliarne uno, enumerare quelli ammessi no. Restano lettere, cifre, accentate
-# italiane, spazio, trattino, underscore e quattro emoji (sotto); tutto il resto
+# italiane, spazio, trattino, underscore e sei emoji (sotto); tutto il resto
 # (apici, backslash, `$`, backtick, `;`, quadre, ogni altra emoji…) cade.
 #
-# T156 — le quattro emoji entrano per il PREFISSO del titolo di fallback che il
-# deck genera quando il campo nota è vuoto (`🚀 slug`, `ACTION_EMOJI` in
+# T156 — le emoji entrano per il PREFISSO del titolo di fallback che il deck
+# genera quando il campo nota è vuoto (`🚀 slug`, `ACTION_EMOJI` in
 # `src/spawn.ts`). Senza di loro il prefisso spariva qui e restava nella lista
 # del deck, che riceve la nota grezza dal sidecar `session-tasks.jsonl`: la
 # stessa conversazione portava due titoli diversi, senza errore. Le quadre che
 # delimitavano il prefisso sono cadute col prefisso stesso: l'emoji da sola si
 # stacca già dallo slug.
+# Quattro nominano un'azione su una task (📐🚀📊🏁); le altre due nominano
+# l'oggetto di una sessione che una task non ce l'ha — 🧹 il file inbox che si
+# drena (`inboxTitle`, `src/inbox.ts`), 📏 il path che si srotola (`wrapTitle`,
+# `src/wrap-scan.ts`).
 # La whitelist le nomina una per una e NON apre un intervallo di code point. Due
 # ragioni: un'emoji arriva nella tab solo se il deck la mostra identica in lista,
 # cioè se `sanitize` (`src/width.ts`) la lascia passare invece di renderla `·`, e
@@ -305,7 +309,7 @@ _sane_note() {  # <raw> → nota ridotta, spazi collassati, cap 60 char
   # `tr` non ne ha bisogno: squeeza uno spazio ASCII, e 0x20 non compare mai
   # come byte di continuazione di una sequenza UTF-8.
   s="$(printf '%s' "$1" \
-       | LC_ALL=C.UTF-8 sed 's/[^A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ📐🚀📊🏁-]//g' \
+       | LC_ALL=C.UTF-8 sed 's/[^A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ📐🚀📊🏁🧹📏-]//g' \
        | tr -s ' ')"
   s="${s# }"; s="${s% }"
   printf '%s' "${s:0:60}"
