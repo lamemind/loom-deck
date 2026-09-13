@@ -315,6 +315,7 @@ export function screenFor(input: ScreensInput) {
         model={sheet.model}
         spawnNote={sheet.spawnNote}
         prompt={sheet.prompt}
+        priority={sheet.priority}
         cursor={sheet.cursor}
         columns={columns}
         find={sheet.find}

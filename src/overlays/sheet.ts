@@ -59,20 +59,29 @@ export interface SheetOverlayDeps {
     model: ModelKind,
     spawnNote: string,
     prompt: string,
+    priority: boolean,
   ) => void;
 }
 
-// T117 — le quattro righe dell'area di compilazione del detail, nell'ordine in
-// cui si leggono dall'alto. Gli indici sono nominati perché li usano insieme
-// l'handler dei tasti e la resa, e un `2` nudo in due file diversi è la
-// coordinata che scade appena una riga si sposta.
-export const DROW = { action: 0, prompt: 1, model: 2, title: 3 } as const;
+// T117 — le righe dell'area di compilazione del detail, nell'ordine in cui si
+// leggono dall'alto. Gli indici sono nominati perché li usano insieme l'handler
+// dei tasti e la resa, e un `2` nudo in due file diversi è la coordinata che
+// scade appena una riga si sposta.
+//
+// T158 — `priority` sta in coda e non accanto al titolo: le prime quattro righe
+// sono i parametri del COMANDO che parte, questa è un attributo della
+// conversazione che nasce, e vive nel sidecar invece che nell'argv di deck-run.
+export const DROW = { action: 0, prompt: 1, model: 2, title: 3, priority: 4 } as const;
+
+/** T158 — le due voci della riga priorità, nell'ordine degli indici. */
+export const PRIORITY_CHOICES = ['no', '🚨 sì'] as const;
 
 export const DETAIL_FIELDS: readonly FieldSpec[] = [
   { kind: 'choice', count: DETAIL_ACTIONS.length, hotkeys: ACTION_HOTKEYS },
   { kind: 'text' },
   { kind: 'choice', count: MODELS.length },
   { kind: 'text' },
+  { kind: 'choice', count: PRIORITY_CHOICES.length },
 ];
 
 export function useSheetOverlay(deps: SheetOverlayDeps) {
@@ -94,6 +103,11 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
   // T117 — il prompt iniziale, EDITABILE. Quello che si legge nel campo è quello
   // che parte: non un'anteprima di qualcos'altro.
   const [prompt, setPrompt] = useState('');
+  // T158 — la conversazione nasce già marcata prioritaria? Si azzera a ogni
+  // apertura come gli altri campi: una marca armata che sopravvive alla chiusura
+  // farebbe partire prioritaria la conversazione successiva, senza che nulla a
+  // schermo lo dica.
+  const [priority, setPriority] = useState(false);
   /** La task aperta è un cappello (`Size: Epic`)? Deciso UNA VOLTA all'apertura,
    *  dal testo che il detail ha già in mano: rifarlo a ogni cambio di azione
    *  riparserebbe l'intero task file per un campo dell'header. */
@@ -176,6 +190,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     setModel(modelFor(catalog, kind) ?? MODEL_DEFAULT);
     setSpawnNote('');
     setPrompt(promptFor(catalog, kind, next.id));
+    setPriority(false);
     setCursor({ row: DROW.action, caret: 0 });
     setFind(null);
     setOccIdx(0);
@@ -205,9 +220,19 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
   const fieldsIO: FieldsIO = {
     text: (row) => (row === DROW.prompt ? prompt : spawnNote),
     setText: (row, next) => (row === DROW.prompt ? setPrompt(next) : setSpawnNote(next)),
-    choice: (row) => (row === DROW.action ? action : Math.max(0, MODELS.indexOf(model))),
-    setChoice: (row, index) =>
-      row === DROW.action ? selectAction(index) : setModel(MODELS[index]!),
+    choice: (row) =>
+      row === DROW.action
+        ? action
+        : row === DROW.priority
+          ? priority
+            ? 1
+            : 0
+          : Math.max(0, MODELS.indexOf(model)),
+    setChoice: (row, index) => {
+      if (row === DROW.action) selectAction(index);
+      else if (row === DROW.priority) setPriority(index === 1);
+      else setModel(MODELS[index]!);
+    },
   };
 
   function close() {
@@ -310,7 +335,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       const note = spawnNote.trim();
       const text = prompt.trim();
       close();
-      if (id) onAction(id, specializeRecap(act.kind, epic), model, note, text);
+      if (id) onAction(id, specializeRecap(act.kind, epic), model, note, text, priority);
       return;
     }
     if (key.pageUp) {
@@ -337,6 +362,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     model,
     spawnNote,
     prompt,
+    priority,
     cursor,
     find,
     lines,

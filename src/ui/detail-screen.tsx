@@ -6,7 +6,7 @@ import { sliceLine, type Occurrence } from '../text-search.js';
 import { sliceSpans, type Span, type SpanKind } from '../markdown.js';
 import { ChoiceRow, FieldText, LABEL_W } from './fields.js';
 import { DETAIL_ACTIONS, MODELS, type ModelKind } from '../spawn.js';
-import { DROW } from '../overlays/sheet.js';
+import { DROW, PRIORITY_CHOICES } from '../overlays/sheet.js';
 import type { FieldsCursor } from '../fields.js';
 import { CARET, CARET_OFF, WARN } from '../glyphs.js';
 
@@ -105,7 +105,7 @@ const ACTION_KEYS = DETAIL_ACTIONS.map((a) => a.label[0]).join(' ');
  * decidere QUALE azione lanciare, e con due overlay separati quella decisione
  * costava uscire dal viewer e ricordarsi la combo.
  *
- * T117 — i quattro parametri dello spawn sono quattro RIGHE con un fuoco solo,
+ * T117 — i parametri dello spawn sono RIGHE con un fuoco solo,
  * la stessa forma del modale edit: prima erano tre alfabeti diversi sulla stessa
  * schermata (`←→` per l'azione, `tab` per il modello, i tasti nudi per la nota),
  * e ogni parametro aggiunto ne chiedeva un quarto.
@@ -127,6 +127,7 @@ export function DetailScreen({
   model,
   spawnNote,
   prompt,
+  priority,
   cursor,
   columns,
   find,
@@ -153,6 +154,8 @@ export function DetailScreen({
   spawnNote: string;
   /** T117 — prompt iniziale, editabile: è il testo che parte davvero. */
   prompt: string;
+  /** T158 — la conversazione nasce già marcata prioritaria. */
+  priority: boolean;
   /** Riga in fuoco fra le quattro + caret dentro la riga di testo attiva. */
   cursor: FieldsCursor;
   columns: number;
@@ -282,6 +285,17 @@ export function DetailScreen({
           />
           {spawnNote ? null : <Text dimColor>{NOTE_HINT}</Text>}
         </Text>
+        {/* T158 — la marca di priorità: non un parametro del comando come le
+            quattro sopra, ma un attributo della conversazione che nasce. Sta in
+            coda per questo, e la riga la dichiara con lo stesso glifo che poi
+            comparirà nella sua riga di lista. */}
+        <ChoiceRow
+          label="priorità"
+          values={PRIORITY_CHOICES}
+          index={priority ? 1 : 0}
+          focused={cursor.row === DROW.priority}
+          width={width}
+        />
       </Box>
     </Box>
   );

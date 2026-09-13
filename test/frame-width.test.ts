@@ -687,8 +687,8 @@ for (const rows of [16, 20]) {
     );
   });
 
-  // T111/T117 — le quattro righe dell'area di compilazione sono FISSE, quindi si
-  // pagano anche senza ricerca aperta: è il caso che cade per primo se
+  // T111/T117/T158 — le cinque righe dell'area di compilazione sono FISSE, quindi
+  // si pagano anche senza ricerca aperta: è il caso che cade per primo se
   // `DETAIL_CHROME` resta al conteggio di prima.
   test(`altezza · detail con l'area di compilazione @ ${rows} righe`, { skip: !CAN_RUN }, () => {
     const raw = capture(100, rows, 'DD\rDDDX');

@@ -337,17 +337,18 @@ export function readerCapacity(rows: number): number {
 //   1  riga prompt   (T117)
 //   1  riga modello  (T108)
 //   1  riga titolo   (T111)
+//   1  riga priorità (T158)
 //
-// Le ultime cinque sono il motivo per cui il detail non può riusare
-// READER_CHROME: le quattro righe dell'area di compilazione sono righe FISSE in
-// più dentro l'overlay, e ogni riga fissa aggiunta va scalata dalla capienza del
-// contenuto o il frame sfonda `rows` (stessa invariante di TASKS_PANE_CHROME).
+// Le ultime sei sono il motivo per cui il detail non può riusare READER_CHROME:
+// le cinque righe dell'area di compilazione sono righe FISSE in più dentro
+// l'overlay, e ogni riga fissa aggiunta va scalata dalla capienza del contenuto o
+// il frame sfonda `rows` (stessa invariante di TASKS_PANE_CHROME).
 //
 // Sono fisse e non `extra` condizionali di `detailCapacity` (T111 · D1): due
 // condizionali mutuamente esclusivi obbligherebbero il parametro a dire QUALE è
 // a schermo — un solo booleano per entrambi sottostima quando quello aperto è il
 // più alto, e sommarli toglie righe al testo per un campo che non c'è.
-const DETAIL_CHROME = 13;
+const DETAIL_CHROME = 14;
 
 // T91 — la ricerca dentro il detail: marginTop + riga del campo.
 //
