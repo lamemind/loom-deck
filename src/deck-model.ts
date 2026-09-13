@@ -186,6 +186,7 @@ export function useDeckModel({
     forkOf,
     pinned,
     notes: sessionNotes,
+    priority: sessionPriority,
     live,
     reload: reloadSessions,
   } = useSessions(cwd);
@@ -599,6 +600,7 @@ export function useDeckModel({
     forkOf,
     pinned,
     sessionNotes,
+    sessionPriority,
     live,
     reloadSessions,
     detail,

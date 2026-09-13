@@ -22,6 +22,7 @@ import { loadPromptCatalog, modelFor } from './prompt-catalog.js';
 import {
   appendNote,
   appendPin,
+  appendPriority,
   appendSessionRecord,
   appendTaskBinding,
 } from './task-index.js';
@@ -171,11 +172,20 @@ export function useDeckActions({
     modelKind: ModelKind,
     spawnNote = '',
     prompt?: string,
+    priority = false,
   ) {
     const sid = randomUUID();
     const note = spawnNote || fallbackTitle(tasksDir, id, kind) || '';
     appendTaskBinding(cwd, sid, id);
     if (note) appendNote(cwd, sid, note);
+    // T158 — la marca si appende NELLO STESSO momento del binding, prima che la
+    // tab esista: il `sessionId` è già noto (lo pinna `deck-run`), quindi il primo
+    // cambio di stato della conversazione trova la marca già su disco. Scriverla
+    // dopo lo spawn sarebbe una corsa contro il primo `Stop`.
+    //
+    // Solo il ramo acceso scrive: un `priority:false` allo spawn di ogni sessione
+    // riempirebbe il sidecar di smarcature di conversazioni mai marcate.
+    if (priority) appendPriority(cwd, sid, true);
     const spawned = spawnDeck(id, cwd, sid, kind, modelKind, note, prompt);
     spawned.child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
     // Il modello resta SEMPRE visibile anche quando è il default, perché è un
@@ -358,6 +368,34 @@ export function useDeckActions({
     setNote(`${isPinned ? 'unpin' : '📌 pin'} ${sid.slice(0, 8)}`);
   }
 
+  /**
+   * T158 — `a`: marca/smarca la conversazione selezionata come PRIORITARIA.
+   *
+   * Gemella di `togglePin` nella forma (azione immediata, scrive il sidecar,
+   * ricarica subito) ma non nell'effetto: la marca non sposta e non filtra
+   * niente, quindi non c'è nessun vicino su cui atterrare — la riga resta dov'è
+   * e cambia solo il glifo.
+   *
+   * Vale anche su una pinnata STALE: il transcript non c'è più, ma la marca è un
+   * attributo del `sessionId` e non del transcript, e l'unico posto da cui
+   * toglierla resta quella riga.
+   */
+  function togglePriority() {
+    if (model.focus !== 'sessions') {
+      setNote('a → priorità: seleziona una sessione (→ per il pane)');
+      return;
+    }
+    const sid = model.selSessionId;
+    if (!sid) {
+      setNote('a → nessuna sessione da marcare');
+      return;
+    }
+    const on = model.sessionPriority.has(sid);
+    appendPriority(cwd, sid, !on);
+    model.reloadSessions();
+    setNote(`${on ? 'priorità via' : '🚨 prioritaria'} ${sid.slice(0, 8)}`);
+  }
+
   /** `t` — terminale a project root, con un titolo che il matcher di compass riconosce. */
   function openTerminal() {
     const title = model.identity ? `🖥️ ${model.identity.name} [term]` : null;
@@ -450,6 +488,7 @@ export function useDeckActions({
     assignSession,
     forkSession,
     togglePin,
+    togglePriority,
     drainInbox,
     unwrapPath,
     openTerminal,

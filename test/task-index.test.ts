@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
   appendNote,
   appendPin,
+  appendPriority,
   appendSessionRecord,
   appendTaskBinding,
   loadSessionIndex,
@@ -130,6 +131,70 @@ test('campi indipendenti: un pin non cancella il binding, e viceversa', () => {
 
 test('pin: file assente → mappa pinned vuota, nessun throw', () => {
   assert.equal(loadSessionIndex(root()).pinned.size, 0);
+});
+
+// ── T158 · marca di priorità ────────────────────────────────────────────────
+
+test('priorità: append priority:true → la sessione è nell’insieme', () => {
+  const r = root();
+  appendPriority(r, 'sid-1', true);
+  assert.equal(loadSessionIndex(r).priority.has('sid-1'), true);
+});
+
+test('smarcatura last-wins: priority:false finale toglie la chiave', () => {
+  const r = root();
+  appendPriority(r, 'sid', true);
+  appendPriority(r, 'sid', false);
+  assert.equal(loadSessionIndex(r).priority.has('sid'), false);
+});
+
+test('ri-marca dopo smarcatura: la sessione torna prioritaria', () => {
+  const r = root();
+  appendPriority(r, 'sid', true);
+  appendPriority(r, 'sid', false);
+  appendPriority(r, 'sid', true);
+  assert.equal(loadSessionIndex(r).priority.has('sid'), true);
+});
+
+test('campi indipendenti: la marca non tocca binding, pin e nota', () => {
+  const r = root();
+  appendTaskBinding(r, 'sid', 'T158');
+  appendPin(r, 'sid', true);
+  appendNote(r, 'sid', 'notifiche');
+  appendPriority(r, 'sid', true);
+  // …e nessuno dei tre tocca la marca: un unpin dopo la marca la lascia accesa.
+  appendPin(r, 'sid', false);
+  const idx = loadSessionIndex(r);
+  assert.equal(idx.bindings.get('sid'), 'T158');
+  assert.equal(idx.notes.get('sid'), 'notifiche');
+  assert.equal(idx.pinned.has('sid'), false);
+  assert.equal(idx.priority.has('sid'), true, 'la marca sopravvive all’unpin');
+});
+
+test('retrocompat: un record senza il campo non smarca una sessione già marcata', () => {
+  const r = root();
+  appendPriority(r, 'sid', true);
+  // Un record scritto da una versione che non conosce `priority` (o un semplice
+  // re-binding): non nomina il campo, quindi non lo tocca. È la differenza fra
+  // «assente» e «false», e il `typeof` del reader è ciò che la tiene.
+  appendTaskBinding(r, 'sid', 'T99');
+  assert.equal(loadSessionIndex(r).priority.has('sid'), true);
+});
+
+test('priorità: file assente → insieme vuoto, nessun throw', () => {
+  assert.equal(loadSessionIndex(root()).priority.size, 0);
+});
+
+test('priorità: valore non booleano nel file → il campo si ignora', () => {
+  const r = root();
+  const p = taskIndexPath(r);
+  mkdirSync(join(r, '.claude', 'loom'), { recursive: true });
+  writeFileSync(
+    p,
+    '{"sessionId":"sid","priority":true}\n' +
+      '{"sessionId":"sid","priority":"si"}\n' /* stringa: non è un booleano */,
+  );
+  assert.equal(loadSessionIndex(r).priority.has('sid'), true, 'la marca buona resta');
 });
 
 // ── T53 · note store ────────────────────────────────────────────────────────

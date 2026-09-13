@@ -494,6 +494,7 @@ export function SessionsPane({
   columns,
   forkOf,
   sessionNotes,
+  sessionPriority,
   projectCore,
   live,
 }: {
@@ -530,6 +531,9 @@ export function SessionsPane({
   columns: number;
   /** T53 — sessionId → nota umana (solo le sessioni annotate). */
   sessionNotes: Map<string, string>;
+  /** T158 — le conversazioni marcate prioritarie. Insieme e non mappa: il glifo
+   *  di riga è l'unico consumatore, e non ha bisogno di un valore. */
+  sessionPriority: Set<string>;
   /** `name` del progetto: il prefisso che la nota fa sparire. */
   projectCore: string | null;
   /** T62 — sessionId → processo vivo. Assente dalla mappa = conversazione
@@ -672,7 +676,18 @@ export function SessionsPane({
           // metterlo fuori cella sposterebbe il bordo del titolo solo sui rami —
           // cioè rimetterebbe lo slittamento che le colonne tolgono.
           const forkMark = forked ? '⑂ ' : '';
-          const inner = Math.max(0, titleW - termWidth(forkMark));
+          // T158 · P7 — 🚨 entra nella stessa cella e per la stessa ragione,
+          // davanti al segno di fork. NON nella cella di appartenenza (📌/🔗/○):
+          // lì un solo glifo ha diritto di stare, e la priorità coprirebbe il pin
+          // sulle righe che sono pinnate e prioritarie insieme. La cella titolo
+          // perde 3 colonne solo sulle righe marcate.
+          //
+          // Larghezza misurata concorde (2 colonne per `string-width` e 2 per il
+          // terminale) e carattere astrale: nessun selettore di variazione, quindi
+          // nessuna voce da aggiungere alla tabella dei glifi discordi.
+          const priorityMark = sessionPriority.has(s.sessionId) ? '🚨 ' : '';
+          const marks = priorityMark + forkMark;
+          const inner = Math.max(0, titleW - termWidth(marks));
           // T60 — il testo arriva già ripulito di ciò che le colonne accanto
           // dicono già (progetto e task id): senza, la cella conterrebbe
           // `🧵 loom-works · T59` accanto a una colonna che dice `T59`.
@@ -716,6 +731,7 @@ export function SessionsPane({
                   {' '}
                 </>
               ) : null}
+              {priorityMark ? <Text color="red" bold>{priorityMark}</Text> : null}
               {forkMark ? <Text color="magenta">{forkMark}</Text> : null}
               {label.note ? (
                 <Text color="yellow" bold>{label.note}</Text>

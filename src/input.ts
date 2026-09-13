@@ -517,6 +517,11 @@ export function useDeckInput({
       // T50 — pin/unpin, gemella di `f`: azione immediata sulla riga
       // selezionata del pane sessioni.
       actions.togglePin();
+    } else if (input === 'a') {
+      // T158 — marca prioritaria, gemella di `p`. Minuscola perché è
+      // un'azione immediata, e `a` per «allarme» (il glifo di riga è 🚨): la
+      // `A` maiuscola resta al modale di assegnazione, come `f`/`F` e `c`/`C`.
+      actions.togglePriority();
     } else if (input === 'm') {
       // T148/T154 — bersaglio deciso dal focus E dalla selezione (P2): con
       // una riga sessioni selezionata (stale compresa, P3) scorre il modello

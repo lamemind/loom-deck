@@ -442,6 +442,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
             columns={columns}
             forkOf={model.forkOf}
             sessionNotes={model.sessionNotes}
+            sessionPriority={model.sessionPriority}
             projectCore={model.projectCore}
             live={model.live}
           />

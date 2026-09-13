@@ -139,7 +139,10 @@ export function deckLegend(state: {
       // allo spawn, e due nomi per una cosa sola li paga chi legge le due
       // schermate. Rename di sola ETICHETTA: il dato resta `note` nel sidecar e
       // `--title-note` in deck-run, dove rinominarlo sarebbe un breaking.
-      ...(canPin ? ['p pin', 'N titolo', 'A assegna'] : []),
+      // T158 — `a` sta accanto a `p` perché condivide la condizione (`canPin`:
+      // focus sul pane e una riga selezionata, stale compresa) e la forma: due
+      // attributi della stessa conversazione, scritti nello stesso sidecar.
+      ...(canPin ? ['p pin', 'a priorità', 'N titolo', 'A assegna'] : []),
       // T121 — le due voci nominano il GESTO e non l'oggetto: «status» da solo
       // sarebbe indistinguibile dal recap della task su `^K`, che è un'altra
       // cosa e sta a due voci di distanza.

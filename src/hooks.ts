@@ -157,6 +157,7 @@ export function useSessions(projectRoot: string) {
     forkOf: Map<string, string>;
     pinned: Map<string, number>;
     notes: Map<string, string>;
+    priority: Set<string>;
     live: Map<string, LiveSession>;
   }>({
     sessions: [],
@@ -164,6 +165,7 @@ export function useSessions(projectRoot: string) {
     forkOf: new Map(),
     pinned: new Map(),
     notes: new Map(),
+    priority: new Set(),
     live: new Map(),
   });
   // T50 — pin/unpin scrive il sidecar e vuole feedback IMMEDIATO, non al
@@ -181,7 +183,13 @@ export function useSessions(projectRoot: string) {
         index = loadSessionIndex(projectRoot);
       } catch {
         sessions = [];
-        index = { bindings: new Map(), forkOf: new Map(), pinned: new Map(), notes: new Map() };
+        index = {
+          bindings: new Map(),
+          forkOf: new Map(),
+          pinned: new Map(),
+          notes: new Map(),
+          priority: new Set(),
+        };
       }
       // T62 — le vive stanno sullo STESSO tick delle altre fonti, non su una
       // scala propria come `useArchivable`: `status` cambia a ogni turno, quindi
@@ -194,10 +202,11 @@ export function useSessions(projectRoot: string) {
       } catch {
         live = new Map();
       }
-      const { bindings, forkOf, pinned, notes } = index;
-      // La signature copre anche fork, pin e note: un record di lineage, un
-      // toggle di pin o una nota appena scritta cambiano la lista renderizzata,
-      // quindi devono forzare il re-render come farebbe un binding nuovo.
+      const { bindings, forkOf, pinned, notes, priority } = index;
+      // La signature copre anche fork, pin, note e marca di priorità: un record
+      // di lineage, un toggle di pin, una nota appena scritta o un 🚨 acceso
+      // cambiano la lista renderizzata, quindi devono forzare il re-render come
+      // farebbe un binding nuovo.
       const sig =
         sessions.map((s) => `${s.sessionId}:${s.ts}`).join('|') +
         '#' +
@@ -209,10 +218,12 @@ export function useSessions(projectRoot: string) {
         '#' +
         [...notes.entries()].map(([k, v]) => `${k}"${v}`).sort().join(',') +
         '#' +
+        [...priority].sort().join(',') +
+        '#' +
         liveSig(live);
       if (sig === lastSig) return;
       lastSig = sig;
-      setState({ sessions, bindings, forkOf, pinned, notes, live });
+      setState({ sessions, bindings, forkOf, pinned, notes, priority, live });
     };
     reloadRef.current = reload;
     reload();

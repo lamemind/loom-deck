@@ -61,6 +61,9 @@ export interface SessionRecord {
   pinned?: boolean;
   /** T53 — nota umana sulla conversazione. Stringa vuota = nota cancellata. */
   note?: string;
+  /** T158 — conversazione PRIORITARIA: ogni suo cambio di stato notevole produce
+   *  banner e ding per-conversazione. true = marcata, false = smarcata. */
+  priority?: boolean;
 }
 
 export function taskIndexPath(projectRoot: string): string {
@@ -92,6 +95,19 @@ export function appendNote(projectRoot: string, sessionId: string, note: string)
   appendSessionRecord(projectRoot, { sessionId, note });
 }
 
+/**
+ * T158 — marca/smarca la conversazione come prioritaria: stessa forma di
+ * `appendPin`, quarto campo mutabile del record.
+ *
+ * Il campo lo leggono TRE attori a rilascio indipendente — il deck, compass e
+ * l'hook `announce-state.sh` del plugin. Il nome, una volta scritto nei file
+ * degli utenti, non si rinomina senza migrazione: è un contratto fra tre repo,
+ * non un dettaglio interno di questo modulo.
+ */
+export function appendPriority(projectRoot: string, sessionId: string, priority: boolean): void {
+  appendSessionRecord(projectRoot, { sessionId, priority });
+}
+
 export interface SessionIndex {
   /** sessionId → taskId (solo le scoped). */
   bindings: Map<string, string>;
@@ -106,6 +122,10 @@ export interface SessionIndex {
    *  finale toglie la chiave, così chi legge non deve distinguere «assente» da
    *  «cancellata» (sono la stessa cosa a schermo). */
   notes: Map<string, string>;
+  /** T158 — le conversazioni marcate prioritarie, come INSIEME e non come mappa:
+   *  a differenza del pin non c'è un rango da conservare — nessuna vista ordina
+   *  per marca — quindi un valore associato sarebbe un campo che nessuno legge. */
+  priority: Set<string>;
 }
 
 // Una sola lettura del JSONL per entrambe le mappe: il deck poll-a l'indice a
@@ -118,11 +138,12 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
   const forkOf = new Map<string, string>();
   const pinned = new Map<string, number>();
   const notes = new Map<string, string>();
+  const priority = new Set<string>();
   let content: string;
   try {
     content = readFileSync(taskIndexPath(projectRoot), 'utf8');
   } catch {
-    return { bindings, forkOf, pinned, notes };
+    return { bindings, forkOf, pinned, notes, priority };
   }
   let order = 0; // posizione crescente dei record pinned → rango di pin (D2)
   for (const line of content.split('\n')) {
@@ -134,6 +155,7 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
         forkOf?: unknown;
         pinned?: unknown;
         note?: unknown;
+        priority?: unknown;
       };
       if (typeof d.sessionId !== 'string') continue;
       // T57 — last-wins con la stringa vuota come CANCELLAZIONE: `taskId:''`
@@ -164,9 +186,17 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
         if (d.note) notes.set(d.sessionId, sanitize(d.note));
         else notes.delete(d.sessionId);
       }
+      // T158 — stesso last-wins per campo: `false` è una smarcatura esplicita e
+      // toglie la chiave, il record che non nomina il campo non la tocca. Il
+      // `typeof` è quindi obbligatorio anche qui: un test di verità confonderebbe
+      // «smarcata» con «mai marcata», e la prima deve poter cancellare la seconda.
+      if (typeof d.priority === 'boolean') {
+        if (d.priority) priority.add(d.sessionId);
+        else priority.delete(d.sessionId);
+      }
     } catch {
       // riga corrotta → skip
     }
   }
-  return { bindings, forkOf, pinned, notes };
+  return { bindings, forkOf, pinned, notes, priority };
 }
