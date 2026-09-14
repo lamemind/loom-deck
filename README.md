@@ -74,7 +74,7 @@ Regola unica, senza eccezioni — pensata per reggere l'aggiunta di nuove azioni
 | `⏎` | azione primaria del pane | Tasks → apre il **detail** della task selezionata · Sessions → riprende (`claude --resume`) la sessione selezionata |
 | **MAIUSCOLA** | **apre un modale** | cattura tutti i tasti; `esc` annulla, non esce |
 | minuscola | azione immediata, one-shot | |
-| `CTRL`+lettera | idiomi universali, toggle dentro i modali di testo, varianti di un'azione | `^F` = find, come ovunque · `^K`/`^P`/`^R` = spawn con un altro prompt · `^G`/`^O` = genera/apri il project status · `^U` = update del gitlink |
+| `CTRL`+lettera | idiomi universali, toggle dentro i modali di testo, varianti di un'azione | `^F` = find, come ovunque · `^K`/`^P`/`^R` = spawn con un altro prompt · `^G`/`^O` = genera/apri il project status · `^U` = update del gitlink · `^S` = pagina delle azioni di spawn |
 | `1`…`9` | voce `launch` n-esima del progetto | da `.claude/loom-works.json` |
 | `esc` | chiude l'overlay aperto | in modalità normale è inerte: **nessuna lettera chiude il deck** |
 | `^C` `^C` | chiude il deck | la prima pressione avverte in riga di stato, la seconda entro **5 secondi** esce; passata la finestra si riparte dall'avviso. Da dentro un modale il primo `^C` riporta alla lista — l'avviso vive nella riga di stato, che le schermate a pieno frame non disegnano |
@@ -95,6 +95,7 @@ Assegnazioni correnti:
 | modale | `⏎` | **detail** della task selezionata: task file scrollabile + area di compilazione a quattro righe |
 | modale | `CANC` | **elimina** — la task selezionata; su una riga meta della vista `archiviabili`, l'intero insieme |
 | modale | `^O` | apre il **project status** in cache (viewer fullscreen) |
+| modale | `^S` | **azioni di spawn**: la tabella di tutto ciò che il deck apre, con titolo/modello/prompt configurabili per progetto |
 | immediata | `^G` | **genera** il project status (skill headless, dura minuti) |
 | immediata | `^U` | **bumpa il gitlink** dei submodule idonei (solo su un progetto con `.gitmodules`) |
 | immediata | `^K` | spawna la task selezionata col prompt di **recap** |
@@ -109,7 +110,7 @@ Assegnazioni correnti:
 Il footer è **due righe con due nature diverse**:
 
 ```
-⏎ detail · ^K/^P/^R spawn · ^G genera status · ^O apri status · ^U bumpa gitlink · ^F cerca · C nuova · E edit · S sort · F filtri · w salva
+⏎ detail · ^K/^P/^R spawn · ^G genera status · ^O apri status · ^U bumpa gitlink · ^S azioni · ^F cerca · C nuova · E edit · S sort · F filtri · w salva
 t 💻 · c 🤖 · 1 📝 codium · 2 ☕ idea
 ```
 
@@ -161,15 +162,17 @@ Da qui la forma della conferma: nomina il bersaglio (quante e quali ID, troncand
 
 Sulla task selezionata (focus sul pane Tasks) si apre una sessione **bound**: `LOOM_TASK` iniettata, `sessionId` pinnato, binding scritto nel sidecar. Fra i modi cambia **solo il prompt iniziale**.
 
-| Azione (detail) | Tasto diretto | Prompt |
+| Azione (detail) | Tasto diretto | Prompt di default |
 |---|---|---|
 | `open` | — | nessuno — il contesto lo carica l'hook `SessionStart`, il primo messaggio lo scrivi tu |
-| `status` | `^K` | `recap stato task <id>` — prompt diretto, nessuna skill |
+| `status` | `^K` | `/loom-works:recap-status <id>`, che dal detail si specializza in `-task` o `-epic` |
 | `preflight` | `^P` | `/loom-works:preflight-task <id>` |
-| `run` | `^R` | `/loom-works:run-task <id>`, oppure `/loom-works:run-doc <id>` se l'id è una `D` |
+| `run` | `^R` | `/loom-works:run-task <id>` |
 | `checkpoint` | — | `/loom-works:checkpoint-task <id>` |
 
 Il prompt iniziale è la scelta di **chi apre**, non una proprietà della task: lo stesso task file si apre per leggerne lo stato, per congelarne le decisioni, per eseguirlo o per entrarci a mani nude — e l'azione scelta *è* quell'intento.
+
+Sono **default**, non costanti: titolo, modello e prompt di ognuna di queste azioni si riscrivono dalla pagina `^S` e si salvano nel progetto (§`^S` — le azioni di spawn sotto).
 
 Le due superfici sono complementari, non alternative. `⏎` apre il **detail** e lì si legge la Description *mentre* si decide: è il caso normale, perché la domanda «quale azione?» quasi sempre si risponde leggendo la task. I tre `CTRL` saltano il passaggio per chi lo sa già. Dentro il detail sono inerti — i bottoni sono lì.
 
@@ -177,26 +180,39 @@ Col focus sul pane Sessions né `⏎` né i `CTRL` spawnano: l'oggetto dell'azio
 
 ### `⏎` — il detail della task
 
-Overlay fullscreen a due zone: il **task file per intero**, scrollabile con `PgUp`/`PgDn`, e sotto un'**area di compilazione** a quattro righe — i quattro parametri con cui la sessione sta per nascere.
+Overlay fullscreen a due zone: il **task file per intero**, scrollabile con `PgUp`/`PgDn`, e sotto un'**area di compilazione** a cinque righe — i parametri con cui la sessione sta per nascere.
 
 | Riga | Cosa | Come si cambia |
 |---|---|---|
 | `azione` | `open` `preflight` `run` `status` `checkpoint` | `←→`, oppure l'iniziale: `o` `p` `r` `s` `c` |
 | `prompt` | il testo che riceverà la sessione | si scrive; parte pre-riempito dall'azione scelta |
 | `modello` | `fable` `opus` `sonnet` `haiku` | `←→` |
-| `titolo` | il nome della conversazione, in lista e nella tab | si scrive |
+| `titolo` | il nome della conversazione, in lista e nella tab | si scrive; parte pre-riempito col template dell'azione, reso su questa task |
+| `priorità` | la conversazione nasce già marcata | `←→` |
 
-`↑↓` spostano il fuoco fra le righe, `⏎` spawna coi quattro valori correnti, `esc` chiude lasciando la lista con la stessa selezione. Le righe di testo ricevono i caratteri **solo quando sono in fuoco**: su `azione` una lettera che non è un'iniziale resta inerte invece di finire in un campo.
+`↑↓` spostano il fuoco fra le righe, `⏎` spawna coi valori correnti, `esc` chiude lasciando la lista con la stessa selezione. Le righe di testo ricevono i caratteri **solo quando sono in fuoco**: su `azione` una lettera che non è un'iniziale resta inerte invece di finire in un campo.
 
 `↑↓` sono quindi una risorsa contesa, e vanno al fuoco: la lettura del task file resta su `PgUp`/`PgDn`, cioè una granularità sola invece di due. È il prezzo di avere `↑↓` nel loro significato di sempre su una schermata che ospita insieme un documento e dei campi.
 
-**Il campo `prompt` è quello che parte davvero**, non un'anteprima: modificarlo cambia il messaggio che la sessione riceve. Cambiare azione lo riscrive col default della nuova — col fuoco per riga il cambio accidentale non esiste (`←→` toccano l'azione solo dalla sua riga), quindi non c'è nessuna modifica da proteggere.
+**I tre campi mostrano quello che parte davvero**, non un'anteprima: modificarli cambia il comando. Cambiare azione li riscrive coi default della nuova — col fuoco per riga il cambio accidentale non esiste (`←→` toccano l'azione solo dalla sua riga), quindi non c'è nessuna modifica da proteggere. Un campo titolo svuotato a mano significa **nessuna nota**: il default è già a schermo, quindi non c'è nessun fallback invisibile da far scattare.
 
 La grammatica delle righe è la **stessa** del modale edit (`SHIFT+E`) e sta in `src/fields.ts`: descrittore delle righe, fuoco, caret, `^A`/`^E`/`^D`/`^U`. Finché era scritta due volte andava tenuta allineata a mano a ogni tasto aggiunto. `Home`/`End` non ci sono e non possono esserci: `useInput` non le espone — verificato su otto sequenze diverse, arrivano tutte come input vuoto senza flag — da cui `^A`/`^E`.
 
 Le azioni non sono un catalogo nuovo: chiamano lo **stesso** percorso di spawn dei tasti diretti. Una superficie in più, zero percorsi di spawn in più. Sono bottoni affiancati e non voci di un menu verticale perché è la forma che sopravvive all'arrivo del mouse: un rettangolo ha già coordinate e area cliccabile, una lista di voci andrebbe rifatta.
 
-Il **testo** dei prompt vive in `scripts/prompt-catalog`, un file dati sibling di `deck-run` che entrambi leggono a runtime: il deck per pre-riempire il campo, `deck-run` per comporre il comando in-tab. Come codice posseduto da un lato solo il deck avrebbe dovuto riscriverlo per mostrarlo, e le due copie divergerebbero alla prima voce aggiunta da una parte sola. Un prompt modificato a mano viaggia poi letterale (`--prompt`), perché a quel punto nessun `--prompt-kind` lo descrive più.
+Il **testo** dei prompt vive in `scripts/prompt-catalog`, un file dati sibling di `deck-run` che entrambi leggono a runtime: il deck per pre-riempire il campo, `deck-run` per comporre il comando in-tab quando lo si invoca a mano. Come codice posseduto da un lato solo il deck avrebbe dovuto riscriverlo per mostrarlo, e le due copie divergerebbero alla prima voce aggiunta da una parte sola. Dal deck il prompt viaggia comunque **letterale** (`--prompt`), su ogni percorso: la risoluzione — default cablato, riga del catalogo dati, override di progetto — sta tutta da questo lato, e un simbolo non saprebbe più descrivere il testo che ne esce.
+
+### `^S` — le azioni di spawn
+
+Una pagina fullscreen con **una riga per ogni cosa che il deck sa aprire** e quattro colonne: funzione, titolo, modello, prompt. Le ultime tre si modificano, e `w` scrive il blocco `spawn` di `.claude/loom-works.json` — committato, quindi la configurazione viaggia col repo.
+
+Due livelli: `↑↓` scorrono la tabella, `⏎` apre sotto di essa l'area di compilazione della riga selezionata (la stessa grammatica del detail), `⏎` conferma in memoria, `esc` annulla. `CANC` toglie l'override di una riga e la riporta al default; comporre non tocca il disco finché non si preme `w`.
+
+Le celle portano il **template grezzo**, coi buchi ancora dentro — `📐 {slug}`, `📏 {path}` — e l'area mostra accanto l'esempio reso: un valore già interpolato si modificherebbe a partire da un esempio, e ogni modifica cancellerebbe il buco senza dirlo. Una riga con almeno un override si marca con `◆`.
+
+Non tutte le celle esistono per tutte le righe, e quelle che non esistono **dicono perché** invece di restare vuote: la sessione nuda non pinna un `sessionId` e quindi non ha un titolo, il project status gira headless e non apre nessuna tab, il prompt del drain è una funzione della natura del file inbox. Resume e fork non hanno una riga affatto — il loro modello è ereditato dalla conversazione d'origine, non una preferenza.
+
+Un file assente, illeggibile o con una voce sbagliata non rompe niente: il deck parte sui default e lo dice in riga di stato, una voce alla volta.
 
 ### `f` — forkare una conversazione
 
