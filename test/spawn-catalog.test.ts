@@ -14,10 +14,12 @@ import {
   DETAIL_ACTIONS,
   MODELS,
   SPAWN_ACTIONS,
+  SPAWN_FIELDS,
   editableFields,
   isModelKind,
   isSpawnActionId,
   spawnAction,
+  spawnCell,
   specializeRecap,
 } from '../src/spawn-catalog.js';
 
@@ -135,6 +137,51 @@ test('un titolo esiste se e solo se non è dichiarato fisso', () => {
       `${a.id}: titolo e ragione della sua assenza non concordano`,
     );
   }
+});
+
+// ── T161/DLV2 · il contratto di cella ──────────────────────────────────────
+
+test('nessuna cella della tabella resta muta', () => {
+  // Il perimetro fa entrare righe non commensurabili: la nuda non ha un titolo,
+  // il project status gira headless, il prompt del drain dipende dalla natura
+  // del file. Una cella vuota si leggerebbe come un dato mancante.
+  for (const a of SPAWN_ACTIONS) {
+    for (const f of SPAWN_FIELDS) {
+      const cell = spawnCell(a, f, null, false);
+      assert.ok(cell.text.trim().length > 0, `${a.id}.${f}: cella muta`);
+    }
+  }
+});
+
+test('una cella fissa porta la ragione e non si apre in compilazione', () => {
+  const bare = spawnAction('bare')!;
+  const cell = spawnCell(bare, 'title', 'un titolo qualunque', true);
+  assert.equal(cell.editable, false);
+  assert.equal(cell.origin, 'fisso');
+  assert.equal(cell.text, '(nessun sessionId pinnato)');
+  // Nemmeno un override scritto a mano nel file riesce a riempirla: la ragione
+  // vince sul valore, o la pagina prometterebbe un titolo che non parte.
+  assert.ok(cell.placeholder);
+});
+
+test('vuoto ≠ assente: la cella a vuoto resta editabile e lo dichiara', () => {
+  const run = spawnAction('run')!;
+  const empty = spawnCell(run, 'title', '', true);
+  assert.equal(empty.editable, true);
+  assert.equal(empty.origin, 'override');
+  assert.equal(empty.text, '(nessun titolo)');
+  assert.ok(empty.placeholder);
+});
+
+test('una cella col valore dichiara da dove viene', () => {
+  const run = spawnAction('run')!;
+  assert.deepEqual(spawnCell(run, 'model', 'opus', false), {
+    text: 'opus',
+    editable: true,
+    origin: 'default',
+    placeholder: false,
+  });
+  assert.equal(spawnCell(run, 'model', 'haiku', true).origin, 'override');
 });
 
 test('MODELS e MODEL_DEFAULT restano gli alias del CLI, mai id versionati', () => {

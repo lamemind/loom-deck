@@ -384,3 +384,56 @@ export function isSpawnActionId(id: unknown): id is SpawnActionId {
 export function editableFields(action: SpawnAction): readonly SpawnField[] {
   return SPAWN_FIELDS.filter((f) => !(f in action.fixed));
 }
+
+/**
+ * Cosa mostra una cella della tabella.
+ *
+ * Il perimetro di D1 fa entrare righe che non sono commensurabili — la nuda non
+ * ha un titolo, il project status gira headless, il prompt del drain è una
+ * funzione della natura del file — quindi alcune celle non hanno un valore da
+ * mostrare. La regola è che una cella senza valore **dice perché**, invece di
+ * restare vuota: una cella muta si legge come un dato mancante, cioè come un
+ * difetto, e manda a cercare un guasto che non c'è.
+ *
+ * `placeholder` distingue il testo che È il valore da quello che ne sta al
+ * posto: la pagina lo rende smorzato, così la colonna resta leggibile come
+ * elenco di valori anche quando metà delle sue celle sono spiegazioni.
+ */
+export interface SpawnCell {
+  text: string;
+  /** La cella si apre in compilazione. */
+  editable: boolean;
+  /** `fisso` = nessun valore da configurare; `override` = il progetto l'ha
+   *  scritto; `default` = viene dal deck (o dal catalogo dati). */
+  origin: 'override' | 'default' | 'fisso';
+  /** Il testo sta al posto del valore, non è il valore. */
+  placeholder: boolean;
+}
+
+/** Il segnaposto di una cella editabile ma a vuoto. Il vuoto è un valore
+ *  legittimo e distinto dall'assenza (P15): un titolo svuotato significa
+ *  «nessuna nota», un prompt svuotato «nessun prompt». */
+const EMPTY_LABEL: Readonly<Record<SpawnField, string>> = {
+  title: '(nessun titolo)',
+  model: '(nessun modello)',
+  prompt: '(nessun prompt)',
+};
+
+export function spawnCell(
+  action: SpawnAction,
+  field: SpawnField,
+  /** Il valore risolto: `null` quando la cella non ne ha uno. */
+  value: string | null,
+  /** Il valore viene da un override di progetto. */
+  overridden: boolean,
+): SpawnCell {
+  const reason = action.fixed[field];
+  if (reason !== undefined) {
+    return { text: `(${reason})`, editable: false, origin: 'fisso', placeholder: true };
+  }
+  const origin = overridden ? 'override' : 'default';
+  if (value === null || value === '') {
+    return { text: EMPTY_LABEL[field], editable: true, origin, placeholder: true };
+  }
+  return { text: value, editable: true, origin, placeholder: false };
+}
