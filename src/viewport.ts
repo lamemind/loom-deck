@@ -102,6 +102,10 @@ export const MODAL_HEIGHT = {
   // 77 `WRAP` e 147 `misto`, cioè una lista che non entra in nessun box sopra i
   // pane. Altezza da `wrapListCapacity`.
   wrap: 0,
+  // T161 — la pagina delle azioni di spawn: ottava sostitutiva. Undici righe di
+  // tabella più l'area di compilazione: in un box sopra i pane resterebbero due
+  // colonne per il prompt. Altezza da `spawnListCapacity`.
+  spawn: 0,
 } as const;
 
 export type Mode = keyof typeof MODAL_HEIGHT;
@@ -415,6 +419,40 @@ const WRAP_CHROME = 12;
 /** Righe di lista che entrano nel terminale. */
 export function wrapListCapacity(rows: number): number {
   return Math.max(0, (rows || 24) - SLACK - WRAP_CHROME);
+}
+
+// T161 — cornice della pagina delle azioni di spawn.
+//   2  bordi del box esterno
+//   1  riga di testata (nome della pagina · quante righe · quante configurate)
+//   1  riga hint
+//   1  marginTop del box tabella
+//   2  bordi del box tabella
+//   1  riga di intestazione delle colonne
+const SPAWN_CHROME = 8;
+
+// L'area di compilazione: marginTop + le TRE righe (titolo, modello, prompt) +
+// la riga dell'anteprima resa.
+//
+// Fisse e non proporzionali alle celle editabili della riga aperta: su `bare`,
+// che ha il solo modello, le altre due si disegnano comunque per dire perché non
+// si modificano. Un'altezza che dipendesse dalla riga selezionata farebbe
+// saltare la tabella di due righe a ogni movimento del caret, e il budget
+// dovrebbe sapere quale riga è aperta per non sottostimare — lo stesso motivo
+// per cui le cinque righe del detail sono dentro `DETAIL_CHROME` invece che
+// condizionali (T111 · D1).
+const SPAWN_FIELDS_CHROME = 5;
+
+/**
+ * Righe di tabella che entrano nel terminale.
+ *
+ * Le righe dell'area aperta e la riga di stato si pagano QUI, non altrove: la
+ * pagina è una schermata sostitutiva, quindi la nota che le sue azioni scrivono
+ * la disegna lei — a differenza della lista, dove la riga di stato sta fuori dai
+ * pane e il suo costo è già in `layoutBudget`.
+ */
+export function spawnListCapacity(rows: number, editing = false, noteLine = false): number {
+  const extra = (editing ? SPAWN_FIELDS_CHROME : 0) + (noteLine ? 1 : 0);
+  return Math.max(0, (rows || 24) - SLACK - SPAWN_CHROME - extra);
 }
 
 /**

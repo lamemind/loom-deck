@@ -13,13 +13,14 @@
 // come valore, e prima di questo split la leggeva da una closure risolta solo
 // all'arrivo dell'evento, cioè dopo la fine del render.
 import { render, Box, Text } from 'ink';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { resolveTasksPath, resolveTasksDir } from './tasks.js';
 import { LAUNCH_SEP } from './config.js';
 import { anchorFrame, enableMouse } from './mouse.js';
 import { sanitize } from './width.js';
 import { MODEL_SHORT_LIST, modelAlias } from './glyphs.js';
 import { MODEL_DEFAULT, MODELS } from './spawn-catalog.js';
+import { loadPromptCatalog } from './prompt-catalog.js';
 import { type Mode } from './model.js';
 import {
   BARE_BUTTONS_WIDTH,
@@ -40,10 +41,11 @@ import { useAssignOverlay } from './overlays/assign.js';
 import { useProjectStatus } from './overlays/status.js';
 import { useInboxOverlay } from './overlays/inbox.js';
 import { useWrapOverlay } from './overlays/wrap.js';
+import { useSpawnPage } from './overlays/spawn.js';
 import { useGitlink } from './overlays/gitlink.js';
 import { usePurgeOverlay } from './overlays/purge.js';
 import { useTextModals, useViewModals } from './overlays/modals.js';
-import { useTerminalSize } from './hooks.js';
+import { useTerminalSize, useSpawnConfig } from './hooks.js';
 import { EditModal, FilterModal, PurgeModal, SortModal } from './ui/modals.js';
 import { StatusHeadline } from './ui/status-screen.js';
 import { InboxPane, SessionsPane, TasksPane } from './ui/panes.js';
@@ -59,6 +61,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const [mode, setMode] = useState<Mode>('normal');
   // Dimensioni vive del terminale: sono l'input del budget d'altezza.
   const { rows, columns } = useTerminalSize();
+
+  // T161 — il catalogo dati dei prompt e gli override di progetto: i due
+  // gradini del default di ogni azione di spawn. Si leggono una volta per vita
+  // del deck e scendono a chi risolve la terna (l'attuatore, il detail) e a chi
+  // la configura (la pagina), invece di essere riletti a ogni sede di chiamata.
+  const catalog = useMemo(() => loadPromptCatalog(), []);
+  const spawnConfig = useSpawnConfig({ cwd, setNote });
 
   const model = useDeckModel({ cwd, tasksPath, tasksDir, setNote });
   const actions = useDeckActions({ cwd, tasksPath, tasksDir, columns, model, setNote });
@@ -135,6 +144,20 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // committa.
   const gitlink = useGitlink({ cwd, setNote });
 
+  // T161 — la pagina delle azioni di spawn. Come il detail e la lista hard-wrap
+  // non esce dal deck da sé: qui riceve il saver degli override, e lo spawn che
+  // quegli override governano parte da tutt'altra parte.
+  const spawn = useSpawnPage({
+    cwd,
+    rows,
+    hasNote: Boolean(note),
+    overrides: spawnConfig.overrides,
+    save: spawnConfig.save,
+    catalog,
+    setMode,
+    setNote,
+  });
+
   const purge = usePurgeOverlay({
     setMode,
     setNote,
@@ -167,6 +190,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     status,
     inbox,
     wrap,
+    spawn,
     gitlink,
     purge,
     view: viewModals,
@@ -287,7 +311,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     projectName: model.projectName,
     taskRowData: model.taskRowData,
     hiddenTasks: model.hiddenTasks,
-    overlays: { assign, sheet, search, status, inbox, wrap },
+    overlays: { assign, sheet, search, status, inbox, wrap, spawn },
   });
   if (screen) return screen;
 

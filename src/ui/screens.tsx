@@ -38,6 +38,7 @@ import { DetailScreen } from './detail-screen.js';
 import { StatusScreen } from './status-screen.js';
 import { InboxScreen } from './inbox-screen.js';
 import { WrapScreen } from './wrap-screen.js';
+import { SpawnScreen } from './spawn-screen.js';
 import { ReaderScreen, SearchScreen } from './search-screen.js';
 import type { useAssignOverlay } from '../overlays/assign.js';
 import type { useSheetOverlay } from '../overlays/sheet.js';
@@ -45,6 +46,7 @@ import type { useSearchOverlay } from '../overlays/search.js';
 import type { useProjectStatus } from '../overlays/status.js';
 import type { useInboxOverlay } from '../overlays/inbox.js';
 import type { useWrapOverlay } from '../overlays/wrap.js';
+import type { useSpawnPage } from '../overlays/spawn.js';
 
 type AssignOverlay = ReturnType<typeof useAssignOverlay>;
 type SheetOverlay = ReturnType<typeof useSheetOverlay>;
@@ -52,6 +54,7 @@ type SearchOverlay = ReturnType<typeof useSearchOverlay>;
 type StatusOverlay = ReturnType<typeof useProjectStatus>;
 type InboxOverlay = ReturnType<typeof useInboxOverlay>;
 type WrapOverlay = ReturnType<typeof useWrapOverlay>;
+type SpawnPage = ReturnType<typeof useSpawnPage>;
 
 /**
  * Il ripiego per un terminale troppo basso: una riga sola al posto della
@@ -215,6 +218,7 @@ export type ScreensInput = {
     status: StatusOverlay;
     inbox: InboxOverlay;
     wrap: WrapOverlay;
+    spawn: SpawnPage;
   };
 };
 
@@ -229,7 +233,7 @@ export type ScreensInput = {
  */
 export function screenFor(input: ScreensInput) {
   const { mode, rows, columns, note, overlays } = input;
-  const { assign, sheet, search, status, inbox, wrap } = overlays;
+  const { assign, sheet, search, status, inbox, wrap, spawn } = overlays;
 
   // ── T57 · schermata di assegnazione ─────────────────────────────────────
   // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
@@ -405,6 +409,35 @@ export function screenFor(input: ScreensInput) {
         path={wrap.path}
         caret={wrap.caret}
         columns={columns}
+      />
+    );
+  }
+
+  // ── T161 · pagina delle azioni di spawn ─────────────────────────────────
+  // Ottava schermata sostitutiva: undici righe per quattro colonne, più l'area
+  // di compilazione. In un box sopra i due pane al prompt resterebbero due
+  // colonne.
+  if (mode === 'spawn' && spawn.open) {
+    if (isCompact(spawn.capacity)) {
+      return <CompactNotice what="azioni di spawn" esc="chiude" rows={rows} columns={columns} />;
+    }
+    return (
+      <SpawnScreen
+        rows={spawn.table}
+        sel={spawn.sel}
+        top={Math.min(spawn.top, spawn.maxTop)}
+        capacity={spawn.capacity}
+        configured={spawn.table.filter((r) => r.touched).length}
+        dirty={spawn.dirty}
+        editing={spawn.editing}
+        editable={spawn.editable}
+        fieldTitle={spawn.fieldTitle}
+        fieldModel={spawn.fieldModel}
+        fieldPrompt={spawn.fieldPrompt}
+        cursor={spawn.cursor}
+        example={spawn.example}
+        columns={columns}
+        note={note}
       />
     );
   }

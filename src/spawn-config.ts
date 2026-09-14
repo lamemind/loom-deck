@@ -210,6 +210,40 @@ export function resolveSpawn(
   catalog: Map<string, CatalogEntry>,
   holes: Readonly<Record<string, string>> = {},
 ): ResolvedSpawn {
+  const raw = rawSpawn(action, overrides, catalog);
+
+  let prompt = raw.prompt;
+  if (prompt) prompt = interpolate(prompt, holes) ?? '';
+
+  // La riduzione si applica DOPO l'interpolazione, perché i buchi portano dentro
+  // testo che l'alfabeto non ammette: uno slug col punto, un path con le barre.
+  // Quello che esce di qui è la stessa stringa che `deck-run` comporrà.
+  const filled = raw.title === null ? null : interpolate(raw.title, holes);
+  const title = filled === null ? null : saneNote(filled) || null;
+
+  return { title, model: raw.model, prompt, overridden: raw.overridden };
+}
+
+/**
+ * Gli stessi tre valori PRIMA dell'interpolazione: i template coi buchi ancora
+ * dentro.
+ *
+ * È la forma che la pagina mostra e fa modificare (P9 preflight): nella cella si
+ * legge `🚀 {slug}`, non il titolo di una task particolare — un valore già reso
+ * si modificherebbe a partire da un esempio, e ogni modifica cancellerebbe il
+ * buco senza che nulla lo dica. L'esempio reso sta accanto, nell'area di
+ * compilazione, dove serve a vedere l'effetto senza essere il campo.
+ *
+ * Serve anche al confronto col DEFAULT: chi conferma una modifica scrive la
+ * cella solo se differisce dal grezzo che uscirebbe senza override, ed è così
+ * che un valore riportato a mano al default smette di essere un override invece
+ * di restare nel file come una riga che non cambia niente.
+ */
+export function rawSpawn(
+  action: SpawnAction,
+  overrides: SpawnOverrides,
+  catalog: Map<string, CatalogEntry>,
+): ResolvedSpawn {
   const ov = overrides.get(action.id) ?? {};
   const overridden = new Set<SpawnField>(Object.keys(ov) as SpawnField[]);
 
@@ -227,16 +261,8 @@ export function resolveSpawn(
   // il file dati esiste per non avere.
   else if (action.kind) prompt = catalog.get(action.kind)?.template ?? '';
   else prompt = null;
-  if (prompt) prompt = interpolate(prompt, holes) ?? '';
 
-  const rawTitle = ov.title ?? action.title;
-  // La riduzione si applica DOPO l'interpolazione, perché i buchi portano dentro
-  // testo che l'alfabeto non ammette: uno slug con un punto, un path con le
-  // barre. Quello che esce di qui è la stessa stringa che `deck-run` comporrà.
-  const filled = rawTitle === null ? null : interpolate(rawTitle, holes);
-  const title = filled === null ? null : saneNote(filled) || null;
-
-  return { title, model, prompt, overridden };
+  return { title: ov.title ?? action.title, model, prompt, overridden };
 }
 
 /**

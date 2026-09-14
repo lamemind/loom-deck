@@ -156,6 +156,10 @@ export function deckLegend(state: {
       // direbbe il contrario di ciò che il tasto fa. Stessa regola di `CANC
       // elimina tutte`, che nomina il bersaglio e non il tasto.
       state.inboxPane ? '^B sessioni' : '^B inbox',
+      // T161 — la voce nomina l'OGGETTO e non il gesto, al contrario di `^G`/
+      // `^O`/`^U`: lì il tasto fa qualcosa (genera, bumpa) e il nome dell'oggetto
+      // da solo sarebbe ambiguo, qui apre una pagina e basta.
+      '^S azioni',
       '^F cerca',
       'C nuova',
       'E edit',

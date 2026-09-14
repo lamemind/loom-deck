@@ -46,6 +46,7 @@ import type { useSearchOverlay } from './overlays/search.js';
 import type { useProjectStatus } from './overlays/status.js';
 import type { useInboxOverlay } from './overlays/inbox.js';
 import type { useWrapOverlay } from './overlays/wrap.js';
+import type { useSpawnPage } from './overlays/spawn.js';
 import type { useGitlink } from './overlays/gitlink.js';
 import type { usePurgeOverlay } from './overlays/purge.js';
 import type { useTextModals, useViewModals } from './overlays/modals.js';
@@ -85,6 +86,7 @@ export type DeckOverlays = {
   status: ReturnType<typeof useProjectStatus>;
   inbox: ReturnType<typeof useInboxOverlay>;
   wrap: ReturnType<typeof useWrapOverlay>;
+  spawn: ReturnType<typeof useSpawnPage>;
   /** T155 — non è un modo: non compare in `MODE_KEYS` perché non cattura
    *  niente. Sta fra gli overlay per il solo `^U`. */
   gitlink: ReturnType<typeof useGitlink>;
@@ -154,6 +156,7 @@ export function useDeckInput({
     status: overlays.status.onKey,
     inbox: overlays.inbox.onKey,
     wrap: overlays.wrap.onKey,
+    spawn: overlays.spawn.onKey,
     reader: overlays.search.onReaderKey,
     search: overlays.search.onSearchKey,
     assign: overlays.assign.onKey,
@@ -393,6 +396,20 @@ export function useDeckInput({
         // ma quelli consumano l'input per intero e non vedono mai questo ramo —
         // stesso doppio significato per contesto già in esercizio su `^F`.
         overlays.gitlink.bump();
+      } else if (input === 's') {
+        // T161/P13 preflight — `^S` apre la pagina delle azioni di spawn. Le
+        // schermate sostitutive si aprono tutte con `CTRL` più lettera, e `s`
+        // sta per «spawn»; `^A`, che sarebbe l'altra mnemonica, è già
+        // inizio-riga dentro ogni campo di testo del deck.
+        //
+        // Sul flow-control XON/XOFF il repo porta due commenti in
+        // contraddizione — `model.ts` dice che il raw mode di Ink lo disattiva e
+        // il tasto passa pulito, `cli.tsx` che il terminale lo intercetta. La
+        // contraddizione si chiude qui con una MISURA, non con un'opinione: il
+        // gate pty di `test/modes-smoke.test.ts` manda `^S` al deck vero dentro
+        // un pseudo-terminale e pretende che la pagina si apra, quindi se il
+        // byte non arrivasse il test fallirebbe invece di lasciare il dubbio.
+        overlays.spawn.openPage();
       } else if (input === 'b') {
         // T134/D8 preflight — `^B` (box/bacheca) scambia i due pane dello slot
         // destro. Non è un modale né una schermata: il pane resta uno dei due

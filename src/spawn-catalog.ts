@@ -236,7 +236,7 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
   },
   {
     id: 'recap',
-    label: 'stato task (dispatcher)',
+    label: 'stato · dispatcher',
     surface: 'lista ^K',
     kind: 'recap',
     // P3 di T150 — le tre varianti di recap condividono il prefisso: la
@@ -355,7 +355,7 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     // T121 — il recap di progetto, headless (`claude -p`): nessuna tab, quindi
     // nessun titolo da configurare.
     id: 'project-status',
-    label: 'project status (headless)',
+    label: 'project status',
     surface: 'tasto ^G',
     kind: null,
     title: null,
@@ -365,6 +365,34 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     fixed: { title: 'headless: nessuna tab' },
   },
 ];
+
+/**
+ * Valori d'esempio dei buchi, per l'ANTEPRIMA dell'area di compilazione.
+ *
+ * La cella della tabella mostra il template grezzo (`🚀 {slug}`), l'area mostra
+ * come verrebbe reso: senza l'esempio un template si scrive alla cieca, e
+ * l'effetto si scopre alla prima conversazione aperta.
+ *
+ * Sono valori FINTI e dichiarati tali dalla pagina, non la task selezionata: la
+ * pagina non ha una selezione — si apre da qualunque punto del deck — e legare
+ * l'anteprima a ciò che capita di avere sotto il caret la renderebbe diversa a
+ * ogni apertura, per la stessa configurazione.
+ */
+export const EXAMPLE_HOLES: Readonly<Record<string, string>> = {
+  TASK: 'T42',
+  slug: 'esempio di task',
+  file: 'T42-nozioni',
+  path: 'runtime reference',
+};
+
+/**
+ * I valori sono quelli che i FORNITORI dei buchi producono davvero, non testo
+ * grezzo: lo slug arriva dal nome del task file coi trattini già sciolti in
+ * spazi, il basename dell'inbox senza `.md`, il path già reso in parole. Un
+ * esempio con dentro un `/` o un `.` mostrerebbe l'effetto della riduzione — le
+ * parole saldate — su un caso che allo spawn non si presenta mai, e chi lo
+ * legge correggerebbe un titolo che non è rotto.
+ */
 
 const BY_ID = new Map<string, SpawnAction>(SPAWN_ACTIONS.map((a) => [a.id, a]));
 

@@ -26,6 +26,7 @@ const ALL_MODES: Mode[] = [
   'status',
   'inbox',
   'wrap',
+  'spawn',
 ];
 
 test('normal è l\'unico modo non capturing', () => {

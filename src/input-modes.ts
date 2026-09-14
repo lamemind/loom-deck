@@ -29,6 +29,7 @@ export const CAPTURING_MODES = [
   'status',
   'inbox',
   'wrap',
+  'spawn',
   'reader',
   'search',
   'assign',

@@ -307,6 +307,8 @@ const CTRL_W = String.fromCharCode(23);
 /** T121 — genera e apri il project status. */
 const CTRL_G = String.fromCharCode(7);
 const CTRL_O = String.fromCharCode(15);
+/** T161 — apre la pagina delle azioni di spawn. */
+const CTRL_S = String.fromCharCode(19);
 
 /** T121 — cache del recap a coordinata nota: senza, `^O` risponderebbe «nessun
  *  recap in cache» e lo scenario misurerebbe la lista invece del viewer. Le
@@ -519,6 +521,19 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // bottone resta intero: se il budget fosse sbagliato di una colonna, il bordo
   // sparirebbe proprio qui.
   ['legenda con indicatori', 'W', [80, 100, 176]],
+  // T161 — la pagina delle azioni di spawn. Quattro colonne calcolate per
+  // sottrazione, due delle quali elastiche: è la stessa aritmetica che ha fatto
+  // uscire dal pane la lista sessioni due volte. A 80 colonne il prompt scende
+  // sotto le venti celle, cioè il caso in cui una colonna di troppo mangia il
+  // bordo.
+  ['pagina azioni di spawn', CTRL_S, [80, 100, 176]],
+  // L'area di compilazione aperta: tre righe in più, di cui una col campo di
+  // testo più lungo del deck (il prompt cablato dello srotolamento sfiora le 180
+  // colonne). `DDDDDDDDDD` scende sulla riga `unwrap`, che è la decima.
+  ['pagina azioni · area aperta', `${CTRL_S}DDDDDDDDD\r`, [80, 100, 176]],
+  // La riga `bare`, dove due celle su tre non si modificano: l'area disegna
+  // comunque le loro righe, con la ragione al posto del campo.
+  ['pagina azioni · celle fisse', `${CTRL_S}DDDDDDD\r`, [80, 100, 176]],
 ];
 
 // T121 — il viewer del project status e i due stati «rumorosi» della testata.

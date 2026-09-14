@@ -13,7 +13,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +51,11 @@ const CANC = 'K';
 /** T121 — le due attivazioni del project status: genera e apri. */
 const CTRL_G = '\x07';
 const CTRL_O = '\x0f';
+/** T161 — `^S` apre la pagina delle azioni di spawn. È anche l'XOFF del
+ *  flow-control: che arrivi al deck invece di essere mangiato dal terminale è
+ *  ciò che i due commenti in contraddizione del repo (`model.ts` contro
+ *  `cli.tsx`) non stabilivano, e che questo gate misura. */
+const CTRL_S = '\x13';
 
 function capture(
   keys: string,
@@ -157,6 +169,10 @@ const MODES: Array<{ name: string; keys: string; expect: RegExp; env?: NodeJS.Pr
   // T112 — `DD` porta sulla prima task reale, `CANC` apre la conferma. La
   // conferma NOMINA l'effetto sul disco, non l'etichetta della vista.
   { name: 'purge', keys: `DD${CANC}`, expect: /eliminare/i },
+  // T161 — la pagina delle azioni di spawn. L'attesa è sulla riga di TESTATA,
+  // che è l'unica a nominare la pagina: le celle della tabella portano valori
+  // che il progetto può aver cambiato.
+  { name: 'spawn', keys: CTRL_S, expect: /azioni di spawn/i },
 ];
 
 for (const m of MODES) {
@@ -888,4 +904,62 @@ test('il tracking si accende all\'avvio e si spegne all\'uscita', { skip: !CAN_R
   assert.match(raw, /\x1b\[\?1006h/, 'la modalità SGR non è stata accesa');
   const off = raw.lastIndexOf('\x1b[?1000l');
   assert.ok(off > raw.indexOf('\x1b[?1000h'), 'il tracking non è stato spento all\'uscita');
+});
+
+// ── T161 · la pagina delle azioni di spawn ─────────────────────────────────
+//
+// Il gate di larghezza (`frame-width.test.ts`) misura che la tabella non sfondi
+// il frame ed è cieco al comportamento; qui si verifica il CICLO: l'area si
+// apre, il valore cambia, `w` scrive il blocco nel file di progetto.
+//
+// Il progetto è TEMPORANEO e col suo `.claude/loom-works.json`: `w` scrive
+// davvero, e scriverlo nel cappello vero significherebbe che lanciare i test
+// riconfigura il deck di chi li lancia.
+
+/** Un progetto con tasks.md e config, su cui la pagina può salvare. */
+function configProject(): string {
+  const root = mkdtempSync(join(tmpdir(), 'loom-deck-spawncfg-'));
+  mkdirSync(join(root, 'runtime', 'tasks'), { recursive: true });
+  mkdirSync(join(root, '.claude'), { recursive: true });
+  if (CAN_RUN) copyFileSync(TASKS, join(root, 'runtime', 'tasks.md'));
+  writeFileSync(
+    join(root, '.claude', 'loom-works.json'),
+    JSON.stringify({ id: 'prova', emoji: '🧵', name: 'prova' }, null, 2) + '\n',
+  );
+  return root;
+}
+
+test('pagina azioni: ⏎ apre l\'area di compilazione della riga', { skip: !CAN_RUN }, () => {
+  const frame = lastFrame(capture(`${CTRL_S}\r`, configProject()));
+  assert.match(frame, /modello/, `l'area non si è aperta: ${frame}`);
+  assert.match(frame, /esempio/, `manca l'anteprima resa: ${frame}`);
+});
+
+test('pagina azioni: CANC su una riga mai toccata lo dice', { skip: !CAN_RUN }, () => {
+  // Inerzia dichiarata invece che silenziosa, come `^K` fuori dal pane task.
+  const frame = capture(`${CTRL_S}${CANC}`, configProject());
+  assert.match(frame, /nessun override da togliere/, frame);
+});
+
+test('pagina azioni: il modello scelto finisce nel file di progetto', { skip: !CAN_RUN }, () => {
+  // `⏎` apre l'area sulla prima riga (`none`), `D` scende sulla riga modello,
+  // `R` cicla al successivo (fable → opus), `⏎` congela nella bozza, `w` scrive.
+  const proj = configProject();
+  const frame = capture(`${CTRL_S}\rDR\rw`, proj);
+  const doc = JSON.parse(readFileSync(join(proj, '.claude', 'loom-works.json'), 'utf8'));
+  assert.deepEqual(doc.spawn, { none: { model: 'opus' } }, `frame: ${frame}`);
+  // Il resto del file non è stato toccato: il saver è read-modify-write.
+  assert.equal(doc.id, 'prova');
+  assert.equal(doc.emoji, '🧵');
+});
+
+test('pagina azioni: senza un file di progetto `w` rifiuta e lo dice', { skip: !CAN_RUN }, () => {
+  // Un progetto non registrato non riceve un `loom-works.json` generato dal
+  // deck: quel file regge identità, label e registry di compass, e il deck non
+  // li conosce nemmeno tutti.
+  const naked = mkdtempSync(join(tmpdir(), 'loom-deck-noconfig-'));
+  mkdirSync(join(naked, 'runtime', 'tasks'), { recursive: true });
+  if (CAN_RUN) copyFileSync(TASKS, join(naked, 'runtime', 'tasks.md'));
+  const frame = capture(`${CTRL_S}\rDR\rw`, naked);
+  assert.match(frame, /⚠|ENOENT|no such file/i, frame);
 });
