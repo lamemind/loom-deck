@@ -224,29 +224,33 @@ export function fallbackTitle(tasksDir: string, id: string, kind: PromptKind): s
 // separino, quindi il flag non appartiene alla ripresa — vale su ogni spawn.
 // Assente quando la nota è vuota, e non passato vuoto: `--title-note ''`
 // produrrebbe un `«»` a vuoto nel titolo.
-// T117 — `prompt` è il TESTO letterale, e quando c'è sostituisce il kind:
-// `--prompt` e `--prompt-kind` sono mutuamente esclusivi in deck-run. Serve al
-// detail, dove il prompt è un campo editabile e quello che l'utente legge è
-// quello che parte — dopo una modifica nessun kind lo descrive più.
-// `undefined` = questo percorso non ha un campo prompt (gli acceleratori della
-// lista) e viaggia col simbolo, come prima. Stringa VUOTA ≠ undefined: è la
-// richiesta esplicita di nessun prompt (azione `open`, o un campo svuotato a
-// mano) e si esprime col kind `none`, perché senza flag deck-run cadrebbe sul
-// proprio default `recap`.
+// T117 — `prompt` è il TESTO letterale, e sostituisce il kind: `--prompt` e
+// `--prompt-kind` sono mutuamente esclusivi in deck-run.
+//
+// T161 — dal deck viaggia SEMPRE il testo, mai più il simbolo. Prima gli
+// acceleratori della lista passavano `--prompt-kind` e lasciavano risolvere il
+// testo a `deck-run`, che consultava il proprio catalogo; il detail passava già
+// il letterale. Con un override di progetto sui prompt la risoluzione deve
+// stare da una parte sola, e quella parte è il deck — che è l'unico dei due a
+// leggere `.claude/loom-works.json` per questo (`jq` è dipendenza opzionale di
+// `deck-run`). Un percorso solo, quindi, e ciò che parte è verificabile
+// sull'argv.
+//
+// Due conseguenze dichiarate: `--prompt-kind` resta in `deck-run` per chi lo
+// invoca a mano, e `LOOM_DECK_ENTER_PROMPT` non ha più effetto sugli spawn dal
+// deck (non ha mai vinto su `--prompt`).
+//
+// Stringa VUOTA = richiesta esplicita di nessun prompt (azione `open`, o un
+// campo svuotato a mano): si esprime col kind `none`, perché senza nessun flag
+// `deck-run` cadrebbe sul proprio default `recap`.
 export function deckArgs(
   id: string,
   sessionId: string,
-  kind: PromptKind,
   model: ModelKind = MODEL_DEFAULT,
   spawnNote?: string,
-  prompt?: string,
+  prompt = '',
 ): string[] {
-  const promptArgs =
-    prompt === undefined
-      ? ['--prompt-kind', kind]
-      : prompt
-        ? ['--prompt', prompt]
-        : ['--prompt-kind', 'none'];
+  const promptArgs = prompt ? ['--prompt', prompt] : ['--prompt-kind', 'none'];
   const args = [id, '--session-id', sessionId, ...promptArgs, '--model', model];
   if (spawnNote) args.push('--title-note', spawnNote);
   return args;
@@ -256,12 +260,11 @@ export function spawnDeck(
   id: string,
   cwd: string,
   sessionId: string,
-  kind: PromptKind,
   model: ModelKind = MODEL_DEFAULT,
   spawnNote?: string,
-  prompt?: string,
+  prompt = '',
 ): Spawned {
-  return launchDeckRun(deckArgs(id, sessionId, kind, model, spawnNote, prompt), cwd);
+  return launchDeckRun(deckArgs(id, sessionId, model, spawnNote, prompt), cwd);
 }
 
 // T49 — resume di una sessione esistente come nuova tab Ptyxis. Scoped (taskId
@@ -628,16 +631,25 @@ export function spawnCleanTasks(
 // permissivo toglie le richieste di permesso che il CLI pone su un tool, e
 // quelle in `-p` non hanno nessuno che risponda — il processo resterebbe appeso
 // senza emettere niente, cioè con l'indicatore che conta all'infinito.
+//
+// T161 — modello e prompt arrivano dal CHIAMANTE, risolti sul catalogo delle
+// azioni: erano gli ultimi due valori che questa funzione sceglieva da sé
+// (`PROJECT_STATUS_MODEL` e la stringa della skill), e con l'override di
+// progetto il default deve stare in un posto solo insieme a quello delle altre
+// dieci azioni. Il `--permission-mode auto` invece resta qui: non è una
+// preferenza ma la condizione perché un `-p` non resti appeso.
 export function spawnProjectStatus(
   cwd: string,
   sessionId: string,
   onResult: (ok: boolean, detail: string) => void,
+  model: ModelKind = PROJECT_STATUS_MODEL,
+  prompt = '/loom-works:recap-status-project',
 ) {
-  return spawnSkill('/loom-works:recap-status-project', cwd, sessionId, onResult, [
+  return spawnSkill(prompt, cwd, sessionId, onResult, [
     '--permission-mode',
     'auto',
     '--model',
-    PROJECT_STATUS_MODEL,
+    model,
   ]);
 }
 

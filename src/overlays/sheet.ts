@@ -27,10 +27,11 @@ import {
   specializeRecap,
   type ModelKind,
   type PromptKind,
+  type SpawnActionId,
 } from '../spawn-catalog.js';
 import { taskIsEpic } from '../tasks.js';
 import { fieldsKey, type FieldSpec, type FieldsCursor, type FieldsIO } from '../fields.js';
-import { loadPromptCatalog, modelFor, promptFor } from '../prompt-catalog.js';
+import type { ResolvedSpawn } from '../spawn-config.js';
 import type { Mode } from '../model.js';
 
 export interface Sheet {
@@ -50,12 +51,18 @@ export interface SheetOverlayDeps {
   columns: number;
   setMode: (m: Mode) => void;
   setNote: (s: string) => void;
+  /**
+   * T161 — la terna di DEFAULT di un'azione su questa task: default del deck ←
+   * override di progetto, coi buchi già riempiti. Arriva come funzione e non
+   * come mappa perché dipende dalla task aperta (`{TASK}`, `{slug}`), che il
+   * detail conosce e l'attuatore no.
+   */
+  defaults: (id: SpawnActionId, taskId: string) => ResolvedSpawn;
   /** Spawn dall'area di compilazione: effetto esterno, non nostro. Il `prompt`
    *  è il TESTO che parte davvero — dopo una modifica a mano nessun kind lo
-   *  descrive più, quindi il kind non basta a dire cosa riceverà la sessione. */
+   *  descrive più, quindi il kind non serve più a valle. */
   onAction: (
     taskId: string,
-    kind: PromptKind,
     model: ModelKind,
     spawnNote: string,
     prompt: string,
@@ -85,7 +92,7 @@ export const DETAIL_FIELDS: readonly FieldSpec[] = [
 ];
 
 export function useSheetOverlay(deps: SheetOverlayDeps) {
-  const { rows, columns, setMode, setNote, onAction } = deps;
+  const { rows, columns, setMode, setNote, defaults, onAction } = deps;
 
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [top, setTop] = useState(0);
@@ -113,10 +120,6 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
    *  riparserebbe l'intero task file per un campo dell'header. */
   const [epic, setEpic] = useState(false);
   const [cursor, setCursor] = useState<FieldsCursor>({ row: DROW.action, caret: 0 });
-
-  // Il catalogo si legge una volta per vita del deck: è un file di quattro righe
-  // accanto al codice, non un dato che cambia sotto i piedi.
-  const catalog = useMemo(() => loadPromptCatalog(), []);
 
   // T91 — ricerca dentro il detail. `open` distingue i due modi in cui la si
   // lascia: `esc` butta via ciò che il modale ha prodotto (`find` a null,
@@ -183,13 +186,13 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     setTop(0);
     setAction(0);
     setEpic(isEpic);
-    // T152 — il modello segue l'azione iniziale, come già il prompt: su una
-    // task Epic la prima azione specializza a `recap-epic`, che nel catalogo
-    // può portare un modello diverso da `recap`. Nessun kind fuori catalogo →
-    // MODEL_DEFAULT, lo stesso fallback che vale ovunque nel deck.
-    setModel(modelFor(catalog, kind) ?? MODEL_DEFAULT);
-    setSpawnNote('');
-    setPrompt(promptFor(catalog, kind, next.id));
+    // T152/T161 — i tre campi partono dalla terna dell'azione, risolta sul
+    // catalogo e sugli override di progetto: su una task Epic la prima azione
+    // specializza a `recap-epic`, che può portare valori diversi da `recap`.
+    const d = defaults(kind, next.id);
+    setModel(d.model);
+    setSpawnNote(d.title ?? '');
+    setPrompt(d.prompt ?? '');
     setPriority(false);
     setCursor({ row: DROW.action, caret: 0 });
     setFind(null);
@@ -198,20 +201,26 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     setMode('detail');
   }
 
-  /** Cambia l'azione e RISCRIVE prompt e modello col default del nuovo kind (D2).
+  /** Cambia l'azione e RISCRIVE i tre campi col default del nuovo kind (D2).
    *
-   *  Nessuna preservazione della scelta manuale di modello, per la stessa
-   *  ragione già scritta sul prompt: col fuoco per riga un cambio di azione
-   *  ACCIDENTALE non esiste — `←→` cambiano azione solo dalla riga azione —
-   *  quindi la preservazione difenderebbe da nulla e costerebbe un campo che
-   *  non torna più al default della nuova azione (T152). */
+   *  Nessuna preservazione delle scelte fatte a mano, per la stessa ragione già
+   *  scritta sul prompt: col fuoco per riga un cambio di azione ACCIDENTALE non
+   *  esiste — `←→` cambiano azione solo dalla riga azione — quindi la
+   *  preservazione difenderebbe da nulla e costerebbe campi che non tornano più
+   *  al default della nuova azione (T152).
+   *
+   *  T161 — da qui ci passa anche il TITOLO, che prima restava vuoto e veniva
+   *  riempito allo spawn da `fallbackTitle`: ora il campo mostra quello che
+   *  partirà, come già il prompt e il modello. */
   function selectAction(index: number) {
     setAction(index);
     const id = sheet?.id;
     if (!id) return;
     const kind = specializeRecap(DETAIL_ACTIONS[index]!.kind, epic);
-    setPrompt(promptFor(catalog, kind, id));
-    setModel(modelFor(catalog, kind) ?? MODEL_DEFAULT);
+    const d = defaults(kind, id);
+    setPrompt(d.prompt ?? '');
+    setModel(d.model);
+    setSpawnNote(d.title ?? '');
   }
 
   // Il ponte fra le quattro righe e i quattro stati. Le righe restano
@@ -330,12 +339,11 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       // Il kind viaggia specializzato quanto il prompt che lo accompagna: se il
       // campo è stato svuotato a mano il testo non parte e resta lui a dire cosa
       // ricevera' la sessione, quindi i due non possono divergere.
-      const act = DETAIL_ACTIONS[action]!;
       const id = sheet?.id;
       const note = spawnNote.trim();
       const text = prompt.trim();
       close();
-      if (id) onAction(id, specializeRecap(act.kind, epic), model, note, text, priority);
+      if (id) onAction(id, model, note, text, priority);
       return;
     }
     if (key.pageUp) {

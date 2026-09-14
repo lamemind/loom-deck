@@ -224,6 +224,19 @@ export function resolveSpawn(
   return { title, model: raw.model, prompt, overridden: raw.overridden };
 }
 
+/** La terna di un'azione per ID di catalogo. Due chiamanti — l'attuatore, che la
+ *  espone a tutte le sedi di spawn, e il valore iniziale del selettore della
+ *  sessione nuda, che si risolve prima che l'attuatore esista — e una sola
+ *  implementazione. */
+export function resolveSpawnId(
+  id: SpawnActionId,
+  overrides: SpawnOverrides,
+  catalog: Map<string, CatalogEntry>,
+  holes: Readonly<Record<string, string>> = {},
+): ResolvedSpawn {
+  return resolveSpawn(spawnAction(id)!, overrides, catalog, holes);
+}
+
 /**
  * Gli stessi tre valori PRIMA dell'interpolazione: i template coi buchi ancora
  * dentro.

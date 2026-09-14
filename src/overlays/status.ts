@@ -16,6 +16,7 @@ import { pageStep, statusCapacity } from '../viewport.js';
 import { cut, wrapWithOffsets } from '../width.js';
 import { parseMarkdown } from '../markdown.js';
 import { CLAUDE_CMD, notifyDone, spawnProjectStatus } from '../spawn.js';
+import type { ModelKind } from '../spawn-catalog.js';
 import {
   readStatusCache,
   statusFilePath,
@@ -31,6 +32,15 @@ export interface StatusOverlayDeps {
   name: string;
   rows: number;
   columns: number;
+  /**
+   * T161 — modello e prompt della riga `project-status` del catalogo delle
+   * azioni, già risolti sugli override di progetto. Arrivano come dipendenza e
+   * non si leggono qui: la generazione è uno spawn come gli altri dieci, e la
+   * sua terna deve uscire dallo stesso posto — prima erano una costante e una
+   * stringa scritte dentro `spawnProjectStatus`.
+   */
+  model: ModelKind;
+  prompt: string;
   setMode: (m: Mode) => void;
   setNote: (s: string) => void;
 }
@@ -47,7 +57,7 @@ export interface StatusView {
 }
 
 export function useProjectStatus(deps: StatusOverlayDeps) {
-  const { cwd, name, rows, columns, setMode, setNote } = deps;
+  const { cwd, name, rows, columns, model, prompt, setMode, setNote } = deps;
 
   const path = useMemo(() => statusFilePath(cwd), [cwd]);
   // Letta al mount e basta: è ciò che fa ripartire un deck riaperto dall'ora di
@@ -111,7 +121,7 @@ export function useProjectStatus(deps: StatusOverlayDeps) {
     setFailed(false);
     setStartedAt(Date.now());
     setNote(`⏳ project status di ${name}… (sid ${sid.slice(0, 8)})`);
-    const child = spawnProjectStatus(cwd, sid, finish);
+    const child = spawnProjectStatus(cwd, sid, finish, model, prompt);
     child.on('error', () => {
       setStartedAt(null);
       setFailed(true);

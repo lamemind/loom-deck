@@ -168,11 +168,18 @@ export function useDeckModel({
   cwd,
   tasksPath,
   tasksDir,
+  bareModel: bareModelDefault,
   setNote,
 }: {
   cwd: string;
   tasksPath: string;
   tasksDir: string;
+  /** T161 — il modello con cui il selettore della sessione nuda APRE, dalla riga
+   *  `bare` del catalogo delle azioni. Vale al mount e basta (P4 preflight): la
+   *  pagina configura il valore iniziale dei selettori vivi, non li vincola, e
+   *  un valore che si riallineasse a metà sessione sposterebbe il bottone sotto
+   *  le dita di chi l'ha appena ciclato con `m`. */
+  bareModel: ModelKind;
   setNote: (s: string) => void;
 }) {
   const { tasks, loadError } = useTasks(tasksPath);
@@ -215,7 +222,7 @@ export function useDeckModel({
   // ha una riga, è un'azione sulla surface del cappello) e quindi non si
   // azzera mai — resta quello scelto finché non si sceglie altro, per tutta la
   // vita del deck.
-  const [bareModel, setBareModel] = useState<ModelKind>(MODEL_DEFAULT);
+  const [bareModel, setBareModel] = useState<ModelKind>(bareModelDefault);
   // T39 — vista corrente (filtri + sort). Vive nel modello e non nell'hook dei
   // modali che la editano: è ciò che `applyView` consuma per produrre la lista,
   // è persistita su disco e la rilegge il tasto `w`. È stato del modello che due

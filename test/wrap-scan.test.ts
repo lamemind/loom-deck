@@ -5,8 +5,8 @@
 // tolleranza, si stima sul 90° percentile, lo srotolamento itera a colonna
 // ferma) sono tarate su un collaudo, e replicarle qui darebbe due misure
 // destinate a divergere in silenzio. Quello che si prova qui è il LETTORE: che
-// legga il TSV per nome di campo, che conti i soli `WRAP`, e che il prompt
-// dell'azione resti quello cablato.
+// legga il TSV per nome di campo, che conti i soli `WRAP`, e che il path arrivi
+// ai template del catalogo delle azioni già reso a parole.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,8 +15,7 @@ import {
   parseWrapTsv,
   wrapCacheFile,
   wrapCount,
-  wrapPrompt,
-  wrapTitle,
+  wrapWords,
   WRAP_DEFAULT_PATH,
 } from '../src/wrap-scan.js';
 import { sanitize } from '../src/width.js';
@@ -79,39 +78,33 @@ test('D4 — il contatore conta i soli WRAP, `misto` resta fuori', () => {
   assert.equal(wrapCount(files) + mixedCount(files), files.length);
 });
 
-test('wrapPrompt: testo cablato, col path sostituito', () => {
-  const p = wrapPrompt('runtime/reference');
-  assert.match(p, /^lancia md-wrap modo apply su runtime\/reference e backup in cartella tmp/);
-  assert.match(p, /verifica risultato e fai rapporto/);
-  assert.match(p, /se le modifiche sono tutte chiaramente safe, puoi committare direttamente$/);
-});
-
-test('wrapPrompt: campo vuoto → project root intera, non un comando monco', () => {
-  assert.equal(wrapPrompt(''), wrapPrompt(WRAP_DEFAULT_PATH));
-  assert.equal(wrapPrompt('   '), wrapPrompt(WRAP_DEFAULT_PATH));
-});
-
-test('wrapTitle: il path diventa parole, senza barre né estensione', () => {
+test('wrapWords: il path diventa parole, senza barre né estensione', () => {
+  // T161 — l'emoji del prefisso e il testo del prompt non stanno più qui: sono
+  // i template della riga `unwrap` del catalogo delle azioni, dove un override
+  // di progetto può riscriverli. Questa funzione porta il solo buco `{path}`.
+  //
   // L'alfabeto di `_sane_note` (deck-run) non ha `/` né `.`: lasciandoceli
   // cadere le parole si salderebbero (`runtimereferencedoc-systemmd`) e il
   // titolo della tab divergerebbe da quello che la lista legge dal sidecar.
-  assert.equal(wrapTitle('runtime/reference'), '📏 runtime reference');
+  assert.equal(wrapWords('runtime/reference'), 'runtime reference');
   assert.equal(
-    wrapTitle('runtime/reference/doc-system/doc-system-topology.md'),
-    '📏 runtime reference doc-system doc-system-topology',
+    wrapWords('runtime/reference/doc-system/doc-system-topology.md'),
+    'runtime reference doc-system doc-system-topology',
   );
-  assert.equal(wrapTitle('./CLAUDE.md'), '📏 CLAUDE');
+  assert.equal(wrapWords('./CLAUDE.md'), 'CLAUDE');
 });
 
-test('wrapTitle: la project root intera è una frase, non un prefisso nudo', () => {
-  assert.equal(wrapTitle(WRAP_DEFAULT_PATH), '📏 tutto il progetto');
-  assert.equal(wrapTitle(''), wrapTitle(WRAP_DEFAULT_PATH));
-  assert.equal(wrapTitle('   '), wrapTitle(WRAP_DEFAULT_PATH));
+test('wrapWords: la project root intera è una frase, non un vuoto', () => {
+  // Interpolato in `📏 {path}` un vuoto darebbe il solo prefisso, cioè un
+  // titolo uguale per ogni srotolamento.
+  assert.equal(wrapWords(WRAP_DEFAULT_PATH), 'tutto il progetto');
+  assert.equal(wrapWords(''), wrapWords(WRAP_DEFAULT_PATH));
+  assert.equal(wrapWords('   '), wrapWords(WRAP_DEFAULT_PATH));
 });
 
-test('wrapTitle: il prefisso sopravvive a sanitize', () => {
+test('wrapWords: sopravvive a sanitize', () => {
   for (const p of ['.', 'runtime/reference', 'CLAUDE.md']) {
-    assert.equal(sanitize(wrapTitle(p)), wrapTitle(p));
+    assert.equal(sanitize(wrapWords(p)), wrapWords(p));
   }
 });
 

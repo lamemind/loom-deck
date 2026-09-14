@@ -251,17 +251,11 @@ export function inboxPrompt(f: InboxFile): string {
   return `/loom-works:${DRAIN_SKILL[f.natura]} ${f.basename}`;
 }
 
-/** Prefisso del titolo di una sessione aperta su un file inbox. Astrale come le
- *  emoji delle azioni su task (`ACTION_EMOJI` in `src/spawn.ts`) e per la stessa
- *  ragione: `sanitize` di `src/width.ts` sostituisce con `·` ogni glifo su cui
- *  le due contabilità di larghezza divergono, e le emoji del BMP divergono
- *  sempre. Sta anche nella whitelist di `_sane_note` in `deck-run`, o arriverebbe
- *  nella tab ridotta a niente mentre la lista del deck la mostra. */
-const INBOX_EMOJI = '🧹';
-
 /**
- * Il titolo della sessione che il deck apre su un file inbox: `🧹 <basename>`,
- * senza l'estensione.
+ * T161 — il buco `{file}` del titolo di una sessione di drain: il basename senza
+ * estensione e senza punti. L'emoji del prefisso non sta più qui — è dentro il
+ * template della riga `drain` del catalogo delle azioni, dove il progetto può
+ * riscriverla.
  *
  * Il `.md` si toglie QUI e non lo si lascia cadere a valle: l'alfabeto di
  * `_sane_note` non ha il punto, quindi il titolo della tab uscirebbe con le due
@@ -273,9 +267,8 @@ const INBOX_EMOJI = '🧹';
  * invece di drenare, ma l'oggetto su cui lavora è lo stesso file, ed è il file
  * che il titolo nomina. L'azione la dice il prompt.
  */
-export function inboxTitle(f: InboxFile): string {
-  const name = f.basename.replace(/\.md$/i, '').replace(/\./g, '-');
-  return `${INBOX_EMOJI} ${name}`;
+export function inboxWords(f: InboxFile): string {
+  return f.basename.replace(/\.md$/i, '').replace(/\./g, '-');
 }
 
 /**

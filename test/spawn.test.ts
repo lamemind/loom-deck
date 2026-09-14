@@ -28,38 +28,37 @@ import { sanitize } from '../src/width.js';
 // La forma degli argv È il contratto col primitive `deck-run`, e finora non la
 // fissava nulla: un flag rinominato da un lato si scopriva solo aprendo una tab.
 
-test('deckArgs pinna il sessionId e dichiara sempre il kind', () => {
-  // Il kind non ha default qui: dal deck ogni tasto dichiara il proprio intento,
-  // e un default silenzioso renderebbe indistinguibili `⏎` e `^K`.
-  // Il modello sì (T108): i percorsi che non passano dal selettore del detail
-  // non hanno un intento da dichiarare, e il loro unico valore sensato è quello
-  // che il selettore stesso mostra all'apertura.
-  // Il VALORE del default non si ricopia qui: quale sia lo decide `spawn.ts`, e
-  // una cifra cablata in questa asserzione sarebbe una seconda dichiarazione da
-  // tenere allineata a mano. Sotto misura c'è che il flag ci sia e porti IL
-  // default, non quale modello sia il default oggi.
-  assert.deepEqual(deckArgs('T104', 'sid-1', 'run'), [
+test('deckArgs pinna il sessionId e porta sempre il modello', () => {
+  // T161 — il kind non compare più nella firma: dal deck viaggia il TESTO del
+  // prompt, risolto sul catalogo delle azioni e sugli override di progetto.
+  // Il modello ha un default (T108): i percorsi che non passano dal selettore
+  // del detail non hanno un intento da dichiarare, e il loro unico valore
+  // sensato è quello che il selettore stesso mostra all'apertura.
+  // Il VALORE del default non si ricopia qui: quale sia lo decide
+  // `spawn-catalog.ts`, e una cifra cablata in questa asserzione sarebbe una
+  // seconda dichiarazione da tenere allineata a mano.
+  assert.deepEqual(deckArgs('T104', 'sid-1'), [
     'T104',
     '--session-id',
     'sid-1',
     '--prompt-kind',
-    'run',
+    'none',
     '--model',
     MODEL_DEFAULT,
   ]);
-  assert.deepEqual(deckArgs('T104', 'sid-1', 'run', 'sonnet').slice(-2), ['--model', 'sonnet']);
+  assert.deepEqual(deckArgs('T104', 'sid-1', 'sonnet').slice(-2), ['--model', 'sonnet']);
 });
 
 // T111 — la nota data alla nascita viaggia sullo STESSO flag del resume, perché
 // deck-run appende il suffisso al titolo prima che i rami si separino: il flag
 // non appartiene alla ripresa, vale su ogni spawn.
 test('deckArgs porta la nota nel titolo solo quando c\'è', () => {
-  assert.deepEqual(deckArgs('T111', 'sid-1', 'preflight', 'opus', 'baluba'), [
+  assert.deepEqual(deckArgs('T111', 'sid-1', 'opus', 'baluba', 'fai la cosa'), [
     'T111',
     '--session-id',
     'sid-1',
-    '--prompt-kind',
-    'preflight',
+    '--prompt',
+    'fai la cosa',
     '--model',
     'opus',
     '--title-note',
@@ -67,15 +66,16 @@ test('deckArgs porta la nota nel titolo solo quando c\'è', () => {
   ]);
   // Nota vuota = nessun flag, non `--title-note ''`: quello produrrebbe un `«»`
   // a vuoto nel titolo. Stesso regime già fissato per `resumeArgs`.
-  assert.ok(!deckArgs('T111', 'sid-1', 'preflight', 'opus', '').includes('--title-note'));
-  assert.ok(!deckArgs('T111', 'sid-1', 'preflight').includes('--title-note'));
+  assert.ok(!deckArgs('T111', 'sid-1', 'opus', '').includes('--title-note'));
+  assert.ok(!deckArgs('T111', 'sid-1').includes('--title-note'));
 });
 
-// T117 — dal detail il prompt è un TESTO, non un simbolo: dopo una modifica a
-// mano nessun kind lo descrive più. I due flag sono mutuamente esclusivi in
-// deck-run, quindi qui l'uno sostituisce l'altro invece di affiancarlo.
-test('deckArgs: un prompt letterale sostituisce il kind', () => {
-  assert.deepEqual(deckArgs('T117', 'sid-1', 'run', 'opus', '', 'fai la cosa'), [
+// T117/T161 — il prompt è un TESTO e non un simbolo, su OGNI percorso: dal
+// detail perché il campo è editabile, dagli acceleratori perché la risoluzione
+// (catalogo dati + override di progetto) sta nel deck. `--prompt` e
+// `--prompt-kind` sono mutuamente esclusivi in deck-run.
+test('deckArgs: il prompt viaggia come testo', () => {
+  assert.deepEqual(deckArgs('T117', 'sid-1', 'opus', '', 'fai la cosa'), [
     'T117',
     '--session-id',
     'sid-1',
@@ -90,13 +90,10 @@ test('deckArgs: prompt VUOTO → kind none, non un --prompt a vuoto', () => {
   // Senza flag deck-run cadrebbe sul proprio default `recap`, cioè su un prompt
   // che nessuno ha chiesto: «nessun prompt» va detto, non omesso. È il caso
   // dell'azione `open` e di un campo svuotato a mano.
-  assert.deepEqual(deckArgs('T117', 'sid-1', 'none', 'opus', '', '').slice(3, 5), [
+  assert.deepEqual(deckArgs('T117', 'sid-1', 'opus', '', '').slice(3, 5), [
     '--prompt-kind',
     'none',
   ]);
-  // `undefined` ≠ stringa vuota: chi non ha un campo prompt (gli acceleratori
-  // della lista) continua a viaggiare col simbolo.
-  assert.deepEqual(deckArgs('T117', 'sid-1', 'run').slice(3, 5), ['--prompt-kind', 'run']);
 });
 
 test('resumeArgs scoped porta la task, spot porta --no-task', () => {
@@ -413,7 +410,7 @@ test('fallbackTitle: task file assente → null, il chiamante decide il ripiego'
 test('fallbackTitle → deckArgs: il fallback sostituisce la nota vuota e porta --title-note', () => {
   withTaskFiles({ 'T150-deck-titolo-conversazione-auto.md': '# Task: x\n' }, (dir) => {
     const note = fallbackTitle(dir, 'T150', 'run') ?? '';
-    const args = deckArgs('T150', 'sid-1', 'run', 'opus', note);
+    const args = deckArgs('T150', 'sid-1', 'opus', note);
     assert.ok(args.includes('--title-note'));
     assert.equal(args[args.indexOf('--title-note') + 1], '🚀 deck titolo conversazione auto');
   });
@@ -460,8 +457,8 @@ test('shellCommand ricompone eseguibile e argv come si scriverebbero in bash', (
   // È la riga che finisce nella riga di stato a ogni spawn di sessione Claude:
   // deve poter essere ricopiata in un terminale e fare la stessa cosa.
   assert.equal(
-    shellCommand('/opt/deck-run', deckArgs('T115', 'sid-1', 'run', 'sonnet', 'due parole')),
-    "/opt/deck-run T115 --session-id sid-1 --prompt-kind run --model sonnet --title-note 'due parole'",
+    shellCommand('/opt/deck-run', deckArgs('T115', 'sid-1', 'sonnet', 'due parole', 'fai')),
+    "/opt/deck-run T115 --session-id sid-1 --prompt fai --model sonnet --title-note 'due parole'",
   );
   assert.equal(shellCommand('/opt/deck-run', ['--no-task']), '/opt/deck-run --no-task');
 });

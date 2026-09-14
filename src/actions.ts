@@ -15,10 +15,10 @@
 // `test/modes-smoke.test.ts` (`seleziona una task`, `terminale su`, `deck-run`,
 // `nessun push`, `eliminare N task?`, `scartate`): si copiano verbatim, non si
 // migliorano di passaggio.
-import { useMemo, useRef } from 'react';
+import { useRef } from 'react';
 import { randomUUID } from 'node:crypto';
-import { loadTasks, type Task } from './tasks.js';
-import { loadPromptCatalog, modelFor } from './prompt-catalog.js';
+import { loadTasks, taskSlug, type Task } from './tasks.js';
+import type { CatalogEntry } from './prompt-catalog.js';
 import {
   appendNote,
   appendPin,
@@ -45,15 +45,15 @@ import {
   spawnDeckFork,
   spawnDeckResume,
   spawnTerminal,
-  fallbackTitle,
   CLAUDE_CMD,
   DECK_RUN,
   type Spawned,
 } from './spawn.js';
-import { MODEL_DEFAULT, type ModelKind, type PromptKind } from './spawn-catalog.js';
+import { type ModelKind, type PromptKind, type SpawnActionId } from './spawn-catalog.js';
+import { resolveSpawnId, type ResolvedSpawn, type SpawnOverrides } from './spawn-config.js';
 import { useTaskOps } from './task-ops.js';
-import { inboxTitle, type InboxFile } from './inbox.js';
-import { wrapTitle } from './wrap-scan.js';
+import { inboxWords, type InboxFile } from './inbox.js';
+import { wrapWords } from './wrap-scan.js';
 import type { DeckModel } from './deck-model.js';
 
 export function useDeckActions({
@@ -62,6 +62,8 @@ export function useDeckActions({
   tasksDir,
   columns,
   model,
+  overrides,
+  catalog,
   setNote,
 }: {
   cwd: string;
@@ -69,6 +71,12 @@ export function useDeckActions({
   tasksDir: string;
   columns: number;
   model: DeckModel;
+  /** T161 — gli override di spawn del progetto e il catalogo dati dei prompt: i
+   *  due gradini del default di ogni azione. Scendono qui come VALORI e non si
+   *  rileggono da disco a ogni spawn — la pagina che li scrive vive nello stesso
+   *  processo, e il suo saver ricarica. */
+  overrides: SpawnOverrides;
+  catalog: Map<string, CatalogEntry>;
   setNote: (s: string) => void;
 }) {
   // La riga di stato di OGNI spawn di sessione Claude: il comando esatto, come
@@ -105,10 +113,6 @@ export function useDeckActions({
   // prima dell'exec), ed è anche il comando da ripetere a mano per vedere
   // l'errore. Il salto fra le due dura i millisecondi che `deck-run` impiega a
   // comporre.
-  // T152 — stessa fonte del detail (sheet.ts): un file di sei righe accanto al
-  // codice, letto una volta per vita del deck.
-  const catalog = useMemo(() => loadPromptCatalog(), []);
-
   const spawnSeq = useRef(0);
   function noteSpawn(spawned: Spawned) {
     noteCommand(spawned.cmd);
@@ -120,6 +124,41 @@ export function useDeckActions({
       // partito.
       if (spawnSeq.current === mine) noteCommand(inTab);
     });
+  }
+
+  /**
+   * T161 — la TERNA di un'azione: default del deck ← override di progetto, coi
+   * buchi già riempiti.
+   *
+   * Un punto solo. Prima di questa task ogni sede di chiamata sceglieva da sé —
+   * `MODEL_DEFAULT` dentro `drainInbox`, `'sonnet'` dentro `unwrapPath`,
+   * `modelFor(catalog, kind)` dentro `spawnTaskSession`, `PROJECT_STATUS_MODEL`
+   * dentro `spawnProjectStatus` — e nessuna delle quattro poteva essere
+   * indirizzata da una configurazione, perché non esisteva un nome con cui
+   * nominarla.
+   */
+  function spawnDefaults(
+    id: SpawnActionId,
+    holes: Readonly<Record<string, string>> = {},
+  ): ResolvedSpawn {
+    return resolveSpawnId(id, overrides, catalog, holes);
+  }
+
+  /** I buchi di un'azione su task. Lo slug viene dal NOME del task file, non
+   *  dalla descrizione di `tasks.md`: il nome è già dentro l'alfabeto di
+   *  `_sane_note` per costruzione — minuscolo, separato da trattini, senza
+   *  punteggiatura — mentre la descrizione porta apostrofi e `/` che la riduzione
+   *  toglie senza sostituto, saldando le parole. Task file assente → slug vuoto,
+   *  e il titolo si spegne invece di ridursi al solo prefisso. */
+  function taskHoles(id: string): Record<string, string> {
+    return { TASK: id, slug: taskSlug(tasksDir, id) };
+  }
+
+  /** La terna di un'azione SU UNA TASK, per chi ha in mano l'id e non i buchi:
+   *  il detail. Derivare i buchi dal chiamante sarebbe la seconda copia della
+   *  regola, e diverge il giorno che un template ne guadagna uno terzo. */
+  function spawnTaskDefaults(id: SpawnActionId, taskId: string): ResolvedSpawn {
+    return spawnDefaults(id, taskHoles(taskId));
   }
 
   // T66 — la guardia dello spawn bound, con due chiamanti: gli acceleratori
@@ -167,14 +206,13 @@ export function useDeckActions({
   // default '' (P1 preflight) — nascono quindi titolati anche loro.
   function spawnForTask(
     id: string,
-    kind: PromptKind,
     modelKind: ModelKind,
     spawnNote = '',
-    prompt?: string,
+    prompt = '',
     priority = false,
   ) {
     const sid = randomUUID();
-    const note = spawnNote || fallbackTitle(tasksDir, id, kind) || '';
+    const note = spawnNote;
     appendTaskBinding(cwd, sid, id);
     if (note) appendNote(cwd, sid, note);
     // T158 — la marca si appende NELLO STESSO momento del binding, prima che la
@@ -185,7 +223,7 @@ export function useDeckActions({
     // Solo il ramo acceso scrive: un `priority:false` allo spawn di ogni sessione
     // riempirebbe il sidecar di smarcature di conversazioni mai marcate.
     if (priority) appendPriority(cwd, sid, true);
-    const spawned = spawnDeck(id, cwd, sid, kind, modelKind, note, prompt);
+    const spawned = spawnDeck(id, cwd, sid, modelKind, note, prompt);
     spawned.child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
     // Il modello resta SEMPRE visibile anche quando è il default, perché è un
     // argomento esplicito del comando (T108): gli acceleratori della lista non
@@ -202,10 +240,15 @@ export function useDeckActions({
   // invece deve restare vivo.
   function spawnTaskSession(kind: PromptKind, keyLabel: string) {
     const task = selectedTaskOr(keyLabel, 'spawnare');
-    // T152 — stesso catalogo del detail: senza, `^R` partirebbe sul default
-    // fisso mentre l'azione `run` del detail parte sul modello del kind, e le
-    // due superfici divergerebbero sullo stesso comando.
-    if (task) spawnForTask(task.id, kind, modelFor(catalog, kind) ?? MODEL_DEFAULT);
+    if (!task) return;
+    // T161 — stessa risoluzione del detail, sullo stesso id di catalogo: senza,
+    // `^R` e l'azione `run` del detail partirebbero su due terne diverse per lo
+    // stesso comando. Il kind NON si specializza qui: gli acceleratori leggono
+    // solo `tasks.md`, dove il `Size` non c'è, quindi `recap` resta il
+    // dispatcher — che è la riga di catalogo giusta per chi non sa se la task è
+    // un cappello.
+    const d = spawnDefaults(kind, taskHoles(task.id));
+    spawnForTask(task.id, d.model, d.title ?? '', d.prompt ?? '');
   }
 
   // T49 — resume di una conversazione in una nuova tab. Unico punto: lo chiamano
@@ -411,11 +454,13 @@ export function useDeckActions({
    * darebbe due tabelle capaci di divergere, e la seconda si scoprirebbe solo
    * il giorno in cui una natura nuova apre la skill sbagliata.
    *
-   * Sessione NUDA e modello esplicito: il drain lavora sulla doc, non sulla
-   * task (D10 preflight), e `MODEL_DEFAULT` passa nell'argv anche essendo il
-   * default, come `permissionMode`.
+   * Sessione NUDA: il drain lavora sulla doc, non sulla task (D10 preflight).
+   * Modello e titolo vengono dalla riga `drain` del catalogo delle azioni
+   * (T161), non più da un letterale scritto qui; il PROMPT resta del chiamante,
+   * perché la skill è una funzione della natura del file e quella mappa vive in
+   * un posto solo (`inboxPrompt`, `src/inbox.ts`).
    *
-   * Il TITOLO lo deriva `inboxTitle` dal file, e serve un `sessionId` pinnato
+   * Il titolo interpola il basename del file, e serve un `sessionId` pinnato
    * per scriverlo nel sidecar — senza, la nota non avrebbe una chiave e la riga
    * in lista resterebbe nuda mentre la tab porta un nome. Le due scritture
    * stanno qui accanto per la stessa ragione di `spawnForTask`: il nome che le
@@ -423,9 +468,10 @@ export function useDeckActions({
    */
   function drainInbox(file: InboxFile, prompt: string) {
     const sid = randomUUID();
-    const title = inboxTitle(file);
-    appendNote(cwd, sid, title);
-    const spawned = spawnBare(cwd, prompt, MODEL_DEFAULT, sid, title);
+    const d = spawnDefaults('drain', { file: inboxWords(file) });
+    const title = d.title ?? '';
+    if (title) appendNote(cwd, sid, title);
+    const spawned = spawnBare(cwd, prompt, d.model, sid, title);
     spawned.child.on('error', () => setNote(`⚠ drain ${file.basename} fallito (${DECK_RUN})`));
     noteSpawn(spawned);
   }
@@ -433,17 +479,24 @@ export function useDeckActions({
   /**
    * T134 — apre la sessione che SROTOLA l'hard-wrap di un path.
    *
-   * `sonnet` e non il default (D9): lo srotolamento è una passata meccanica con
-   * un verificatore deterministico dietro (`md-wrap --apply` confronta le due
-   * versioni normalizzate `\s+ → spazio` e rimette indietro il file se
-   * differiscono), quindi il giudizio richiesto al modello è leggere un diff e
-   * decidere se committarlo — non progettare niente.
+   * Terna intera dalla riga `unwrap` del catalogo (T161): il modello, il titolo
+   * e anche il PROMPT, che fino a T134 era cablato in `wrap-scan.ts`. A
+   * differenza del drain qui un template unico basta — la skill è sempre la
+   * stessa e l'unico buco è il `{path}`.
+   *
+   * Il default resta `sonnet` e non il modello di default del deck (D9): lo
+   * srotolamento è una passata meccanica con un verificatore deterministico
+   * dietro (`md-wrap --apply` confronta le due versioni normalizzate
+   * `\s+ → spazio` e rimette indietro il file se differiscono), quindi il
+   * giudizio richiesto al modello è leggere un diff e decidere se committarlo —
+   * non progettare niente.
    */
-  function unwrapPath(path: string, prompt: string) {
+  function unwrapPath(path: string) {
     const sid = randomUUID();
-    const title = wrapTitle(path);
-    appendNote(cwd, sid, title);
-    const spawned = spawnBare(cwd, prompt, 'sonnet', sid, title);
+    const d = spawnDefaults('unwrap', { path: wrapWords(path) });
+    const title = d.title ?? '';
+    if (title) appendNote(cwd, sid, title);
+    const spawned = spawnBare(cwd, d.prompt ?? '', d.model, sid, title);
     spawned.child.on('error', () => setNote(`⚠ srotolamento ${path} fallito (${DECK_RUN})`));
     noteSpawn(spawned);
   }
@@ -490,6 +543,8 @@ export function useDeckActions({
   return {
     ...taskOps,
     selectedTaskOr,
+    spawnDefaults,
+    spawnTaskDefaults,
     spawnForTask,
     spawnTaskSession,
     resumeSession,

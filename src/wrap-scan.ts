@@ -102,51 +102,28 @@ export function mixedCount(files: readonly WrapFile[]): number {
 export const WRAP_DEFAULT_PATH = '.';
 
 /**
- * Il prompt della sessione che srotola un path.
+ * T161 — il buco `{path}` del titolo e del prompt di una sessione di
+ * srotolamento: il path reso a parole.
  *
- * CABLATO per decisione, non per fretta (D9): parametrizzarlo prima di aver
- * visto come si comporta significherebbe scegliere i parametri a occhio. Le tre
- * cose che dice sono le tre che rendono l'operazione reversibile e verificabile
- * — backup fuori dal repo, rapporto, commit solo se il diff è chiaramente
- * innocuo — e nessuna delle tre è una preferenza da esporre.
- *
- * Il `<path>` è l'unico buco. Arriva dal campo della lista e finisce dentro
- * `--prompt` come argv singolo, quindi non passa da nessuna shell prima di
- * `deck-run`, che lo quota ad apici singoli: non c'è quoting da fare qui.
- */
-export function wrapPrompt(path: string): string {
-  const target = path.trim() || WRAP_DEFAULT_PATH;
-  return (
-    `lancia md-wrap modo apply su ${target} e backup in cartella tmp dedicata. ` +
-    'verifica risultato e fai rapporto. se le modifiche sono tutte chiaramente safe, ' +
-    'puoi committare direttamente'
-  );
-}
-
-/** Prefisso del titolo di una sessione di srotolamento. Astrale, come le altre
- *  emoji che finiscono in un titolo: le BMP `sanitize` (`src/width.ts`) le rende
- *  `·`. Va tenuta allineata alla whitelist di `_sane_note` in `deck-run`. */
-const WRAP_EMOJI = '📏';
-
-/**
- * Il titolo della sessione che srotola un path: `📏 <path a parole>`.
- *
- * Le barre diventano spazi e l'estensione cade PRIMA di `_sane_note`, il cui
- * alfabeto non ha né `/` né `.`: lasciandoceli cadere le parole si salderebbero
- * (`runtimereferencedoc-systemmd`), e il titolo della tab divergerebbe da quello
- * che la lista del deck legge dal sidecar.
+ * Le barre diventano spazi e l'estensione cade QUI, prima di `_sane_note`, il
+ * cui alfabeto non ha né `/` né `.`: lasciandoceli cadere le parole si
+ * salderebbero (`runtimereferencedoc-systemmd`), e il titolo della tab
+ * divergerebbe da quello che la lista del deck legge dal sidecar.
  *
  * Il path di default (`.`, la project root intera) non ha parole da mostrare e
- * diventa una frase: un titolo `📏 ` sarebbe il solo prefisso.
+ * diventa una frase: interpolato in `📏 {path}` darebbe il solo prefisso, cioè
+ * un titolo uguale per ogni srotolamento.
+ *
+ * L'emoji del prefisso non sta più qui: è dentro il template della riga
+ * `unwrap` del catalogo delle azioni, dove il progetto può riscriverla.
  */
-export function wrapTitle(path: string): string {
+export function wrapWords(path: string): string {
   const target = path.trim() || WRAP_DEFAULT_PATH;
-  if (target === WRAP_DEFAULT_PATH) return `${WRAP_EMOJI} tutto il progetto`;
-  const words = target
+  if (target === WRAP_DEFAULT_PATH) return 'tutto il progetto';
+  return target
     .replace(/\.md$/i, '')
     .replace(/[./]+/g, ' ')
     .trim();
-  return `${WRAP_EMOJI} ${words}`;
 }
 
 /**

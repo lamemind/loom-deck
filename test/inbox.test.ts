@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import {
   ageHours,
   inboxPrompt,
-  inboxTitle,
+  inboxWords,
   countByNatura,
   inboxMark,
   isQueued,
@@ -237,30 +237,34 @@ test('inboxPrompt: nessuna guardia su drainable o branch (D5)', () => {
   assert.equal(inboxPrompt(branched), '/loom-works:drain-notions d-branched.md');
 });
 
-// ── il titolo della sessione ───────────────────────────────────────────────
+// ── il buco {file} del titolo ──────────────────────────────────────────────
 
-test('inboxTitle: prefisso più basename, senza estensione', () => {
+test('inboxWords: basename senza estensione', () => {
+  // T161 — l'emoji del prefisso non sta più qui: è nel template della riga
+  // `drain` del catalogo delle azioni, dove un override di progetto può
+  // riscriverla. Questa funzione porta il solo buco.
   const by = (name: string) => files.find((f) => f.basename === name)!;
-  assert.equal(inboxTitle(by('a-nozioni.md')), '🧹 a-nozioni');
+  assert.equal(inboxWords(by('a-nozioni.md')), 'a-nozioni');
   // Anche il malformato ha un titolo: quella sessione ripara invece di drenare,
   // ma l'oggetto che il titolo nomina è lo stesso file.
-  assert.equal(inboxTitle(by('f-rotto.md')), '🧹 f-rotto');
+  assert.equal(inboxWords(by('f-rotto.md')), 'f-rotto');
 });
 
-test('inboxTitle: niente punti nel titolo', () => {
+test('inboxWords: niente punti nel nome', () => {
   // L'alfabeto di `_sane_note` (deck-run) non ha il punto: lasciandocelo cadere
   // le lettere si salderebbero al nome nella tab (`…-prioritariamd`) mentre la
   // lista del deck, che legge la nota grezza dal sidecar, mostrerebbe il nome
   // intero — due titoli per la stessa conversazione.
-  for (const f of files) assert.ok(!inboxTitle(f).includes('.'), f.basename);
+  for (const f of files) assert.ok(!inboxWords(f).includes('.'), f.basename);
 });
 
-test('inboxTitle: il prefisso sopravvive a sanitize', () => {
-  // Un'emoji BMP diventerebbe `·` in lista e arriverebbe intera nella tab: la
-  // stessa divergenza che la whitelist esiste per chiudere.
+test('inboxWords: sopravvive a sanitize', () => {
+  // Un glifo su cui le due contabilità di larghezza divergono diventerebbe `·`
+  // in lista e arriverebbe intero nella tab: la stessa divergenza che la
+  // whitelist esiste per chiudere.
   for (const f of files) {
-    const title = inboxTitle(f);
-    assert.equal(sanitize(title), title, `sanitize ha toccato il titolo: ${title}`);
+    const words = inboxWords(f);
+    assert.equal(sanitize(words), words, `sanitize ha toccato il nome: ${words}`);
   }
 });
 

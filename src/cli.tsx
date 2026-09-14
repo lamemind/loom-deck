@@ -21,6 +21,7 @@ import { sanitize } from './width.js';
 import { MODEL_SHORT_LIST, modelAlias } from './glyphs.js';
 import { MODEL_DEFAULT, MODELS } from './spawn-catalog.js';
 import { loadPromptCatalog } from './prompt-catalog.js';
+import { resolveSpawnId } from './spawn-config.js';
 import { type Mode } from './model.js';
 import {
   BARE_BUTTONS_WIDTH,
@@ -69,8 +70,23 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   const catalog = useMemo(() => loadPromptCatalog(), []);
   const spawnConfig = useSpawnConfig({ cwd, setNote });
 
-  const model = useDeckModel({ cwd, tasksPath, tasksDir, setNote });
-  const actions = useDeckActions({ cwd, tasksPath, tasksDir, columns, model, setNote });
+  const model = useDeckModel({
+    cwd,
+    tasksPath,
+    tasksDir,
+    bareModel: resolveSpawnId('bare', spawnConfig.overrides, catalog).model,
+    setNote,
+  });
+  const actions = useDeckActions({
+    cwd,
+    tasksPath,
+    tasksDir,
+    columns,
+    model,
+    overrides: spawnConfig.overrides,
+    catalog,
+    setNote,
+  });
 
   const assign = useAssignOverlay({
     viewTasks: model.viewTasks,
@@ -86,6 +102,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     columns,
     setMode,
     setNote,
+    // T161 — il detail chiede la terna per ID DI CATALOGO e task aperta; chi la
+    // risolve è l'attuatore, che ha già in mano override, catalogo dati e i
+    // fornitori dei buchi.
+    defaults: actions.spawnTaskDefaults,
     onAction: actions.spawnForTask,
   });
 
@@ -108,11 +128,14 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // Il nome è quello del file config quando c'è, la cartella altrimenti: la
   // testata deve dire di quale progetto parla anche su un checkout non ancora
   // registrato.
+  const statusDefaults = actions.spawnDefaults('project-status');
   const status = useProjectStatus({
     cwd,
     name: model.projectCore ?? model.projectName,
     rows,
     columns,
+    model: statusDefaults.model,
+    prompt: statusDefaults.prompt ?? '',
     setMode,
     setNote,
   });

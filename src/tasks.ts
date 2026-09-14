@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { sanitize } from './width.js';
 
 /**
@@ -140,6 +140,26 @@ export function loadTasks(path: string): Task[] {
 // ID → path del task file: `<id>-<slug>.md` nella tasks dir. Il dash dopo l'ID
 // disambigua i prefissi (`T20-` non matcha `T2-…`). Se più file matchano, primo
 // in ordine. `null` se la dir non è leggibile o nessun file matcha.
+/**
+ * T161 — lo SLUG di una task: il nome del suo file senza l'id e coi trattini
+ * sciolti in spazi, cioè il buco `{slug}` dei template di titolo.
+ *
+ * Viene dal NOME del file e non dalla descrizione in `tasks.md` per una ragione
+ * di alfabeto: il nome è già dentro quello di `_sane_note` per costruzione —
+ * minuscolo, separato da trattini, senza punteggiatura — mentre la descrizione
+ * porta apostrofi e `/`, che la riduzione toglie senza sostituto saldando le
+ * parole (`l'epica/doc` → `lepicadoc`).
+ *
+ * Stringa VUOTA quando il task file non si trova: chi interpola tratta un buco
+ * senza valore come «nessun titolo», invece di comporre un prefisso uguale per
+ * ogni task.
+ */
+export function taskSlug(tasksDir: string, id: string): string {
+  const path = findTaskFile(tasksDir, id);
+  if (!path) return '';
+  return basename(path, '.md').slice(id.length + 1).replace(/-/g, ' ');
+}
+
 export function findTaskFile(dir: string, id: string): string | null {
   let entries: string[];
   try {

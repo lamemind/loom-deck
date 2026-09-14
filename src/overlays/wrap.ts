@@ -15,7 +15,7 @@ import { useWrapScan } from '../hooks.js';
 import { pageStep, wrapListCapacity } from '../viewport.js';
 import { cpLen, insertAt, removeAt } from '../layout.js';
 import { sanitizeTyped } from '../glyphs.js';
-import { WRAP_DEFAULT_PATH, wrapPrompt, type WrapFile } from '../wrap-scan.js';
+import { WRAP_DEFAULT_PATH, type WrapFile } from '../wrap-scan.js';
 import type { Mode } from '../model.js';
 
 export interface WrapOverlayDeps {
@@ -23,9 +23,11 @@ export interface WrapOverlayDeps {
   rows: number;
   setMode: (m: Mode) => void;
   setNote: (s: string) => void;
-  /** Apre la sessione sonnet che srotola il path. Il PROMPT viaggia già
-   *  composto: chi esegue lo spawn non deve conoscere il testo cablato. */
-  onApply: (path: string, prompt: string) => void;
+  /** Apre la sessione che srotola il path. T161 — viaggia il solo PATH: modello,
+   *  titolo e prompt vengono dalla riga `unwrap` del catalogo delle azioni, dove
+   *  un override di progetto può riscriverli, e comporli qui li renderebbe di
+   *  nuovo una scelta di questa schermata. */
+  onApply: (path: string) => void;
 }
 
 export function useWrapOverlay(deps: WrapOverlayDeps) {
@@ -91,7 +93,7 @@ export function useWrapOverlay(deps: WrapOverlayDeps) {
     if (key.return) {
       const target = path.trim() || WRAP_DEFAULT_PATH;
       close();
-      onApply(target, wrapPrompt(target));
+      onApply(target);
       return;
     }
     if (key.upArrow) {
