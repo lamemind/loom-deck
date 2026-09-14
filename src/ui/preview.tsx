@@ -14,7 +14,7 @@ import {
 } from '../glyphs.js';
 import { NATURA_SHORT, inboxMark, type InboxFile } from '../inbox.js';
 import { ChoiceRow } from './fields.js';
-import { MODELS, type ModelKind } from '../spawn.js';
+import { MODELS, type ModelKind } from '../spawn-catalog.js';
 import type { TaskDetail } from '../tasks.js';
 import type { Session } from '../sessions.js';
 import type { LiveSession } from '../live-sessions.js';

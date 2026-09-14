@@ -20,11 +20,9 @@ import {
   shellQuote,
   spawnCleanTasks,
   terminalArgs,
-  DETAIL_ACTIONS,
-  specializeRecap,
   INTAB_MARKER,
-  MODEL_DEFAULT,
 } from '../src/spawn.js';
+import { DETAIL_ACTIONS, MODEL_DEFAULT, specializeRecap } from '../src/spawn-catalog.js';
 import { sanitize } from '../src/width.js';
 
 // La forma degli argv È il contratto col primitive `deck-run`, e finora non la

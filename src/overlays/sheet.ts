@@ -27,7 +27,7 @@ import {
   specializeRecap,
   type ModelKind,
   type PromptKind,
-} from '../spawn.js';
+} from '../spawn-catalog.js';
 import { taskIsEpic } from '../tasks.js';
 import { fieldsKey, type FieldSpec, type FieldsCursor, type FieldsIO } from '../fields.js';
 import { loadPromptCatalog, modelFor, promptFor } from '../prompt-catalog.js';

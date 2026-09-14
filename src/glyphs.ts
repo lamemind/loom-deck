@@ -1,11 +1,11 @@
 // Glifi letterali del frame e formatter di display. Fase VISTA, ma senza JSX:
 // tutto qui è puro e testabile, e nessun sito di render scrive un glifo nudo.
 import { sanitize } from './width.js';
-// T148/P3 — costo accettato: la fase vista importa dalla fase effetti esterni.
-// Il TIPO si cancella alla compilazione (nessuna dipendenza runtime); T154
-// aggiunge MODELS come VALORE — una dipendenza runtime vera, ma senza ciclo:
-// `spawn.ts` non importa questo file, quindi il verso resta uno solo.
-import { MODELS, type ModelKind } from './spawn.js';
+// T161 — il catalogo dei modelli è DATO PURO (`spawn-catalog.ts`) e non importa
+// nessuno: la fase vista può leggerlo senza ciclo. Prima di T161 la stessa riga
+// prendeva `MODELS` da `spawn.ts`, cioè dalla fase «effetti esterni» — costo
+// accettato allora (T148/P3) e caduto adesso.
+import { MODELS, type ModelKind } from './spawn-catalog.js';
 
 // Glifi LETTERALI del JSX. I dati passano dai loader, che sanificano al
 // confine; questi no — quindi passano da `sanitize` una volta qui, così nessun

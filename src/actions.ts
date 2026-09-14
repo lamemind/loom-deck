@@ -48,11 +48,9 @@ import {
   fallbackTitle,
   CLAUDE_CMD,
   DECK_RUN,
-  MODEL_DEFAULT,
-  type ModelKind,
-  type PromptKind,
   type Spawned,
 } from './spawn.js';
+import { MODEL_DEFAULT, type ModelKind, type PromptKind } from './spawn-catalog.js';
 import { useTaskOps } from './task-ops.js';
 import { inboxTitle, type InboxFile } from './inbox.js';
 import { wrapTitle } from './wrap-scan.js';

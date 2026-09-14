@@ -19,7 +19,7 @@ import { LAUNCH_SEP } from './config.js';
 import { anchorFrame, enableMouse } from './mouse.js';
 import { sanitize } from './width.js';
 import { MODEL_SHORT_LIST, modelAlias } from './glyphs.js';
-import { MODEL_DEFAULT, MODELS } from './spawn.js';
+import { MODEL_DEFAULT, MODELS } from './spawn-catalog.js';
 import { type Mode } from './model.js';
 import {
   BARE_BUTTONS_WIDTH,

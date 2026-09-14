@@ -70,7 +70,7 @@ import {
 import { applyView, epicRollup, taskColumns, type TaskRowData, type ViewState } from './view.js';
 import { loadView } from './view-store.js';
 import { termWidth } from './width.js';
-import { MODELS, MODEL_DEFAULT, type ModelKind } from './spawn.js';
+import { MODELS, MODEL_DEFAULT, type ModelKind } from './spawn-catalog.js';
 import type { TaskLive } from './live-sessions.js';
 import type { Session } from './sessions.js';
 

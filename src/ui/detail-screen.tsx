@@ -5,7 +5,7 @@ import { cut, type WrappedLine } from '../width.js';
 import { sliceLine, type Occurrence } from '../text-search.js';
 import { sliceSpans, type Span, type SpanKind } from '../markdown.js';
 import { ChoiceRow, FieldText, LABEL_W } from './fields.js';
-import { DETAIL_ACTIONS, MODELS, type ModelKind } from '../spawn.js';
+import { DETAIL_ACTIONS, MODELS, type ModelKind } from '../spawn-catalog.js';
 import { DROW, PRIORITY_CHOICES } from '../overlays/sheet.js';
 import type { FieldsCursor } from '../fields.js';
 import { CARET, CARET_OFF, WARN } from '../glyphs.js';

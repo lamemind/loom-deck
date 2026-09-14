@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { MODELS, type ModelKind, type PromptKind } from './spawn.js';
+import { MODELS, type ModelKind, type PromptKind } from './spawn-catalog.js';
 
 /** Stessa risalita di `DECK_RUN`: src/ (dev) e dist/ (build) sono entrambi
  *  figli della package root, quindi il sibling è un livello sopra. */

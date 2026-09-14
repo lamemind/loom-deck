@@ -7,6 +7,15 @@ import { basename, dirname, join } from 'node:path';
 import type { LaunchEntry } from './config.js';
 import type { IgnoredMode } from './purge.js';
 import { findTaskFile } from './tasks.js';
+// T161 — i cataloghi (kind, modelli, azioni) stanno in `spawn-catalog.ts`, che
+// è DATO PURO e non importa questo file: la dipendenza va in un verso solo.
+// Qui restano i soli effetti verso l'esterno — comporre un argv e lanciarlo.
+import {
+  MODEL_DEFAULT,
+  PROJECT_STATUS_MODEL,
+  type ModelKind,
+  type PromptKind,
+} from './spawn-catalog.js';
 
 // scripts/deck-run è un sibling della dir del bundle: src/ (dev, tsx) e dist/
 // (build, node) stanno entrambi sotto la package root → risalita di un livello.
@@ -138,104 +147,6 @@ export function onInTabCommand(child: ChildProcess, cb: (cmd: string) => void): 
     }
   });
 }
-
-// T56 — quale prompt iniziale riceve la sessione appena aperta. È un SIMBOLO,
-// non il testo: il catalogo vive in deck-run (primitive UI-agnostico), così il
-// quoting del prompt resta verificato in un posto solo e il deck non conosce le
-// stringhe. Nomi identici ai valori di `--prompt-kind`.
-export type PromptKind =
-  | 'none'
-  | 'recap'
-  | 'recap-task'
-  | 'recap-epic'
-  | 'preflight'
-  | 'run'
-  | 'checkpoint';
-
-/**
- * `recap` → la sotto-skill giusta, quando chi spawna SA se la task è un cappello.
- *
- * `recap` resta il kind onesto per chi non lo sa: punta al dispatcher, che
- * risolve la task e classifica da sé. È il caso degli acceleratori della lista,
- * dove il deck ha in mano solo `tasks.md` — e lì il `Size` non c'è. Il DETAIL
- * invece il task file l'ha già letto, quindi può saltare il giro e pagare un
- * turno di modello in meno.
- *
- * Non è una classificazione duplicata: il criterio (`Size: Epic`) resta uno solo
- * e sta in `taskIsEpic`, che legge lo stesso campo che leggerebbe il dispatcher.
- * Quello che si evita è il RITARDO, non il giudizio.
- *
- * Ogni kind diverso da `recap` passa intatto: la specializzazione è un caso, non
- * una trasformazione da applicare a tutti.
- */
-export function specializeRecap(kind: PromptKind, epic: boolean): PromptKind {
-  if (kind !== 'recap') return kind;
-  return epic ? 'recap-epic' : 'recap-task';
-}
-
-// T108 — quale modello riceve la sessione appena aperta. Quarto asse di
-// deck-run, indipendente dagli altri tre: vale su una sessione bound come su una
-// nuda, su una nuova come su una ripresa.
-//
-// Le voci sono gli ALIAS del CLI e restano tali fino dentro `claude --model`:
-// un id versionato (`claude-opus-5`) cablato qui diventerebbe falso al primo
-// cambio di generazione, e fallirebbe come modello inesistente invece che come
-// configurazione da aggiornare.
-export type ModelKind = 'fable' | 'opus' | 'sonnet' | 'haiku';
-
-// L'ordine È il giro di `tab` nel detail, non una preferenza di lettura:
-// cambiarlo sposta le voci sotto le dita di chi le ha imparate. Fino a T111 era
-// anche il binding delle cifre `1`-`4`, passate poi al campo nota.
-export const MODELS: readonly ModelKind[] = ['fable', 'opus', 'sonnet', 'haiku'];
-
-// Default del selettore e FALLBACK per ogni kind fuori catalogo (kind `none`,
-// o un catalogo mutilo). Duplicato del default di deck-run e non letto da lì:
-// il deck deve poter MOSTRARE la selezione iniziale prima di spawnare
-// alcunché, e un valore che si conosce solo a spawn avvenuto non è mostrabile.
-//
-// T152 — non è più IL default di `^K`/`^P`/`^R` dalla lista: quei percorsi
-// leggono il catalogo come il detail (`modelFor`), e cadono qui solo quando il
-// kind non ha una riga. Resta l'unico default che resume e fork usano per
-// intero, perché lì il modello non è mai una funzione del kind — è quello
-// della conversazione d'origine (T148).
-export const MODEL_DEFAULT: ModelKind = 'fable';
-
-// T152 — `recap-status-project` non è una chiave del catalogo (§Doc Impact,
-// "le chiavi del catalogo sono i valori di --prompt-kind"): lo spawn headless
-// non passa mai --prompt-kind, quindi una riga lì sarebbe irraggiungibile da
-// ogni chiamante. Il default vive qui, accanto a MODEL_DEFAULT, e non nel
-// catalogo. Resta `opus` mentre i tre recap del catalogo stanno su fable: è
-// l'unico recap che gira in headless (`-p`), senza nessuno che ne legga
-// l'esito mentre si forma e possa rilanciarlo — il testo prodotto è il
-// deliverable, e viene riletto da disco anche giorni dopo.
-export const PROJECT_STATUS_MODEL: ModelKind = 'opus';
-
-// T66 — le azioni del detail. Non sono un catalogo nuovo: ognuna è un
-// `--prompt-kind` già esistente più `checkpoint`, e tutte passano dallo stesso
-// `spawnForTask` dei CTRL della lista — una superficie in più, zero percorsi di
-// spawn in più.
-//
-// L'etichetta è distinta dal kind dove il kind è il nome del MECCANISMO e
-// l'etichetta quello dell'INTENZIONE: `none` è "aprire la task a mani nude",
-// `recap` è "vedere a che punto sta".
-export const DETAIL_ACTIONS: ReadonlyArray<{ kind: PromptKind; label: string }> = [
-  { kind: 'none', label: 'open' },
-  { kind: 'preflight', label: 'preflight' },
-  { kind: 'run', label: 'run' },
-  { kind: 'recap', label: 'status' },
-  { kind: 'checkpoint', label: 'checkpoint' },
-];
-
-// T117 — selezione DIRETTA di un'azione con la sua iniziale (`o p r s c`),
-// accanto allo scorrimento `←→`. Derivate dalle label e non cablate: una voce
-// aggiunta al catalogo porta con sé la propria lettera, invece di lasciare
-// indietro una seconda lista.
-// Il vincolo che la derivazione impone al catalogo: le iniziali devono restare
-// DISTINTE fra loro. Due label con la stessa lettera renderebbero la seconda
-// irraggiungibile, e in silenzio — chi aggiunge una voce lo controlla qui.
-export const ACTION_HOTKEYS: Readonly<Record<string, number>> = Object.fromEntries(
-  DETAIL_ACTIONS.map((a, i) => [a.label[0]!, i]),
-);
 
 // T150 — titolo di fallback quando il campo nota è vuoto, derivato dall'AZIONE
 // e dal task. Mappa sul KIND, non sulla label (P2 preflight): alla sede del

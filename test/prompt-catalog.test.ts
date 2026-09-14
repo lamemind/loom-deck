@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadPromptCatalog, modelFor, promptFor, PROMPT_CATALOG } from '../src/prompt-catalog.js';
-import { DETAIL_ACTIONS } from '../src/spawn.js';
+import { DETAIL_ACTIONS } from '../src/spawn-catalog.js';
 
 test('il catalogo esiste dove il deck lo risolve', () => {
   assert.ok(existsSync(PROMPT_CATALOG), `catalogo assente: ${PROMPT_CATALOG}`);
