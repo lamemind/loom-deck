@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadPromptCatalog, modelFor, promptFor, PROMPT_CATALOG } from '../src/prompt-catalog.js';
-import { DETAIL_ACTIONS } from '../src/spawn-catalog.js';
+import { DETAIL_ACTIONS, SPAWN_ACTIONS } from '../src/spawn-catalog.js';
 
 test('il catalogo esiste dove il deck lo risolve', () => {
   assert.ok(existsSync(PROMPT_CATALOG), `catalogo assente: ${PROMPT_CATALOG}`);
@@ -111,4 +111,31 @@ test('catalogo reale: fable sulla lettura, opus sulla scrittura', () => {
   assert.equal(modelFor(catalog, 'preflight'), 'fable');
   assert.equal(modelFor(catalog, 'run'), 'opus');
   assert.equal(modelFor(catalog, 'checkpoint'), 'opus');
+});
+
+// T161 — il catalogo dati e quello delle azioni sono due gradini dello stesso
+// default, e le loro chiavi devono restare allineate: una riga qui che non
+// corrisponde a nessuna azione è un template che nessun percorso del deck legge
+// più, e un'azione con `kind` senza riga qui apre una sessione senza prompt.
+test('ogni riga del catalogo dati nomina un’azione, e viceversa', () => {
+  const catalog = loadPromptCatalog();
+  const withKind = SPAWN_ACTIONS.filter((a) => a.kind !== null && a.kind !== 'none');
+  assert.deepEqual(
+    [...catalog.keys()].sort(),
+    withKind.map((a) => a.kind!).sort(),
+    'le chiavi di scripts/prompt-catalog e i kind del catalogo delle azioni divergono',
+  );
+  // `none` è l'eccezione dichiarata: ha un'azione ma non una riga, perché
+  // «nessun prompt» è l'assenza della voce e non un template vuoto.
+  assert.equal(catalog.has('none'), false);
+});
+
+test('nessuna azione senza kind ha una riga nel catalogo dati', () => {
+  // Le chiavi qui sono i valori di `--prompt-kind`: la nuda, il drain, lo
+  // srotolamento e il project status non ne passano nessuno, quindi una riga
+  // per loro sarebbe irraggiungibile da ogni chiamante.
+  const catalog = loadPromptCatalog();
+  for (const a of SPAWN_ACTIONS) {
+    if (a.kind === null) assert.equal(catalog.has(a.id), false, `${a.id} ha una riga di troppo`);
+  }
 });

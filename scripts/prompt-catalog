@@ -8,9 +8,23 @@
 #
 # Perché un file dati e non un `case` dentro deck-run: due lati hanno bisogno
 # dello stesso testo — deck-run per comporre il comando in-tab, il deck TUI per
-# pre-riempire il campo prompt (e ora anche il modello) del detail con ciò che
-# sta per essere eseguito. Come codice, il secondo lato dovrebbe riscriverlo, e
-# le due copie divergono alla prima voce aggiunta da una parte sola.
+# pre-riempire i campi del detail con ciò che sta per essere eseguito. Come
+# codice, il secondo lato dovrebbe riscriverlo, e le due copie divergono alla
+# prima voce aggiunta da una parte sola.
+#
+# T161 — questo file resta la FONTE UNICA dei sette kind, e non è diventato un
+# blocco JSON nel file di progetto per una ragione precisa: `jq` è dipendenza
+# OPZIONALE di deck-run, e un JSON da consultare la renderebbe obbligatoria su
+# un percorso che oggi degrada senza. Le sue righe sono il primo gradino del
+# default di un'azione su task; il secondo è la riga di catalogo in
+# `src/spawn-catalog.ts`, e sopra entrambi sta l'override di progetto nel blocco
+# `spawn` di `.claude/loom-works.json`, che legge il solo deck.
+#
+# Le azioni SENZA kind (la sessione nuda, il drain di un file inbox, lo
+# srotolamento dell'hard-wrap, il project status) non hanno una riga qui e non
+# devono averla: le chiavi di questo file sono i valori di `--prompt-kind`, e
+# quelle quattro non ne passano nessuno — una riga qui sarebbe irraggiungibile
+# da ogni chiamante. I loro default vivono in `src/spawn-catalog.ts`.
 #
 # `none` non compare: nessun prompt non è un template vuoto, è l'assenza della
 # voce. Chi chiede un kind fuori da questo file riceve un prompt vuoto e nessun

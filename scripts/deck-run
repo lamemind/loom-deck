@@ -56,6 +56,9 @@
 #   LOOM_DECK_PROFILE_UUID UUID profilo Ptyxis     (default: cc-host)
 #   LOOM_DECK_WORKDIR      dir di lavoro della tab (default: $PWD)
 #   LOOM_DECK_ENTER_PROMPT override del prompt iniziale, {TASK}=TaskID (vince sul kind, tranne `none`)
+#                          T161: inerte sugli spawn che arrivano dal deck TUI —
+#                          quelli passano SEMPRE `--prompt`, su cui non ha mai
+#                          vinto. Resta per le invocazioni a mano e per i test.
 #   LOOM_DECK_INTAB_CMD    override comando in-tab (default: la sessione CC; usato per i test)
 #   LOOM_DECK_STATE_PROFILE  PTYXIS_PROFILE annunciata a compass (default: bindings/claude
 #                            del progetto, letto da dconf; settata a vuoto = nessun annuncio)
@@ -391,7 +394,15 @@ MODE_FLAG="--permission-mode ${PERM_MODE} "
 
 # ── modello (T108 + T152) ────────────────────────────────────────────────────
 # Precedenza: --model > env LOOM_DECK_MODEL > modello del kind nel catalogo >
-# 'fable'. L'ultimo gradino è il gemello bash di `MODEL_DEFAULT` in spawn.ts e
+# 'fable'.
+#
+# T161 — questa cascata vale per chi invoca deck-run A MANO. Il deck TUI passa
+# SEMPRE `--model` già risolto (default del deck ← override di progetto nel
+# blocco `spawn` di `.claude/loom-works.json`), quindi dal deck si ferma al primo
+# gradino e i tre sotto non intervengono mai. Il blocco di progetto qui non si
+# legge di proposito: `jq` è dipendenza opzionale di questo script, e dargli un
+# JSON da consultare la renderebbe obbligatoria su un percorso che oggi degrada
+# senza. L'ultimo gradino è il gemello bash di `MODEL_DEFAULT` in spawn.ts e
 # va tenuto allineato a mano: i due lati non si leggono a vicenda (il deck deve
 # poter MOSTRARE la selezione iniziale prima che deck-run esista come processo),
 # quindi un cambio qui senza l'altro fa partire dalla lista un modello diverso
