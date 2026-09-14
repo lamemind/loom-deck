@@ -23,6 +23,11 @@ import {
   type WrapFile,
 } from './wrap-scan.js';
 import { purgeTargets } from './purge.js';
+import {
+  loadSpawnOverrides,
+  saveSpawnOverrides,
+  type SpawnOverrides,
+} from './spawn-config.js';
 import { POLL_MS } from './model.js';
 
 // Dimensioni del terminale, live sul resize.
@@ -496,3 +501,52 @@ export function useTaskDetail(tasksDir: string, id: string | undefined) {
   }, [tasksDir, id]);
   return detail;
 }
+
+/**
+ * T161 — gli OVERRIDE di spawn del progetto, tenuti vivi per la durata del deck.
+ *
+ * Lettura una volta al mount, e da lì in poi lo stato in memoria è la fonte: la
+ * pagina delle azioni è l'unico scrittore, e rileggere il file a ogni tick del
+ * poll significherebbe pagare una `readFileSync` ogni 1,5 secondi per un dato
+ * che cambia quando lo si cambia. Chi lo modifica fuori dal deck (a mano, o un
+ * altro deck sullo stesso progetto) si riallinea alla riapertura, che è lo stesso
+ * regime di `launch` e `archivableDays`.
+ *
+ * Gli AVVISI del parse si mostrano una volta, all'avvio, nella riga di stato: una
+ * voce scartata in silenzio si presenta come un override che non fa niente, cioè
+ * come un guasto del deck. La riga di stato è l'unica superficie sempre presente
+ * — la pagina potrebbe non venire mai aperta.
+ *
+ * Il salvataggio NON si fida: ricarica dal disco quello che ha appena scritto,
+ * così quello che la pagina mostra dopo `w` è quello che il file dice davvero,
+ * riduzione del titolo e scarti compresi.
+ */
+export function useSpawnConfig({
+  cwd,
+  setNote,
+}: {
+  cwd: string;
+  setNote: (s: string) => void;
+}) {
+  const [parsed, setParsed] = useState(() => loadSpawnOverrides(cwd));
+  const warned = useRef(false);
+
+  useEffect(() => {
+    if (warned.current || parsed.warnings.length === 0) return;
+    warned.current = true;
+    const [first, ...rest] = parsed.warnings;
+    setNote(`⚠ ${first}${rest.length > 0 ? ` · +${rest.length}` : ''}`);
+  }, [parsed, setNote]);
+
+  const save = useCallback(
+    (entries: SpawnOverrides) => {
+      saveSpawnOverrides(cwd, entries);
+      setParsed(loadSpawnOverrides(cwd));
+    },
+    [cwd],
+  );
+
+  return { overrides: parsed.entries, warnings: parsed.warnings, save };
+}
+
+export type SpawnConfig = ReturnType<typeof useSpawnConfig>;
