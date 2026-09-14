@@ -12,7 +12,6 @@ import {
   cleanTasksPrompt,
   deckArgs,
   emptyArgs,
-  fallbackTitle,
   forkArgs,
   onInTabCommand,
   resumeArgs,
@@ -22,7 +21,15 @@ import {
   terminalArgs,
   INTAB_MARKER,
 } from '../src/spawn.js';
-import { DETAIL_ACTIONS, MODEL_DEFAULT, specializeRecap } from '../src/spawn-catalog.js';
+import {
+  DETAIL_ACTIONS,
+  MODEL_DEFAULT,
+  specializeRecap,
+  type SpawnActionId,
+} from '../src/spawn-catalog.js';
+import { resolveSpawnId } from '../src/spawn-config.js';
+import { loadPromptCatalog } from '../src/prompt-catalog.js';
+import { taskSlug } from '../src/tasks.js';
 import { sanitize } from '../src/width.js';
 
 // La forma degli argv È il contratto col primitive `deck-run`, e finora non la
@@ -341,9 +348,24 @@ function withTaskFiles(files: Record<string, string>, run: (dir: string) => void
   }
 }
 
-test('fallbackTitle: ogni azione del detail produce un titolo distinto', () => {
+// T161 — il titolo di una conversazione non è più derivato da una tabella
+// dentro `spawn.ts` (`fallbackTitle`, caduto): è il TEMPLATE della riga di
+// catalogo dell'azione, interpolato coi buchi della task e ridotto all'alfabeto
+// di `_sane_note`. Quello che qui si fissa è il risultato di quella catena,
+// perché è la forma che il gate bash di `deck-run.test.ts` si aspetta.
+
+/** La stessa catena che percorre l'attuatore: template della riga → buchi della
+ *  task → riduzione. */
+function titleOf(dir: string, id: string, action: SpawnActionId): string | null {
+  return resolveSpawnId(action, new Map(), loadPromptCatalog(), {
+    TASK: id,
+    slug: taskSlug(dir, id),
+  }).title;
+}
+
+test('titolo: ogni azione del detail produce un titolo distinto', () => {
   withTaskFiles({ 'T150-deck-titolo-conversazione-auto.md': '# Task: x\n' }, (dir) => {
-    const titles = DETAIL_ACTIONS.map((a) => fallbackTitle(dir, 'T150', a.kind));
+    const titles = DETAIL_ACTIONS.map((a) => titleOf(dir, 'T150', a.kind));
     assert.deepEqual(titles, [
       'deck titolo conversazione auto',
       '📐 deck titolo conversazione auto',
@@ -362,10 +384,10 @@ test('fallbackTitle: ogni azione del detail produce un titolo distinto', () => {
 // misura sul vero script bash sta in `deck-run.test.ts`; qui si fissa la FORMA
 // che quel gate si aspetta, così un cambio di formato fatto da un lato solo
 // rompe subito invece di produrre due titoli divergenti in silenzio.
-test('fallbackTitle: il prefisso è la sola emoji, staccata dallo slug da uno spazio', () => {
+test('titolo: il prefisso è la sola emoji, staccata dallo slug da uno spazio', () => {
   withTaskFiles({ 'T150-deck-titolo-conversazione-auto.md': '# Task: x\n' }, (dir) => {
     for (const kind of ['preflight', 'run', 'recap', 'checkpoint'] as const) {
-      const title = fallbackTitle(dir, 'T150', kind) ?? '';
+      const title = titleOf(dir, 'T150', kind) ?? '';
       // Flag `u`: `\p{Extended_Pictographic}` è UN code point anche per
       // un'emoji astrale, che senza il flag conterebbe come due unità UTF-16.
       assert.match(
@@ -377,40 +399,39 @@ test('fallbackTitle: il prefisso è la sola emoji, staccata dallo slug da uno sp
   });
 });
 
-test('fallbackTitle: `open` (kind `none`) è il solo slug, senza prefisso (D2/P7)', () => {
+test('titolo: `open` (kind `none`) è il solo slug, senza prefisso (D2/P7)', () => {
   withTaskFiles({ 'T99-drop-di-tag.md': '# Task: x\n' }, (dir) => {
-    assert.equal(fallbackTitle(dir, 'T99', 'none'), 'drop di tag');
+    assert.equal(titleOf(dir, 'T99', 'none'), 'drop di tag');
   });
 });
 
-test('fallbackTitle: le tre varianti di recap condividono lo stesso prefisso (P3)', () => {
+test('titolo: le tre varianti di recap condividono lo stesso prefisso (P3)', () => {
   withTaskFiles({ 'T81-fix-deck.md': '# Task: x\n' }, (dir) => {
-    const recap = fallbackTitle(dir, 'T81', 'recap');
+    const recap = titleOf(dir, 'T81', 'recap');
     assert.equal(recap, '📊 fix deck');
-    assert.equal(fallbackTitle(dir, 'T81', 'recap-task'), recap);
-    assert.equal(fallbackTitle(dir, 'T81', 'recap-epic'), recap);
+    assert.equal(titleOf(dir, 'T81', 'recap-task'), recap);
+    assert.equal(titleOf(dir, 'T81', 'recap-epic'), recap);
   });
 });
 
-test('fallbackTitle: lo slug viene dal NOME del file, non dalla descrizione — apici e `/` non esistono da saldare', () => {
+test('titolo: lo slug viene dal NOME del file, non dalla descrizione — apici e `/` non esistono da saldare', () => {
   withTaskFiles({ 'T16-valutare-integrazione-obsidian-viewer.md': '# Task: x\n' }, (dir) => {
-    assert.equal(
-      fallbackTitle(dir, 'T16', 'run'),
-      '🚀 valutare integrazione obsidian viewer',
-    );
+    assert.equal(titleOf(dir, 'T16', 'run'), '🚀 valutare integrazione obsidian viewer');
   });
 });
 
-test('fallbackTitle: task file assente → null, il chiamante decide il ripiego', () => {
+test('titolo: task file assente → nessun titolo, non il solo prefisso', () => {
+  // `🚀` da solo sarebbe uguale per ogni task, cioè peggio di nessun titolo: il
+  // buco senza valore spegne l'intero template.
   withTaskFiles({}, (dir) => {
-    assert.equal(fallbackTitle(dir, 'T404', 'run'), null);
+    assert.equal(titleOf(dir, 'T404', 'run'), null);
   });
 });
 
-test('fallbackTitle → deckArgs: il fallback sostituisce la nota vuota e porta --title-note', () => {
+test('titolo → deckArgs: il titolo risolto viaggia in --title-note', () => {
   withTaskFiles({ 'T150-deck-titolo-conversazione-auto.md': '# Task: x\n' }, (dir) => {
-    const note = fallbackTitle(dir, 'T150', 'run') ?? '';
-    const args = deckArgs('T150', 'sid-1', 'opus', note);
+    const note = titleOf(dir, 'T150', 'run') ?? '';
+    const args = deckArgs('T150', 'sid-1', 'opus', note, 'fai');
     assert.ok(args.includes('--title-note'));
     assert.equal(args[args.indexOf('--title-note') + 1], '🚀 deck titolo conversazione auto');
   });
@@ -422,10 +443,10 @@ test('fallbackTitle → deckArgs: il fallback sostituisce la nota vuota e porta 
 // sopravvive qui arriverebbe intera nella tab Ptyxis (la whitelist di
 // `_sane_note` la nomina) e `·` nella lista del deck: la stessa divergenza fra
 // i due titoli che T156 chiude, nel verso opposto.
-test('fallbackTitle: le emoji del prefisso sopravvivono a sanitize', () => {
+test('titolo: le emoji del prefisso sopravvivono a sanitize', () => {
   withTaskFiles({ 'T150-deck-titolo-conversazione-auto.md': '# Task: x\n' }, (dir) => {
     for (const kind of ['preflight', 'run', 'recap', 'checkpoint'] as const) {
-      const title = fallbackTitle(dir, 'T150', kind) ?? '';
+      const title = titleOf(dir, 'T150', kind) ?? '';
       assert.equal(sanitize(title), title, `sanitize ha toccato il prefisso: ${title}`);
       assert.ok(!sanitize(title).includes('·'), `emoji ridotta a ·: ${title}`);
     }

@@ -272,17 +272,22 @@ WORKDIR="${LOOM_DECK_WORKDIR:-$PWD}"
 # italiane, spazio, trattino, underscore e sei emoji (sotto); tutto il resto
 # (apici, backslash, `$`, backtick, `;`, quadre, ogni altra emoji…) cade.
 #
-# T156 — le emoji entrano per il PREFISSO del titolo di fallback che il deck
-# genera quando il campo nota è vuoto (`🚀 slug`, `ACTION_EMOJI` in
-# `src/spawn.ts`). Senza di loro il prefisso spariva qui e restava nella lista
-# del deck, che riceve la nota grezza dal sidecar `session-tasks.jsonl`: la
-# stessa conversazione portava due titoli diversi, senza errore. Le quadre che
+# T156 — le emoji entrano per il PREFISSO del titolo che il deck compone
+# (`🚀 slug`). Senza di loro il prefisso spariva qui e restava nella lista del
+# deck, che riceve la nota grezza dal sidecar `session-tasks.jsonl`: la stessa
+# conversazione portava due titoli diversi, senza errore. Le quadre che
 # delimitavano il prefisso sono cadute col prefisso stesso: l'emoji da sola si
 # stacca già dallo slug.
-# Quattro nominano un'azione su una task (📐🚀📊🏁); le altre due nominano
-# l'oggetto di una sessione che una task non ce l'ha — 🧹 il file inbox che si
-# drena (`inboxTitle`, `src/inbox.ts`), 📏 il path che si srotola (`wrapTitle`,
-# `src/wrap-scan.ts`).
+# T161 — le sei stanno tutte nei TEMPLATE di titolo del catalogo delle azioni
+# (`SPAWN_ACTIONS` in `src/spawn-catalog.ts`), che il progetto può riscrivere:
+# quattro nominano un'azione su una task (📐🚀📊🏁), 🧹 il file inbox che si
+# drena, 📏 il path che si srotola.
+# Questa whitelist ha un GEMELLO TypeScript (`saneNote` in `src/sane-note.ts`),
+# che riduce il template al salvataggio perché quello che sta nel file di
+# progetto sia quello che la tab mostrerà. I due lati non si leggono a vicenda e
+# vanno cambiati insieme: il custode è il gate di `test/deck-run.test.ts`, che
+# passa la stessa batteria di input a questa funzione e al gemello e pretende
+# l'uguaglianza.
 # La whitelist le nomina una per una e NON apre un intervallo di code point. Due
 # ragioni: un'emoji arriva nella tab solo se il deck la mostra identica in lista,
 # cioè se `sanitize` (`src/width.ts`) la lascia passare invece di renderla `·`, e

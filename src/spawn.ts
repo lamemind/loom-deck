@@ -3,19 +3,13 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { LaunchEntry } from './config.js';
 import type { IgnoredMode } from './purge.js';
-import { findTaskFile } from './tasks.js';
 // T161 — i cataloghi (kind, modelli, azioni) stanno in `spawn-catalog.ts`, che
 // è DATO PURO e non importa questo file: la dipendenza va in un verso solo.
 // Qui restano i soli effetti verso l'esterno — comporre un argv e lanciarlo.
-import {
-  MODEL_DEFAULT,
-  PROJECT_STATUS_MODEL,
-  type ModelKind,
-  type PromptKind,
-} from './spawn-catalog.js';
+import { MODEL_DEFAULT, PROJECT_STATUS_MODEL, type ModelKind } from './spawn-catalog.js';
 
 // scripts/deck-run è un sibling della dir del bundle: src/ (dev, tsx) e dist/
 // (build, node) stanno entrambi sotto la package root → risalita di un livello.
@@ -148,78 +142,18 @@ export function onInTabCommand(child: ChildProcess, cb: (cmd: string) => void): 
   });
 }
 
-// T150 — titolo di fallback quando il campo nota è vuoto, derivato dall'AZIONE
-// e dal task. Mappa sul KIND, non sulla label (P2 preflight): alla sede del
-// fallback (`spawnForTask` in actions.ts) arriva il kind — già specializzato
-// quando la chiamata viene dal detail (`recap-task`/`recap-epic`) — mai la
-// label del catalogo.
-// D2/P7 — `none` (label "open") non ha un prefisso: è "nessuna azione", e
-// inventargliene uno contraddirebbe l'intenzione dell'utente.
-// P3 — le tre varianti di recap condividono il prefisso: la specializzazione
-// sceglie quale skill parte, non cosa l'utente sta chiedendo.
-//
-// T156 — emoji invece della parola in maiuscolo (`PREFL`, `RUN`, …): il titolo
-// si legge in lista deck e nella tab Ptyxis, dove l'azione va riconosciuta a
-// colpo d'occhio e non letta.
-// Le quattro sono ASTRALI (code point ≥ U+10000) per necessità, non per gusto:
-// `sanitize` (`src/width.ts`) sostituisce con `·` ogni glifo su cui le due
-// contabilità di larghezza divergono, e le emoji del BMP a presentazione testo
-// (⚙️ ⏱️ 🛠️ …) divergono sempre — string-width le conta 2, VTE ne disegna 1, e
-// il VS16 non sposta nessuno dei due verdetti. Un'emoji aggiunta qui va prima
-// passata in `sanitize` per vedere se sopravvive.
-// Le stesse quattro stanno anche nella whitelist di `_sane_note` in `deck-run`,
-// che è una lista chiusa di code point (P2 preflight): cambiare una voce qui e
-// non là riapre la divergenza fra titolo in lista e titolo in tab. La whitelist
-// è più larga di questa tabella — porta anche le emoji dei titoli che non
-// nascono da un'azione su task (🧹 drain di un file inbox, `src/inbox.ts`; 📏
-// srotolamento di un path, `src/wrap-scan.ts`).
-// Le quadre che delimitavano il prefisso sono cadute: l'emoji da sola si stacca
-// già dallo slug, e con lei sono uscite dalla whitelist di `_sane_note`.
-const ACTION_EMOJI: Readonly<Partial<Record<PromptKind, string>>> = {
-  preflight: '📐',
-  run: '🚀',
-  recap: '📊',
-  'recap-task': '📊',
-  'recap-epic': '📊',
-  checkpoint: '🏁',
-};
-
-/**
- * Titolo di fallback per una conversazione con nota vuota: `{emoji} {slug}`,
- * o il solo slug per `none` (D1/D2 preflight). Lo slug viene dal NOME del
- * task file (`findTaskFile`), non dalla descrizione di `tasks.md`: il nome è
- * già dentro l'alfabeto di `_sane_note` per costruzione — minuscolo, separato
- * da trattini, senza punteggiatura — mentre la descrizione porta apostrofi e
- * `/` che la riduzione toglie senza sostituto, saldando le parole (D1
- * razionale).
- *
- * Il PREFISSO invece nell'alfabeto non ci sta per costruzione: l'emoji ci entra
- * solo perché la whitelist di `_sane_note` le nomina una per una (T156). È
- * l'unica parte del titolo di fallback che dipende da una modifica fatta
- * dall'altro lato.
- *
- * `null` quando il task file non si trova: il chiamante decide se ripiegare
- * su nota vuota o su un altro fallback.
- */
-export function fallbackTitle(tasksDir: string, id: string, kind: PromptKind): string | null {
-  const path = findTaskFile(tasksDir, id);
-  if (!path) return null;
-  const slug = basename(path, '.md').slice(id.length + 1).replace(/-/g, ' ');
-  const emoji = ACTION_EMOJI[kind];
-  return emoji ? `${emoji} ${slug}` : slug;
-}
-
 // Spawn detached: il deck spawna ma NON contiene la sessione (la possiede
 // ptyxis-agent). unref + stdio ignore → ritorna subito, la TUI resta viva.
 // sessionId pinnato (T27) → il binding sidecar è deterministico allo spawn.
-// Il kind è OBBLIGATORIO e non ha default qui: il default vive in deck-run (per
-// le invocazioni a mano), mentre dal deck ogni tasto dichiara il proprio intento
-// — un default silenzioso renderebbe indistinguibili `⏎` e `^K`.
-// Il modello, al contrario del kind, ha un default (T108): i percorsi che non
-// passano dal selettore del detail non devono nominarlo per forza, e l'unico
-// valore sensato per loro è quello che il selettore stesso mostra all'apertura.
+// Il modello ha un default (T108): i percorsi che non passano dal selettore del
+// detail non devono nominarlo per forza, e l'unico valore sensato per loro è
+// quello che il selettore stesso mostra all'apertura.
 // T111 — `spawnNote` è la nota data alla NASCITA della conversazione, dal campo
-// sempre attivo del detail. Stesso flag `--title-note` del resume (T64): il
+// sempre attivo del detail — che da T161 nasce PRE-RIEMPITO col template di
+// titolo dell'azione, reso sulla task aperta. Ne discende che un campo svuotato
+// a mano significa «nessuna nota» e non più «usa il titolo di fallback»: il
+// fallback non esiste più, perché il default è già a schermo.
+// Stesso flag `--title-note` del resume (T64): il
 // suffisso `«nota»` viene appeso a `TITLE` dentro deck-run PRIMA che i rami si
 // separino, quindi il flag non appartiene alla ripresa — vale su ogni spawn.
 // Assente quando la nota è vuota, e non passato vuoto: `--title-note ''`

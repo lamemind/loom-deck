@@ -5,6 +5,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { saneNote } from '../src/sane-note.js';
+import { SPAWN_ACTIONS } from '../src/spawn-catalog.js';
 
 // T56 — gate sul COMANDO IN-TAB che deck-run compone: è la superficie dove il
 // prompt viene scelto e quotato, e nessun altro test la copre (il resto della
@@ -601,4 +603,76 @@ test('un errore di validazione non annuncia niente', () => {
   const r = deckRun(['T56', '--prompt-kind', 'bogus']);
   assert.equal(r.ok, false);
   assert.doesNotMatch(r.out, /LOOM_DECK_INTAB/);
+});
+
+// ── T161 · l'allineamento fra `_sane_note` e il suo gemello TypeScript ──────
+//
+// Da quando un TEMPLATE di titolo si scrive in una pagina e si salva su disco,
+// la divergenza fra la riduzione bash e quella del deck diventa permanente: il
+// file direbbe una cosa e la tab ne mostrerebbe un'altra, per sempre e senza un
+// errore da nessuna parte. Il gemello (`src/sane-note.ts`) esiste per quello, e
+// questo è il gate che lo tiene uguale all'originale.
+//
+// Si misura sullo script VERO, non su una copia della regex: l'harness di
+// questo file fa già girare `deck-run` con lo shim `ptyxis`, e il titolo esce
+// nel comando in-tab dentro `claude --name '<TITLE>'`. Con un workdir senza
+// `.claude/loom-works.json` la label cade sul fallback `cc <task>`, quindi
+// quello che segue è esattamente la nota ridotta.
+
+/** La nota come `deck-run` l'ha ridotta: il titolo meno il prefisso `cc <task>`. */
+function saneFromDeckRun(raw: string): string {
+  const cmd = inTabCmd(['T161', '--resume', SID, '--title-note', raw]);
+  const m = /--name '([^']*)'/.exec(cmd);
+  assert.ok(m, `titolo non trovato nel comando: ${cmd}`);
+  const title = m[1]!;
+  const prefix = 'cc T161';
+  assert.ok(title.startsWith(prefix), `prefisso inatteso: ${title}`);
+  return title.slice(prefix.length).replace(/^ /, '');
+}
+
+/** La batteria: un caso per ogni regola della riduzione, più i due che l'hanno
+ *  già rotta in passato (l'emoji astrale fuori whitelist, il cap a metà di un
+ *  multibyte). */
+const SANE_CASES: string[] = [
+  'titolo semplice',
+  'abc ABC 123 _ - àèéìòù ÀÈÉÌÒÙ',
+  "l'apice e il $dollaro; `backtick` \"doppi\" [quadre]",
+  '📐 preflight',
+  '🚀 run',
+  '📊 stato',
+  '🏁 checkpoint',
+  '🧹 drain',
+  '📏 srotola',
+  '🔥 emoji fuori whitelist',
+  '🗺️ astrale fuori whitelist',
+  '   spazi    multipli   ',
+  'à'.repeat(80),
+  'T161-pagina.azioni/spawn',
+  '',
+];
+
+for (const raw of SANE_CASES) {
+  test(`_sane_note ≡ saneNote · ${JSON.stringify(raw).slice(0, 40)}`, () => {
+    assert.equal(
+      saneFromDeckRun(raw),
+      saneNote(raw),
+      `la riduzione bash e quella TypeScript divergono su ${JSON.stringify(raw)}: ` +
+        'la whitelist va cambiata in ENTRAMBE le sedi (scripts/deck-run e src/sane-note.ts)',
+    );
+  });
+}
+
+test('le emoji dei titoli del catalogo passano tutte da deck-run', () => {
+  // Un'emoji aggiunta a un template del catalogo e non alla whitelist di
+  // `_sane_note` sparirebbe fra la tabella della pagina e la tab, in silenzio.
+  for (const action of SPAWN_ACTIONS) {
+    if (!action.title) continue;
+    // Il template si misura sul suo RESO: i buchi non arrivano mai fino a bash.
+    const reso = action.title.replace(/\{[A-Za-z]+\}/g, 'esempio');
+    assert.equal(
+      saneFromDeckRun(reso),
+      reso,
+      `il titolo di '${action.id}' non sopravvive a _sane_note: ${reso}`,
+    );
+  }
 });
