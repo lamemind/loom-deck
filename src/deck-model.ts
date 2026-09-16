@@ -183,6 +183,23 @@ export function useDeckModel({
   setNote: (s: string) => void;
 }) {
   const { tasks, loadError } = useTasks(tasksPath);
+  // Voci launch del progetto (T32): lette una volta, raggiunte per indice 1..9.
+  const launch = useMemo(() => loadLaunch(cwd), [cwd]);
+  // Identità (T37): titolo delle tab terminale spawnate col tasto `t`.
+  const identity = useMemo(() => loadIdentity(cwd), [cwd]);
+  // T53 — il core che ogni titolo di tab porta, quindi la colonna costante da
+  // togliere quando serve spazio. Hoistato perché lo consumano DUE schermate
+  // (lista e ricerca): calcolarlo su ogni call site è il modo in cui le due
+  // smettono di togliere la stessa cosa.
+  // T58 — il core è il solo `name`, non `<emoji> <name>` come la chiave di match
+  // di compass: qui non serve entropia (è un taglio cosmetico, non un matcher) e
+  // il nome nudo ripulisce anche i titoli storici, scritti quando la formula
+  // includeva l'owner.
+  // T162 — sta SOPRA `useSessions` perché ora è anche un suo ingresso: il deck
+  // scrive nel sidecar il residuo del titolo, e quel residuo si ottiene
+  // togliendo questo stesso core (§Riempimento dei buchi in `hooks.ts`).
+  const projectCore = identity ? identity.name : null;
+  const projectName = cwd.split('/').pop() || cwd;
   // `notes` esce dall'indice come `sessionNotes`: nel deck `note` è già la riga
   // di STATO in fondo al frame (il feedback di un'azione). Due concetti diversi
   // a una lettera di distanza sarebbero una trappola di lettura — e di
@@ -196,7 +213,7 @@ export function useDeckModel({
     priority: sessionPriority,
     live,
     reload: reloadSessions,
-  } = useSessions(cwd);
+  } = useSessions(cwd, projectCore);
 
   const [focus, setFocus] = useState<Focus>('tasks');
   // T39 — selezione KEYED SU ID, non su indice. Con una vista trasformata
@@ -244,21 +261,6 @@ export function useDeckModel({
   // sbagliata in silenzio (stessa trappola di T39 sulle task e T50 sulle
   // conversazioni).
   const [selInboxPath, setSelInboxPath] = useState<string | null>(null);
-
-  // Voci launch del progetto (T32): lette una volta, raggiunte per indice 1..9.
-  const launch = useMemo(() => loadLaunch(cwd), [cwd]);
-  // Identità (T37): titolo delle tab terminale spawnate col tasto `t`.
-  const identity = useMemo(() => loadIdentity(cwd), [cwd]);
-  // T53 — il core che ogni titolo di tab porta, quindi la colonna costante da
-  // togliere quando serve spazio. Hoistato perché lo consumano DUE schermate
-  // (lista e ricerca): calcolarlo su ogni call site è il modo in cui le due
-  // smettono di togliere la stessa cosa.
-  // T58 — il core è il solo `name`, non `<emoji> <name>` come la chiave di match
-  // di compass: qui non serve entropia (è un taglio cosmetico, non un matcher) e
-  // il nome nudo ripulisce anche i titoli storici, scritti quando la formula
-  // includeva l'owner.
-  const projectCore = identity ? identity.name : null;
-  const projectName = cwd.split('/').pop() || cwd;
 
   // T136 — data dell'ultimo commit di ogni task file, per la chiave `commit`
   // della chain di sort.

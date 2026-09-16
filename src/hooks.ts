@@ -8,7 +8,8 @@ import { statSync } from 'node:fs';
 import { loadTasks, loadTaskDetail, type Task, type TaskDetail } from './tasks.js';
 import { discoverProjectSessions, type Session } from './sessions.js';
 import { discoverLiveSessions, liveSig, type LiveSession } from './live-sessions.js';
-import { loadSessionIndex, type SessionIndex } from './task-index.js';
+import { appendSessionMeta, loadSessionIndex, type SessionIndex } from './task-index.js';
+import { sidecarGaps } from './session-meta.js';
 import { archivableIds, SCAN_INTERVAL_MS } from './archivable.js';
 import { commitTimes } from './commit-times.js';
 import { scanEpicHierarchy, EMPTY_EPIC_HIERARCHY, type EpicHierarchy } from './epic-hierarchy.js';
@@ -155,7 +156,15 @@ export function useEpicHierarchy(tasksDir: string): EpicHierarchy {
 // ha cache mtime-keyed interna → il poll è economico; qui si evita comunque il
 // re-render inutile con una signature (sessionId:ts + binding entries): setState
 // solo quando cambia davvero qualcosa.
-export function useSessions(projectRoot: string) {
+//
+// T162 — è anche il posto dove il deck RIEMPIE I BUCHI dei campi derivati del
+// sidecar (`title`, `model`): qui le due fonti sono già in mano nello stesso
+// giro, la corrente (le `Session`) e quella su disco (l'indice). Il `core` del
+// progetto arriva per argomento e non si rilegge qui: la stessa derivazione
+// vive già nel modello (`projectCore`), e una seconda copia toglierebbe dal
+// titolo scritto nel sidecar una stringa diversa da quella che la lista toglie
+// dalle proprie righe.
+export function useSessions(projectRoot: string, core: string | null) {
   const [state, setState] = useState<{
     sessions: Session[];
     bindings: Map<string, string>;
@@ -210,6 +219,41 @@ export function useSessions(projectRoot: string) {
         live = new Map();
       }
       const { bindings, forkOf, pinned, notes, priority } = index;
+      // T162 — i campi derivati delle PINNATE, allineati prima della signature.
+      //
+      // Gira a ogni giro e non solo al cambio di stato, perché il buco può
+      // nascere senza che nulla nel deck si muova: a pinnare può essere compass,
+      // dalla modale sulla conversazione in focus, e compass il titolo non lo
+      // conosce. Il deck è l'unico che ce l'ha, quindi è l'unico che può
+      // chiudere quel buco — e lo fa passando, non al momento del gesto.
+      //
+      // Costa solo quando c'è da scrivere: senza pinnate `sidecarGaps` esce
+      // subito, e con un sidecar già allineato ritorna una lista vuota (è
+      // l'invariante di convergenza del modulo — vedi `session-meta.ts`).
+      //
+      // Fuori dal gate della signature di proposito: un sidecar temporaneamente
+      // non scrivibile deve poter essere ritentato al giro dopo, e con lo stato
+      // invariato la signature non cambierebbe mai più.
+      //
+      // Gli append NON entrano nella signature e non producono un re-render: il
+      // deck il titolo lo ha dalla `Session`, che è la fonte. Questi campi
+      // esistono per un lettore che non può aprire un transcript, cioè compass.
+      try {
+        for (const gap of sidecarGaps({
+          pinned,
+          sessions,
+          bindings,
+          titles: index.titles,
+          models: index.models,
+          core,
+        })) {
+          appendSessionMeta(projectRoot, gap.sessionId, gap);
+        }
+      } catch {
+        // sidecar non scrivibile: il poll continua, il buco si riprova al giro
+        // dopo. Niente a schermo — è manutenzione di un campo di servizio, non
+        // un'azione che l'utente ha chiesto.
+      }
       // La signature copre anche fork, pin, note e marca di priorità: un record
       // di lineage, un toggle di pin, una nota appena scritta o un 🚨 acceso
       // cambiano la lista renderizzata, quindi devono forzare il re-render come
@@ -236,7 +280,7 @@ export function useSessions(projectRoot: string) {
     reload();
     const id = setInterval(reload, POLL_MS);
     return () => clearInterval(id);
-  }, [projectRoot]);
+  }, [projectRoot, core]);
 
   return { ...state, reload: () => reloadRef.current() };
 }

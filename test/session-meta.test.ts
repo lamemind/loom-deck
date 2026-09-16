@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sidecarTitle, SIDECAR_TITLE_MAX } from '../src/session-meta.js';
+import { sidecarGaps, sidecarTitle, SIDECAR_TITLE_MAX } from '../src/session-meta.js';
 import { NO_TITLE, type Session } from '../src/sessions.js';
 
 const sess = (over: Partial<Session> = {}): Session => ({
@@ -85,4 +85,111 @@ test('cap: non spezza una coppia surrogata', () => {
 test('cap: un titolo sotto soglia passa identico', () => {
   const s = sess({ title: 'corto' });
   assert.equal(sidecarTitle(s, null, null), 'corto');
+});
+
+// ── i buchi da riempire ─────────────────────────────────────────────────────
+
+const gapsOf = (input: {
+  pinned?: [string, number][];
+  sessions?: Session[];
+  bindings?: [string, string][];
+  titles?: [string, string][];
+  models?: [string, string][];
+  core?: string | null;
+}) =>
+  sidecarGaps({
+    pinned: new Map(input.pinned ?? []),
+    sessions: input.sessions ?? [],
+    bindings: new Map(input.bindings ?? []),
+    titles: new Map(input.titles ?? []),
+    models: new Map(input.models ?? []),
+    core: input.core ?? 'loom-works',
+  });
+
+test('buchi: nessuna pinnata → nessun lavoro', () => {
+  assert.deepEqual(gapsOf({ sessions: [sess({ title: 'x' })] }), []);
+});
+
+test('buchi: pinnata senza titolo nel sidecar → append di title e model', () => {
+  const s = sess({ sessionId: 'a', title: 'come chiudo una lane?', model: 'claude-opus-5' });
+  assert.deepEqual(gapsOf({ pinned: [['a', 0]], sessions: [s] }), [
+    { sessionId: 'a', title: 'come chiudo una lane?', model: 'opus' },
+  ]);
+});
+
+test('CONVERGENZA: un sidecar già allineato non produce nessun append', () => {
+  const s = sess({ sessionId: 'a', title: 'titolo', model: 'claude-sonnet-5' });
+  const primo = gapsOf({ pinned: [['a', 0]], sessions: [s] });
+  assert.equal(primo.length, 1);
+  // Il giro dopo legge quello che il giro prima ha scritto: se il confronto
+  // non combaciasse, il deck appenderebbe a ogni tick del poll per sempre.
+  const dopo = gapsOf({
+    pinned: [['a', 0]],
+    sessions: [s],
+    titles: [['a', primo[0]!.title!]],
+    models: [['a', primo[0]!.model!]],
+  });
+  assert.deepEqual(dopo, []);
+});
+
+test('CONVERGENZA: regge anche su un titolo oltre il cap', () => {
+  const s = sess({ sessionId: 'a', title: 'x'.repeat(SIDECAR_TITLE_MAX + 50) });
+  const primo = gapsOf({ pinned: [['a', 0]], sessions: [s] });
+  const dopo = gapsOf({ pinned: [['a', 0]], sessions: [s], titles: [['a', primo[0]!.title!]] });
+  assert.deepEqual(dopo, [], 'il cap è applicato da un lato solo, quindi il confronto torna');
+});
+
+test('buchi: titolo cambiato sotto → riallineamento del solo title', () => {
+  const s = sess({ sessionId: 'a', title: 'titolo nuovo', model: 'claude-opus-5' });
+  assert.deepEqual(
+    gapsOf({
+      pinned: [['a', 0]],
+      sessions: [s],
+      titles: [['a', 'titolo vecchio']],
+      models: [['a', 'opus']],
+    }),
+    [{ sessionId: 'a', title: 'titolo nuovo' }],
+  );
+});
+
+test('buchi: pinnata STALE → nessun append (niente da cui derivare)', () => {
+  assert.deepEqual(gapsOf({ pinned: [['fantasma', 0]], sessions: [] }), []);
+});
+
+test('buchi: residuo vuoto → nessun append, non la cancellazione del campo', () => {
+  const s = sess({
+    sessionId: 'a',
+    title: '🧵 loom-works · T32',
+    customTitle: 'x',
+    firstPrompt: '/loom-works:recap-status-task T32',
+  });
+  assert.deepEqual(gapsOf({ pinned: [['a', 0]], sessions: [s], bindings: [['a', 'T32']] }), []);
+});
+
+test('buchi: modello non riconducibile a un alias → si scrive il solo titolo', () => {
+  const s = sess({ sessionId: 'a', title: 'titolo', model: 'qualcosa-di-ignoto' });
+  assert.deepEqual(gapsOf({ pinned: [['a', 0]], sessions: [s] }), [
+    { sessionId: 'a', title: 'titolo' },
+  ]);
+});
+
+test('buchi: conversazione senza record assistant → nessun modello da scrivere', () => {
+  const s = sess({ sessionId: 'a', title: 'titolo', model: '' });
+  assert.deepEqual(gapsOf({ pinned: [['a', 0]], sessions: [s] }), [
+    { sessionId: 'a', title: 'titolo' },
+  ]);
+});
+
+test('buchi: solo le PINNATE, non tutte le conversazioni del progetto', () => {
+  const a = sess({ sessionId: 'a', title: 'pinnata' });
+  const b = sess({ sessionId: 'b', title: 'libera' });
+  const out = gapsOf({ pinned: [['a', 0]], sessions: [a, b] });
+  assert.deepEqual(out.map((g) => g.sessionId), ['a']);
+});
+
+test('buchi: il task id del binding entra nello strip della pinnata', () => {
+  const s = sess({ sessionId: 'a', title: '🧵 loom-works · T59 prova', customTitle: 'x' });
+  assert.deepEqual(gapsOf({ pinned: [['a', 0]], sessions: [s], bindings: [['a', 'T59']] }), [
+    { sessionId: 'a', title: 'prova' },
+  ]);
 });
