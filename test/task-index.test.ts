@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   appendNote,
   appendPin,
   appendPriority,
+  appendSessionMeta,
   appendSessionRecord,
   appendTaskBinding,
   loadSessionIndex,
@@ -314,4 +315,78 @@ test('retrocompat: un record senza taskId non stacca un binding scritto prima', 
   appendPin(r, 'sid', true);
   appendNote(r, 'sid', 'x');
   assert.equal(loadSessionIndex(r).bindings.get('sid'), 'T57');
+});
+
+// ── T162 · campi derivati (title, model) ────────────────────────────────────
+
+test('meta: title e model vanno in UN record e si rileggono', () => {
+  const r = root();
+  appendSessionMeta(r, 'sid', { title: 'revisione del reader', model: 'opus' });
+  const righe = readFileSync(taskIndexPath(r), 'utf8').trim().split('\n');
+  assert.equal(righe.length, 1, 'un solo record: lo stato su disco non passa da metà');
+  const idx = loadSessionIndex(r);
+  assert.equal(idx.titles.get('sid'), 'revisione del reader');
+  assert.equal(idx.models.get('sid'), 'opus');
+});
+
+test('meta: il record porta solo i campi passati', () => {
+  const r = root();
+  appendSessionMeta(r, 'sid', { title: 'solo titolo' });
+  const rec = JSON.parse(readFileSync(taskIndexPath(r), 'utf8').trim());
+  assert.equal(rec.title, 'solo titolo');
+  assert.equal('model' in rec, false, 'un model non toccato non va riscritto');
+});
+
+test('meta: insieme vuoto non scrive niente', () => {
+  const r = root();
+  appendSessionMeta(r, 'sid', {});
+  assert.equal(loadSessionIndex(r).titles.size, 0);
+  assert.throws(() => readFileSync(taskIndexPath(r), 'utf8'), 'nessun file creato');
+});
+
+test('meta: last-wins per campo, il vuoto CANCELLA', () => {
+  const r = root();
+  appendSessionMeta(r, 'sid', { title: 'primo', model: 'fable' });
+  appendSessionMeta(r, 'sid', { title: 'secondo' });
+  assert.equal(loadSessionIndex(r).titles.get('sid'), 'secondo');
+  assert.equal(loadSessionIndex(r).models.get('sid'), 'fable', 'model non nominato → intatto');
+  appendSessionMeta(r, 'sid', { title: '' });
+  assert.equal(loadSessionIndex(r).titles.has('sid'), false);
+});
+
+test('meta: un record senza i campi nuovi non tocca titolo e modello', () => {
+  const r = root();
+  appendSessionMeta(r, 'sid', { title: 'viva', model: 'sonnet' });
+  appendPin(r, 'sid', true);
+  appendNote(r, 'sid', 'nota');
+  const idx = loadSessionIndex(r);
+  assert.equal(idx.titles.get('sid'), 'viva');
+  assert.equal(idx.models.get('sid'), 'sonnet');
+});
+
+test('meta: nessuna migrazione — un sidecar di soli record vecchi resta valido', () => {
+  const r = root();
+  mkdirSync(join(r, '.claude', 'loom'), { recursive: true });
+  writeFileSync(
+    taskIndexPath(r),
+    [
+      '{"sessionId":"sid-1","taskId":"T50","ts":"2025-01-01T00:00:00Z"}',
+      '{"sessionId":"sid-1","pinned":true,"ts":"2025-01-01T00:00:01Z"}',
+      '{"sessionId":"sid-1","note":"vecchia","ts":"2025-01-01T00:00:02Z"}',
+    ].join('\n') + '\n',
+  );
+  const idx = loadSessionIndex(r);
+  assert.equal(idx.bindings.get('sid-1'), 'T50');
+  assert.equal(idx.pinned.has('sid-1'), true);
+  assert.equal(idx.notes.get('sid-1'), 'vecchia');
+  assert.equal(idx.titles.size, 0, 'il campo nuovo manca, e la sua assenza non è un errore');
+  assert.equal(idx.models.size, 0);
+});
+
+test('meta: il titolo NON è sanificato in lettura (la convergenza dipende da questo)', () => {
+  const r = root();
+  // `note` verrebbe riscritta (`✅` → `✅️`): il titolo no, o il confronto col
+  // valore derivato non combacerebbe mai e il deck appenderebbe a ogni tick.
+  appendSessionMeta(r, 'sid', { title: 'done ✅' });
+  assert.equal(loadSessionIndex(r).titles.get('sid'), 'done ✅');
 });

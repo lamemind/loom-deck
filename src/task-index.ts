@@ -49,6 +49,22 @@ import { sanitize } from './width.js';
 // dentro un suo file. La cancellazione è un append di stringa VUOTA (`note:''`),
 // non un record di tipo diverso — last-wins la fa vincere sull'ultima nota, come
 // `pinned:false` vince sull'ultimo `pinned:true`.
+//
+// T162 — `title` e `model` sono i primi campi DERIVATI del record: non li
+// decide un umano né lo spawn, sono una COPIA di un dato che vive nel transcript
+// di Claude Code e che il deck ha già in mano a ogni tick. Esistono perché
+// compass non può leggere un transcript — gira dentro il processo di
+// gnome-shell, e una lettura sincrona di qualche megabyte blocca il compositore,
+// cioè l'intero desktop. Il sidecar è invece un file piccolo che compass già
+// apre, quindi il dato deve arrivargli per questa via.
+//
+// Ne discende la forma: chi POSSIEDE il dato riempie i buchi quando passa (vedi
+// `sidecarGaps` in `session-meta.ts`), invece di scriverlo al momento
+// dell'azione umana — compass pinna da sé, dalla modale sulla conversazione in
+// focus, e il titolo non lo conosce. Il campo è quindi EVENTUALMENTE
+// CONSISTENTE: esiste una finestra in cui manca (chi legge deve avere un
+// fallback), e invecchia se il possessore non gira — chi rinomina una
+// conversazione cambia il titolo nel transcript, non qui.
 
 export interface SessionRecord {
   sessionId: string;
@@ -64,6 +80,17 @@ export interface SessionRecord {
   /** T158 — conversazione PRIORITARIA: ogni suo cambio di stato notevole produce
    *  banner e ding per-conversazione. true = marcata, false = smarcata. */
   priority?: boolean;
+  /** T162 — titolo mostrabile della conversazione, per un lettore che non può
+   *  aprire il transcript (compass). È il RESIDUO del titolo, non il titolo
+   *  grezzo: vedi `sidecarTitle` in `session-meta.ts`. Stringa vuota =
+   *  cancellazione, come `note`. */
+  title?: string;
+  /** T162 — ALIAS del modello (`fable|opus|sonnet|haiku`), non l'id versionato
+   *  che sta sul transcript: serve a chi riprende la conversazione da fuori dal
+   *  deck e deve passare `--model` a `deck-run`, che accetta l'enum degli alias.
+   *  Un id versionato obbligherebbe il consumer a rifare la mappa
+   *  famiglia → alias. Stringa vuota = cancellazione. */
+  model?: string;
 }
 
 export function taskIndexPath(projectRoot: string): string {
@@ -108,6 +135,33 @@ export function appendPriority(projectRoot: string, sessionId: string, priority:
   appendSessionRecord(projectRoot, { sessionId, priority });
 }
 
+/**
+ * T162 — scrive i campi DERIVATI (`title`, `model`) di una conversazione.
+ *
+ * I due vanno in UN record e non in due, anche se il lettore risolve last-wins
+ * per campo e due append darebbero lo stesso esito finale: due record lasciano
+ * un istante in cui su disco lo stato è a metà, e in quel mezzo ci sta il
+ * lettore di compass — che mostrerebbe il titolo nuovo e riprenderebbe col
+ * modello vecchio. È la stessa regola di `writeSessionMarks` lato compass.
+ *
+ * Il record porta SOLO i campi passati: uno che portasse anche l'altro col
+ * valore che aveva prima lo riscriverebbe, e il last-wins trasformerebbe quella
+ * riscrittura in una sovrascrittura di ciò che un altro scrittore ha messo nel
+ * frattempo. Un insieme vuoto non scrive niente, invece di appendere un record
+ * col solo `sessionId` che nessun lettore userebbe.
+ */
+export function appendSessionMeta(
+  projectRoot: string,
+  sessionId: string,
+  fields: { title?: string; model?: string },
+): void {
+  const rec: SessionRecord = { sessionId };
+  if (fields.title !== undefined) rec.title = fields.title;
+  if (fields.model !== undefined) rec.model = fields.model;
+  if (rec.title === undefined && rec.model === undefined) return;
+  appendSessionRecord(projectRoot, rec);
+}
+
 export interface SessionIndex {
   /** sessionId → taskId (solo le scoped). */
   bindings: Map<string, string>;
@@ -126,6 +180,13 @@ export interface SessionIndex {
    *  a differenza del pin non c'è un rango da conservare — nessuna vista ordina
    *  per marca — quindi un valore associato sarebbe un campo che nessuno legge. */
   priority: Set<string>;
+  /** T162 — sessionId → titolo scritto nel sidecar. Solo i NON vuoti, come
+   *  `notes`: la stringa vuota è la cancellazione e toglie la chiave. Serve al
+   *  deck per sapere quali buchi riempire, non per rendere la lista — lì il
+   *  titolo lo ha già dalla `Session`, che è la fonte. */
+  titles: Map<string, string>;
+  /** T162 — sessionId → alias di modello scritto nel sidecar, stessa regola. */
+  models: Map<string, string>;
 }
 
 // Una sola lettura del JSONL per entrambe le mappe: il deck poll-a l'indice a
@@ -139,11 +200,13 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
   const pinned = new Map<string, number>();
   const notes = new Map<string, string>();
   const priority = new Set<string>();
+  const titles = new Map<string, string>();
+  const models = new Map<string, string>();
   let content: string;
   try {
     content = readFileSync(taskIndexPath(projectRoot), 'utf8');
   } catch {
-    return { bindings, forkOf, pinned, notes, priority };
+    return { bindings, forkOf, pinned, notes, priority, titles, models };
   }
   let order = 0; // posizione crescente dei record pinned → rango di pin (D2)
   for (const line of content.split('\n')) {
@@ -156,6 +219,8 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
         pinned?: unknown;
         note?: unknown;
         priority?: unknown;
+        title?: unknown;
+        model?: unknown;
       };
       if (typeof d.sessionId !== 'string') continue;
       // T57 — last-wins con la stringa vuota come CANCELLAZIONE: `taskId:''`
@@ -194,9 +259,27 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
         if (d.priority) priority.add(d.sessionId);
         else priority.delete(d.sessionId);
       }
+      // T162 — stesso last-wins per campo di `note`, con una differenza che
+      // conta: NESSUNA sanificazione in lettura. `note` la paga perché il deck
+      // la mette nel frame e il file è editabile a mano; qui il valore non
+      // entra nel frame (il deck il titolo lo ha dalla `Session`) e chi lo
+      // rende — compass, sotto Pango — non fa contabilità di colonne.
+      //
+      // Sanificare qui avrebbe un costo suo: il deck decide se riempire il
+      // buco CONFRONTANDO il valore letto con quello derivato, e un valore
+      // riscritto in lettura non combacerebbe mai col derivato — un append a
+      // ogni tick del poll, per sempre, senza nessun errore a dirlo.
+      if (typeof d.title === 'string') {
+        if (d.title) titles.set(d.sessionId, d.title);
+        else titles.delete(d.sessionId);
+      }
+      if (typeof d.model === 'string') {
+        if (d.model) models.set(d.sessionId, d.model);
+        else models.delete(d.sessionId);
+      }
     } catch {
       // riga corrotta → skip
     }
   }
-  return { bindings, forkOf, pinned, notes, priority };
+  return { bindings, forkOf, pinned, notes, priority, titles, models };
 }

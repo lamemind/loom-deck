@@ -143,6 +143,13 @@ function isInterrupt(text: string): boolean {
   return text.trimStart().startsWith(INTERRUPT_MARKER);
 }
 
+/** Titolo di una conversazione che non ne ha nessuno — né custom né un primo
+ *  prompt da cui derivarlo. È un SEGNAPOSTO di resa, non un titolo: chi copia
+ *  il titolo altrove (T162, il sidecar per compass) deve poterlo riconoscere e
+ *  trattarlo come assenza, invece di propagare la stringa. Esportato per quello
+ *  — una seconda copia del letterale divergerebbe al primo ritocco del testo. */
+export const NO_TITLE = '(senza titolo)';
+
 // T110 — valore che il CLI scrive nel campo modello dei record che fabbrica da
 // sé (osservato su `{"type":"text","text":"No response requested."}`). Restano
 // `type:assistant` a tutti gli effetti: chi si fida del campo etichetta la
@@ -332,7 +339,7 @@ export function parseTranscript(
     cwd,
     gitBranch,
     parentUuid,
-    title: sanitize(customTitle || firstUserText || '(senza titolo)'),
+    title: sanitize(customTitle || firstUserText || NO_TITLE),
     ts: mtime,
     path,
     sizeBytes,

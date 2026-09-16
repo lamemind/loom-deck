@@ -194,6 +194,8 @@ export function useSessions(projectRoot: string) {
           pinned: new Map(),
           notes: new Map(),
           priority: new Set(),
+          titles: new Map(),
+          models: new Map(),
         };
       }
       // T62 — le vive stanno sullo STESSO tick delle altre fonti, non su una
