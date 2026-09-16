@@ -676,3 +676,53 @@ test('le emoji dei titoli del catalogo passano tutte da deck-run', () => {
     );
   }
 });
+
+// ── T162 · --new-window ─────────────────────────────────────────────────────
+//
+// Lo shim stampa i propri argv uno per riga, quindi il primo argomento passato
+// a `ptyxis` È il verbo di apertura. La riga `LOOM_DECK_INTAB …` che deck-run
+// scrive su stdout prima dell'exec va saltata: non viene dallo shim.
+function ptyxisArgv(args: string[], env: Record<string, string | undefined> = {}): string[] {
+  const r = deckRun(args, env);
+  assert.ok(r.ok, `deck-run ${args.join(' ')} è fallito: ${r.err}`);
+  return r.out
+    .trimEnd()
+    .split('\n')
+    .filter((l) => !l.startsWith('LOOM_DECK_INTAB '));
+}
+
+test('senza --new-window: tab nella finestra attiva', () => {
+  assert.equal(ptyxisArgv(['T162', '--prompt-kind', 'none'])[0], '--tab');
+});
+
+test('--new-window: finestra nuova invece della tab', () => {
+  assert.equal(ptyxisArgv(['T162', '--prompt-kind', 'none', '--new-window'])[0], '--new-window');
+});
+
+test('--new-window non tocca il comando in-tab', () => {
+  // È il punto del flag: cambia DOVE nasce la tab, non cosa ci gira dentro.
+  const senza = inTabCmd(['T162', '--resume', SID]);
+  const con = inTabCmd(['T162', '--resume', SID, '--new-window']);
+  assert.equal(con, senza);
+});
+
+test('--new-window si compone con la ripresa scoped e con quella spot', () => {
+  const scoped = ptyxisArgv(['T162', '--resume', SID, '--new-window', '--model', 'opus']);
+  assert.equal(scoped[0], '--new-window');
+  const spot = ptyxisArgv(['--no-task', '--resume', SID, '--new-window', '--model', 'opus']);
+  assert.equal(spot[0], '--new-window');
+});
+
+test('ripresa scoped: LOOM_TASK valorizzata, --resume passato, nessun prompt', () => {
+  const cmd = inTabCmd(['T162', '--resume', SID, '--model', 'opus']);
+  assert.match(cmd, /^LOOM_TASK=T162 claude /);
+  assert.ok(cmd.includes(`--resume ${SID}`), cmd);
+  assert.ok(cmd.includes('--model opus'), cmd);
+  assert.ok(!cmd.trimEnd().endsWith("'"), `una ripresa non inietta prompt: ${cmd}`);
+});
+
+test('ripresa spot: nessuna LOOM_TASK', () => {
+  const cmd = inTabCmd(['--no-task', '--resume', SID, '--model', 'opus']);
+  assert.match(cmd, /^claude /);
+  assert.ok(cmd.includes(`--resume ${SID}`), cmd);
+});

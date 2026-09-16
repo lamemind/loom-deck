@@ -13,6 +13,8 @@
 #   continuità     nuova ........ --resume [--fork]
 #   prompt         --prompt-kind none|recap|preflight|run|checkpoint | --prompt <testo>
 #   modello        --model fable|opus|sonnet|haiku
+# Fuori dai quattro, e volutamente non un asse: --new-window, che cambia SOLO il
+# verbo dell'exec finale (tab nella finestra attiva → finestra nuova).
 # Il terzo asse (T56) prima non esisteva: il prompt era una CONSEGUENZA degli
 # altri due (bound ⇒ recap, --no-task ⇒ niente, --resume ⇒ niente), quindi
 # "task-bound SENZA prompt" era inesprimibile e l'unico modo di non avere un
@@ -78,6 +80,17 @@ SESSION_ID=""
 RESUME_ID=""
 NO_TASK=0
 FORK=0
+# T162 — finestra NUOVA invece di una tab nella finestra attiva.
+#
+# `ptyxis --tab` va sempre nella finestra col focus, e va bene per il deck, che
+# è già una tab della finestra del progetto. Un chiamante che vive FUORI da
+# quella finestra — compass, che riapre una conversazione pinnata di un
+# progetto chiuso — non ha una finestra attiva giusta: senza un verbo diverso
+# la tab finisce nella finestra di un altro progetto, o in una a caso.
+#
+# Non è un quinto asse: non cambia cosa gira nella tab, solo dove la tab nasce.
+# Vale identico nei due rami di spawn (inline e profile).
+NEW_WINDOW=0
 TITLE_NOTE=""
 # Vuoto = flag non passato (≠ un default già risolto): serve a distinguere
 # "kind implicito" da "kind chiesto", perché con --no-task il primo è legittimo
@@ -157,6 +170,8 @@ while [[ $# -gt 0 ]]; do
       FORK=1; shift ;;
     --no-task)
       NO_TASK=1; shift ;;
+    --new-window)
+      NEW_WINDOW=1; shift ;;
     *)
       if [[ -z "$TASK" ]]; then TASK="$1"; shift
       else echo "argomento inatteso: '$1'" >&2; exit 2; fi ;;
@@ -190,7 +205,10 @@ USAGE="uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <kind>] [--sessio
                  valore ignoto → fallback sul default, con avviso su stderr
 
   --title-note   nota della conversazione, appesa al titolo tab
-                 (ridotta a lettere/cifre/spazi/-/_, cap 60 char)"
+                 (ridotta a lettere/cifre/spazi/-/_, cap 60 char)
+
+  --new-window   apre una FINESTRA nuova invece di una tab nella finestra
+                 attiva. Per chi chiama da fuori dalla finestra del progetto"
 
 if [[ $NO_TASK -eq 1 && -n "$TASK" ]]; then
   echo "--no-task e <TaskID> sono mutuamente esclusivi" >&2
@@ -669,19 +687,30 @@ IN_TAB_CMD="${LOOM_DECK_INTAB_CMD:-$_default_intab}"
 # vedono comunque quello che vedevano prima.
 printf 'LOOM_DECK_INTAB %s\n' "$IN_TAB_CMD"
 
+# Verbo di apertura (T162): tab nella finestra attiva, o finestra nuova. Una
+# variabile e non due rami duplicati per ogni modalità di spawn — `--new-window`
+# è l'unica differenza fra i due casi.
+if [[ $NEW_WINDOW -eq 1 ]]; then WIN_FLAG="--new-window"; else WIN_FLAG="--tab"; fi
+
 case "$MODE" in
   inline)
     # --tab: tab nella window attiva. -- <cmd>: comando inline nella tab.
     # LOOM_TASK viaggia dentro il comando → nessuna scrittura dconf.
-    exec ptyxis --tab -d "$WORKDIR" -T "${TITLE}" -- bash -lc "$IN_TAB_CMD"
+    exec ptyxis "$WIN_FLAG" -d "$WORKDIR" -T "${TITLE}" -- bash -lc "$IN_TAB_CMD"
     ;;
   profile)
     # --tab-with-profile: riusa il profilo (custom-command FISSO) → per iniettare
     # LOOM_TASK+task va riscritto il custom-command al volo via dconf (stato condiviso).
+    # Con --new-window i due flag convivono: la finestra nasce e il profilo
+    # decide cosa gira nella sua prima tab.
     dpath="/org/gnome/Ptyxis/Profiles/${PROFILE_UUID}/"
     dconf write "${dpath}use-custom-command" true
     dconf write "${dpath}custom-command" "'bash -lc \"${IN_TAB_CMD//\"/\\\"}\"'"
-    exec ptyxis --tab-with-profile="$PROFILE_UUID" -d "$WORKDIR" -T "${TITLE}"
+    if [[ $NEW_WINDOW -eq 1 ]]; then
+      exec ptyxis --new-window --tab-with-profile="$PROFILE_UUID" -d "$WORKDIR" -T "${TITLE}"
+    else
+      exec ptyxis --tab-with-profile="$PROFILE_UUID" -d "$WORKDIR" -T "${TITLE}"
+    fi
     ;;
   *)
     echo "LOOM_DECK_SPAWN_MODE ignoto: '$MODE' (usa 'inline' o 'profile')" >&2
