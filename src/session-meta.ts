@@ -8,15 +8,19 @@
 // lì da chi ce l'ha in mano, cioè il deck, che a ogni tick materializza le
 // `Session` complete di titolo e modello.
 //
-// Modulo PURO come `session-list.ts`: nessun I/O, nessun import da ink/react.
-// Decide COSA appendere e ritorna i record; il chiamante li scrive. La
-// separazione è ciò che rende testabile la parte non ovvia — la convergenza:
-// un derivato che non combacia mai col valore su disco produrrebbe un append a
-// ogni tick del poll, per sempre, senza nessun errore a dirlo.
+// Il giudizio è separato dalla scrittura: `sidecarGaps` decide e ritorna i
+// record, `fillSidecarGaps` li scrive. La separazione è ciò che rende testabile
+// la parte non ovvia — la convergenza: un derivato che non combacia mai col
+// valore su disco produrrebbe un append a ogni tick del poll, per sempre, senza
+// nessun errore a dirlo.
+//
+// Nessun import da ink/react: il chiamante è un hook, questo modulo no.
 
 import { modelAlias } from './glyphs.js';
 import { stripProjectCore, stripTaskId } from './session-list.js';
 import { NO_TITLE, type Session } from './sessions.js';
+import { NO_SPAWN } from './spawn.js';
+import { appendSessionMeta } from './task-index.js';
 
 /**
  * Cap del titolo scritto nel sidecar, in CODE POINT.
@@ -100,14 +104,16 @@ export interface SidecarGap {
  * quindi un buco riempito resta riempito e il giro successivo non trova niente
  * da fare.
  */
-export function sidecarGaps(input: {
+export interface SidecarGapInput {
   pinned: ReadonlyMap<string, number>;
   sessions: readonly Session[];
   bindings: ReadonlyMap<string, string>;
   titles: ReadonlyMap<string, string>;
   models: ReadonlyMap<string, string>;
   core: string | null;
-}): SidecarGap[] {
+}
+
+export function sidecarGaps(input: SidecarGapInput): SidecarGap[] {
   const { pinned, sessions, bindings, titles, models, core } = input;
   if (pinned.size === 0) return [];
   const byId = new Map(sessions.map((s) => [s.sessionId, s]));
@@ -127,4 +133,39 @@ export function sidecarGaps(input: {
     if (gap.title !== undefined || gap.model !== undefined) out.push(gap);
   }
   return out;
+}
+
+/**
+ * Scrive i buchi di questo giro. Ritorna quanti record ha appeso — zero è
+ * l'esito normale a regime, non un fallimento.
+ *
+ * `NO_SPAWN` frena anche questa scrittura, ed è lo stesso freno delle tab
+ * Ptyxis per la stessa ragione: il gate su pseudo-terminale avvia il DECK VERO
+ * con cwd la project root del cappello, quindi senza freno ogni run della suite
+ * appende record nel sidecar reale di chi la lancia. Il valore scritto sarebbe
+ * pure corretto — è quello che il deck scriverebbe comunque — ma è una
+ * scrittura fuori dalla sandbox del test, che è precisamente ciò che il freno
+ * esiste per impedire.
+ *
+ * Il freno sta QUI e non nel chiamante perché questa è l'unica sede della
+ * scrittura: nel chiamante sarebbe una guardia che il prossimo scrittore non
+ * vede.
+ *
+ * Un sidecar non scrivibile non è un errore da mostrare: il giro dopo riprova,
+ * e nel frattempo il deck funziona identico — questi campi li legge un altro
+ * processo, non lui.
+ */
+export function fillSidecarGaps(projectRoot: string, input: SidecarGapInput): number {
+  if (NO_SPAWN) return 0;
+  let scritti = 0;
+  try {
+    for (const gap of sidecarGaps(input)) {
+      appendSessionMeta(projectRoot, gap.sessionId, gap);
+      scritti++;
+    }
+  } catch {
+    // sidecar non scrivibile: si riprova al giro dopo, niente a schermo — è
+    // manutenzione di un campo di servizio, non un'azione che l'utente ha chiesto.
+  }
+  return scritti;
 }

@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { sidecarGaps, sidecarTitle, SIDECAR_TITLE_MAX } from '../src/session-meta.js';
+import { loadSessionIndex, taskIndexPath } from '../src/task-index.js';
 import { NO_TITLE, type Session } from '../src/sessions.js';
 
 const sess = (over: Partial<Session> = {}): Session => ({
@@ -192,4 +197,71 @@ test('buchi: il task id del binding entra nello strip della pinnata', () => {
   assert.deepEqual(gapsOf({ pinned: [['a', 0]], sessions: [s], bindings: [['a', 'T59']] }), [
     { sessionId: 'a', title: 'prova' },
   ]);
+});
+
+// ── la scrittura, e il freno sulla scrittura ────────────────────────────────
+
+// Entrambi i casi girano in un SOTTOPROCESSO, e non per comodità: `NO_SPAWN` è
+// letto all'import del modulo, quindi dentro la suite il valore è già fissato —
+// la suite gira col freno tirato, o il gate su pseudo-terminale scriverebbe nel
+// sidecar reale di chi la lancia. Il sottoprocesso è l'unico modo di misurare i
+// due regimi nella stessa passata.
+//
+// Gira sul BUILD (`dist/`) e non sul sorgente: un sottoprocesso `node` non ha il
+// loader di `tsx`. Il prezzo è che il test pretende un `npm run build` prima —
+// che il publish fa da sé, e in locale è il comando che si lancia comunque.
+function fillInSubprocess(root: string, brake: boolean): { status: number | null; err: string } {
+  const script = `
+    const {fillSidecarGaps} = await import(${JSON.stringify(join(process.cwd(), 'dist', 'session-meta.js'))});
+    const n = fillSidecarGaps(${JSON.stringify(root)}, {
+      pinned: new Map([['a', 0]]),
+      sessions: [{sessionId:'a', cwd:'/p', gitBranch:'', parentUuid:null, title:'titolo',
+                  ts:0, path:'/p/a.jsonl', sizeBytes:1, turns:1, customTitle:'',
+                  firstPrompt:'', lastReply:'', model:'claude-opus-5', bodies:[]}],
+      bindings: new Map(), titles: new Map(), models: new Map(), core: null,
+    });
+    process.stdout.write(String(n));
+  `;
+  const env = { ...process.env } as Record<string, string | undefined>;
+  if (brake) env.LOOM_DECK_NO_SPAWN = '1';
+  else delete env.LOOM_DECK_NO_SPAWN;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    env: env as NodeJS.ProcessEnv,
+  });
+  return { status: r.status, err: r.stderr ?? '' };
+}
+
+test('scrittura: il buco finisce su disco, e il giro dopo non trova niente', () => {
+  const root = mkdtempSync(join(tmpdir(), 'loom-deck-fill-'));
+  const r = fillInSubprocess(root, false);
+  assert.equal(r.status, 0, r.err);
+  const idx = loadSessionIndex(root);
+  assert.equal(idx.titles.get('a'), 'titolo');
+  assert.equal(idx.models.get('a'), 'opus');
+  assert.equal(readFileSync(taskIndexPath(root), 'utf8').trim().split('\n').length, 1);
+  // CONVERGENZA su disco, non solo in memoria: il giro successivo del poll
+  // rilegge l'indice appena scritto e non deve trovare nulla da fare.
+  assert.deepEqual(
+    sidecarGaps({
+      pinned: new Map([['a', 0]]),
+      sessions: [sess({ sessionId: 'a', title: 'titolo', model: 'claude-opus-5' })],
+      bindings: new Map(),
+      titles: idx.titles,
+      models: idx.models,
+      core: null,
+    }),
+    [],
+    'un secondo giro appenderebbe un record a ogni tick, per sempre',
+  );
+});
+
+test('FRENO: con LOOM_DECK_NO_SPAWN il sidecar non viene toccato', () => {
+  // Il gate su pseudo-terminale avvia il deck VERO con cwd la project root del
+  // cappello: senza freno, ogni run della suite appenderebbe record nel sidecar
+  // reale di chi la lancia.
+  const root = mkdtempSync(join(tmpdir(), 'loom-deck-brake-'));
+  const r = fillInSubprocess(root, true);
+  assert.equal(r.status, 0, r.err);
+  assert.throws(() => readFileSync(taskIndexPath(root), 'utf8'), 'nessun file creato');
 });

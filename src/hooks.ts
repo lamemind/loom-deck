@@ -8,8 +8,8 @@ import { statSync } from 'node:fs';
 import { loadTasks, loadTaskDetail, type Task, type TaskDetail } from './tasks.js';
 import { discoverProjectSessions, type Session } from './sessions.js';
 import { discoverLiveSessions, liveSig, type LiveSession } from './live-sessions.js';
-import { appendSessionMeta, loadSessionIndex, type SessionIndex } from './task-index.js';
-import { sidecarGaps } from './session-meta.js';
+import { loadSessionIndex, type SessionIndex } from './task-index.js';
+import { fillSidecarGaps } from './session-meta.js';
 import { archivableIds, SCAN_INTERVAL_MS } from './archivable.js';
 import { commitTimes } from './commit-times.js';
 import { scanEpicHierarchy, EMPTY_EPIC_HIERARCHY, type EpicHierarchy } from './epic-hierarchy.js';
@@ -238,22 +238,14 @@ export function useSessions(projectRoot: string, core: string | null) {
       // Gli append NON entrano nella signature e non producono un re-render: il
       // deck il titolo lo ha dalla `Session`, che è la fonte. Questi campi
       // esistono per un lettore che non può aprire un transcript, cioè compass.
-      try {
-        for (const gap of sidecarGaps({
-          pinned,
-          sessions,
-          bindings,
-          titles: index.titles,
-          models: index.models,
-          core,
-        })) {
-          appendSessionMeta(projectRoot, gap.sessionId, gap);
-        }
-      } catch {
-        // sidecar non scrivibile: il poll continua, il buco si riprova al giro
-        // dopo. Niente a schermo — è manutenzione di un campo di servizio, non
-        // un'azione che l'utente ha chiesto.
-      }
+      fillSidecarGaps(projectRoot, {
+        pinned,
+        sessions,
+        bindings,
+        titles: index.titles,
+        models: index.models,
+        core,
+      });
       // La signature copre anche fork, pin, note e marca di priorità: un record
       // di lineage, un toggle di pin, una nota appena scritta o un 🚨 acceso
       // cambiano la lista renderizzata, quindi devono forzare il re-render come
