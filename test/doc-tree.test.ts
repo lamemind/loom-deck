@@ -18,12 +18,15 @@ import {
   countFlagged,
   dirListing,
   docRoot,
+  docTargetKind,
   docWords,
   flagCell,
   flagNames,
   flatDocRows,
   loadDocText,
   parseDocTsv,
+  type DocFlag,
+  type DocRow,
 } from '../src/doc-tree.js';
 
 /**
@@ -267,4 +270,46 @@ test('dirListing: una cartella di sole sottocartelle lo dice', () => {
     testo.includes('sottocartelle'),
     `un corpo vuoto si legge come uno sheet rotto: ${testo}`,
   );
+});
+
+// ── la coda inbox dentro l'albero ────────────────────────────────────────
+
+test('docTargetKind: un file inbox non è un bersaglio di rebalance', () => {
+  // L'albero misura TUTTA la docs-root, `inbox/` compresa, e senza questa
+  // distinzione la riga di un file di nozioni offriva `rebalance-doc` — cioè la
+  // skill sbagliata sullo stesso file che il pane di destra, nello stesso modo
+  // doc, offre a `drain-notions`.
+  const file = (path: string, flags: DocFlag[] = []): DocRow => ({
+    kind: 'file',
+    path,
+    name: path,
+    depth: 0,
+    chars: 100,
+    tldr: 0,
+    files: 0,
+    flags,
+  });
+  const dir = (path: string): DocRow => ({
+    kind: 'dir',
+    path,
+    name: path,
+    depth: 0,
+    chars: 0,
+    tldr: 0,
+    files: 1,
+    flags: ['REGROUP'],
+  });
+
+  assert.equal(docTargetKind(file('runtime/inbox/T160-x.md', ['INBOX']), 'runtime'), 'inbox-file');
+  assert.equal(docTargetKind(dir('runtime/inbox'), 'runtime'), 'inbox-dir');
+  assert.equal(docTargetKind(file('runtime/project/plugin-dev.md', ['SPLIT']), 'runtime'), 'doc');
+  assert.equal(docTargetKind(dir('runtime/reference'), 'runtime'), 'doc');
+  // Il flag regge anche quando la docs-root del deck e quella della misura
+  // divergono; il path regge anche se una versione dello script smette di
+  // emettere il flag. Due criteri perché ognuno copre il buco dell'altro.
+  assert.equal(docTargetKind(file('docs/inbox/x.md', ['INBOX']), 'runtime'), 'inbox-file');
+  assert.equal(docTargetKind(file('runtime/inbox/x.md'), 'runtime'), 'inbox-file');
+  // `inbox` sotto un'altra radice non è la coda: il confronto è sul path
+  // intero, non su un segmento che si chiama così.
+  assert.equal(docTargetKind(dir('runtime/reference/inbox'), 'runtime'), 'doc');
 });

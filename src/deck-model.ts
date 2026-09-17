@@ -737,12 +737,17 @@ export function useDeckModel({
     // modo del deck
     deckMode,
     // derivazioni del pane inbox
+    docsRoot,
     inboxScanned: inbox.scanned,
     inboxOk: inbox.ok,
     inboxViewId,
     inboxCounts,
     inboxStale,
     inboxFiles,
+    // La coda INTERA, non filtrata dalla vista: il pane doc la interroga per
+    // path e la vista attiva del pane inbox non c'entra niente con quale file
+    // l'albero stia mostrando.
+    inboxAll: inbox.files,
     selInboxPath,
     selInbox,
     // derivazioni del pane doc

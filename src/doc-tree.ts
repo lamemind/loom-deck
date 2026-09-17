@@ -452,6 +452,32 @@ export function countFlagged(data: DocScanData, flags: readonly DocFlag[]): numb
 }
 
 /**
+ * Che cosa sia la riga selezionata per le skill che la consumano.
+ *
+ * L'albero misura TUTTA la docs-root, quindi ci passa dentro anche `inbox/` —
+ * ma la coda inbox non è topologia: un file di nozioni non si spezza e non si
+ * fonde, si drena, e la cartella che li tiene non si riorganizza perché il suo
+ * contenuto è destinato a sparire un file alla volta. Offrire `rebalance-doc`
+ * su una di quelle righe proporrebbe la skill sbagliata sullo stesso bersaglio
+ * che il pane di destra, nello stesso modo doc, offre alla skill giusta.
+ *
+ * Il path è il criterio primario e il flag `INBOX` il secondo: il primo regge
+ * anche se una versione dello script smettesse di emettere il flag, il secondo
+ * anche se la docs-root passata al deck e quella della misura divergessero.
+ */
+export type DocTargetKind = 'doc' | 'inbox-file' | 'inbox-dir';
+
+export function inboxDirOf(docsRoot: string): string {
+  return `${docsRoot}/inbox`;
+}
+
+export function docTargetKind(row: DocRow, docsRoot: string): DocTargetKind {
+  const dir = inboxDirOf(docsRoot);
+  if (row.kind === 'dir') return row.path === dir ? 'inbox-dir' : 'doc';
+  return row.path.startsWith(`${dir}/`) || row.flags.includes('INBOX') ? 'inbox-file' : 'doc';
+}
+
+/**
  * T160 — il buco `{words}` del titolo di una sessione di rebalance: il path reso
  * a parole.
  *

@@ -52,8 +52,8 @@ import {
 import { type ModelKind, type PromptKind, type SpawnActionId } from './spawn-catalog.js';
 import { resolveSpawnId, type ResolvedSpawn, type SpawnOverrides } from './spawn-config.js';
 import { useTaskOps } from './task-ops.js';
-import { inboxWords, type InboxFile } from './inbox.js';
-import { docWords, type DocRow } from './doc-tree.js';
+import { inboxPrompt, inboxWords, type InboxFile } from './inbox.js';
+import { docTargetKind, docWords, type DocRow } from './doc-tree.js';
 import { wrapWords } from './wrap-scan.js';
 import type { DeckModel } from './deck-model.js';
 
@@ -494,6 +494,23 @@ export function useDeckActions({
    * un comando che non si è riusciti a comporre.
    */
   function rebalanceSpawn(row: DocRow): { prompt: string; hint: string } {
+    // La coda inbox PRIMA dei flag: un file inbox porta sempre il suo flag, e
+    // senza questo ramo cadrebbe nel ramo del rebalance con l'aria di essere un
+    // bersaglio legittimo. La skill è la stessa che offre il pane di destra —
+    // il prompt lo compone `inboxPrompt`, unico posto in cui vive la mappa
+    // natura → skill, esattamente come per il `⏎` del pane inbox.
+    const kind = docTargetKind(row, model.docsRoot);
+    if (kind !== 'doc') {
+      const f = kind === 'inbox-file' ? inboxFileAt(row.path) : null;
+      if (f) return { prompt: inboxPrompt(f), hint: '' };
+      return {
+        prompt: '',
+        hint:
+          kind === 'inbox-dir'
+            ? `${row.path} è la coda inbox: si drena un file alla volta, non si riorganizza`
+            : `${row.path} è un file inbox: la sua natura non è ancora stata misurata, aprilo dal pane di destra`,
+      };
+    }
     if (row.flags.length === 0) {
       return {
         prompt: '',
@@ -502,6 +519,14 @@ export function useDeckActions({
     }
     const d = spawnDefaults('rebalance', { target: row.path, words: docWords(row.path) });
     return { prompt: d.prompt ?? '', hint: '' };
+  }
+
+  /** Il file della coda inbox che sta dietro una riga dell'albero doc. Le due
+   *  misure sono due scan distinti dello stesso script: l'albero conosce il
+   *  path, la natura la sa solo la coda, e il prompt di drain è una funzione
+   *  della natura. */
+  function inboxFileAt(path: string): InboxFile | null {
+    return model.inboxAll.find((f) => f.path === path) ?? null;
   }
 
   /**
@@ -520,6 +545,15 @@ export function useDeckActions({
    */
   function rebalanceDoc(row: DocRow, prompt: string) {
     if (!prompt) return;
+    // Il bersaglio inbox prende la terna della riga `drain`, non quella di
+    // `rebalance`: il prompt da solo non basterebbe — modello e titolo della tab
+    // verrebbero comunque dalla riga sbagliata, e la conversazione si
+    // chiamerebbe «rebalance» mentre esegue un drain.
+    const f = inboxFileAt(row.path);
+    if (f) {
+      drainInbox(f, prompt);
+      return;
+    }
     const sid = randomUUID();
     const d = spawnDefaults('rebalance', { target: row.path, words: docWords(row.path) });
     const title = d.title ?? '';

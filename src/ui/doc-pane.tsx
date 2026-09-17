@@ -151,13 +151,20 @@ export function DocPane({
       ) : (
         rows.map((r) => {
           const sel = r.path === selectedPath;
-          const indent = ' '.repeat(r.depth * INDENT_W);
+          // Il rientro sta FUORI da `cut`, che normalizza il whitespace e taglia
+          // gli estremi (`\s+ → spazio`, poi `trim`): passarglielo insieme al
+          // nome lo faceva sparire, e l'albero usciva piatto pur avendo le
+          // profondità giuste. Il budget si divide qui — prima le colonne del
+          // rientro, il resto al nome — e il rientro si ferma una colonna prima
+          // della fine, o su un pane strettissimo mangerebbe il nome intero.
+          const indentW = Math.min(r.depth * INDENT_W, Math.max(0, nameW - 1));
+          const indent = ' '.repeat(indentW);
           // La barra finale distingue una cartella da un file senza spendere una
           // colonna di marcatore: è la convenzione di `ls -F`, e su una riga che
           // porta già una colonna di flag un glifo in più sarebbe la terza cosa
           // da leggere prima del nome.
           const label = r.kind === 'dir' ? `${r.name}/` : r.name;
-          const text = cut(indent + label, nameW);
+          const text = indent + cut(label, nameW - indentW);
           return (
             <Text key={r.path} inverse={sel && focused} bold={sel && !focused} wrap="truncate-end">
               {sel ? CARET : CARET_OFF}

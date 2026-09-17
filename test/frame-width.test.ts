@@ -696,6 +696,12 @@ const DOC_SCENARIOS: Array<[string, string, number[], string?]> = [
   ['detail doc · bersaglio senza flag', `${CTRL_B}${'D'.repeat(14)}\r`, [80, 100], 'non porta flag'],
   // Il detail di un file inbox, raggiunto dal pane destro del modo doc.
   ['detail inbox', `${CTRL_B}RD\r`, [80, 100, 176]],
+  // Lo STESSO file raggiunto dall'ALBERO, che lo misura perché sta sotto la
+  // docs-root: l'azione proposta deve essere la stessa del pane di destra. `DD`
+  // scende su `inbox/` e poi sul suo unico file. Il gate assertava solo la
+  // larghezza, e una riga azione con la skill sbagliata ci stava dentro
+  // benissimo.
+  ['detail doc · file inbox dall’albero', `${CTRL_B}DD\r`, [80, 100, 176], 'drain-notions'],
 ];
 
 for (const [label, keys, widths, needle] of DOC_SCENARIOS) {
