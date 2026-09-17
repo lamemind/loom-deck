@@ -33,12 +33,17 @@ const MAX_DETAIL_LINES = 6;
 // a un pane va scalata qui, o il frame sfonda `rows` e Ink passa a
 // clearTerminal (frame-fantasma nello scrollback di VTE).
 const TASKS_PANE_CHROME = 6; // 2 bordi + header "Tasks (n)" + riga sort + 2 righe meta
-// T134 — vale per ENTRAMBI i pane dello slot destro: il pane inbox ha la stessa
-// cornice (2 bordi + header) e uno solo dei due è montato alla volta, quindi
-// `Budget.sessionRows` è la capienza del pane destro qualunque esso sia. Se un
-// giorno l'inbox guadagnasse una riga fissa, questa costante deve sdoppiarsi e
-// il budget guadagnare un ramo: una riga fissa non contata è ciò che fa sfondare
-// `rows` e manda Ink nel ramo `clearTerminal`.
+// T134/T160 — vale per TRE pane su quattro: conversazioni, coda inbox e albero
+// doc hanno la stessa cornice (2 bordi + header) e ne sono montati al massimo
+// due alla volta, quindi `Budget.sessionRows` è la capienza di ognuno di loro.
+// Solo il pane task ha una cornice propria (`TASKS_PANE_CHROME`), perché porta
+// la riga sort e le due righe meta.
+//
+// Il pane doc sta nello slot SINISTRO e paga comunque questa cornice, non quella
+// del pane task: il costo lo decide ciò che il pane disegna, non il lato in cui
+// sta. Se un giorno uno dei tre guadagnasse una riga fissa, questa costante deve
+// sdoppiarsi e il budget guadagnare un ramo — una riga fissa non contata è ciò
+// che fa sfondare `rows` e manda Ink nel ramo `clearTerminal`.
 const SESSIONS_PANE_CHROME = 3; // 2 bordi + header "Sessions · …"
 const PREVIEW_CHROME = 3; // marginTop + 2 bordi
 
@@ -56,6 +61,12 @@ const MAX_SESSION_PREVIEW = 3;
  *  lettura di file a ogni movimento di selezione per un'anteprima che il detail
  *  dà per intero. */
 const INBOX_DETAIL_FIXED = 2;
+
+/** T160 — preview doc: nome intero del bersaglio + riga meta (cifre e nomi
+ *  interi dei flag). Righe TUTTE fisse come per l'inbox, e per la stessa
+ *  ragione: il corpo del file sta nel detail fullscreen, e mostrarne qui le
+ *  prime righe costerebbe una lettura di file a ogni movimento di selezione. */
+const DOC_DETAIL_FIXED = 2;
 
 /** Altezza di ciascuna modale, marginTop incluso. In flusso, non in overlay:
  *  spingono giù i pane, quindi il loro costo va scalato dal budget. */
@@ -118,7 +129,7 @@ export type Mode = keyof typeof MODAL_HEIGHT;
  * tutte`, `○ spot`) non c'è nessuna task da mostrare, e il blocco non esiste —
  * `none` è quindi uno stato pieno, non un fallback.
  */
-export type PreviewKind = 'none' | 'task' | 'session' | 'inbox';
+export type PreviewKind = 'none' | 'task' | 'session' | 'inbox' | 'doc';
 
 export type Budget = {
   /** Task renderizzabili nella finestra scorrevole. */
@@ -248,11 +259,14 @@ export function layoutBudget(input: BudgetInput): Budget {
       }
       previewCost = fixed + sessionFirstLines + sessionLastLines;
     }
-  } else if (input.preview === 'inbox') {
+  } else if (input.preview === 'inbox' || input.preview === 'doc') {
     // Tutte righe fisse: o il blocco entra intero o non esiste. Non c'è una
     // parte variabile da sacrificare per farlo stare, quindi non c'è nemmeno la
-    // domanda di quanto concedergli.
-    const fixed = PREVIEW_CHROME + INBOX_DETAIL_FIXED;
+    // domanda di quanto concedergli. I due blocchi costano uguale e non sono
+    // mai a schermo insieme (stanno nei due pane dello stesso modo, e il blocco
+    // preview è uno solo, scelto dal focus).
+    const fixed =
+      PREVIEW_CHROME + (input.preview === 'inbox' ? INBOX_DETAIL_FIXED : DOC_DETAIL_FIXED);
     if (avail - floor - fixed >= 0) {
       preview = true;
       previewCost = fixed;

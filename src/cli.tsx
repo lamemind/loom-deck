@@ -49,7 +49,9 @@ import { useTextModals, useViewModals } from './overlays/modals.js';
 import { useTerminalSize, useSpawnConfig } from './hooks.js';
 import { EditModal, FilterModal, PurgeModal, SortModal } from './ui/modals.js';
 import { StatusHeadline } from './ui/status-screen.js';
-import { InboxPane, SessionsPane, TasksPane } from './ui/panes.js';
+import { SessionsPane, TasksPane } from './ui/panes.js';
+import { InboxPane } from './ui/inbox-pane.js';
+import { DocPane } from './ui/doc-pane.js';
 import { PreviewPane, detailMetaOf } from './ui/preview.js';
 import { CompactNotice, HintBar, TextBox, screenFor } from './ui/screens.js';
 import { VERSION } from './version.js';
@@ -236,9 +238,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         ? model.selInbox
           ? ('inbox' as const)
           : ('none' as const)
-        : model.selSessionObj
-          ? ('session' as const)
-          : ('none' as const);
+        : model.focus === 'doctree'
+          ? model.selDoc
+            ? ('doc' as const)
+            : ('none' as const)
+          : model.selSessionObj
+            ? ('session' as const)
+            : ('none' as const);
   const detailParts = model.detail ? detailMetaOf(model.detail) : null;
 
   const launch = launchRow(model.launch, columns);
@@ -307,6 +313,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     selDocPath: model.selDocPath,
     docCounts: model.docCounts,
     docViewId: model.docViewId,
+    docHasDirs: model.docHasDirs,
   });
 
   useDeckInput({
@@ -437,26 +444,48 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         <PurgeModal draft={purge.draft} columns={columns} />
       ) : null}
       <Box flexDirection="row" marginTop={1}>
-        <TasksPane
-          tasks={frame.windowTasks}
-          counts={model.taskCounts}
-          activeView={model.taskViewId}
-          paneCount={model.paneTasks.length}
-          view={model.view}
-          selected={model.selIndex}
-          spotCount={model.spotCount}
-          allCount={model.sessions.length}
-          idW={model.taskCols.id}
-          tailW={model.taskCols.tail}
-          focused={model.focus === 'tasks'}
-          loadError={model.loadError}
-          windowStart={frame.taskWin.start}
-          above={frame.taskWin.start}
-          below={model.paneTasks.length - frame.taskWin.end}
-          columns={columns}
-          data={model.taskRowData}
-          blockMark={model.blockMark}
-        />
+        {/* T160 — lo slot SINISTRO: lista task in modo task, albero doc in modo
+            doc. Il pane doc porta la sua cornice (2 bordi + header) e non quella
+            del pane task, che ha in più la riga sort e le due righe meta — il
+            budget d'altezza lo sa (`SESSIONS_PANE_CHROME` in viewport.ts). */}
+        {model.deckMode === 'doc' ? (
+          <DocPane
+            rows={frame.windowDoc}
+            counts={model.docCounts}
+            activeView={model.docViewId}
+            paneCount={model.docRows.length}
+            selectedPath={model.selDocPath}
+            focused={model.focus === 'doctree'}
+            above={frame.docWin.start}
+            below={model.docRows.length - frame.docWin.end}
+            columns={columns}
+            ok={model.docOk}
+            scanned={model.docScanned}
+            scanning={model.docScanning}
+            hasDirs={model.docHasDirs}
+          />
+        ) : (
+          <TasksPane
+            tasks={frame.windowTasks}
+            counts={model.taskCounts}
+            activeView={model.taskViewId}
+            paneCount={model.paneTasks.length}
+            view={model.view}
+            selected={model.selIndex}
+            spotCount={model.spotCount}
+            allCount={model.sessions.length}
+            idW={model.taskCols.id}
+            tailW={model.taskCols.tail}
+            focused={model.focus === 'tasks'}
+            loadError={model.loadError}
+            windowStart={frame.taskWin.start}
+            above={frame.taskWin.start}
+            below={model.paneTasks.length - frame.taskWin.end}
+            columns={columns}
+            data={model.taskRowData}
+            blockMark={model.blockMark}
+          />
+        )}
         {/* T160 — il MODO sceglie la coppia: lista task + conversazioni, oppure
             albero doc + coda inbox. Con quattro pane distinti i tipi delle righe
             restano disgiunti, e ogni azione continua a valere solo dove il suo
@@ -512,6 +541,8 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         />
       ) : frame.budget.preview && previewKind === 'inbox' && model.selInbox ? (
         <PreviewPane kind="inbox" file={model.selInbox} columns={columns} />
+      ) : frame.budget.preview && previewKind === 'doc' && model.selDoc ? (
+        <PreviewPane kind="doc" row={model.selDoc} columns={columns} />
       ) : frame.budget.preview && previewKind === 'session' && model.selSessionObj ? (
         <PreviewPane
           kind="session"

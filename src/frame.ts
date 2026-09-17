@@ -15,7 +15,13 @@
 // leggeva dichiarata seicento righe più in basso. Il costo è calcolare il
 // budget anche quando il render esce presto su una schermata sostitutiva:
 // aritmetica su array già in memoria, e `layoutBudget` accetta ogni `Mode`.
-import { headerItems, inboxHeaderParts, sessionHeaderParts, taskHeaderParts } from './pane-header.js';
+import {
+  docHeaderParts,
+  headerItems,
+  inboxHeaderParts,
+  sessionHeaderParts,
+  taskHeaderParts,
+} from './pane-header.js';
 import {
   FRAME_TEXT_COL,
   HINT_ROW,
@@ -458,6 +464,9 @@ export type FrameInput = {
   selDocPath: string | null;
   docCounts: DocViewCounts;
   docViewId: DocViewId;
+  /** La misura portava anche la tabella delle cartelle: l'header lo dice, e
+   *  l'avviso occupa colonne che le regioni cliccabili devono contare. */
+  docHasDirs: boolean;
 };
 
 export type Frame = {
@@ -579,13 +588,27 @@ export function frameGeometry(input: FrameInput): Frame {
           ),
           spans.sessions.start + PANE_TEXT_PAD,
         ),
+        // Il pane doc occupa lo slot SINISTRO, quindi le sue regioni partono
+        // dallo span del pane task — la posizione è del lato, non del contenuto.
+        docHeader: inlineRegions(
+          headerItems(
+            docHeaderParts(
+              input.docCounts,
+              input.docViewId,
+              docWin.start,
+              input.docRows.length - docWin.end,
+              input.columns,
+              input.docHasDirs,
+            ),
+          ),
+          spans.tasks.start + PANE_TEXT_PAD,
+        ),
         // Con un errore di caricamento al posto delle task c'è la riga rossa:
         // restano cliccabili le sole righe meta.
         taskRows: META_ROWS + (input.hasLoadError ? 0 : windowTasks.length),
         sessionRows: windowRows.length,
         inboxRows: windowInbox.length,
-        docHeader: [],
-        docRows: 0,
+        docRows: windowDoc.length,
         mode: input.deckMode,
       };
 

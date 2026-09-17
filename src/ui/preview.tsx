@@ -13,6 +13,7 @@ import {
   modelAlias,
 } from '../glyphs.js';
 import { NATURA_SHORT, inboxMark, type InboxFile } from '../inbox.js';
+import { flagNames, type DocRow } from '../doc-tree.js';
 import { ChoiceRow } from './fields.js';
 import { MODELS, type ModelKind } from '../spawn-catalog.js';
 import type { TaskDetail } from '../tasks.js';
@@ -55,7 +56,10 @@ export type PreviewProps =
   /** T134 — il file inbox selezionato. Nessun parametro di righe: il blocco è
    *  tutto a righe fisse (INBOX_DETAIL_FIXED), quindi non c'è una capienza da
    *  distribuire. */
-  | { kind: 'inbox'; file: InboxFile; columns: number };
+  | { kind: 'inbox'; file: InboxFile; columns: number }
+  /** T160 — la riga doc selezionata, file o cartella. Righe fisse come la
+   *  inbox, e per la stessa ragione (DOC_DETAIL_FIXED). */
+  | { kind: 'doc'; row: DocRow; columns: number };
 
 /** Colonne del prefisso delle due anteprime della preview sessione (`» `, `« `,
  *  e i due spazi delle righe di continuazione). Costante perché entra nel
@@ -70,6 +74,8 @@ export function PreviewPane(p: PreviewProps) {
         <TaskPreview detail={p.detail} maxLines={p.maxLines} columns={p.columns} />
       ) : p.kind === 'inbox' ? (
         <InboxPreview file={p.file} columns={p.columns} />
+      ) : p.kind === 'doc' ? (
+        <DocPreview row={p.row} columns={p.columns} />
       ) : (
         <SessionPreview
           s={p.s}
@@ -120,6 +126,42 @@ export function InboxPreview({ file, columns }: { file: InboxFile; columns: numb
         {fmtDateTime(file.created * 1000)}
         {file.cappello ? ` · ${file.cappello}` : ''}
         {file.indexed ? ' · indexed' : ''} · {state}
+      </Text>
+    </>
+  );
+}
+
+/**
+ * T160 — corpo della preview doc: due righe FISSE, contate da
+ * `DOC_DETAIL_FIXED`. Ogni riga aggiunta va scalata lì, o il frame sfonda `rows`
+ * e Ink passa a `clearTerminal`.
+ *
+ * Porta le due cose che la riga di lista non può (P6): il PATH intero — in lista
+ * l'albero mostra l'ultimo segmento e le viste piatte troncano — e i NOMI INTERI
+ * dei flag accanto alle cifre che li spiegano. Le short di riga dicono quale
+ * flag; qui si legge perché ce l'ha, che è il dato su cui si decide se lanciare
+ * l'operazione.
+ *
+ * La riga meta cambia di natura fra file e cartella e non è un ramo di
+ * cortesia: `char` di un file è la sua lunghezza, `char` di una cartella è la
+ * somma dei suoi — due misure che si confrontano con due soglie diverse, e
+ * mostrarle con la stessa etichetta le farebbe leggere come la stessa cosa.
+ */
+export function DocPreview({ row, columns }: { row: DocRow; columns: number }) {
+  const width = previewTextWidth(columns);
+  const names = flagNames(row.flags);
+  return (
+    <>
+      <Text bold wrap="truncate-end">
+        <Text color="cyan">{row.kind === 'dir' ? 'dir ' : 'file'}</Text>{' '}
+        {cut(row.path, Math.max(10, width - 6))}
+      </Text>
+      <Text dimColor wrap="truncate-end">
+        {row.kind === 'dir'
+          ? `${row.files} file · ${fmtSize(row.chars)} in cartella`
+          : `${fmtSize(row.chars)} · TLDR ${row.tldr || 'assente'}`}
+        {' · '}
+        {names.length > 0 ? names.join(' · ') : 'nessun flag: in equilibrio'}
       </Text>
     </>
   );
