@@ -392,6 +392,71 @@ function gitlinkCacheRoot(): string {
   return root;
 }
 
+/**
+ * T160 — una cache del plugin FINTA con uno stub di `doc-metrics.sh`.
+ *
+ * Due ragioni, e nessuna delle due è la comodità. La prima è il COSTO: lo scan
+ * vero apre ogni `.md` del progetto e costa 4,06 s misurati, cioè più di quanto
+ * la cattura pty aspetti dopo l'ultimo tasto — il gate misurerebbe la nota
+ * «misura in corso…» invece dell'albero, restando verde su una schermata che non
+ * ha mai visto. La seconda è la STABILITÀ: i flag veri dipendono da com'è la doc
+ * del cappello in questo istante, quindi la larghezza delle righe cambierebbe da
+ * sola fra due run.
+ *
+ * Lo stub risponde a ENTRAMBI i modi dello script: senza il ramo `--inbox` il
+ * pane destro del modo doc misurerebbe una coda vuota, e gli scenari che lo
+ * attraversano proverebbero metà schermata.
+ *
+ * I dati sono la forma più LARGA di ogni cella: un path profondo quattro livelli
+ * (il rientro dell'albero morde lì), un file con quattro flag (la cella va in
+ * overflow e chiude col `+`), una cartella flaggata con un nome lungo.
+ */
+function docCacheRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), 'deck-doc-'));
+  const dir = join(root, '99.0.0', 'scripts', 'docs');
+  mkdirSync(dir, { recursive: true });
+  const files = [
+    'runtime/reference/loom-deck/sessions/loom-deck-spawn-compose.md\\t19229\\t420\\tSPLIT',
+    'runtime/reference/task/task-preflight-contract.md\\t17914\\t388\\tSPLIT TLDR-ORFANA ONLINE CONFIG',
+    'runtime/project/plugin-dev.md\\t16125\\t0\\tSPLIT NOTLDR ONLINE',
+    'runtime/reference/assumed-knowledge.md\\t537\\t293\\tMERGE? TLDR-ORFANA CONFIG',
+    'runtime/reference/INDEX.md\\t12000\\t0\\tGEN',
+    'runtime/inbox/T160-deck-albero-doc-toggle-unificato.md\\t4371\\t120\\tINBOX',
+    'runtime/tasks.md\\t12019\\t0\\t-',
+  ];
+  const dirs = [
+    'runtime/reference/doc-system\\t13\\t112382\\tREGROUP',
+    'runtime/reference/loom-deck/sessions\\t7\\t88086\\tREGROUP',
+    'runtime/reference/task\\t7\\t64429\\tREGROUP',
+    'runtime/reference\\t2\\t12537\\t-',
+    'runtime/inbox\\t1\\t4371\\t-',
+    'runtime/project\\t1\\t16125\\t-',
+    'runtime\\t1\\t12019\\t-',
+  ];
+  const inbox = [
+    'runtime/inbox/T160-deck-albero-doc-toggle-unificato.md\\tnozioni\\tno\\tsi\\t\\t9\\t9\\t4371\\t1767225600\\t3\\tT160',
+  ];
+  writeFileSync(
+    join(dir, 'doc-metrics.sh'),
+    [
+      '#!/bin/bash',
+      'for a in "$@"; do [ "$a" = "--inbox" ] && {',
+      "  printf 'PATH\\tNATURA\\tINDEXED\\tDRAINABLE\\tBRANCH\\tNOZIONI\\tAPERTE\\tCHAR\\tCREATED\\tAGE_DAYS\\tCAPPELLO\\n'",
+      ...inbox.map((r) => `  printf '${r}\\n'`),
+      '  exit 0',
+      '}; done',
+      "printf 'PATH\\tCHAR\\tTLDR\\tFLAGS\\n'",
+      ...files.map((r) => `printf '${r}\\n'`),
+      "printf '\\n'",
+      "printf 'DIR\\tFILES\\tCHAR\\tFLAGS\\n'",
+      ...dirs.map((r) => `printf '${r}\\n'`),
+      '',
+    ].join('\n'),
+    { mode: 0o755 },
+  );
+  return root;
+}
+
 /** Modale edit aperto sulla riga titolo (3 `D` dopo `E`), con due incollaggi da
  *  60 caratteri in coda: è il campo che porta dentro il box un testo di lunghezza
  *  arbitraria, cioè l'unico che può sfondarlo, e a 120 caratteri sfora il budget
@@ -503,19 +568,10 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // Il bulk: l'elenco ID cresce con l'insieme, ed è il pezzo che sfonda se il
   // troncamento `+N` non lo tiene. La soglia a 1 giorno riempie la vista.
   ['conferma · bulk archiviabili', 'TTK', [80, 100, 176], ARCHIVABLE_ON],
-  // T134 — il pane inbox nello slot destro. Due colonne fisse (natura, marker)
-  // più una cella elastica calcolata per sottrazione: la stessa aritmetica che
-  // ha fatto uscire dal pane la lista sessioni due volte. Il nome di un file
-  // inbox arriva ai 45 caratteri, cioè sfora da solo il pane a 80 colonne.
-  ['pane inbox', CTRL_B, [80, 100, 176]],
-  // L'header del catalogo inbox al completo: `Inbox · Tutti (N) · nozioni (n) ·
-  // derivazione (n) · sweep (n)` è più lungo di quello delle sessioni, e su un
-  // pane stretto è il caso in cui la voce attiva deve restare e le altre cedere.
-  ['pane inbox · vista sweep attiva', `${CTRL_B}RTTT`, [80, 100]],
-  // Il detail di un file inbox: schermata sostitutiva col testo reso a piena
-  // larghezza più la riga dell'azione, che porta un comando lungo quanto il
-  // basename del file.
-  ['detail inbox', `${CTRL_B}RD\r`, [80, 100, 176]],
+  // T134/T160 — gli scenari del MODO DOC sono usciti da qui: vogliono la cache
+  // finta di `docCacheRoot()`, e un temporaneo creato al modulo sarebbe
+  // condiviso da scenari che non lo usano. Stanno nel proprio ciclo più sotto,
+  // come quelli del project status, della lista hard-wrap e del gitlink.
   // T134 — la riga legenda divide il budget con gli indicatori ancorati a
   // destra. A 80 colonne è la larghezza in cui la legenda cede quasi tutto e il
   // bottone resta intero: se il budget fosse sbagliato di una colonna, il bordo
@@ -590,6 +646,71 @@ for (const [label, keys, widths, extraEnv] of SCENARIOS) {
   for (const cols of widths) {
     test(`gate larghezza · ${label} @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
       assertFrameFits(capture(cols, 38, keys, extraEnv), cols, `${label}@${cols}`);
+    });
+  }
+}
+
+// T160 — gli scenari del MODO DOC, tutti sulla stessa cache finta. Fuori da
+// `SCENARIOS` per la ragione già valsa a project status, hard-wrap e gitlink: la
+// cache va scritta prima, e un temporaneo creato al modulo sarebbe condiviso da
+// scenari che non la usano.
+//
+// Il gate misura la LARGHEZZA, quindi da solo resterebbe verde su una schermata
+// sbagliata: sugli scenari dove esiste una riga che li distingue si asserisce
+// anche il CONTENUTO, per non certificare una nota di attesa al posto
+// dell'albero.
+const DOC_SCENARIOS: Array<[string, string, number[], string?]> = [
+  // Il pane doc montato: colonna dei flag a larghezza fissa più una cella
+  // elastica calcolata per sottrazione, con in più il rientro dell'albero — la
+  // stessa aritmetica che ha fatto uscire dal pane la lista sessioni due volte.
+  // Il path più profondo della fixture sta a quattro livelli, dove il rientro
+  // morde davvero.
+  ['modo doc · albero', CTRL_B, [80, 100, 176], 'SPL'],
+  // L'header del catalogo doc al completo: `Doc · Tutti (N) · SPLIT (n) · MERGE?
+  // (n) · TLDR (n) · REGROUP (n)` è il più lungo dei quattro cataloghi, e su un
+  // pane stretto è il caso in cui la voce attiva deve restare e le altre cedere.
+  ['modo doc · vista REGROUP attiva', `${CTRL_B}TTTT`, [80, 100, 176], 'REGROUP'],
+  // Una vista PIATTA: le righe portano il path meno la radice invece
+  // dell'ultimo segmento, cioè la cella elastica al suo massimo.
+  ['modo doc · vista SPLIT attiva', `${CTRL_B}T`, [80, 100], 'SPLIT'],
+  // `←→` fra i due pane dello stesso modo: il fuoco si sposta, i bordi no.
+  ['modo doc · fuoco a destra e ritorno', `${CTRL_B}RL`, [80, 100]],
+  // Il pane inbox, che in modo doc occupa lo slot destro. Due colonne fisse
+  // (natura, marker) più una cella elastica: il nome di un file inbox arriva ai
+  // 45 caratteri, cioè sfora da solo il pane a 80 colonne.
+  ['modo doc · coda inbox a destra', `${CTRL_B}R`, [80, 100, 176]],
+  ['modo doc · vista inbox sweep attiva', `${CTRL_B}RTTT`, [80, 100]],
+  // Il detail di un FILE doc: schermata sostitutiva col testo reso a piena
+  // larghezza più la riga dell'azione, che porta il comando col path intero.
+  // Le `D` contano le righe dell'ALBERO della fixture, non i file: fra un file e
+  // l'altro ci sono le righe cartella. `DDDD` cade su `plugin-dev.md`, il primo
+  // file vero dopo `inbox/` e `project/`.
+  ['detail doc · file', `${CTRL_B}DDDD\r`, [80, 100, 176], 'rebalance-doc'],
+  // Il detail di una CARTELLA (P10): stesso gesto, e al posto del testo l'elenco
+  // dei suoi file coi loro flag.
+  ['detail doc · cartella', `${CTRL_B}D\r`, [80, 100, 176], 'file ·'],
+  // Il bersaglio SENZA flag: la riga azione porta la ragione invece del comando,
+  // ed è più lunga di lui — il caso che sfonda se il budget è tarato sul comando.
+  // `runtime/tasks.md` è l'ULTIMA riga dell'albero (quindici in tutto) ed è
+  // l'unica senza flag: quattordici `D` dalla radice.
+  ['detail doc · bersaglio senza flag', `${CTRL_B}${'D'.repeat(14)}\r`, [80, 100], 'non porta flag'],
+  // Il detail di un file inbox, raggiunto dal pane destro del modo doc.
+  ['detail inbox', `${CTRL_B}RD\r`, [80, 100, 176]],
+];
+
+for (const [label, keys, widths, needle] of DOC_SCENARIOS) {
+  for (const cols of widths) {
+    test(`gate larghezza · ${label} @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+      const raw = capture(cols, 38, keys, { LOOM_DECK_PLUGIN_CACHE_ROOT: docCacheRoot() });
+      assertFrameFits(raw, cols, `${label}@${cols}`);
+      // A 80 colonne la riga si tronca e l'ancora può cadere fuori: il controllo
+      // di contenuto vale sulle larghezze dove ciò che cerca ci sta.
+      if (needle && cols >= 100) {
+        assert.ok(
+          lastFrame(raw).join('\n').includes(needle),
+          `${label}@${cols}: atteso "${needle}" a schermo — il gate stava misurando un'altra schermata`,
+        );
+      }
     });
   }
 }

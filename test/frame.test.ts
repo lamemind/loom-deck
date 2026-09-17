@@ -18,6 +18,7 @@ import {
   SURFACE_SEGMENTS,
 } from '../src/frame.js';
 import { META_ROWS } from '../src/model.js';
+import { TASK_MODE_LEGEND } from '../src/input-modes.js';
 import { termWidth } from '../src/width.js';
 import type { LaunchEntry } from '../src/config.js';
 import type { Task } from '../src/tasks.js';
@@ -180,6 +181,48 @@ test('deckLegend: su una pinnata stale restano pin/titolo/assegna, non il fork',
   // T148 — nessun blocco preview su una pinnata stale: niente bottone da
   // cambiare, quindi la voce non deve promettere un'azione che non parte.
   assert.ok(!legend.includes('m modello'), `nessun modello da cambiare: ${legend}`);
+});
+
+// ── T160 · la legenda tace sui tasti che il modo doc rende inerti ─────────
+
+test('deckLegend: in modo doc nessun tasto del mondo task resta annunciato', () => {
+  // Un tasto inerte che resta in legenda descrive un deck che non esiste. Le
+  // voci si tolgono dall'ELENCO che governa anche il dispatch, quindi qui si
+  // misura proprio che i due lettori non divergano.
+  const doc = deckLegend({
+    focus: 'doctree',
+    hasTask: false,
+    hasSession: false,
+    hasSessionId: false,
+    purgeBulk: false,
+    docMode: true,
+    hasDoc: true,
+  });
+  for (const voce of TASK_MODE_LEGEND) {
+    assert.ok(!doc.includes(voce), `voce del mondo task annunciata in modo doc: ${voce}`);
+  }
+  assert.ok(!doc.includes('CANC'), `CANC annunciato in modo doc: ${doc}`);
+  assert.ok(!doc.includes('^K'), `gli acceleratori di spawn sono annunciati: ${doc}`);
+  // Quello che DEVE restare: `^B` nomina il modo che monta, e `⏎` apre il
+  // bersaglio doc selezionato.
+  assert.ok(doc.includes('^B task'), `la via di ritorno non è annunciata: ${doc}`);
+  assert.ok(doc.includes('⏎ apri'), `l'apertura del bersaglio non è annunciata: ${doc}`);
+});
+
+test('deckLegend: in modo task le stesse voci ci sono tutte', () => {
+  const task = deckLegend({
+    focus: 'tasks',
+    hasTask: true,
+    hasSession: false,
+    hasSessionId: false,
+    purgeBulk: false,
+    docMode: false,
+    hasDoc: false,
+  });
+  for (const voce of TASK_MODE_LEGEND) {
+    assert.ok(task.includes(voce), `voce del mondo task sparita dal suo modo: ${voce}`);
+  }
+  assert.ok(task.includes('^B doc'), `la via d'andata non è annunciata: ${task}`);
 });
 
 // ── launchRow: le colonne cliccabili sono quelle disegnate ────────────────

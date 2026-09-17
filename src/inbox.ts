@@ -15,6 +15,7 @@ import { readFileSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { basename, join } from 'node:path';
 import { pluginScript } from './plugin-cache.js';
+import { sanitize } from './width.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -276,10 +277,18 @@ export function inboxWords(f: InboxFile): string {
  * il detail lo dice e tiene l'azione attiva, come fa quello della task con un
  * task file mancante: la skill risolve il file per nome, non per il testo che
  * il deck è riuscito a leggere.
+ *
+ * `sanitize` AL CONFINE DI CARICAMENTO, come `loadTaskFileText` e il gemello
+ * `loadDocText`: la catena dichiarata in `markdown.ts` è `sanitize →
+ * parseMarkdown → wrapWithOffsets`, e la prima non conserva la lunghezza —
+ * applicarla più a valle sposterebbe gli offset degli span appena calcolati. Un
+ * file di nozioni è testo libero e porta glifi su cui Ink e il terminale
+ * divergono: senza la sanificazione il wrap conta una colonna in meno di quante
+ * Ink ne disegna, e la riga esce dal box mangiandone il bordo.
  */
 export function loadInboxText(projectRoot: string, relPath: string): string | null {
   try {
-    return readFileSync(join(projectRoot, relPath), 'utf8');
+    return sanitize(readFileSync(join(projectRoot, relPath), 'utf8'));
   } catch {
     return null;
   }

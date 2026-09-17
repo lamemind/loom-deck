@@ -21,11 +21,14 @@ test('apici e metacaratteri di shell spariscono senza sostituto', () => {
   assert.equal(saneNote(`l'ho fatto; $(rm -rf /) \`x\` "y" [z]`), 'lho fatto rm -rf x y z');
 });
 
-test('le sei emoji dei titoli sopravvivono, le altre no', () => {
-  for (const e of ['📐', '🚀', '📊', '🏁', '🧹', '📏']) {
+test('le sette emoji dei titoli sopravvivono, le altre no', () => {
+  // T160 — 🧭 è la settima, e nasce col titolo della riga `rebalance`. La
+  // whitelist ha tre sedi (questo lato, `deck-run`, i template del catalogo) e
+  // un'emoji aggiunta a una sola sparisce fra la tabella e la tab, senza errore.
+  for (const e of ['📐', '🚀', '📊', '🏁', '🧹', '📏', '🧭']) {
     assert.equal(saneNote(`${e} prova`), `${e} prova`, `${e} non sopravvive`);
   }
-  // 🗺️ è astrale come le sei ammesse: passerebbe solo se la whitelist si
+  // 🗺️ è astrale come le sette ammesse: passerebbe solo se la whitelist si
   // allargasse per intervallo di code point, che è proprio ciò che non fa.
   assert.equal(saneNote('🔥 fuoco'), 'fuoco');
   assert.equal(saneNote('🗺️ mappa'), 'mappa');

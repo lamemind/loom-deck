@@ -28,9 +28,13 @@ import select
 import signal
 
 # 'T' = tab, il selettore di vista dell'header; 'L'/'R' = frecce orizzontali,
-# cioè il cambio pane ('L' = task, 'R' = sessioni). Chi scrive uno scenario deve
-# guardare qui: la lettera dice il TASTO, non l'intenzione, e un rimappaggio
-# lascia verde ogni scenario che continua a battere il tasto vecchio.
+# cioè il cambio di pane per POSIZIONE ('L' = quello di sinistra, 'R' = quello di
+# destra). T160 — non piu' 'task' e 'sessioni': il tasto nomina un lato, e quale
+# pane lo occupi lo decide il modo del deck ('^B'). In modo task 'L' porta sulla
+# lista task e 'R' sulle conversazioni, in modo doc sull'albero doc e sulla coda
+# inbox. Chi scrive uno scenario deve guardare qui: la lettera dice il TASTO, non
+# l'intenzione, e un rimappaggio lascia verde ogni scenario che continua a
+# battere il tasto vecchio.
 # 'X' = INCOLLAGGIO: 60 caratteri in una scrittura sola, cioè un chunk unico di
 # stdin. Riempie un campo di testo oltre il budget al costo di UN tasto (una
 # `x` per volta costerebbe 60 pump da 0.7s), ed è anche l'unico modo di provare

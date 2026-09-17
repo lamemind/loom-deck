@@ -22,6 +22,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { pluginScript } from './plugin-cache.js';
+import { sanitize } from './width.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -477,10 +478,19 @@ export function docWords(path: string): string {
  * detail lo dice e tiene l'azione attiva, come quello dell'inbox: la skill
  * risolve il bersaglio per path, non per il testo che il deck è riuscito a
  * leggere.
+ *
+ * `sanitize` AL CONFINE DI CARICAMENTO, come `loadTaskFileText`: la catena
+ * dichiarata in `markdown.ts` è `sanitize → parseMarkdown → wrapWithOffsets`, e
+ * la prima non conserva la lunghezza (timbra col VS16 i BMP larghi 2, sostituisce
+ * i discordi) — applicarla più a valle sposterebbe gli offset degli span appena
+ * calcolati. Qui non è una precauzione teorica: un `.md` della doc porta glifi
+ * che Ink e il terminale misurano diversamente (`↔` in una testata, `⚡`/`✔️` in
+ * una tabella), e senza la sanificazione il wrap conta una colonna in meno di
+ * quante Ink ne disegna — la riga esce dal box e ne mangia il bordo.
  */
 export function loadDocText(projectRoot: string, relPath: string): string | null {
   try {
-    return readFileSync(join(projectRoot, relPath), 'utf8');
+    return sanitize(readFileSync(join(projectRoot, relPath), 'utf8'));
   } catch {
     return null;
   }
