@@ -40,7 +40,9 @@ import { useSearchOverlay } from './overlays/search.js';
 import { useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
 import { useProjectStatus } from './overlays/status.js';
-import { useInboxOverlay } from './overlays/inbox.js';
+import { useFileSheet } from './overlays/file-sheet.js';
+import type { InboxFile } from './inbox.js';
+import type { DocRow } from './doc-tree.js';
 import { useWrapOverlay } from './overlays/wrap.js';
 import { useSpawnPage } from './overlays/spawn.js';
 import { useGitlink } from './overlays/gitlink.js';
@@ -142,14 +144,28 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     setNote,
   });
 
-  // T134 — il detail di un file inbox. Come lo sheet della task riceve lo spawn
-  // come callback: un hook di overlay non esce dal deck.
-  const inbox = useInboxOverlay({
+  // T134/T160 — le DUE istanze dello sheet di file: la coda inbox e il bersaglio
+  // doc. Stesso hook (`useFileSheet`, P11), due modi distinti — `esc` da una
+  // torna al pane inbox, dall'altra al pane doc, e un modo condiviso
+  // obbligherebbe a ricordare altrove da dove si era entrati. Come lo sheet
+  // della task ricevono lo spawn come callback: un hook di overlay non esce dal
+  // deck.
+  const inbox = useFileSheet<InboxFile>({
+    mode: 'inbox',
     rows,
     columns,
     setMode,
     setNote,
-    onDrain: actions.drainInbox,
+    onEnter: actions.drainInbox,
+  });
+
+  const docSheet = useFileSheet<DocRow>({
+    mode: 'doc',
+    rows,
+    columns,
+    setMode,
+    setNote,
+    onEnter: actions.rebalanceDoc,
   });
 
   // T134 — l'hard-wrap. Come il project status non è solo un overlay: i suoi
@@ -214,6 +230,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     search,
     status,
     inbox,
+    doc: docSheet,
     wrap,
     spawn,
     gitlink,
@@ -345,7 +362,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     projectName: model.projectName,
     taskRowData: model.taskRowData,
     hiddenTasks: model.hiddenTasks,
-    overlays: { assign, sheet, search, status, inbox, wrap, spawn },
+    overlays: { assign, sheet, search, status, inbox, doc: docSheet, wrap, spawn },
   });
   if (screen) return screen;
 
@@ -397,6 +414,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           purgeBulk: model.purgeBulk,
           docMode: model.deckMode === 'doc',
           hasInbox: model.selInbox !== null,
+          hasDoc: model.selDoc !== null,
           gitlink: gitlink.enabled,
         })}
         indicators={indicators}

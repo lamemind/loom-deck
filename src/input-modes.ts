@@ -28,6 +28,7 @@ export const CAPTURING_MODES = [
   'detail',
   'status',
   'inbox',
+  'doc',
   'wrap',
   'spawn',
   'reader',
@@ -185,7 +186,7 @@ export function inertNote(label: string): string {
  * Il custode è `MODE_WHEEL` in `input.ts`, un `Record<ScrollingMode, …>` che non
  * compila se un modo entra qui senza uno scroll da chiamare.
  */
-export const SCROLLING_MODES = ['detail', 'status', 'inbox', 'wrap', 'reader'] as const;
+export const SCROLLING_MODES = ['detail', 'status', 'inbox', 'doc', 'wrap', 'reader'] as const;
 
 export type ScrollingMode = (typeof SCROLLING_MODES)[number];
 

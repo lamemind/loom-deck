@@ -53,6 +53,7 @@ import { type ModelKind, type PromptKind, type SpawnActionId } from './spawn-cat
 import { resolveSpawnId, type ResolvedSpawn, type SpawnOverrides } from './spawn-config.js';
 import { useTaskOps } from './task-ops.js';
 import { inboxWords, type InboxFile } from './inbox.js';
+import { docWords, type DocRow } from './doc-tree.js';
 import { wrapWords } from './wrap-scan.js';
 import type { DeckModel } from './deck-model.js';
 
@@ -477,6 +478,58 @@ export function useDeckActions({
   }
 
   /**
+   * T160 — la terna della riga `rebalance` sul bersaglio selezionato.
+   *
+   * Separata dallo spawn perché ha due chiamanti che la vogliono in due momenti
+   * diversi: la schermata, che MOSTRA il comando in fondo prima che `⏎` lo
+   * lanci, e l'attuatore, che lo lancia. Comporlo due volte darebbe due comandi
+   * capaci di divergere — e quello mostrato è la sola cosa che rende `⏎` una
+   * scelta invece di un salto nel buio.
+   *
+   * P9 — su una riga SENZA FLAG il prompt è vuoto, e il deck non spawna. Il
+   * flag resta un invito a guardare e non un ordine, quindi la skill su un
+   * bersaglio in equilibrio produrrebbe un report e nient'altro: aprire una
+   * conversazione per farselo dire è un giro di modello pagato per niente. La
+   * ragione viaggia accanto al vuoto (`hint`), o la riga muta si leggerebbe come
+   * un comando che non si è riusciti a comporre.
+   */
+  function rebalanceSpawn(row: DocRow): { prompt: string; hint: string } {
+    if (row.flags.length === 0) {
+      return {
+        prompt: '',
+        hint: `${row.path} non porta flag: rebalance-doc non ha niente da fare qui`,
+      };
+    }
+    const d = spawnDefaults('rebalance', { target: row.path, words: docWords(row.path) });
+    return { prompt: d.prompt ?? '', hint: '' };
+  }
+
+  /**
+   * T160 — apre la sessione che RIORGANIZZA la topologia attorno a un bersaglio.
+   *
+   * Gemella di `drainInbox` e `unwrapPath` nella forma: sessione NUDA (il
+   * rebalance lavora sulla doc, non su una task), `sessionId` pinnato per poter
+   * scrivere la nota nel sidecar, titolo dalla riga di catalogo.
+   *
+   * Il modello della riga è `sonnet` ed è una cella FISSA, non una preferenza:
+   * `rebalance-doc` dichiara `model: sonnet` nel frontmatter e quel campo
+   * ri-timbra il modello della sessione qualunque `--model` arrivi dallo spawn.
+   * Passarlo comunque nell'argv resta giusto — lo spawn è deterministico e la
+   * riga di stato mostra il comando vero — ma configurarlo sarebbe una cella che
+   * mente.
+   */
+  function rebalanceDoc(row: DocRow, prompt: string) {
+    if (!prompt) return;
+    const sid = randomUUID();
+    const d = spawnDefaults('rebalance', { target: row.path, words: docWords(row.path) });
+    const title = d.title ?? '';
+    if (title) appendNote(cwd, sid, title);
+    const spawned = spawnBare(cwd, prompt, d.model, sid, title);
+    spawned.child.on('error', () => setNote(`⚠ rebalance ${row.path} fallito (${DECK_RUN})`));
+    noteSpawn(spawned);
+  }
+
+  /**
    * T134 — apre la sessione che SROTOLA l'hard-wrap di un path.
    *
    * Terna intera dalla riga `unwrap` del catalogo (T161): il modello, il titolo
@@ -556,6 +609,8 @@ export function useDeckActions({
     togglePin,
     togglePriority,
     drainInbox,
+    rebalanceSpawn,
+    rebalanceDoc,
     unwrapPath,
     openTerminal,
     openClaude,

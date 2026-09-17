@@ -132,7 +132,13 @@ export const ACTION_HOTKEYS: Readonly<Record<string, number>> = Object.fromEntri
  * kind → id sarebbe una mappa da tenere allineata a mano, e `specializeRecap`
  * non potrebbe più fare da ponte fra il detail e il catalogo.
  */
-export type SpawnActionId = PromptKind | 'bare' | 'drain' | 'unwrap' | 'project-status';
+export type SpawnActionId =
+  | PromptKind
+  | 'bare'
+  | 'drain'
+  | 'unwrap'
+  | 'rebalance'
+  | 'project-status';
 
 /** Le tre celle configurabili di una riga. */
 export type SpawnField = 'title' | 'model' | 'prompt';
@@ -203,7 +209,7 @@ const UNWRAP_PROMPT =
   'puoi committare direttamente';
 
 /**
- * Le UNDICI azioni configurabili, nell'ordine in cui la pagina le elenca.
+ * Le DODICI azioni configurabili, nell'ordine in cui la pagina le elenca.
  *
  * Il perimetro è quello di D1: entra una riga se ha almeno una cella editabile.
  * Ne restano fuori resume e fork — lì il modello non è una preferenza ma
@@ -216,9 +222,10 @@ const UNWRAP_PROMPT =
  * T156 — le emoji dei titoli sono ASTRALI (code point ≥ U+10000) per necessità,
  * non per gusto: `sanitize` (`src/width.ts`) sostituisce con `·` ogni glifo su
  * cui le due contabilità di larghezza divergono, e le emoji del BMP a
- * presentazione testo divergono sempre. Le stesse sei stanno nella whitelist di
- * `_sane_note` in `deck-run` e nel suo gemello `src/sane-note.ts`: un'emoji
- * cambiata qui e non là sparisce fra la tabella e la tab, senza errore.
+ * presentazione testo divergono sempre. Le stesse SETTE (T160 aggiunge `🧭`)
+ * stanno nella whitelist di `_sane_note` in `deck-run` e nel suo gemello
+ * `src/sane-note.ts`: un'emoji cambiata qui e non là sparisce fra la tabella e
+ * la tab, senza errore.
  */
 export const SPAWN_ACTIONS: readonly SpawnAction[] = [
   {
@@ -352,6 +359,35 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     fixed: {},
   },
   {
+    // T160 — il rebalance della topologia doc su un bersaglio (file o cartella).
+    //
+    // La cella MODELLO è fissa, e la ragione mostrata al posto del valore non è
+    // una scorciatoia: `rebalance-doc` dichiara `model: sonnet` nel frontmatter,
+    // e quel campo ri-timbra il modello della sessione per la durata della
+    // skill, qualunque `--model` sia stato passato allo spawn. Una cella
+    // editabile qui accetterebbe un valore che non sopravvive all'invocazione —
+    // cioè mentirebbe senza produrre nessun errore. Lo stesso vale per le altre
+    // tre skill doc (`drain-notions`, `derive-notions`, `align-doc`), che la
+    // riga `drain` non ha ancora recepito.
+    //
+    // DUE buchi per lo stesso dato, e servono entrambi: `{target}` è il path
+    // VERO, che la skill risolve contro la colonna `PATH` della misura, e
+    // `{words}` lo stesso path reso a parole per il titolo. L'alfabeto di
+    // `_sane_note` non ha né `/` né `.`, quindi un `{target}` in un template di
+    // titolo uscirebbe con le parole saldate (`runtimereferencedoc-systemmd`) e
+    // la tab mostrerebbe un nome diverso da quello che il deck legge dal
+    // sidecar.
+    id: 'rebalance',
+    label: 'rebalance della doc',
+    surface: 'pane doc ⏎⏎',
+    kind: null,
+    title: '🧭 {words}',
+    model: 'sonnet',
+    prompt: '/loom-works:rebalance-doc {target}',
+    holes: ['target', 'words'],
+    fixed: { model: 'lo impone il frontmatter della skill' },
+  },
+  {
     // T121 — il recap di progetto, headless (`claude -p`): nessuna tab, quindi
     // nessun titolo da configurare.
     id: 'project-status',
@@ -383,6 +419,12 @@ export const EXAMPLE_HOLES: Readonly<Record<string, string>> = {
   slug: 'esempio di task',
   file: 'T42-nozioni',
   path: 'runtime reference',
+  // T160 — i due buchi della riga `rebalance`, che portano lo stesso dato in due
+  // alfabeti: il path vero per il prompt della skill, le parole per il titolo
+  // della tab. L'esempio li mostra entrambi nella forma in cui arrivano davvero,
+  // o chi scrive un template li scambierebbe senza accorgersene.
+  target: 'runtime/reference/doc-system',
+  words: 'runtime reference doc-system',
 };
 
 /**

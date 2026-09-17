@@ -18,6 +18,8 @@
 // e il divieto di entrare nel poll da 1,5 s (T153).
 
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { pluginScript } from './plugin-cache.js';
 
@@ -468,6 +470,58 @@ export function docWords(path: string): string {
     .replace(/\.md$/i, '')
     .replace(/[./]+/g, ' ')
     .trim();
+}
+
+/**
+ * Il testo di un file doc, per il detail fullscreen. `null` = illeggibile — il
+ * detail lo dice e tiene l'azione attiva, come quello dell'inbox: la skill
+ * risolve il bersaglio per path, non per il testo che il deck è riuscito a
+ * leggere.
+ */
+export function loadDocText(projectRoot: string, relPath: string): string | null {
+  try {
+    return readFileSync(join(projectRoot, relPath), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * P10 — `⏎` su una CARTELLA apre lo stesso sheet, con l'elenco dei suoi file al
+ * posto del testo.
+ *
+ * Il gesto è identico su file e cartella (`⏎⏎`), quindi anche la schermata deve
+ * esserlo: cambia cosa si legge nel corpo, non cosa si preme. Per un file è il
+ * suo testo, per una cartella l'elenco che dice PERCHÉ la cartella è flaggata —
+ * quanti file, quanto pesano, quali portano un flag proprio. Senza, `⏎` su una
+ * riga `REGROUP` aprirebbe un corpo vuoto e la decisione andrebbe presa alla
+ * cieca.
+ *
+ * Markdown perché lo sheet lo rende (`parseMarkdown`): il titolo diventa un
+ * heading e i backtick una cella di codice, senza che questa funzione sappia
+ * niente della resa.
+ */
+export function dirListing(data: DocScanData, dirPath: string): string {
+  const dir = data.dirs.find((d) => d.path === dirPath);
+  const own = data.files
+    .filter((f) => parentOf(f.path) === dirPath)
+    .sort((a, b) => b.chars - a.chars);
+  const head = [
+    `# ${dirPath}`,
+    '',
+    `${dir?.files ?? own.length} file · ${dir?.chars ?? 0} char${
+      dir && dir.flags.length > 0 ? ` · ${flagNames(dir.flags).join(' · ')}` : ''
+    }`,
+    '',
+  ];
+  if (own.length === 0) {
+    return [...head, 'Nessun file direttamente in questa cartella: il peso viene dalle sottocartelle.'].join('\n');
+  }
+  const rows = own.map((f) => {
+    const flags = f.flags.length > 0 ? ` — ${flagNames(f.flags).join(' · ')}` : '';
+    return `- \`${lastSegment(f.path)}\` · ${f.chars} char · TLDR ${f.tldr || 'assente'}${flags}`;
+  });
+  return [...head, ...rows].join('\n');
 }
 
 export interface DocScan extends DocScanData {

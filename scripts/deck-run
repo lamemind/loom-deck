@@ -299,10 +299,11 @@ WORKDIR="${LOOM_DECK_WORKDIR:-$PWD}"
 # conversazione portava due titoli diversi, senza errore. Le quadre che
 # delimitavano il prefisso sono cadute col prefisso stesso: l'emoji da sola si
 # stacca già dallo slug.
-# T161 — le sei stanno tutte nei TEMPLATE di titolo del catalogo delle azioni
-# (`SPAWN_ACTIONS` in `src/spawn-catalog.ts`), che il progetto può riscrivere:
-# quattro nominano un'azione su una task (📐🚀📊🏁), 🧹 il file inbox che si
-# drena, 📏 il path che si srotola.
+# T161/T160 — le sette stanno tutte nei TEMPLATE di titolo del catalogo delle
+# azioni (`SPAWN_ACTIONS` in `src/spawn-catalog.ts`), che il progetto può
+# riscrivere: quattro nominano un'azione su una task (📐🚀📊🏁), 🧹 il file inbox
+# che si drena, 📏 il path che si srotola, 🧭 il bersaglio doc che si
+# riorganizza.
 # Questa whitelist ha un GEMELLO TypeScript (`saneNote` in `src/sane-note.ts`),
 # che riduce il template al salvataggio perché quello che sta nel file di
 # progetto sia quello che la tab mostrerà. I due lati non si leggono a vicenda e
@@ -335,7 +336,7 @@ _sane_note() {  # <raw> → nota ridotta, spazi collassati, cap 60 char
   # `tr` non ne ha bisogno: squeeza uno spazio ASCII, e 0x20 non compare mai
   # come byte di continuazione di una sequenza UTF-8.
   s="$(printf '%s' "$1" \
-       | LC_ALL=C.UTF-8 sed 's/[^A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ📐🚀📊🏁🧹📏-]//g' \
+       | LC_ALL=C.UTF-8 sed 's/[^A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ📐🚀📊🏁🧹📏🧭-]//g' \
        | tr -s ' ')"
   s="${s# }"; s="${s% }"
   printf '%s' "${s:0:60}"

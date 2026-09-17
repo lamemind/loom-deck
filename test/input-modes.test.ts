@@ -25,6 +25,7 @@ const ALL_MODES: Mode[] = [
   'purge',
   'status',
   'inbox',
+  'doc',
   'wrap',
   'spawn',
 ];
@@ -71,7 +72,10 @@ test('un modo fuori catalogo non risulta capturing', () => {
 // modi scorrevoli sono quelli con un documento e nessuna lista a fuoco:
 // `search` ha un'anteprima ma il fuoco è sui risultati, che sono una scelta.
 test('i modi scorrevoli sono i viewer di testo', () => {
-  assert.deepEqual([...SCROLLING_MODES].sort(), ['detail', 'inbox', 'reader', 'status', 'wrap']);
+  assert.deepEqual(
+    [...SCROLLING_MODES].sort(),
+    ['detail', 'doc', 'inbox', 'reader', 'status', 'wrap'],
+  );
 });
 
 test('ogni modo scorrevole è anche capturing', () => {

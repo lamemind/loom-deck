@@ -36,7 +36,7 @@ import type { Session } from '../sessions.js';
 import { AssignScreen } from './assign-screen.js';
 import { DetailScreen } from './detail-screen.js';
 import { StatusScreen } from './status-screen.js';
-import { InboxScreen } from './inbox-screen.js';
+import { FileSheetScreen, docSheetHead, inboxSheetHead } from './file-sheet-screen.js';
 import { WrapScreen } from './wrap-screen.js';
 import { SpawnScreen } from './spawn-screen.js';
 import { ReaderScreen, SearchScreen } from './search-screen.js';
@@ -44,7 +44,9 @@ import type { useAssignOverlay } from '../overlays/assign.js';
 import type { useSheetOverlay } from '../overlays/sheet.js';
 import type { useSearchOverlay } from '../overlays/search.js';
 import type { useProjectStatus } from '../overlays/status.js';
-import type { useInboxOverlay } from '../overlays/inbox.js';
+import type { useFileSheet } from '../overlays/file-sheet.js';
+import type { InboxFile } from '../inbox.js';
+import type { DocRow } from '../doc-tree.js';
 import type { useWrapOverlay } from '../overlays/wrap.js';
 import type { useSpawnPage } from '../overlays/spawn.js';
 
@@ -52,7 +54,8 @@ type AssignOverlay = ReturnType<typeof useAssignOverlay>;
 type SheetOverlay = ReturnType<typeof useSheetOverlay>;
 type SearchOverlay = ReturnType<typeof useSearchOverlay>;
 type StatusOverlay = ReturnType<typeof useProjectStatus>;
-type InboxOverlay = ReturnType<typeof useInboxOverlay>;
+type InboxOverlay = ReturnType<typeof useFileSheet<InboxFile>>;
+type DocOverlay = ReturnType<typeof useFileSheet<DocRow>>;
 type WrapOverlay = ReturnType<typeof useWrapOverlay>;
 type SpawnPage = ReturnType<typeof useSpawnPage>;
 
@@ -217,6 +220,7 @@ export type ScreensInput = {
     search: SearchOverlay;
     status: StatusOverlay;
     inbox: InboxOverlay;
+    doc: DocOverlay;
     wrap: WrapOverlay;
     spawn: SpawnPage;
   };
@@ -233,7 +237,7 @@ export type ScreensInput = {
  */
 export function screenFor(input: ScreensInput) {
   const { mode, rows, columns, note, overlays } = input;
-  const { assign, sheet, search, status, inbox, wrap, spawn } = overlays;
+  const { assign, sheet, search, status, inbox, doc, wrap, spawn } = overlays;
 
   // ── T57 · schermata di assegnazione ─────────────────────────────────────
   // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
@@ -365,7 +369,7 @@ export function screenFor(input: ScreensInput) {
     if (isCompact(inbox.capacity)) {
       return (
         <CompactNotice
-          what={inbox.sheet.file.basename}
+          what={inbox.sheet.item.basename}
           esc="chiude"
           rows={rows}
           columns={columns}
@@ -376,8 +380,8 @@ export function screenFor(input: ScreensInput) {
     // scroll già dato.
     const start = Math.min(inbox.top, inbox.maxTop);
     return (
-      <InboxScreen
-        file={inbox.sheet.file}
+      <FileSheetScreen
+        head={inboxSheetHead(inbox.sheet.item)}
         missing={inbox.sheet.text === null}
         lines={inbox.lines.slice(start, start + inbox.capacity)}
         spans={inbox.doc?.spans ?? []}
@@ -385,6 +389,33 @@ export function screenFor(input: ScreensInput) {
         total={inbox.lines.length}
         capacity={inbox.capacity}
         prompt={inbox.prompt}
+        hint={inbox.hint}
+        columns={columns}
+      />
+    );
+  }
+
+  // ── T160 · detail di un bersaglio doc ───────────────────────────────────
+  // Nona schermata sostitutiva: la stessa dell'inbox (`useFileSheet`, due
+  // istanze) su un altro oggetto. Su una cartella il corpo porta l'elenco dei
+  // suoi file al posto di un testo (P10): il gesto è lo stesso, cambia cosa si
+  // legge.
+  if (mode === 'doc' && doc.sheet) {
+    if (isCompact(doc.capacity)) {
+      return <CompactNotice what={doc.sheet.item.path} esc="chiude" rows={rows} columns={columns} />;
+    }
+    const start = Math.min(doc.top, doc.maxTop);
+    return (
+      <FileSheetScreen
+        head={docSheetHead(doc.sheet.item)}
+        missing={doc.sheet.text === null}
+        lines={doc.lines.slice(start, start + doc.capacity)}
+        spans={doc.doc?.spans ?? []}
+        top={start}
+        total={doc.lines.length}
+        capacity={doc.capacity}
+        prompt={doc.prompt}
+        hint={doc.hint}
         columns={columns}
       />
     );

@@ -96,6 +96,7 @@ test('deckLegend: CANC nomina il bersaglio singolo quando il bulk è spento', ()
     hasSessionId: false,
     purgeBulk: false,
     docMode: false,
+    hasDoc: false,
   });
   assert.ok(legend.includes('CANC elimina'), 'la voce deve esserci');
   assert.ok(
@@ -112,6 +113,7 @@ test('deckLegend: CANC nomina il bulk quando il bulk è acceso', () => {
     hasSessionId: false,
     purgeBulk: true,
     docMode: false,
+    hasDoc: false,
   });
   assert.ok(legend.includes('CANC elimina tutte'), `bulk non annunciato: ${legend}`);
 });
@@ -126,6 +128,7 @@ test('deckLegend: col focus sulle sessioni non c\'è nessuna voce CANC', () => {
     hasSessionId: true,
     purgeBulk: true,
     docMode: false,
+    hasDoc: false,
   });
   assert.ok(!legend.includes('CANC'), `voce CANC fuori dal suo pane: ${legend}`);
 });
@@ -138,6 +141,7 @@ test('deckLegend: le voci contestuali seguono il pane a fuoco', () => {
     hasSessionId: false,
     purgeBulk: false,
     docMode: false,
+    hasDoc: false,
   });
   assert.ok(suTask.includes('⏎ detail'), 'sul pane task ⏎ apre il detail');
   assert.ok(!suTask.includes('f fork'), 'il fork non vive sul pane task');
@@ -149,6 +153,7 @@ test('deckLegend: le voci contestuali seguono il pane a fuoco', () => {
     hasSessionId: true,
     purgeBulk: false,
     docMode: false,
+    hasDoc: false,
   });
   assert.ok(suSessioni.includes('⏎ resume'), 'sul pane sessioni ⏎ fa il resume');
   assert.ok(suSessioni.includes('f fork'), 'il fork vive qui');
@@ -167,6 +172,7 @@ test('deckLegend: su una pinnata stale restano pin/titolo/assegna, non il fork',
     hasSessionId: true,
     purgeBulk: false,
     docMode: false,
+    hasDoc: false,
   });
   assert.ok(legend.includes('p pin'), `il pin deve restare: ${legend}`);
   assert.ok(legend.includes('A assegna'), `l'assegnazione deve restare: ${legend}`);

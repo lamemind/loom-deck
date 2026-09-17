@@ -26,7 +26,7 @@ import {
   useTasks,
 } from './hooks.js';
 import { DEFAULT_INBOX_STALE_HOURS, staleCount, type InboxFile } from './inbox.js';
-import type { DocRow } from './doc-tree.js';
+import type { DocRow, DocScanData } from './doc-tree.js';
 import {
   cycleDocView,
   docCounts as deriveDocCounts,
@@ -356,14 +356,16 @@ export function useDeckModel({
   // chiamare `doc.scan()` come fa il gemello inbox, e chiamarlo darebbe due
   // spawn da quattro secondi per un gesto solo.
   const doc = useDocScan(cwd, docsRoot, deckMode === 'doc');
-  const docCounts: DocViewCounts = useMemo(
-    () => deriveDocCounts({ files: doc.files, dirs: doc.dirs, hasDirs: doc.hasDirs }),
+  // La misura GREZZA, memoizzata a parte: la consumano tre derivazioni (i
+  // contatori, le righe della vista, l'elenco dei file di una cartella nello
+  // sheet) e ricomporre l'oggetto a ogni render darebbe una identità nuova a
+  // ogni giro, cioè tre memo che non memoizzano più niente.
+  const docData: DocScanData = useMemo(
+    () => ({ files: doc.files, dirs: doc.dirs, hasDirs: doc.hasDirs }),
     [doc.files, doc.dirs, doc.hasDirs],
   );
-  const docRows = useMemo(
-    () => selectDocRows(docViewId, { files: doc.files, dirs: doc.dirs, hasDirs: doc.hasDirs }),
-    [docViewId, doc.files, doc.dirs, doc.hasDirs],
-  );
+  const docCounts: DocViewCounts = useMemo(() => deriveDocCounts(docData), [docData]);
+  const docRows = useMemo(() => selectDocRows(docViewId, docData), [docViewId, docData]);
   const selDoc: DocRow | null = docRows.find((r) => r.path === selDocPath) ?? null;
 
   // T100 — le task effettivamente a schermo: la vista principale coincide con
@@ -744,6 +746,7 @@ export function useDeckModel({
     selInboxPath,
     selInbox,
     // derivazioni del pane doc
+    docData,
     docScanned: doc.scanned,
     docOk: doc.ok,
     docScanning: doc.scanning,

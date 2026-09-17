@@ -118,6 +118,8 @@ export function deckLegend(state: {
   docMode: boolean;
   /** T134 — c'è una riga inbox selezionata da aprire. */
   hasInbox: boolean;
+  /** T160 — c'è una riga doc selezionata da aprire. */
+  hasDoc: boolean;
   /** T155 — il progetto ha submodule: senza, `^U` non ha bersaglio e la voce
    *  non si annuncia. Stessa regola delle voci contestuali sopra — un tasto
    *  inerte non occupa colonne per dirlo. */
@@ -126,6 +128,7 @@ export function deckLegend(state: {
   const canSpawn = state.focus === 'tasks' && state.hasTask;
   const canResume = state.focus === 'sessions' && state.hasSession;
   const canOpenInbox = state.focus === 'inbox' && state.hasInbox;
+  const canOpenDoc = state.focus === 'doctree' && state.hasDoc;
   // T50 — il pin agisce su qualunque riga selezionata (anche stale, per
   // spinnarla); basta il focus sul pane e una selezione.
   const canPin = state.focus === 'sessions' && state.hasSessionId;
@@ -135,7 +138,7 @@ export function deckLegend(state: {
         ? ['⏎ detail', '^K/^P/^R spawn']
         : canResume
           ? ['⏎ resume']
-          : canOpenInbox
+          : canOpenInbox || canOpenDoc
             ? ['⏎ apri']
             : []),
       // T112 — la voce nomina il BERSAGLIO, che cambia di taglia senza che

@@ -23,24 +23,24 @@
 
 /**
  * L'alfabeto ammesso, negato: lettere, cifre, spazio, `_`, `-`, le accentate
- * italiane e sei emoji.
+ * italiane e sette emoji.
  *
  * Whitelist e non blacklist, come in bash: il titolo finisce dentro apici
  * singoli in `bash -lc "claude --name '…'"`, ed enumerare i caratteri pericolosi
  * significa sbagliarne uno.
  *
- * Le sei emoji sono nominate una per una e NON come intervallo di code point,
+ * Le sette emoji sono nominate una per una e NON come intervallo di code point,
  * per due ragioni che valgono su entrambi i lati: un'emoji arriva nella tab solo
  * se il deck la mostra identica in lista, cioè se `sanitize` (`src/width.ts`) la
  * lascia passare invece di renderla `·`, e quel verdetto si verifica un glifo
  * alla volta; e l'ordine di un intervallo dentro un bracket expression segue la
  * collazione della locale, non i code point.
  *
- * Il flag `u` non è cosmetico: senza, le quattro emoji astrali entrerebbero
+ * Il flag `u` non è cosmetico: senza, le emoji astrali entrerebbero
  * nella classe come coppie di surrogati sciolti, e la riduzione lascerebbe
  * passare mezzo carattere di qualunque altra emoji che ne condivida il primo.
  */
-const OUT_OF_ALPHABET = /[^A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ📐🚀📊🏁🧹📏-]/gu;
+const OUT_OF_ALPHABET = /[^A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ📐🚀📊🏁🧹📏🧭-]/gu;
 
 /** Cap in CARATTERI (code point), non in byte: a byte un taglio a metà di una
  *  `à` lascerebbe UTF-8 rotto nel titolo. Largo di proposito — una tab che sfora

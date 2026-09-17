@@ -28,8 +28,8 @@ test('gli id sono unici: un duplicato renderebbe irraggiungibile la seconda riga
   assert.deepEqual([...new Set(ids)], ids);
 });
 
-test('undici righe: il perimetro di D1, cioè le azioni con almeno una cella editabile', () => {
-  assert.equal(SPAWN_ACTIONS.length, 11);
+test('dodici righe: il perimetro di D1, cioè le azioni con almeno una cella editabile', () => {
+  assert.equal(SPAWN_ACTIONS.length, 12);
   for (const a of SPAWN_ACTIONS) {
     assert.ok(
       editableFields(a).length > 0,

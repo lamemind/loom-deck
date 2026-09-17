@@ -44,7 +44,8 @@ import { TASK_VIEWS, taskView, type SessionViewId, type TaskViewId } from './pan
 import type { InboxViewId } from './inbox-views.js';
 import type { DocViewId } from './doc-views.js';
 import { loadTaskFileText } from './tasks.js';
-import { loadInboxText } from './inbox.js';
+import { inboxPrompt, loadInboxText } from './inbox.js';
+import { dirListing, loadDocText } from './doc-tree.js';
 import type { Frame } from './frame.js';
 import type { DeckActions } from './actions.js';
 import type { DeckModel } from './deck-model.js';
@@ -52,7 +53,9 @@ import type { useAssignOverlay } from './overlays/assign.js';
 import type { useSheetOverlay } from './overlays/sheet.js';
 import type { useSearchOverlay } from './overlays/search.js';
 import type { useProjectStatus } from './overlays/status.js';
-import type { useInboxOverlay } from './overlays/inbox.js';
+import type { useFileSheet } from './overlays/file-sheet.js';
+import type { InboxFile } from './inbox.js';
+import type { DocRow } from './doc-tree.js';
 import type { useWrapOverlay } from './overlays/wrap.js';
 import type { useSpawnPage } from './overlays/spawn.js';
 import type { useGitlink } from './overlays/gitlink.js';
@@ -92,7 +95,10 @@ export type DeckOverlays = {
   sheet: ReturnType<typeof useSheetOverlay>;
   search: ReturnType<typeof useSearchOverlay>;
   status: ReturnType<typeof useProjectStatus>;
-  inbox: ReturnType<typeof useInboxOverlay>;
+  /** T160 — le due istanze dello stesso hook, tipizzate sul proprio oggetto: è
+   *  ciò che tiene disgiunte le due schermate malgrado la meccanica condivisa. */
+  inbox: ReturnType<typeof useFileSheet<InboxFile>>;
+  doc: ReturnType<typeof useFileSheet<DocRow>>;
   wrap: ReturnType<typeof useWrapOverlay>;
   spawn: ReturnType<typeof useSpawnPage>;
   /** T155 — non è un modo: non compare in `MODE_KEYS` perché non cattura
@@ -163,6 +169,7 @@ export function useDeckInput({
     detail: overlays.sheet.onKey,
     status: overlays.status.onKey,
     inbox: overlays.inbox.onKey,
+    doc: overlays.doc.onKey,
     wrap: overlays.wrap.onKey,
     spawn: overlays.spawn.onKey,
     reader: overlays.search.onReaderKey,
@@ -184,6 +191,7 @@ export function useDeckInput({
     detail: overlays.sheet.scroll,
     status: overlays.status.scroll,
     inbox: overlays.inbox.scroll,
+    doc: overlays.doc.scroll,
     wrap: overlays.wrap.scroll,
     reader: overlays.search.scrollReader,
   };
@@ -495,7 +503,25 @@ export function useDeckInput({
       else if (model.focus === 'doctree') model.moveDocSel(1);
       else model.setSelSessionId((id) => moveSelection(model.sessionRows, id, 1));
     } else if (key.return) {
-      if (model.focus === 'inbox') {
+      if (model.focus === 'doctree') {
+        // T160 — `⏎` apre il DETAIL del bersaglio, non la sessione: la sessione
+        // la apre il `⏎` di dentro, come sul pane inbox. Il gesto è lo stesso su
+        // un file e su una cartella (P10) — cambia cosa si legge nel corpo, non
+        // cosa si preme: il testo del file, oppure l'elenco che dice perché la
+        // cartella è flaggata.
+        const r = model.selDoc;
+        if (!r) {
+          setNote('nessuna riga doc selezionata');
+        } else {
+          const { prompt, hint } = actions.rebalanceSpawn(r);
+          overlays.doc.open({
+            item: r,
+            text: r.kind === 'dir' ? dirListing(model.docData, r.path) : loadDocText(cwd, r.path),
+            prompt,
+            hint,
+          });
+        }
+      } else if (model.focus === 'inbox') {
         // T134 — `⏎` apre il DETAIL del file, non la sessione: la sessione la
         // apre il `⏎` di dentro. Stessa scala del pane task, dove `⏎` apre il
         // detail e le combo restano per chi sa già cosa vuole — con la
@@ -503,7 +529,16 @@ export function useDeckInput({
         // una scelta ma una conseguenza della natura del file.
         const f = model.selInbox;
         if (!f) setNote('nessun file inbox selezionato');
-        else overlays.inbox.open({ file: f, text: loadInboxText(cwd, f.path) });
+        else
+          overlays.inbox.open({
+            item: f,
+            text: loadInboxText(cwd, f.path),
+            // T134 — la skill la decide la NATURA del file, e quella mappa vive
+            // in un posto solo (`inboxPrompt`, `src/inbox.ts`): il prompt si
+            // compone qui, dove si apre lo sheet, e non dentro l'hook — che da
+            // T160 è condiviso con un bersaglio di tutt'altra natura.
+            prompt: inboxPrompt(f),
+          });
       } else if (model.focus === 'tasks') {
         // T66 — ⏎ apre il DETAIL, non più una sessione. Secondo rimappaggio in
         // due task (T56 lo spostò da recap a sessione a mani nude), e la

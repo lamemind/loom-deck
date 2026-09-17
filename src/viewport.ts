@@ -107,8 +107,13 @@ export const MODAL_HEIGHT = {
   status: 0,
   // T134 — il detail di un file inbox: sesta sostitutiva. Un file di nozioni
   // arriva a 28KB, cioè più lungo di ogni task file del progetto: la stessa
-  // ragione delle altre cinque. Altezza da `inboxDetailCapacity`.
+  // ragione delle altre cinque. Altezza da `fileSheetCapacity`.
   inbox: 0,
+  // T160 — il detail di un bersaglio doc, nona sostitutiva: stessa schermata
+  // dell'inbox (`useFileSheet`, due istanze) su un altro oggetto. Un modo
+  // proprio e non uno condiviso perché `esc` deve riportare al pane da cui si è
+  // entrati, e un modo solo obbligherebbe a ricordarselo altrove.
+  doc: 0,
   // T134 — la lista hard-wrap: settima sostitutiva. Sul cappello lo scan trova
   // 77 `WRAP` e 147 `misto`, cioè una lista che non entra in nessun box sopra i
   // pane. Altezza da `wrapListCapacity`.
@@ -401,22 +406,28 @@ export function statusCapacity(rows: number): number {
   return Math.max(0, (rows || 24) - SLACK - STATUS_CHROME);
 }
 
-// T134 — cornice del detail di un file inbox. Gemella di STATUS_CHROME più una
-// riga: il detail porta in fondo la riga dell'azione (quale skill partirà su
-// `⏎`), che è l'unica cosa che l'utente deve leggere prima di premere.
+// T134/T160 — cornice del detail di un FILE, condivisa dalle due istanze dello
+// sheet (coda inbox e bersaglio doc). Gemella di STATUS_CHROME più una riga: il
+// detail porta in fondo la riga dell'azione (quale comando partirà su `⏎`), che
+// è l'unica cosa che l'utente deve leggere prima di premere.
 //   2  bordi del box esterno
-//   1  riga di testata (natura :: nome del file)
+//   1  riga di testata (natura o tipo :: nome del bersaglio)
 //   1  riga meta (marcatori · cifre · posizione nel testo)
 //   1  riga hint
 //   1  marginTop del box corpo
 //   2  bordi del box corpo
 //   1  marginTop della riga azione
 //   1  riga azione
-const INBOX_CHROME = 10;
+//
+// Una costante sola per le due schermate perché è la stessa cornice, disegnata
+// dallo stesso schema: due numeri uguali con due nomi diversi divergerebbero al
+// primo ritocco di una delle due, e quella che resta indietro sfonda `rows`
+// senza che niente lo dica.
+const FILE_SHEET_CHROME = 10;
 
-/** Righe di file inbox che entrano nel terminale. */
-export function inboxDetailCapacity(rows: number): number {
-  return Math.max(0, (rows || 24) - SLACK - INBOX_CHROME);
+/** Righe di testo che entrano nel terminale dentro uno sheet di file. */
+export function fileSheetCapacity(rows: number): number {
+  return Math.max(0, (rows || 24) - SLACK - FILE_SHEET_CHROME);
 }
 
 // T134 — cornice della lista hard-wrap.
