@@ -18,6 +18,7 @@ import {
   useArchivable,
   useCommitTimes,
   useDirtyFolders,
+  useDocScan,
   useEpicHierarchy,
   useInboxScan,
   useSessions,
@@ -25,6 +26,15 @@ import {
   useTasks,
 } from './hooks.js';
 import { DEFAULT_INBOX_STALE_HOURS, staleCount, type InboxFile } from './inbox.js';
+import type { DocRow } from './doc-tree.js';
+import {
+  cycleDocView,
+  docCounts as deriveDocCounts,
+  docView,
+  selectDocRows,
+  type DocViewCounts,
+  type DocViewId,
+} from './doc-views.js';
 import {
   cycleInboxView,
   inboxCounts as deriveInboxCounts,
@@ -57,15 +67,18 @@ import {
 } from './pane-views.js';
 import {
   ALL,
+  LEFT_PANE,
   MAX_SESSIONS,
   MAX_SESSIONS_ALL,
   META_ROWS,
+  RIGHT_PANE,
   ROW_ALL,
   ROW_SPOT,
   SPOT,
+  isLeftPane,
+  type DeckMode,
   type Focus,
   type Parent,
-  type RightPane,
 } from './model.js';
 import { applyView, epicRollup, taskColumns, type TaskRowData, type ViewState } from './view.js';
 import { loadView } from './view-store.js';
@@ -252,15 +265,21 @@ export function useDeckModel({
   // riaperta a freddo si legge come la lista intera.
   const [taskViewId, setTaskViewId] = useState<TaskViewId>('tasks');
   const [sessionViewId, setSessionViewId] = useState<SessionViewId>('context');
-  // T134 — quale pane occupa lo slot destro, e la vista attiva di quello inbox.
-  // Volatili entrambi (D6 preflight): il deck riapre sempre sulle sessioni.
-  const [rightPane, setRightPane] = useState<RightPane>('sessions');
+  // T160 — il MODO del deck (quale coppia di pane è montata) e la vista attiva
+  // dei due pane che il modo doc porta con sé. Volatili tutti e tre: il deck
+  // riapre sempre in modo task, sulle viste di default.
+  const [deckMode, setDeckMode] = useState<DeckMode>('task');
   const [inboxViewId, setInboxViewId] = useState<InboxViewId>('all');
+  const [docViewId, setDocViewId] = useState<DocViewId>('all');
   // Selezione KEYED SUL PATH, mai su indice: la lista si riordina sotto le
   // viste e si accorcia a ogni scan, e un indice grezzo punterebbe alla riga
   // sbagliata in silenzio (stessa trappola di T39 sulle task e T50 sulle
   // conversazioni).
   const [selInboxPath, setSelInboxPath] = useState<string | null>(null);
+  // T160 — gemella della precedente, sul pane doc: keyed sul PATH e mai
+  // sull'indice, perché la lista cambia forma fra le viste (albero con le
+  // cartelle, liste piatte per flag) e si riordina a ogni scan.
+  const [selDocPath, setSelDocPath] = useState<string | null>(null);
 
   // T136 — data dell'ultimo commit di ogni task file, per la chiave `commit`
   // della chain di sort.
@@ -329,6 +348,23 @@ export function useDeckModel({
   );
   const selInbox: InboxFile | null =
     inboxFiles.find((f) => f.path === selInboxPath) ?? null;
+
+  // T160 — l'albero della doc, quinto scan della famiglia e l'unico con un
+  // interruttore: gira solo mentre il modo doc è montato (P3 preflight). Il
+  // primo giro lo fa partire l'effect di `useDocScan` quando `enabled` passa a
+  // vero, quindi il montaggio rimisura da sé — `toggleDeckMode` sotto non deve
+  // chiamare `doc.scan()` come fa il gemello inbox, e chiamarlo darebbe due
+  // spawn da quattro secondi per un gesto solo.
+  const doc = useDocScan(cwd, docsRoot, deckMode === 'doc');
+  const docCounts: DocViewCounts = useMemo(
+    () => deriveDocCounts({ files: doc.files, dirs: doc.dirs, hasDirs: doc.hasDirs }),
+    [doc.files, doc.dirs, doc.hasDirs],
+  );
+  const docRows = useMemo(
+    () => selectDocRows(docViewId, { files: doc.files, dirs: doc.dirs, hasDirs: doc.hasDirs }),
+    [docViewId, doc.files, doc.dirs, doc.hasDirs],
+  );
+  const selDoc: DocRow | null = docRows.find((r) => r.path === selDocPath) ?? null;
 
   // T100 — le task effettivamente a schermo: la vista principale coincide con
   // `viewTasks` (nessun ricalcolo sul cammino di default), le altre due passano
@@ -480,6 +516,16 @@ export function useDeckModel({
       setSelInboxPath(inboxFiles[0]!.path);
     }
   }, [inboxFiles, selInboxPath]);
+  // T160 — gemello del precedente sul pane doc: un file splittato sparisce dalla
+  // vista `SPLIT` al primo scan dopo l'operazione, e la selezione cade sulla
+  // prima riga invece che su una posizione a caso.
+  useEffect(() => {
+    if (selDocPath !== null && !docRows.some((r) => r.path === selDocPath)) {
+      setSelDocPath(docRows[0]?.path ?? null);
+    } else if (selDocPath === null && docRows.length > 0) {
+      setSelDocPath(docRows[0]!.path);
+    }
+  }, [docRows, selDocPath]);
 
   /** Selezione per INDICE nella vista, riconvertita subito in sentinella o id.
    *  T21 — la chiama anche il click su una riga del pane task. */
@@ -527,9 +573,17 @@ export function useDeckModel({
     setNote(`vista inbox: ${inboxView(next).label(inboxCounts)}`);
   }
 
+  function selectDocView(next: DocViewId) {
+    if (next === docViewId) return;
+    setDocViewId(next);
+    setSelDocPath(null);
+    setNote(`vista doc: ${docView(next).label(docCounts)}`);
+  }
+
   function cycleView(delta: number) {
     if (focus === 'tasks') selectTaskView(cycleTaskView(taskViewId, delta));
     else if (focus === 'inbox') selectInboxView(cycleInboxView(inboxViewId, delta));
+    else if (focus === 'doctree') selectDocView(cycleDocView(docViewId, delta));
     else selectSessionView(cycleSessionView(sessionViewId, delta));
   }
 
@@ -544,6 +598,20 @@ export function useDeckModel({
     if (inboxFiles.length === 0) return;
     const next = Math.max(0, Math.min(inboxFiles.length - 1, (at < 0 ? 0 : at) + delta));
     setSelInboxPath(inboxFiles[next]!.path);
+  }
+
+  /** Gemelle delle due sopra, sul pane doc. Nessuna riga è non-selezionabile:
+   *  una cartella è un bersaglio di `rebalance-doc` quanto un file. */
+  function selectDocRow(index: number) {
+    const r = docRows[index];
+    if (r) setSelDocPath(r.path);
+  }
+
+  function moveDocSel(delta: number) {
+    const at = docRows.findIndex((r) => r.path === selDocPath);
+    if (docRows.length === 0) return;
+    const next = Math.max(0, Math.min(docRows.length - 1, (at < 0 ? 0 : at) + delta));
+    setSelDocPath(docRows[next]!.path);
   }
 
   /** T148 — `m` scorre il selettore modello della riga sessione selezionata al
@@ -570,33 +638,44 @@ export function useDeckModel({
   }
 
   /**
-   * T134 — `^B` scambia i due pane dello slot destro (D8 preflight).
+   * T160 — `^B` scambia il MODO, cioè ENTRAMBI gli slot insieme.
    *
-   * Il FOCUS segue il pane: chi stava guardando a destra continua a guardare a
-   * destra, ma quello che c'è adesso è l'altro pane. Lasciarlo su `sessions`
-   * con l'inbox montato darebbe un focus su un pane che non è a schermo, e le
-   * azioni della lista sessioni resterebbero attive su una selezione invisibile.
+   * Erede del `toggleInboxPane` di T134, che scambiava il solo pane destro. Un
+   * tasto per slot avrebbe reso raggiungibili le due combinazioni che l'asse
+   * unico esiste per non avere (albero doc accanto alle conversazioni, lista
+   * task accanto alla coda inbox), e ne avrebbe richiesto un secondo che nessuna
+   * legenda ha spazio per annunciare.
+   *
+   * Il FOCUS segue la POSIZIONE, non il contenuto: chi stava guardando a
+   * sinistra continua a guardare a sinistra, e quello che c'è adesso è l'altro
+   * pane. È la stessa regola di T134 (lì con una posizione sola su cui valeva) e
+   * la stessa di `←→`, che nominano un lato e non un pane.
+   *
+   * Nessuno scan esplicito qui, a differenza del gemello di T134: il montaggio
+   * lo rimisura da sé, perché l'effect di `useDocScan` è keyed sull'interruttore
+   * e riparte quando passa a vero. Chiamarlo anche di qui darebbe due spawn da
+   * quattro secondi per un gesto solo. Lo scan inbox invece resta chiesto a
+   * mano — il suo hook gira sempre, e non ha un interruttore che gli dica che
+   * qualcuno ha appena aperto il pane.
    */
-  function toggleInboxPane() {
-    const next: RightPane = rightPane === 'inbox' ? 'sessions' : 'inbox';
-    setRightPane(next);
-    setFocus((f) => (f === 'tasks' ? f : next));
-    // Montare il pane RIMISURA la coda. Il periodico resta, come rete per il
-    // deck lasciato aperto sul pane inbox, ma non è più l'unico canale: senza
-    // questa chiamata chi apre il pane guarda l'ultima misura, che può essere
-    // vecchia quanto l'intero intervallo. Non serve il verso opposto — tornare
-    // alle sessioni non guarda la coda, e uno scan lì si pagherebbe per nessuno.
-    if (next === 'inbox') inbox.scan();
-    setNote(next === 'inbox' ? '^B → pane inbox' : '^B → pane sessioni');
+  function switchMode(next: DeckMode) {
+    if (next === deckMode) return;
+    setDeckMode(next);
+    setFocus((f) => (isLeftPane(f) ? LEFT_PANE[next] : RIGHT_PANE[next]));
+    if (next === 'doc') inbox.scan();
+    setNote(next === 'doc' ? '^B → modo doc' : '^B → modo task');
   }
 
-  /** `esc` in vista normale: torna alle sessioni. Solo in quel verso — `esc`
-   *  dice «esci da dove sei», e sulle sessioni non c'è più niente da cui uscire
-   *  (il tasto resta inerte, come è sempre stato). */
-  function closeInboxPane(): boolean {
-    if (rightPane !== 'inbox') return false;
-    setRightPane('sessions');
-    setFocus((f) => (f === 'inbox' ? 'sessions' : f));
+  function toggleDeckMode() {
+    switchMode(deckMode === 'doc' ? 'task' : 'doc');
+  }
+
+  /** `esc` in vista normale: torna al modo task. Solo in quel verso — `esc` dice
+   *  «esci da dove sei», e dal modo task non c'è più niente da cui uscire (il
+   *  tasto resta inerte, come è sempre stato). */
+  function closeDocMode(): boolean {
+    if (deckMode !== 'doc') return false;
+    switchMode('task');
     return true;
   }
 
@@ -653,8 +732,9 @@ export function useDeckModel({
     cycleResumeModel,
     bareModel,
     cycleBareModel,
+    // modo del deck
+    deckMode,
     // derivazioni del pane inbox
-    rightPane,
     inboxScanned: inbox.scanned,
     inboxOk: inbox.ok,
     inboxViewId,
@@ -663,6 +743,16 @@ export function useDeckModel({
     inboxFiles,
     selInboxPath,
     selInbox,
+    // derivazioni del pane doc
+    docScanned: doc.scanned,
+    docOk: doc.ok,
+    docScanning: doc.scanning,
+    docHasDirs: doc.hasDirs,
+    docViewId,
+    docCounts,
+    docRows,
+    selDocPath,
+    selDoc,
     // mutatori di navigazione
     selectTaskRow,
     moveTaskSel,
@@ -671,8 +761,11 @@ export function useDeckModel({
     selectInboxView,
     selectInboxRow,
     moveInboxSel,
-    toggleInboxPane,
-    closeInboxPane,
+    selectDocView,
+    selectDocRow,
+    moveDocSel,
+    toggleDeckMode,
+    closeDocMode,
     cycleView,
   };
 }

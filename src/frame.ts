@@ -33,10 +33,12 @@ import { layoutBudget, windowRange, type Budget, type PreviewKind } from './view
 import { sanitize, termWidth } from './width.js';
 import { MODEL_SHORT_LIST, WARN } from './glyphs.js';
 import { STATUS_MISSING } from './project-status.js';
-import { META_ROWS, type Focus, type Mode, type RightPane } from './model.js';
+import { META_ROWS, type DeckMode, type Focus, type Mode } from './model.js';
 import type { SessionViewCounts, SessionViewId, TaskViewCounts, TaskViewId } from './pane-views.js';
 import type { InboxViewCounts, InboxViewId } from './inbox-views.js';
 import type { InboxFile } from './inbox.js';
+import type { DocViewCounts, DocViewId } from './doc-views.js';
+import type { DocRow } from './doc-tree.js';
 import { rowIndexOf, type SessionRow } from './session-list.js';
 import type { Task } from './tasks.js';
 import { VERSION } from './version.js';
@@ -105,8 +107,8 @@ export function deckLegend(state: {
   hasSessionId: boolean;
   /** `CANC` pota in blocco invece della sola selezionata. */
   purgeBulk: boolean;
-  /** T134 — il pane inbox occupa lo slot destro. */
-  inboxPane: boolean;
+  /** T160 — il deck è in modo doc (albero doc + coda inbox). */
+  docMode: boolean;
   /** T134 — c'è una riga inbox selezionata da aprire. */
   hasInbox: boolean;
   /** T155 — il progetto ha submodule: senza, `^U` non ha bersaglio e la voce
@@ -151,11 +153,11 @@ export function deckLegend(state: {
       // T155 — la voce nomina il GESTO, come le due sopra: «gitlink» da solo
       // direbbe l'oggetto e non che il tasto lo allinea con un commit.
       ...(state.gitlink ? ['^U bumpa gitlink'] : []),
-      // T134 — la voce nomina il pane che il tasto MONTA, non quello montato:
-      // `^B` scambia i due, e annunciare quello che si sta già guardando
-      // direbbe il contrario di ciò che il tasto fa. Stessa regola di `CANC
-      // elimina tutte`, che nomina il bersaglio e non il tasto.
-      state.inboxPane ? '^B sessioni' : '^B inbox',
+      // T160 — la voce nomina il MODO che il tasto monta, non quello montato:
+      // `^B` li scambia, e annunciare quello che si sta già guardando direbbe il
+      // contrario di ciò che il tasto fa. Stessa regola di `CANC elimina tutte`,
+      // che nomina il bersaglio e non il tasto.
+      state.docMode ? '^B task' : '^B doc',
       // T161 — la voce nomina l'OGGETTO e non il gesto, al contrario di `^G`/
       // `^O`/`^U`: lì il tasto fa qualcosa (genera, bumpa) e il nome dell'oggetto
       // da solo sarebbe ambiguo, qui apre una pagina e basta.
@@ -275,17 +277,28 @@ export type IndicatorRow = {
 };
 
 /**
- * Il bottone che monta il pane inbox: `[ Inbox 📄 3/1/2 🚨2 ]`.
+ * Il bottone che monta il modo doc: `[ Doc 📄 3/1/2 🚨2 ]`.
  *
- * SEMPRE ACCESO, mai grigio (D7): è un pane, non un sottoinsieme che può essere
- * vuoto. I tre numeri sono le tre nature nell'ordine del catalogo; la sirena e
- * il suo contatore compaiono solo sopra la soglia.
+ * T160/P4 — nomina il MODO, non più il solo pane inbox di T134, perché è quello
+ * che `^B` monta adesso. I contatori restano quelli dell'inbox e non ne
+ * guadagnano di doc: un contatore dei flag doc obbligherebbe a tenere lo scan da
+ * quattro secondi acceso anche in modo task, cioè a pagarlo quando nessuno
+ * guarda l'albero — l'opposto dell'interruttore di `useDocScan`.
  *
- * Prima del primo scan i numeri non esistono ancora, e stampare `0/0/0`
- * direbbe «ho misurato e non c'è niente» — cioè la cosa sbagliata (D2
- * preflight: `missing` e guasto sono stati distinti). Il glifo di allerta si
- * AGGIUNGE ai numeri invece di sostituirli: un tentativo fallito lascia in
- * piedi l'esito dell'ultimo riuscito, che resta vero e ancora apribile.
+ * SEMPRE ACCESO, mai grigio (D7 di T134): è un modo, non un sottoinsieme che può
+ * essere vuoto. I tre numeri sono le tre nature nell'ordine del catalogo; la
+ * sirena e il suo contatore compaiono solo sopra la soglia.
+ *
+ * Il nome non si scambia col modo montato, a differenza della voce di legenda
+ * qui sopra: il bottone porta i contatori della coda inbox, che vive in modo
+ * doc, quindi è l'etichetta di quel mondo — e un `[ Task 📄 3/1/2 ]` leggerebbe
+ * quei tre numeri come se fossero delle task.
+ *
+ * Prima del primo scan i numeri non esistono ancora, e stampare `0/0/0` direbbe
+ * «ho misurato e non c'è niente» — cioè la cosa sbagliata (D2 preflight:
+ * `missing` e guasto sono stati distinti). Il glifo di allerta si AGGIUNGE ai
+ * numeri invece di sostituirli: un tentativo fallito lascia in piedi l'esito
+ * dell'ultimo riuscito, che resta vero e ancora apribile.
  */
 export function inboxButton(state: {
   counts: InboxViewCounts;
@@ -298,7 +311,7 @@ export function inboxButton(state: {
     : STATUS_MISSING;
   const siren = state.stale > 0 ? ` 🚨${state.stale}` : '';
   const warn = state.ok ? '' : ` ${WARN}`;
-  return sanitize(`[ Inbox 📄 ${numbers}${siren}${warn} ]`);
+  return sanitize(`[ Doc 📄 ${numbers}${siren}${warn} ]`);
 }
 
 /**
@@ -431,14 +444,20 @@ export type FrameInput = {
   parentLabel: string;
   /** `tasks.md` non è stato caricato: al posto delle righe task c'è la riga rossa. */
   hasLoadError: boolean;
-  /** T134 — quale pane occupa lo slot destro. */
-  rightPane: RightPane;
+  /** T160 — il modo del deck: quale coppia di pane è montata. */
+  deckMode: DeckMode;
   /** T134 — la lista inbox INTERA della vista attiva. */
   inboxFiles: InboxFile[];
   /** Selezione del pane inbox, keyed sul path. */
   selInboxPath: string | null;
   inboxCounts: InboxViewCounts;
   inboxViewId: InboxViewId;
+  /** T160 — la lista doc INTERA della vista attiva. */
+  docRows: DocRow[];
+  /** Selezione del pane doc, keyed sul path. */
+  selDocPath: string | null;
+  docCounts: DocViewCounts;
+  docViewId: DocViewId;
 };
 
 export type Frame = {
@@ -452,6 +471,12 @@ export type Frame = {
    *  in memoria, e un ramo condizionale qui costerebbe più della somma. */
   inboxWin: { start: number; end: number };
   windowInbox: InboxFile[];
+  /** T160 — finestra e righe visibili del pane doc, che occupa lo slot SINISTRO
+   *  in modo doc. La capienza è quella dello slot destro e non quella del pane
+   *  task: la cornice che paga è la sua (2 bordi + header), non quella del pane
+   *  task, che ha in più la riga sort e le due righe meta. */
+  docWin: { start: number; end: number };
+  windowDoc: DocRow[];
   /** `null` in compatto: lì i pane non esistono, quindi non c'è nulla da colpire. */
   listGeometry: ListGeometry | null;
   /** Segmento destro della testata: risoluzione in celle e versione. */
@@ -504,6 +529,9 @@ export function frameGeometry(input: FrameInput): Frame {
   const selInboxIndex = input.inboxFiles.findIndex((f) => f.path === input.selInboxPath);
   const inboxWin = windowRange(input.inboxFiles.length, selInboxIndex, budget.sessionRows);
   const windowInbox = input.inboxFiles.slice(inboxWin.start, inboxWin.end);
+  const selDocIndex = input.docRows.findIndex((r) => r.path === input.selDocPath);
+  const docWin = windowRange(input.docRows.length, selDocIndex, budget.sessionRows);
+  const windowDoc = input.docRows.slice(docWin.start, docWin.end);
 
   // T21 — geometria delle liste per l'hit-test del click, dalla STESSA
   // aritmetica che disegna i pane: le parti degli header escono dal modulo che
@@ -556,7 +584,9 @@ export function frameGeometry(input: FrameInput): Frame {
         taskRows: META_ROWS + (input.hasLoadError ? 0 : windowTasks.length),
         sessionRows: windowRows.length,
         inboxRows: windowInbox.length,
-        rightPane: input.rightPane,
+        docHeader: [],
+        docRows: 0,
+        mode: input.deckMode,
       };
 
   return {
@@ -567,6 +597,8 @@ export function frameGeometry(input: FrameInput): Frame {
     windowRows,
     inboxWin,
     windowInbox,
+    docWin,
+    windowDoc,
     listGeometry,
     // Dimensione del terminale in CELLE (colonne×righe, mai pixel — un processo
     // dentro un terminale vede solo la griglia di caratteri) e versione. La

@@ -32,9 +32,10 @@ import {
 import { HINT_ROW, LAUNCH_ROW } from './frame.js';
 import { moveSelection } from './session-list.js';
 import { captures, scrolls, type CapturingMode, type ScrollingMode } from './input-modes.js';
-import { META_ROWS, QUIT_WINDOW_MS, type Mode } from './model.js';
+import { LEFT_PANE, META_ROWS, QUIT_WINDOW_MS, RIGHT_PANE, type Mode } from './model.js';
 import { TASK_VIEWS, taskView, type SessionViewId, type TaskViewId } from './pane-views.js';
 import type { InboxViewId } from './inbox-views.js';
+import type { DocViewId } from './doc-views.js';
 import { loadTaskFileText } from './tasks.js';
 import { loadInboxText } from './inbox.js';
 import type { Frame } from './frame.js';
@@ -282,7 +283,19 @@ export function useDeckInput({
       model.setFocus(hit.pane);
       if (hit.pane === 'tasks') model.selectTaskView(hit.key as TaskViewId);
       else if (hit.pane === 'inbox') model.selectInboxView(hit.key as InboxViewId);
+      else if (hit.pane === 'doctree') model.selectDocView(hit.key as DocViewId);
       else model.selectSessionView(hit.key as SessionViewId);
+      return;
+    }
+    if (hit.pane === 'doctree') {
+      const r = frame.windowDoc[hit.index];
+      if (!r) return;
+      if (model.focus === 'doctree' && r.path === model.selDocPath) {
+        onKey('', { ...NO_MODIFIERS, return: true });
+        return;
+      }
+      model.setFocus('doctree');
+      model.selectDocRow(frame.docWin.start + hit.index);
       return;
     }
     if (hit.pane === 'inbox') {
@@ -411,11 +424,13 @@ export function useDeckInput({
         // byte non arrivasse il test fallirebbe invece di lasciare il dubbio.
         overlays.spawn.openPage();
       } else if (input === 'b') {
-        // T134/D8 preflight — `^B` (box/bacheca) scambia i due pane dello slot
-        // destro. Non è un modale né una schermata: il pane resta uno dei due
-        // riquadri della vista normale, quindi `tab` continua a ciclare le
-        // viste DENTRO quello montato e `←→` a spostare il focus fra le colonne.
-        model.toggleInboxPane();
+        // T160 — `^B` scambia il MODO del deck, cioè entrambi gli slot insieme.
+        // Erede del tasto di T134, che scambiava il solo pane destro: la
+        // mnemonica (box/bacheca) resta, il bersaglio è salito di un livello.
+        // Non è un modale né una schermata — i due riquadri della vista normale
+        // restano al loro posto, quindi `tab` continua a ciclare le viste DENTRO
+        // il pane a fuoco e `←→` a spostare il fuoco fra le colonne.
+        model.toggleDeckMode();
       }
       return;
     }
@@ -431,25 +446,28 @@ export function useDeckInput({
       // voci risparmia quattro pressioni.
       model.cycleView(key.shift ? -1 : 1);
     } else if (key.escape) {
-      // T134/D8 preflight — `esc` in vista normale chiude il pane inbox e torna
-      // alle sessioni. Resta inerte quando le sessioni sono già montate: `esc`
-      // dice «esci da dove sei», e da lì non c'è niente da cui uscire.
-      model.closeInboxPane();
+      // T160 — `esc` in vista normale torna al modo task. Resta inerte quando il
+      // modo task è già montato: `esc` dice «esci da dove sei», e da lì non c'è
+      // niente da cui uscire.
+      model.closeDocMode();
     } else if (key.leftArrow || key.rightArrow) {
-      // Binding ASSOLUTO, non toggle: `←` porta sempre sui task e `→` sempre
-      // sul pane DESTRO, quindi ripremere lo stesso tasto non riporta indietro.
-      // È ciò che lo rende spaziale — la direzione indica una destinazione, e
-      // con due colonne un toggle sarebbe indistinguibile solo per caso.
-      // T134 — «destro» è il pane montato, non `sessions`: il tasto nomina una
-      // posizione, e quale dei due la occupi è un'altra decisione (`^B`).
-      model.setFocus(key.leftArrow ? 'tasks' : model.rightPane);
+      // Binding ASSOLUTO, non toggle: `←` porta sempre sul pane SINISTRO e `→`
+      // sempre sul destro, quindi ripremere lo stesso tasto non riporta
+      // indietro. È ciò che lo rende spaziale — la direzione indica una
+      // destinazione, e con due colonne un toggle sarebbe indistinguibile solo
+      // per caso.
+      // T160 — «sinistro» e «destro» sono posizioni, non contenuti: quale pane
+      // le occupi lo decide il modo, che è un'altra decisione (`^B`).
+      model.setFocus((key.leftArrow ? LEFT_PANE : RIGHT_PANE)[model.deckMode]);
     } else if (key.upArrow) {
       if (model.focus === 'tasks') model.moveTaskSel(-1);
       else if (model.focus === 'inbox') model.moveInboxSel(-1);
+      else if (model.focus === 'doctree') model.moveDocSel(-1);
       else model.setSelSessionId((id) => moveSelection(model.sessionRows, id, -1));
     } else if (key.downArrow) {
       if (model.focus === 'tasks') model.moveTaskSel(1);
       else if (model.focus === 'inbox') model.moveInboxSel(1);
+      else if (model.focus === 'doctree') model.moveDocSel(1);
       else model.setSelSessionId((id) => moveSelection(model.sessionRows, id, 1));
     } else if (key.return) {
       if (model.focus === 'inbox') {

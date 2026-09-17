@@ -74,11 +74,15 @@ const frameInput = (over: Partial<Parameters<typeof frameGeometry>[0]> = {}) =>
     sessionViewId: 'context',
     parentLabel: 'tutte',
     hasLoadError: false,
-    rightPane: 'sessions',
+    deckMode: 'task',
     inboxFiles: [],
     selInboxPath: null,
     inboxCounts: { total: 0, nozioni: 0, derivazione: 0, sweep: 0 },
     inboxViewId: 'all',
+    docRows: [],
+    selDocPath: null,
+    docCounts: { total: 0, split: 0, merge: 0, tldr: 0, regroup: 0 },
+    docViewId: 'all',
     ...over,
   });
 
@@ -91,7 +95,7 @@ test('deckLegend: CANC nomina il bersaglio singolo quando il bulk è spento', ()
     hasSession: false,
     hasSessionId: false,
     purgeBulk: false,
-    inboxPane: false,
+    docMode: false,
   });
   assert.ok(legend.includes('CANC elimina'), 'la voce deve esserci');
   assert.ok(
@@ -107,7 +111,7 @@ test('deckLegend: CANC nomina il bulk quando il bulk è acceso', () => {
     hasSession: false,
     hasSessionId: false,
     purgeBulk: true,
-    inboxPane: false,
+    docMode: false,
   });
   assert.ok(legend.includes('CANC elimina tutte'), `bulk non annunciato: ${legend}`);
 });
@@ -121,7 +125,7 @@ test('deckLegend: col focus sulle sessioni non c\'è nessuna voce CANC', () => {
     hasSession: true,
     hasSessionId: true,
     purgeBulk: true,
-    inboxPane: false,
+    docMode: false,
   });
   assert.ok(!legend.includes('CANC'), `voce CANC fuori dal suo pane: ${legend}`);
 });
@@ -133,7 +137,7 @@ test('deckLegend: le voci contestuali seguono il pane a fuoco', () => {
     hasSession: false,
     hasSessionId: false,
     purgeBulk: false,
-    inboxPane: false,
+    docMode: false,
   });
   assert.ok(suTask.includes('⏎ detail'), 'sul pane task ⏎ apre il detail');
   assert.ok(!suTask.includes('f fork'), 'il fork non vive sul pane task');
@@ -144,7 +148,7 @@ test('deckLegend: le voci contestuali seguono il pane a fuoco', () => {
     hasSession: true,
     hasSessionId: true,
     purgeBulk: false,
-    inboxPane: false,
+    docMode: false,
   });
   assert.ok(suSessioni.includes('⏎ resume'), 'sul pane sessioni ⏎ fa il resume');
   assert.ok(suSessioni.includes('f fork'), 'il fork vive qui');
@@ -162,7 +166,7 @@ test('deckLegend: su una pinnata stale restano pin/titolo/assegna, non il fork',
     hasSession: false,
     hasSessionId: true,
     purgeBulk: false,
-    inboxPane: false,
+    docMode: false,
   });
   assert.ok(legend.includes('p pin'), `il pin deve restare: ${legend}`);
   assert.ok(legend.includes('A assegna'), `l'assegnazione deve restare: ${legend}`);

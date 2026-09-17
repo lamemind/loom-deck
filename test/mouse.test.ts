@@ -206,10 +206,12 @@ const GEOMETRY: ListGeometry = {
   taskHeader: [{ key: 'tasks', start: 5, end: 17 }, { key: 'hidden', start: 21, end: 31 }],
   sessionHeader: [{ key: 'context', start: 75, end: 85 }],
   inboxHeader: [{ key: 'all', start: 75, end: 84 }],
+  docHeader: [{ key: 'all', start: 5, end: 14 }],
   taskRows: 2 + 5, // due meta + cinque task
   sessionRows: 4,
   inboxRows: 3,
-  rightPane: 'sessions',
+  docRows: 6,
+  mode: 'task',
 };
 
 test('listHit: header → vista, col separatore e il nome del pane inerti', () => {
@@ -262,12 +264,12 @@ test('listHit: pane sessioni — prima riga subito sotto l\'header, oltre la fin
   assert.equal(listHit({ col: 70, row: PANE_BODY_ROW + 4 }, GEOMETRY), null);
 });
 
-// T134 — lo slot destro ospita uno dei due pane, e `rightPane` decide QUALE
-// catalogo il click interroga. Senza, un click sull'header del pane inbox
-// tornerebbe una chiave del catalogo delle sessioni: una vista che esiste, con
-// un id che il pane montato non conosce, e nessun errore.
-test('listHit: col pane inbox montato il click destro parla di inbox', () => {
-  const g: ListGeometry = { ...GEOMETRY, rightPane: 'inbox' };
+// T134/T160 — il MODO decide quale catalogo il click interroga, su entrambi i
+// lati. Senza, un click sull'header del pane inbox tornerebbe una chiave del
+// catalogo delle sessioni: una vista che esiste, con un id che il pane montato
+// non conosce, e nessun errore.
+test('listHit: in modo doc il click destro parla di inbox', () => {
+  const g: ListGeometry = { ...GEOMETRY, mode: 'doc' };
   assert.deepEqual(listHit({ col: 80, row: PANE_HEADER_ROW }, g), {
     pane: 'inbox',
     target: 'view',
@@ -281,12 +283,30 @@ test('listHit: col pane inbox montato il click destro parla di inbox', () => {
   // Le righe del pane inbox sono le sue, non quelle delle sessioni: oltre la
   // terza non c'è niente da colpire anche se le sessioni ne avrebbero quattro.
   assert.equal(listHit({ col: 70, row: PANE_BODY_ROW + 3 }, g), null);
-  // Il pane task non cambia: lo slot destro non lo tocca.
-  assert.deepEqual(listHit({ col: 10, row: TASK_LIST_ROW }, g), {
-    pane: 'tasks',
+});
+
+// T160 — e lo stesso modo cambia anche il lato SINISTRO. Il pane doc non ha la
+// riga sort del pane task, quindi la sua lista comincia una riga più in alto: un
+// hit-test che riusasse `TASK_LIST_ROW` sbaglierebbe di uno su ogni riga, in
+// silenzio e per sempre.
+test('listHit: in modo doc il click sinistro parla di albero doc', () => {
+  const g: ListGeometry = { ...GEOMETRY, mode: 'doc' };
+  assert.deepEqual(listHit({ col: 10, row: PANE_HEADER_ROW }, g), {
+    pane: 'doctree',
+    target: 'view',
+    key: 'all',
+  });
+  assert.deepEqual(listHit({ col: 10, row: PANE_BODY_ROW }, g), {
+    pane: 'doctree',
     target: 'row',
     index: 0,
   });
+  assert.deepEqual(listHit({ col: 10, row: PANE_BODY_ROW + 5 }, g), {
+    pane: 'doctree',
+    target: 'row',
+    index: 5,
+  });
+  assert.equal(listHit({ col: 10, row: PANE_BODY_ROW + 6 }, g), null);
 });
 
 test('listHit: margine fra i pane, bordo esterno e righe sopra i pane sono inerti', () => {

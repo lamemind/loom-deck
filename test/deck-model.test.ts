@@ -159,19 +159,28 @@ test('childSessionsOf: senza task selezionata restano le spot, non tutte', () =>
 // l'ultima misura invece dello stato di adesso, e nulla a schermo diceva che il
 // numero fosse vecchio.
 
-test('toggleInboxPane: montare il pane inbox fa ripartire lo scan', () => {
+test('switchMode: entrare in modo doc fa ripartire lo scan della coda inbox', () => {
   const src = readFileSync(
     join(fileURLToPath(new URL('.', import.meta.url)), '..', 'src', 'deck-model.ts'),
     'utf8',
   );
-  const start = src.indexOf('function toggleInboxPane');
-  assert.notEqual(start, -1, 'toggleInboxPane non trovata in src/deck-model.ts');
+  const start = src.indexOf('function switchMode');
+  assert.notEqual(start, -1, 'switchMode non trovata in src/deck-model.ts');
   const body = src.slice(start, src.indexOf('\n  }', start));
   assert.match(
     body,
     /inbox\.scan\(\)/,
-    "toggleInboxPane deve chiamare inbox.scan(): senza, il pane si apre sull'ultima " +
+    "switchMode deve chiamare inbox.scan(): senza, il pane si apre sull'ultima " +
       "misura periodica, vecchia fino a un intero intervallo",
+  );
+  // T160 — e NON deve chiamare quello della doc: il suo hook è keyed
+  // sull'interruttore e riparte da sé quando il modo si monta. Una seconda
+  // chiamata qui darebbe due spawn da quattro secondi per un gesto solo.
+  assert.equal(
+    /doc\.scan\(\)/.test(body),
+    false,
+    'switchMode non deve chiamare doc.scan(): lo scan doc riparte dal proprio effect, ' +
+      "keyed sull'interruttore `enabled`",
   );
 });
 

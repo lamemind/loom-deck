@@ -14,6 +14,7 @@ import { archivableIds, SCAN_INTERVAL_MS } from './archivable.js';
 import { commitTimes } from './commit-times.js';
 import { scanEpicHierarchy, EMPTY_EPIC_HIERARCHY, type EpicHierarchy } from './epic-hierarchy.js';
 import { scanInbox, INBOX_SCAN_INTERVAL_MS, type InboxFile } from './inbox.js';
+import { scanDocTree, DOC_SCAN_INTERVAL_MS, type DocScanData } from './doc-tree.js';
 import {
   mixedCount,
   readWrapCache,
@@ -442,6 +443,91 @@ export function useInboxScan(projectRoot: string, docsRoot: string): InboxState 
   // Lo scan a richiesta RESETTA il timer, come quello del wrap: senza,
   // l'intervallo continuerebbe a scorrere dall'ultimo tick automatico e potrebbe
   // rimisurare pochi istanti dopo un dato appena misurato.
+  const scan = useCallback(() => {
+    setEpoch((e) => e + 1);
+  }, []);
+
+  return { ...state, scan };
+}
+
+/**
+ * T160 — l'albero della doc, quinto membro della famiglia degli scan, e l'unico
+ * con un INTERRUTTORE.
+ *
+ * Gemello di `useInboxScan` nella forma — stessa struttura a `epoch`, stesso
+ * flag di corsa in un ref, stessa regola che un tentativo fallito non butta via
+ * l'ultimo esito buono — e diverso nelle due cose che il costo impone (P3
+ * preflight).
+ *
+ * NON PARTE ALL'AVVIO. Lo scan apre ogni `.md` sotto la docs-root e sul cappello
+ * loom-works costa 4,06 s di wall clock misurati: pagarli all'apertura del deck
+ * rallenterebbe proprio il momento in cui si vuole vedere la lista task. Il
+ * primo giro lo chiede il montaggio del modo doc, che è il gesto con cui
+ * qualcuno dichiara di volerla guardare.
+ *
+ * IL PERIODICO VIVE SOLO MENTRE `enabled`. Un timer acceso in modo task
+ * pagherebbe quattro secondi di CPU a giro per nessuno — lo stesso conto che
+ * T153 ha fatto sul poll da 1,5 s, un ordine di grandezza più in alto. Spento
+ * l'interruttore l'effect smonta l'intervallo e lo stato resta com'era: chi
+ * rientra nel modo doc rivede l'ultima misura mentre la nuova arriva, invece di
+ * una lista vuota.
+ *
+ * `scanning` è il terzo stato che gli altri scan non hanno bisogno di
+ * distinguere: quattro secondi sono abbastanza da vedersi, e un pane vuoto per
+ * quattro secondi si legge come una doc senza file.
+ */
+export interface DocState extends DocScanData {
+  /** L'ultimo tentativo è andato a buon fine. */
+  ok: boolean;
+  /** Almeno un tentativo è stato fatto. */
+  scanned: boolean;
+  /** Una misura è in corso adesso. */
+  scanning: boolean;
+  /** Rimisura adesso e rimanda indietro il timer del periodico. */
+  scan: () => void;
+}
+
+export function useDocScan(projectRoot: string, docsRoot: string, enabled: boolean): DocState {
+  const [state, setState] = useState<Omit<DocState, 'scan'>>({
+    files: [],
+    dirs: [],
+    hasDirs: false,
+    ok: true,
+    scanned: false,
+    scanning: false,
+  });
+  const [epoch, setEpoch] = useState(0);
+  const busy = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  const run = useCallback(() => {
+    if (busy.current) return;
+    busy.current = true;
+    setState((prev) => ({ ...prev, scanning: true }));
+    scanDocTree(projectRoot, docsRoot).then((res) => {
+      busy.current = false;
+      if (!alive.current) return;
+      setState((prev) =>
+        res.ok
+          ? { files: res.files, dirs: res.dirs, hasDirs: res.hasDirs, ok: true, scanned: true, scanning: false }
+          : { ...prev, ok: false, scanned: true, scanning: false },
+      );
+    });
+  }, [projectRoot, docsRoot]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    run();
+    const id = setInterval(run, DOC_SCAN_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [run, epoch, enabled]);
+
   const scan = useCallback(() => {
     setEpoch((e) => e + 1);
   }, []);

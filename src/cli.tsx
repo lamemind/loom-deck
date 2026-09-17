@@ -298,11 +298,15 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     sessionViewId: model.sessionViewId,
     parentLabel: model.parentLabel,
     hasLoadError: Boolean(model.loadError),
-    rightPane: model.rightPane,
+    deckMode: model.deckMode,
     inboxFiles: model.inboxFiles,
     selInboxPath: model.selInboxPath,
     inboxCounts: model.inboxCounts,
     inboxViewId: model.inboxViewId,
+    docRows: model.docRows,
+    selDocPath: model.selDocPath,
+    docCounts: model.docCounts,
+    docViewId: model.docViewId,
   });
 
   useDeckInput({
@@ -384,7 +388,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           hasSession: model.selSessionObj !== null,
           hasSessionId: model.selSessionId !== null,
           purgeBulk: model.purgeBulk,
-          inboxPane: model.rightPane === 'inbox',
+          docMode: model.deckMode === 'doc',
           hasInbox: model.selInbox !== null,
           gitlink: gitlink.enabled,
         })}
@@ -453,10 +457,11 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           data={model.taskRowData}
           blockMark={model.blockMark}
         />
-        {/* T134 — lo slot destro ospita UNO dei due pane (D6): con due riquadri
-            i tipi delle righe restano disgiunti, e ogni azione della lista
-            sessioni continua a valere solo dove una conversazione esiste. */}
-        {model.rightPane === 'inbox' ? (
+        {/* T160 — il MODO sceglie la coppia: lista task + conversazioni, oppure
+            albero doc + coda inbox. Con quattro pane distinti i tipi delle righe
+            restano disgiunti, e ogni azione continua a valere solo dove il suo
+            oggetto esiste. */}
+        {model.deckMode === 'doc' ? (
           <InboxPane
             files={frame.windowInbox}
             counts={model.inboxCounts}

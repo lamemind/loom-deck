@@ -20,6 +20,7 @@
 //    i campi di testo. Con soli 1000+1006 gli eventi sono due per click.
 
 import { termWidth } from './width.js';
+import { LEFT_PANE, RIGHT_PANE, type DeckMode, type Focus } from './model.js';
 
 /** Un evento mouse SGR già parsato. `col`/`row` sono 1-based, come li manda il
  *  terminale. `button` è il codice grezzo: 0/1/2 = sinistro/centrale/destro,
@@ -329,6 +330,10 @@ export interface ListGeometry {
   sessionHeader: Region[];
   /** T134 — regioni delle viste sull'header del pane inbox. */
   inboxHeader: Region[];
+  /** T160 — regioni delle viste sull'header del pane doc. */
+  docHeader: Region[];
+  /** T160 — righe della lista doc a schermo. */
+  docRows: number;
   /** Righe della lista task A SCHERMO, righe meta comprese (0 = `≡ tutte`). */
   taskRows: number;
   /** Righe della lista sessioni a schermo, separatore compreso. */
@@ -336,36 +341,53 @@ export interface ListGeometry {
   /** T134 — righe della lista inbox a schermo. */
   inboxRows: number;
   /**
-   * T134 — quale pane occupa lo slot destro. Le colonne dei due span non
-   * cambiano (i pane sono affiancati al 50% comunque), ma header e righe da
-   * consultare sì: senza questo campo il click sul pane inbox interrogherebbe
-   * le regioni delle viste sessione, cioè un altro catalogo con altre chiavi.
+   * T160 — il MODO del deck. Le colonne dei due span non cambiano (i pane sono
+   * affiancati al 50% in entrambi i modi), ma header e righe da consultare sì:
+   * senza questo campo il click sul pane inbox interrogherebbe le regioni delle
+   * viste sessione, cioè un altro catalogo con altre chiavi.
+   *
+   * Sostituisce il `rightPane` di T134 per la stessa ragione per cui l'asse è
+   * diventato uno: da qui il modo governa entrambi i lati, non più il solo
+   * destro.
    */
-  rightPane: 'sessions' | 'inbox';
+  mode: DeckMode;
 }
 
+/** Il pane colpito: i quattro valori di `Focus`, perché il chiamante ne fa
+ *  esattamente quell'uso — sposta il fuoco lì. */
+export type HitPane = Focus;
+
 export type ListHit =
-  | { pane: 'tasks' | 'sessions' | 'inbox'; target: 'view'; key: string }
+  | { pane: HitPane; target: 'view'; key: string }
   /** `index` è l'indice nella FINESTRA visibile: spetta al chiamante riportarlo
    *  alla lista completa, perché solo lui sa dove la finestra comincia. */
-  | { pane: 'tasks' | 'sessions' | 'inbox'; target: 'row'; index: number };
+  | { pane: HitPane; target: 'row'; index: number };
 
 /** L'elemento di lista sotto il click, o `null` se il click cade su cornice,
  *  riga sort, spazio vuoto sotto la lista o fuori dai pane. */
 export function listHit(ev: { col: number; row: number }, g: ListGeometry): ListHit | null {
   const spans = paneSpans(g.columns);
-  const inTasks = ev.col >= spans.tasks.start && ev.col <= spans.tasks.end;
+  const inLeft = ev.col >= spans.tasks.start && ev.col <= spans.tasks.end;
   const inRight = ev.col >= spans.sessions.start && ev.col <= spans.sessions.end;
-  if (!inTasks && !inRight) return null;
-  const isInbox = g.rightPane === 'inbox';
-  const pane = inTasks ? 'tasks' : isInbox ? 'inbox' : 'sessions';
-  const rightHeader = isInbox ? g.inboxHeader : g.sessionHeader;
+  if (!inLeft && !inRight) return null;
+  const isDoc = g.mode === 'doc';
+  const pane: HitPane = inLeft ? LEFT_PANE[g.mode] : RIGHT_PANE[g.mode];
+  const leftHeader = isDoc ? g.docHeader : g.taskHeader;
+  const rightHeader = isDoc ? g.inboxHeader : g.sessionHeader;
   if (ev.row === PANE_HEADER_ROW) {
-    const key = hitRegion(inTasks ? g.taskHeader : rightHeader, ev.col);
+    const key = hitRegion(inLeft ? leftHeader : rightHeader, ev.col);
     return key ? { pane, target: 'view', key } : null;
   }
-  const first = inTasks ? TASK_LIST_ROW : PANE_BODY_ROW;
-  const count = inTasks ? g.taskRows : isInbox ? g.inboxRows : g.sessionRows;
+  // Fra header e lista il pane task porta la riga sort/filtri, che non si
+  // seleziona; il pane doc non ce l'ha e la sua lista comincia una riga prima.
+  const first = inLeft && !isDoc ? TASK_LIST_ROW : PANE_BODY_ROW;
+  const count = inLeft
+    ? isDoc
+      ? g.docRows
+      : g.taskRows
+    : isDoc
+      ? g.inboxRows
+      : g.sessionRows;
   const index = ev.row - first;
   if (index < 0 || index >= count) return null;
   return { pane, target: 'row', index };
