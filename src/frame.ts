@@ -40,6 +40,7 @@ import { sanitize, termWidth } from './width.js';
 import { MODEL_SHORT_LIST, WARN } from './glyphs.js';
 import { STATUS_MISSING } from './project-status.js';
 import { META_ROWS, type DeckMode, type Focus, type Mode } from './model.js';
+import { TASK_MODE_LEGEND } from './input-modes.js';
 import type { SessionViewCounts, SessionViewId, TaskViewCounts, TaskViewId } from './pane-views.js';
 import type { InboxViewCounts, InboxViewId } from './inbox-views.js';
 import type { InboxFile } from './inbox.js';
@@ -169,11 +170,17 @@ export function deckLegend(state: {
       // da solo sarebbe ambiguo, qui apre una pagina e basta.
       '^S azioni',
       '^F cerca',
-      'C nuova',
-      'E edit',
-      'S sort',
-      'F filtri',
-      'w salva',
+      // T160 — le voci dei tasti del mondo task vengono dall'ELENCO che governa
+      // anche il dispatch (`input-modes.ts` §TASK_MODE_KEYS), non da cinque
+      // stringhe scritte qui: due elenchi divergono al primo tasto aggiunto, e
+      // il tasto nuovo resterebbe annunciato mentre è inerte — cioè una legenda
+      // che descrive un deck che non esiste.
+      //
+      // In modo doc spariscono tutte. Le altre voci del mondo task (`⏎ detail`,
+      // `^K/^P/^R spawn`, `CANC elimina`) non sono qui perché sono già
+      // condizionate dal focus, che in modo doc non è mai `tasks`: spariscono da
+      // sé, senza una seconda guardia.
+      ...(state.docMode ? [] : TASK_MODE_LEGEND),
     ].join(' · '),
   );
 }

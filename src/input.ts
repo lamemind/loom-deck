@@ -31,7 +31,14 @@ import {
 } from './mouse.js';
 import { HINT_ROW, LAUNCH_ROW } from './frame.js';
 import { moveSelection } from './session-list.js';
-import { captures, scrolls, type CapturingMode, type ScrollingMode } from './input-modes.js';
+import {
+  captures,
+  inertNote,
+  scrolls,
+  taskModeKey,
+  type CapturingMode,
+  type ScrollingMode,
+} from './input-modes.js';
 import { LEFT_PANE, META_ROWS, QUIT_WINDOW_MS, RIGHT_PANE, type Mode } from './model.js';
 import { TASK_VIEWS, taskView, type SessionViewId, type TaskViewId } from './pane-views.js';
 import type { InboxViewId } from './inbox-views.js';
@@ -350,6 +357,24 @@ export function useDeckInput({
     if (captures(mode)) {
       MODE_KEYS[mode](input, key);
       return;
+    }
+
+    // T160 — i tasti del mondo task sono INERTI in modo doc, e lo dicono
+    // (`input-modes.ts` §TASK_MODE_KEYS). Il gate sta QUI, sopra tutti i rami e
+    // sotto il dispatch dei modi: un tasto gated non deve raggiungere né il ramo
+    // `ctrl` né quello delle lettere nude, e dentro un modo capturing la
+    // domanda non si pone perché il modo ha già consumato l'input.
+    //
+    // Un ramo per tasto con la sua guardia avrebbe funzionato uguale e sarebbe
+    // stato il modo per farne dimenticare uno: il gate legge l'elenco, e un
+    // tasto aggiunto lì è gated e smette di essere annunciato senza toccare
+    // questo file.
+    if (model.deckMode === 'doc') {
+      const gated = taskModeKey(input, key.ctrl, key.delete);
+      if (gated) {
+        setNote(inertNote(gated));
+        return;
+      }
     }
 
     // T52/D1 — il ramo CTRL sta PRIMA di quelli su lettera nuda e li chiude
