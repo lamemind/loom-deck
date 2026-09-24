@@ -39,7 +39,11 @@ export interface Session {
   gitBranch: string;
   parentUuid: string | null;
   title: string;
-  ts: number; // ordering key = file mtimeMs
+  /** mtime del file (ms). Chiave della cache di parse e del gate di refresh
+   *  (`hooks.ts`), NON dell'ordine della lista: si sposta anche aprendo la
+   *  conversazione senza farci nulla, quindi non dice quando ha parlato
+   *  qualcuno. L'ordine è `compareSessions`, sull'ultima risposta. */
+  ts: number;
   path: string;
   /** Dimensione del transcript su disco (stat, non parse). */
   sizeBytes: number;
@@ -54,6 +58,17 @@ export interface Session {
   /** Ultima risposta del modello, già ripulita, last-wins (preview nel detail
    *  pane accanto al primo prompt: "da dove parte, dove è arrivata"). */
   lastReply: string;
+  /** Data (epoch ms) del record da cui viene `firstPrompt`, 0 se non c'è.
+   *  Letta dal campo `timestamp` del transcript, non dal file: `ts` è il mtime
+   *  su disco e si sposta anche per record che non sono un prompt (un cambio di
+   *  `custom-title`, di `permission-mode`), quindi non dice quando la
+   *  conversazione è cominciata. Stesso filtro di `firstPrompt`: i record user
+   *  di solo tool_result e le interruzioni da esc non contano. */
+  firstPromptTs: number;
+  /** Data (epoch ms) del record da cui viene `lastReply`, 0 se non c'è. Stesso
+   *  last-wins e stesso asse: un record assistant di solo tool_use non la
+   *  sposta, come non sposta `lastReply`. */
+  lastReplyTs: number;
   /** T110 — id VERSIONATO del modello (`claude-opus-5`), come sta sul
    *  transcript; '' se la conversazione non ha ancora un record assistant.
    *
@@ -280,7 +295,9 @@ export function parseTranscript(
   let parentUuid: string | null = null;
   let customTitle = '';
   let firstUserText = '';
+  let firstUserTs = 0;
   let lastAssistantText = '';
+  let lastAssistantTs = 0;
   let model = '';
   let turns = 0;
   const bodies: MessageBody[] = [];
@@ -307,6 +324,10 @@ export function parseTranscript(
       parentUuid = d.parentUuid;
     }
     if (typeof d.customTitle === 'string' && d.customTitle) customTitle = d.customTitle; // last-wins
+    // Il `timestamp` del record è ISO UTC; `Date.parse` → epoch ms, NaN se
+    // manca o è malformato (i record di stato — `last-prompt`, `mode` — non lo
+    // portano affatto). Si legge solo dove serve, cioè accanto ai due testi.
+    const recordTs = typeof d.timestamp === 'string' ? Date.parse(d.timestamp) : NaN;
     if (d.type === 'user') {
       // T49: turno = prompt umano. I tool_result viaggiano anch'essi come
       // type:user ma senza blocchi text → extractText '' li esclude.
@@ -316,14 +337,20 @@ export function parseTranscript(
       const t = extractText(d.message);
       if (t && !isInterrupt(t)) {
         turns++;
-        if (!firstUserText) firstUserText = t;
+        if (!firstUserText) {
+          firstUserText = t;
+          if (!Number.isNaN(recordTs)) firstUserTs = recordTs;
+        }
       }
     } else if (d.type === 'assistant') {
       // Ultima risposta del modello: last-wins (come customTitle), niente
       // early-stop — l'ultima riga assistant con testo è quella buona. I
       // record assistant di solo tool_use danno '' e non sovrascrivono.
       const t = extractText(d.message);
-      if (t) lastAssistantText = t;
+      if (t) {
+        lastAssistantText = t;
+        if (!Number.isNaN(recordTs)) lastAssistantTs = recordTs;
+      }
       // T110 — stesso regime last-wins, ma su un asse suo: un record di solo
       // tool_use porta comunque il modello, e va contato. Nessun costo di I/O:
       // la riga è già parsata per turni, primo prompt e ultima risposta.
@@ -354,6 +381,8 @@ export function parseTranscript(
     // testo, sanificare a valle sposterebbe l'a-capo già calcolato.
     firstPrompt: sanitize(firstUserText),
     lastReply: sanitize(lastAssistantText),
+    firstPromptTs: firstUserTs,
+    lastReplyTs: lastAssistantTs,
     // Sanificato come il titolo e le due preview, e per lo stesso motivo: è una
     // stringa di sorgente esterna che finisce NEL FRAME (riga meta del blocco
     // preview). Il confine di sanificazione è per SORGENTE, non per campo — un
@@ -365,9 +394,23 @@ export function parseTranscript(
   };
 }
 
+/** L'ordine della lista sessioni: ultima risposta del modello, più recente in
+ *  cima. Chi non ha ancora una risposta con testo (`lastReplyTs === 0`: la
+ *  prima risposta è in corso, o non è mai arrivata) sta sopra tutte — è la
+ *  conversazione che aspetta, non quella che ha finito. Il mtime (`ts`) resta
+ *  solo come spareggio: si sposta anche aprendo la conversazione senza farci
+ *  nulla, e come chiave prima metteva in cima una sessione soltanto guardata. */
+export function compareSessions(a: Session, b: Session): number {
+  const aOpen = a.lastReplyTs === 0;
+  const bOpen = b.lastReplyTs === 0;
+  if (aOpen !== bOpen) return aOpen ? -1 : 1;
+  if (a.lastReplyTs !== b.lastReplyTs) return b.lastReplyTs - a.lastReplyTs;
+  return b.ts - a.ts;
+}
+
 // Discovery read-only delle sessioni del SOLO progetto corrente (D2 preflight
 // T27): legge la project dir calcolata dal forward-transform, filtra per cwd
-// (difesa contro le collisioni lossy del naming), ordina per ts desc.
+// (difesa contro le collisioni lossy del naming), ordina con `compareSessions`.
 export function discoverProjectSessions(projectRoot: string): Session[] {
   const dir = join(claudeProjectsRoot(), projectDirName(projectRoot));
   let files: string[];
@@ -405,13 +448,13 @@ export function discoverProjectSessions(projectRoot: string): Session[] {
   }
   for (const key of cache.keys()) if (!seen.has(key)) cache.delete(key);
 
-  out.sort((a, b) => b.ts - a.ts);
+  out.sort(compareSessions);
   return out;
 }
 
 // Raggruppa per gitBranch (D2: group-by-branch nel progetto corrente). Ordine
-// dei gruppi = sessione più recente nel gruppo (desc); dentro il gruppo resta
-// l'ordine ts desc ereditato dall'input.
+// dei gruppi = la prima sessione di ciascuno, con `compareSessions`; dentro il
+// gruppo resta l'ordine ereditato dall'input.
 export function groupByBranch(sessions: Session[]): SessionGroup[] {
   const map = new Map<string, Session[]>();
   for (const s of sessions) {
@@ -422,5 +465,5 @@ export function groupByBranch(sessions: Session[]): SessionGroup[] {
   }
   return [...map.entries()]
     .map(([branch, arr]) => ({ branch, sessions: arr }))
-    .sort((a, b) => b.sessions[0].ts - a.sessions[0].ts);
+    .sort((a, b) => compareSessions(a.sessions[0], b.sessions[0]));
 }

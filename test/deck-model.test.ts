@@ -29,6 +29,8 @@ const session = (sessionId: string, ts = 1_000): Session => ({
   customTitle: '',
   firstPrompt: '',
   lastReply: '',
+  firstPromptTs: 0,
+  lastReplyTs: 0,
   model: '',
 });
 

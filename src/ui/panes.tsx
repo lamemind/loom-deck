@@ -464,7 +464,11 @@ export function SessionsPane({
           // caratteri). Il marker va portato a 2 anche quando è `○`, largo 1:
           // era lui a far slittare a sinistra di una colonna tutta la riga di
           // ogni sessione spot.
-          const age = relTime(s.ts);
+          // L'età è quella dell'ultima risposta, la stessa chiave che ordina la
+          // lista (`compareSessions`): un'età dal mtime accanto a un ordine per
+          // risposta darebbe una colonna che non cresce scendendo. `-` quando
+          // la risposta non c'è ancora — la riga sta in cima per quello.
+          const age = s.lastReplyTs > 0 ? relTime(s.lastReplyTs) : '-';
           // Il taglio del titolo è ciò che RESTA, calcolato per sottrazione: le
           // colonne fisse sono note, quindi l'unica cella elastica prende il
           // resto. Pavimento `0` e non un minimo di cortesia — è un tetto, non

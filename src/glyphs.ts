@@ -241,6 +241,14 @@ export function fmtDateTime(ts: number): string {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+/** Come `fmtDateTime`, ma con l'assenza resa esplicita: le date lette dal
+ *  transcript (`firstPromptTs`, `lastReplyTs`) valgono 0 quando il record non
+ *  c'è, e 0 formattato darebbe il 01/01/1970 — una data vera al posto di un
+ *  dato mancante. */
+export function fmtDateTimeOr(ts: number, absent = '-'): string {
+  return ts > 0 ? fmtDateTime(ts) : absent;
+}
+
 // T121 — sola ora del giorno, per l'indicatore di project status in testata. Il
 // giorno non ci sta e non servirebbe: un recap del giorno prima è comunque
 // stale, e la cache muore col reboot.

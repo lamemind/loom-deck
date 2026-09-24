@@ -162,7 +162,7 @@ export function sessionColumns(
 /**
  * Le conversazioni figlie della selezione: tutte quelle del progetto (`≡
  * tutte`), quelle bound alla task selezionata, oppure (spot) quelle senza
- * binding. `sessions` è già ts desc → l'ordine si eredita in tutti e tre i rami.
+ * binding. `sessions` è già nell'ordine di `compareSessions` → l'ordine si eredita in tutti e tre i rami.
  */
 export function childSessionsOf(
   sessions: Session[],
@@ -440,7 +440,7 @@ export function useDeckModel({
     () => childSessionsOf(sessions, bindings, selectedTaskId, isAll),
     [sessions, bindings, selectedTaskId, isAll],
   );
-  // T133 — lista unica: le figlie del parent, `ts desc`, cap su tutte. Le
+  // T133 — lista unica: le figlie del parent, ordine di `compareSessions`, cap su tutte. Le
   // pinnate del progetto escono a parte (`pinnedRows`), per la sola vista `📌`.
   // Core PURO in session-list.ts (testabile senza Ink).
   const assembled = useMemo(

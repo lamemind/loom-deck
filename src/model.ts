@@ -17,7 +17,7 @@ export const POLL_MS = 1500;
 // che il tasto non fa più.
 export const QUIT_WINDOW_MS = 5000;
 
-// Cap del pane sessioni: le più recenti (ts desc), le altre restano nell'indice
+// Cap del pane sessioni: le più recenti (ordine di `compareSessions`), le altre restano nell'indice
 // ma fuori vista. Non-silenzioso → l'header mostra quante sono nascoste.
 export const MAX_SESSIONS = 30;
 

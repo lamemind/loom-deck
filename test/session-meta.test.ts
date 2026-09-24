@@ -21,6 +21,8 @@ const sess = (over: Partial<Session> = {}): Session => ({
   customTitle: '',
   firstPrompt: '',
   lastReply: '',
+  firstPromptTs: 0,
+  lastReplyTs: 0,
   model: '',
   bodies: [],
   ...over,
@@ -217,7 +219,7 @@ function fillInSubprocess(root: string, brake: boolean): { status: number | null
       pinned: new Map([['a', 0]]),
       sessions: [{sessionId:'a', cwd:'/p', gitBranch:'', parentUuid:null, title:'titolo',
                   ts:0, path:'/p/a.jsonl', sizeBytes:1, turns:1, customTitle:'',
-                  firstPrompt:'', lastReply:'', model:'claude-opus-5', bodies:[]}],
+                  firstPrompt:'', lastReply:'', firstPromptTs:0, lastReplyTs:0, model:'claude-opus-5', bodies:[]}],
       bindings: new Map(), titles: new Map(), models: new Map(), core: null,
     });
     process.stdout.write(String(n));

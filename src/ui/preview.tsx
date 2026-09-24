@@ -9,6 +9,7 @@ import {
   META_KEYS,
   SID_CHARS,
   fmtDateTime,
+  fmtDateTimeOr,
   fmtSize,
   modelAlias,
 } from '../glyphs.js';
@@ -236,8 +237,14 @@ export function SessionPreview({
           ogni riga, cioè 8 colonne × N che non distinguevano nulla. Nel
           blocco costa 0 righe in più (la meta è già una riga fissa contata da
           SESSION_DETAIL_FIXED) e resta consultabile dove serve davvero. */}
+      {/* Le due date sono quelle del transcript — primo prompt (`» `) e ultima
+          risposta (`« `), gli stessi prefissi delle due anteprime sotto — non
+          il mtime del file: quello si sposta anche per record che non sono né
+          un prompt né una risposta, e nella lista resta comunque come
+          `relTime`. `-` quando il record non c'è (conversazione senza prompt
+          umano, o senza ancora una risposta con testo). */}
       <Text dimColor wrap="truncate-end">
-        {fmtSize(s.sizeBytes)} · {s.turns} turni · {fmtDateTime(s.ts)} · {s.gitBranch || '-'}
+        {fmtSize(s.sizeBytes)} · {s.turns} turni · » {fmtDateTimeOr(s.firstPromptTs)} · « {fmtDateTimeOr(s.lastReplyTs)} · {s.gitBranch || '-'}
         {/* T110 — l'id VERSIONATO, non la short della lista: è l'unica
             superficie che può dire la generazione (`opus 5` contro `opus 6`),
             che i 3 caratteri cancellano per costruzione, ed è dove un id fuori

@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTranscript, type Session } from '../src/sessions.js';
+import { compareSessions, parseTranscript, type Session } from '../src/sessions.js';
 
 const PATH = '/p/aaaa-bbbb.jsonl';
 
@@ -252,4 +252,88 @@ test('modello: l\'id resta GREZZO, la normalizzazione è della resa', () => {
   // monte avrebbe già buttato via.
   const s = parse([assistantWith('claude-opus-5')]);
   assert.equal(s.model, 'claude-opus-5');
+});
+
+// ── date del primo prompt e dell'ultima risposta ────────────────────────────
+// Vengono dal `timestamp` del record, non dal mtime del file (che è `ts`), e
+// seguono ESATTAMENTE i due testi: stesso filtro sul primo prompt, stesso
+// last-wins sull'ultima risposta.
+
+const T0 = '2026-09-23T13:39:43.437Z';
+const T1 = '2026-09-23T13:40:17.039Z';
+const T2 = '2026-09-23T13:41:00.000Z';
+
+test('date: il primo prompt porta il timestamp del SUO record, non del primo record del file', () => {
+  // HEAD non ha timestamp: la data resta 0 finché non arriva un prompt datato.
+  const s = parse([
+    { type: 'user', timestamp: T0, message: { content: [{ type: 'tool_result', content: 'x' }] } },
+    { type: 'user', timestamp: T1, message: { content: 'primo prompt vero' } },
+  ]);
+  assert.equal(s.firstPrompt, 'via', 'HEAD è il primo prompt, senza timestamp');
+  assert.equal(s.firstPromptTs, 0);
+});
+
+test('date: tool_result e interruzione non sono un prompt, la data salta al prompt umano', () => {
+  const s = parseTranscript(
+    transcript([
+      { type: 'user', cwd: '/proj', timestamp: T0, message: { content: [{ type: 'tool_result', content: 'x' }] } },
+      { type: 'user', timestamp: T1, message: { content: '[Request interrupted by user]' } },
+      { type: 'user', timestamp: T2, message: { content: 'primo prompt vero' } },
+    ]),
+    PATH, 1000, 42,
+  );
+  assert.ok(s);
+  assert.equal(s.firstPrompt, 'primo prompt vero');
+  assert.equal(s.firstPromptTs, Date.parse(T2));
+});
+
+test('date: l’ultima risposta è last-wins sui record con testo, il solo tool_use non la sposta', () => {
+  const s = parse([
+    { type: 'assistant', timestamp: T0, message: { content: [{ type: 'text', text: 'prima' }] } },
+    { type: 'assistant', timestamp: T1, message: { content: [{ type: 'text', text: 'ultima' }] } },
+    { type: 'assistant', timestamp: T2, message: { content: [{ type: 'tool_use', name: 'Read', input: {} }] } },
+  ]);
+  assert.equal(s.lastReply, 'ultima');
+  assert.equal(s.lastReplyTs, Date.parse(T1));
+});
+
+test('date: senza risposta → 0, e un timestamp malformato non sporca il valore', () => {
+  const s = parse([{ type: 'assistant', timestamp: 'ieri', message: { content: [{ type: 'text', text: 'r' }] } }]);
+  assert.equal(s.lastReply, 'r');
+  assert.equal(s.lastReplyTs, 0);
+  assert.equal(parse([]).lastReplyTs, 0);
+});
+
+// ── ordine della lista: ultima risposta, chi aspetta in cima ────────────────
+
+/** Sessione con ultima risposta a `replyIso` (o nessuna) e mtime `mtime`. */
+function sessionAt(replyIso: string | null, mtime: number): Session {
+  const records: unknown[] = [HEAD];
+  if (replyIso) {
+    records.push({ type: 'assistant', timestamp: replyIso, message: { content: [{ type: 'text', text: 'r' }] } });
+  }
+  const s = parseTranscript(transcript(records), PATH, mtime, 1);
+  assert.ok(s);
+  return s;
+}
+
+test('ordine: ultima risposta più recente in cima, il mtime non conta', () => {
+  const vecchia = sessionAt(T0, 9_000); // toccata dopo, ma ha risposto prima
+  const recente = sessionAt(T1, 1_000);
+  assert.deepEqual([vecchia, recente].sort(compareSessions), [recente, vecchia]);
+});
+
+test('ordine: senza risposta si sta sopra tutte — la prima risposta è in corso', () => {
+  const inCorso = sessionAt(null, 1);
+  const risposta = sessionAt(T2, 9_000);
+  assert.deepEqual([risposta, inCorso].sort(compareSessions), [inCorso, risposta]);
+});
+
+test('ordine: a parità di risposta (o entrambe senza) spareggia il mtime, desc', () => {
+  const a = sessionAt(T1, 100);
+  const b = sessionAt(T1, 200);
+  assert.deepEqual([a, b].sort(compareSessions), [b, a]);
+  const c = sessionAt(null, 100);
+  const d = sessionAt(null, 200);
+  assert.deepEqual([c, d].sort(compareSessions), [d, c]);
 });

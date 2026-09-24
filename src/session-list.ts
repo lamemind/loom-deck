@@ -1,5 +1,5 @@
 // T133 — Assemblaggio della lista sessioni: UNA lista sola, le figlie del parent
-// selezionato in ordine `ts desc`. Il pin è un ATTRIBUTO della riga (glifo, vista
+// selezionato nell'ordine di `compareSessions`. Il pin è un ATTRIBUTO della riga (glifo, vista
 // dedicata), non una posizione privilegiata.
 // Modulo PURO: nessun import da ink/react, nessun I/O → testabile senza terminale
 // (il pacchetto non ha infrastruttura TUI di test, solo unit sui core puri).
@@ -158,7 +158,7 @@ export type SessionRow =
   | { kind: 'stale'; sessionId: string };
 
 export interface AssembledList {
-  /** La lista: figlie del parent selezionato, `ts desc`, cap applicato. Le
+  /** La lista: figlie del parent selezionato, ordine di `compareSessions`, cap applicato. Le
    *  pinnate che appartengono al parent ci stanno dentro come le altre. */
   rows: SessionRow[];
   /** D7 — tutte le pinnate del progetto, ordine rango desc, stale comprese. Fuori
