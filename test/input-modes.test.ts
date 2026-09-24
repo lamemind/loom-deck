@@ -27,6 +27,7 @@ const ALL_MODES: Mode[] = [
   'assign',
   'detail',
   'purge',
+  'drop',
   'status',
   'inbox',
   'doc',

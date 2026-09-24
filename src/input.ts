@@ -60,6 +60,7 @@ import type { useWrapOverlay } from './overlays/wrap.js';
 import type { useSpawnPage } from './overlays/spawn.js';
 import type { useGitlink } from './overlays/gitlink.js';
 import type { usePurgeOverlay } from './overlays/purge.js';
+import type { useDropOverlay } from './overlays/drop.js';
 import type { useTextModals, useViewModals } from './overlays/modals.js';
 
 // T116 — l'avviso della prima pressione di `^C`. La durata è INTERPOLATA dalla
@@ -105,6 +106,7 @@ export type DeckOverlays = {
    *  niente. Sta fra gli overlay per il solo `^U`. */
   gitlink: ReturnType<typeof useGitlink>;
   purge: ReturnType<typeof usePurgeOverlay>;
+  drop: ReturnType<typeof useDropOverlay>;
   view: ReturnType<typeof useViewModals>;
   text: ReturnType<typeof useTextModals>;
 };
@@ -181,6 +183,7 @@ export function useDeckInput({
     filter: overlays.view.onFilterKey,
     edit: overlays.text.onEditKey,
     purge: overlays.purge.onKey,
+    drop: overlays.drop.onKey,
   };
 
   // T21 (mandata 2) — la ROTELLA, per i soli modi che scorrono un contenuto
@@ -579,7 +582,13 @@ export function useDeckInput({
       // c'è nessun campo di testo da cui Backspace possa rubare un significato,
       // e ogni modo che ne ha uno è capturing e non vede questo ramo. Il modale
       // di conferma è la rete contro chi usa Backspace come «indietro».
-      overlays.purge.open();
+      //
+      // Il bersaglio lo decide il FOCUS, come per `⏎`: sul pane sessioni il
+      // tasto elimina la conversazione selezionata (transcript su disco),
+      // altrove pota una task via skill. Due overlay e non uno perché i due
+      // effetti non hanno niente in comune oltre al tasto.
+      if (model.focus === 'sessions') overlays.drop.open();
+      else overlays.purge.open();
     } else if (input === 'C') {
       overlays.text.openCreate();
     } else if (input === 'E') {

@@ -5,7 +5,14 @@ import { Box, Text } from 'ink';
 import { cut, cutParts, sanitize } from '../width.js';
 import { FieldText } from './fields.js';
 import { CARET, CARET_OFF, WARN } from '../glyphs.js';
-import { EDIT_PRI, EDIT_PROG, type EditDraft, type FilterCursor, type PurgeDraft } from '../model.js';
+import {
+  EDIT_PRI,
+  EDIT_PROG,
+  type DropDraft,
+  type EditDraft,
+  type FilterCursor,
+  type PurgeDraft,
+} from '../model.js';
 import { PRI_ENTRIES, PROG_ENTRIES, type SortEntry, type SortKey, type ViewState } from '../view.js';
 import { progressText, PRI_GLYPH, PRI_LABEL, PROG_GLYPH } from '../task-edit.js';
 
@@ -107,6 +114,28 @@ export function PurgeModal({ draft, columns }: { draft: PurgeDraft; columns: num
           )}
         </Text>
       )}
+    </Box>
+  );
+}
+
+/**
+ * Conferma di eliminazione di una CONVERSAZIONE, in flusso come `PurgeModal`
+ * e con la stessa regola: la conferma dice cosa sparisce (id e titolo) e
+ * l'effetto sul disco, non un nome di vista. Tre righe fisse, costo dichiarato
+ * in `MODAL_HEIGHT.drop`.
+ */
+export function DropModal({ draft, columns }: { draft: DropDraft; columns: number }) {
+  const width = Math.max(8, columns - 8);
+  const effect = draft.hasFolder
+    ? 'transcript + cartella subagent rimossi da ~/.claude/projects · irreversibile'
+    : 'transcript rimosso da ~/.claude/projects · irreversibile';
+  return (
+    <Box flexDirection="column" borderStyle="round" borderColor="red" paddingX={1} marginTop={1}>
+      <Text color="red">CANC › eliminare la conversazione {draft.sessionId.slice(0, 8)}?</Text>
+      <Text wrap="truncate-end">{cut(`«${draft.title}»`, width)}</Text>
+      <Text dimColor wrap="truncate-end">
+        {cut(`${effect} · ⏎ conferma · esc annulla`, width)}
+      </Text>
     </Box>
   );
 }

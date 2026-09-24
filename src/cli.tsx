@@ -47,9 +47,10 @@ import { useWrapOverlay } from './overlays/wrap.js';
 import { useSpawnPage } from './overlays/spawn.js';
 import { useGitlink } from './overlays/gitlink.js';
 import { usePurgeOverlay } from './overlays/purge.js';
+import { useDropOverlay } from './overlays/drop.js';
 import { useTextModals, useViewModals } from './overlays/modals.js';
 import { useTerminalSize, useSpawnConfig } from './hooks.js';
-import { EditModal, FilterModal, PurgeModal, SortModal } from './ui/modals.js';
+import { DropModal, EditModal, FilterModal, PurgeModal, SortModal } from './ui/modals.js';
 import { StatusHeadline } from './ui/status-screen.js';
 import { SessionsPane, TasksPane } from './ui/panes.js';
 import { InboxPane } from './ui/inbox-pane.js';
@@ -206,6 +207,13 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     onSubmit: actions.purgeTasks,
   });
 
+  const drop = useDropOverlay({
+    setMode,
+    setNote,
+    draftFor: actions.dropDraftFor,
+    onSubmit: actions.dropSession,
+  });
+
   const viewModals = useViewModals({
     view: model.view,
     setView: model.setView,
@@ -235,6 +243,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     spawn,
     gitlink,
     purge,
+    drop,
     view: viewModals,
     text: textModals,
   };
@@ -461,6 +470,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
       {mode === 'purge' && purge.draft ? (
         <PurgeModal draft={purge.draft} columns={columns} />
       ) : null}
+      {mode === 'drop' && drop.draft ? <DropModal draft={drop.draft} columns={columns} /> : null}
       <Box flexDirection="row" marginTop={1}>
         {/* T160 — lo slot SINISTRO: lista task in modo task, albero doc in modo
             doc. Il pane doc porta la sua cornice (2 bordi + header) e non quella

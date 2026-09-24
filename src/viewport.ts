@@ -84,6 +84,11 @@ export const MODAL_HEIGHT = {
   // condizionali mutuamente esclusivi obbligherebbero il budget a sapere QUALE
   // dei due è a schermo (stessa ragione della riga nota in DETAIL_CHROME, T111).
   purge: 7,
+  // Conferma di eliminazione di una conversazione: marginTop + 2 bordi + 3
+  // righe (domanda con l'id, titolo, effetto sul disco + tasti). Nessuna riga
+  // condizionale: la terza nomina la cartella subagent solo quando c'è, ma la
+  // riga c'è sempre.
+  drop: 6,
   // T52 — search e reader sono gli unici modali NON in flusso: sostituiscono i
   // due pane invece di spingerli giù (una lista di occorrenze non entra in un
   // box sopra il deck). Costo 0 nel budget dei pane perché quel budget non

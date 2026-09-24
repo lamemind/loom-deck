@@ -40,6 +40,7 @@ export const CAPTURING_MODES = [
   'filter',
   'edit',
   'purge',
+  'drop',
 ] as const;
 
 export type CapturingMode = (typeof CAPTURING_MODES)[number];
@@ -69,7 +70,8 @@ export function captures(mode: Mode): mode is CapturingMode {
  * e un'eccezione che vive solo dentro un `if` annidato è come non averla.
  *
  * `purge` (T112) non ne ha e non può averne: è una domanda binaria, e dentro
- * una domanda non c'è nessun acceleratore da salvare.
+ * una domanda non c'è nessun acceleratore da salvare. Lo stesso vale per
+ * `drop`, la conferma gemella sulle conversazioni.
  */
 export const CTRL_DEROGATIONS: Partial<Record<CapturingMode, readonly string[]>> = {
   detail: ['f'],

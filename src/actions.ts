@@ -30,6 +30,8 @@ import { neighborId } from './session-list.js';
 import { cut, cutMiddle, sanitize } from './width.js';
 import { idList } from './ui/modals.js';
 import { purgeTargets, splitTargets } from './purge.js';
+import { dropSessionFiles, sessionArtifacts } from './session-drop.js';
+import type { DropDraft } from './model.js';
 import { initialDetail, writeTaskEdit, PRI_GLYPH, PRI_LABEL } from './task-edit.js';
 import { priName, progName } from './view.js';
 import { saveView, viewFilePath } from './view-store.js';
@@ -439,6 +441,59 @@ export function useDeckActions({
     setNote(`${on ? 'priorità via' : '🚨 prioritaria'} ${sid.slice(0, 8)}`);
   }
 
+  /**
+   * La bozza di conferma per `CANC` sul pane sessioni, o `null` se non c'è
+   * niente da confermare (la nota dice perché). Tre rifiuti, in ordine:
+   * nessuna riga selezionata; riga stale (il transcript non c'è già più — da
+   * lì si esce spinnando, non eliminando); conversazione VIVA — un processo
+   * `claude` ci sta scrivendo, e togliergli il file da sotto lascia un
+   * processo che continua a scrivere su un inode sganciato, invisibile a tutti.
+   */
+  function dropDraftFor(): DropDraft | null {
+    if (model.focus !== 'sessions') {
+      setNote('CANC → eliminare: seleziona una conversazione (→ per il pane)');
+      return null;
+    }
+    const sid = model.selSessionId;
+    if (!sid) {
+      setNote('CANC → nessuna conversazione da eliminare');
+      return null;
+    }
+    const s = model.selSessionObj;
+    if (!s) {
+      setNote(`CANC → ${sid.slice(0, 8)}: transcript già assente (p per spinnare)`);
+      return null;
+    }
+    const alive = model.live.get(sid);
+    if (alive) {
+      setNote(`CANC → ${sid.slice(0, 8)} è viva (pid ${alive.pid}): chiudila prima`);
+      return null;
+    }
+    return { sessionId: sid, title: s.title, path: s.path, hasFolder: sessionArtifacts(s.path).length > 1 };
+  }
+
+  /**
+   * L'eliminazione confermata. Il vicino si calcola PRIMA di toccare il disco,
+   * come nel pin: dopo la riga non c'è più e non ha vicini. Se la conversazione
+   * era pinnata si spinna nello stesso gesto — altrimenti il sidecar la terrebbe
+   * in lista come pinnata stale, cioè una riga che dice «c'era» di una cosa
+   * appena eliminata apposta.
+   */
+  function dropSession(draft: DropDraft) {
+    const short = draft.sessionId.slice(0, 8);
+    const landing = neighborId(model.sessionRows, draft.sessionId);
+    try {
+      dropSessionFiles(draft.path);
+    } catch (e) {
+      setNote(`⚠ ${short}: eliminazione fallita: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    if (model.pinned.has(draft.sessionId)) appendPin(cwd, draft.sessionId, false);
+    model.reloadSessions();
+    if (landing) model.setSelSessionId(landing);
+    setNote(`✔ eliminata ${short} «${cut(draft.title, 40)}»`);
+  }
+
   /** `t` — terminale a project root, con un titolo che il matcher di compass riconosce. */
   function openTerminal() {
     const title = model.identity ? `🖥️ ${model.identity.name} [term]` : null;
@@ -642,6 +697,8 @@ export function useDeckActions({
     forkSession,
     togglePin,
     togglePriority,
+    dropDraftFor,
+    dropSession,
     drainInbox,
     rebalanceSpawn,
     rebalanceDoc,

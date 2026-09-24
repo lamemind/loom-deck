@@ -169,6 +169,14 @@ export function HintBar({
       </Text>
     );
   }
+  if (mode === 'drop') {
+    return (
+      <Text dimColor wrap="truncate-end">
+        elimina conversazione · <Text color="yellow">⏎</Text> conferma ·{' '}
+        <Text color="yellow">esc</Text> annulla
+      </Text>
+    );
+  }
   if (mode === 'edit') {
     return (
       <Text dimColor wrap="truncate-end">

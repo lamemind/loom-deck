@@ -202,6 +202,21 @@ export function editTextField(r: number): 'detail' | 'title' {
   return r === 2 ? 'detail' : 'title';
 }
 
+// Bozza della conferma di eliminazione di una CONVERSAZIONE (`CANC` sul pane
+// sessioni). Separata da `PurgeDraft` perché l'oggetto è un altro: nessun
+// bulk, nessun gate sui file non tracciati, nessuna skill — un transcript e la
+// sua cartella, rimossi dal disco.
+export interface DropDraft {
+  sessionId: string;
+  /** Titolo mostrato in lista, per una conferma che dice COSA sparisce. */
+  title: string;
+  /** Path del transcript: è ciò che `dropSessionFiles` riceve. */
+  path: string;
+  /** `true` se accanto al transcript c'è la cartella `<sid>/` (subagent, tool
+   *  output): la conferma la nomina, perché sparisce anche lei. */
+  hasFolder: boolean;
+}
+
 // T112 — bozza della conferma di eliminazione. UNA sola per i due bersagli
 // (D5): fra `CANC` sulla task selezionata e `CANC` sull'intera vista
 // `archiviabili` cambia il testo, non la meccanica — e un modale che esiste in

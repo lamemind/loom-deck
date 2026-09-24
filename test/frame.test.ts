@@ -121,9 +121,10 @@ test('deckLegend: CANC nomina il bulk quando il bulk è acceso', () => {
   assert.ok(legend.includes('CANC elimina tutte'), `bulk non annunciato: ${legend}`);
 });
 
-test('deckLegend: col focus sulle sessioni non c\'è nessuna voce CANC', () => {
-  // `CANC` col focus altrove è inerte e lo dice con una nota: annunciarlo in
-  // legenda prometterebbe un'azione che non parte.
+test('deckLegend: sul pane sessioni CANC elimina la conversazione, mai «tutte»', () => {
+  // Il bersaglio del tasto lo decide il focus: qui è la conversazione sotto il
+  // cursore, e il bulk delle task (`purgeBulk`) non deve trapelare — una voce
+  // «elimina tutte» su questo pane prometterebbe una strage che non parte.
   const legend = deckLegend({
     focus: 'sessions',
     hasTask: true,
@@ -133,7 +134,22 @@ test('deckLegend: col focus sulle sessioni non c\'è nessuna voce CANC', () => {
     docMode: false,
     hasDoc: false,
   });
-  assert.ok(!legend.includes('CANC'), `voce CANC fuori dal suo pane: ${legend}`);
+  assert.ok(legend.includes('CANC elimina'), `voce CANC assente sul pane sessioni: ${legend}`);
+  assert.ok(!legend.includes('CANC elimina tutte'), `bulk task trapelato: ${legend}`);
+});
+
+test('deckLegend: su una pinnata stale CANC non si annuncia — non c\'è un transcript', () => {
+  const legend = deckLegend({
+    focus: 'sessions',
+    hasTask: false,
+    hasSession: false,
+    hasSessionId: true,
+    purgeBulk: false,
+    docMode: false,
+    hasDoc: false,
+  });
+  assert.ok(!legend.includes('CANC'), `voce CANC su una stale: ${legend}`);
+  assert.ok(legend.includes('p pin'), 'da una stale si esce spinnando');
 });
 
 test('deckLegend: le voci contestuali seguono il pane a fuoco', () => {
