@@ -74,12 +74,16 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
   // la configura (la pagina), invece di essere riletti a ogni sede di chiamata.
   const catalog = useMemo(() => loadPromptCatalog(), []);
   const spawnConfig = useSpawnConfig({ cwd, setNote });
+  // Il default risolto della nuda serve due volte: valore iniziale del
+  // selettore e bottone sottolineato come «default». Da una sola risoluzione,
+  // o il bottone marcato non sarebbe quello con cui `c` apre davvero.
+  const bareDefault = resolveSpawnId('bare', spawnConfig.overrides, catalog).model;
 
   const model = useDeckModel({
     cwd,
     tasksPath,
     tasksDir,
-    bareModel: resolveSpawnId('bare', spawnConfig.overrides, catalog).model,
+    bareModel: bareDefault,
     setNote,
   });
   const actions = useDeckActions({
@@ -282,7 +286,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     MODEL_SHORT_LIST,
     MODELS.indexOf(model.bareModel),
     BARE_BUTTONS_WIDTH,
-    MODELS.indexOf(MODEL_DEFAULT),
+    MODELS.indexOf(bareDefault),
   );
   // T134 — gli indicatori ancorati a destra della riga legenda. Si compongono
   // PRIMA della legenda perché è la loro larghezza a decidere quanto ne resta:
