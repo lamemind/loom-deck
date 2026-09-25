@@ -91,10 +91,9 @@ export const MODEL_DEFAULT: ModelKind = 'fable';
 // T152 — `recap-status-project` non è una chiave di `prompt-catalog` (le chiavi
 // lì sono i valori di `--prompt-kind`, e lo spawn headless non ne passa mai
 // uno): il suo default vive nella riga `project-status` di questo catalogo.
-// Resta `opus` mentre i tre recap stanno su fable, ed è l'unico recap che gira
-// in headless (`-p`), senza nessuno che ne legga l'esito mentre si forma e possa
-// rilanciarlo — il testo prodotto è il deliverable, e viene riletto da disco
-// anche giorni dopo.
+// È l'unico recap che gira in headless (`-p`), senza nessuno che ne legga
+// l'esito mentre si forma e possa rilanciarlo — il testo prodotto è il
+// deliverable, e viene riletto da disco anche giorni dopo.
 export const PROJECT_STATUS_MODEL: ModelKind = 'opus';
 
 // T66 — le azioni del detail. Non sono un catalogo a parte: ognuna nomina una
@@ -236,7 +235,10 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     // D2 di T150 — nessun prefisso: `open` è "nessuna azione", e inventargliene
     // uno contraddirebbe l'intenzione di chi la sceglie.
     title: '{slug}',
-    model: null,
+    // Cablato qui e non nel catalogo dati: `none` non ha una riga in
+    // `prompt-catalog` (nessun prompt non è un template vuoto), quindi senza
+    // un valore proprio cadrebbe su `MODEL_DEFAULT`.
+    model: 'opus',
     prompt: '',
     holes: ['TASK', 'slug'],
     fixed: {},
@@ -319,7 +321,7 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     surface: 'tasto c',
     kind: null,
     title: null,
-    model: MODEL_DEFAULT,
+    model: 'opus',
     prompt: '',
     holes: [],
     fixed: {

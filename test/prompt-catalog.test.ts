@@ -97,17 +97,15 @@ test('modelFor: kind fuori catalogo → niente', () => {
   assert.equal(modelFor(c, 'run'), undefined);
 });
 
-// Il criterio dietro i sei valori: lettura e conversazione su fable (i tre
-// recap, il preflight), scrittura presidiata su opus (run e checkpoint, che
-// toccano codice e committano). Un cambio qui è un cambio di comportamento
-// per ogni sessione che spawna quel kind, non solo per questo test — se
-// questa asserzione deve muoversi, muove con essa la riga del catalogo E la
-// ragione per cui si muove.
-test('catalogo reale: fable sulla lettura, opus sulla scrittura', () => {
+// I sei valori: opus ovunque, tranne il preflight che resta su fable. Un
+// cambio qui è un cambio di comportamento per ogni sessione che spawna quel
+// kind, non solo per questo test — se questa asserzione deve muoversi, muove
+// con essa la riga del catalogo.
+test('catalogo reale: opus su ogni kind, fable sul solo preflight', () => {
   const catalog = loadPromptCatalog();
-  assert.equal(modelFor(catalog, 'recap'), 'fable');
-  assert.equal(modelFor(catalog, 'recap-task'), 'fable');
-  assert.equal(modelFor(catalog, 'recap-epic'), 'fable');
+  assert.equal(modelFor(catalog, 'recap'), 'opus');
+  assert.equal(modelFor(catalog, 'recap-task'), 'opus');
+  assert.equal(modelFor(catalog, 'recap-epic'), 'opus');
   assert.equal(modelFor(catalog, 'preflight'), 'fable');
   assert.equal(modelFor(catalog, 'run'), 'opus');
   assert.equal(modelFor(catalog, 'checkpoint'), 'opus');

@@ -294,7 +294,7 @@ test('c senza toccare il selettore apre comunque su un modello esplicito (il def
 }, () => {
   const frame = lastFrame(capture('c', spawnProject));
   assert.match(frame, /--no-task/, `c non ha spawnato la nuda: ${frame}`);
-  assert.match(frame, /--model fable/, `il default non è stato passato esplicitamente: ${frame}`);
+  assert.match(frame, /--model opus/, `il default non è stato passato esplicitamente: ${frame}`);
 });
 
 test('m senza una riga sessione in fuoco cicla il modello della nuda: c la spawna col valore ciclato', {
@@ -303,7 +303,7 @@ test('m senza una riga sessione in fuoco cicla il modello della nuda: c la spawn
   // Focus di apertura è `tasks` (D4): `m` deve cadere sul bersaglio nuda.
   const frame = lastFrame(capture('mc', spawnProject));
   assert.match(frame, /--no-task/, `c non ha spawnato la nuda: ${frame}`);
-  assert.match(frame, /--model opus/, `m fuori dal pane sessioni non ha cambiato la nuda: ${frame}`);
+  assert.match(frame, /--model sonnet/, `m fuori dal pane sessioni non ha cambiato la nuda: ${frame}`);
 });
 
 test('m con una riga sessione selezionata cicla il modello di resume, non quello della nuda', {
@@ -320,21 +320,23 @@ test('m con una riga sessione selezionata cicla il modello di resume, non quello
 
 test('i due selettori non si contaminano: la nuda ciclata non muove il resume', { skip: !CAN_RUN }, () => {
   const { proj, env } = singleSessionProject();
-  // `m` (nuda → opus) col focus ancora sui task, poi `R` porta il focus sulla
+  // `m` (nuda → sonnet) col focus ancora sui task, poi `R` porta il focus sulla
   // riga sessione e `⏎` fa resume: se i due stati fossero lo stesso, il
-  // resume partirebbe già su `opus` invece che sul modello d'origine (`fable`).
+  // resume partirebbe già su `sonnet` invece che sul modello d'origine (`fable`).
   const frame = lastFrame(capture('mR\r', proj, env));
   assert.match(frame, /--model fable/, `il resume ha ereditato il modello della nuda: ${frame}`);
 });
 
 test('i due selettori non si contaminano: il resume ciclato non muove la nuda', { skip: !CAN_RUN }, () => {
   const { proj, env } = singleSessionProject();
-  // `R` seleziona la riga sessione, `m` cicla il suo resume a `opus`; `L`
-  // torna sul pane task e `c` apre la nuda: se i due stati fossero lo stesso,
-  // aprirebbe già su `opus` invece che sul proprio default (`fable`).
-  const frame = lastFrame(capture('RmLc', proj, env));
+  // `R` seleziona la riga sessione, `mm` cicla il suo resume da `fable` a
+  // `sonnet`; `L` torna sul pane task e `c` apre la nuda: se i due stati
+  // fossero lo stesso, aprirebbe già su `sonnet` invece che sul proprio default
+  // (`opus`). Due `m` e non uno: un solo giro porterebbe il resume proprio su
+  // `opus`, e il test resterebbe verde anche con i due stati fusi.
+  const frame = lastFrame(capture('RmmLc', proj, env));
   assert.match(frame, /--no-task/, `c non ha spawnato la nuda: ${frame}`);
-  assert.match(frame, /--model fable/, `la nuda ha ereditato il modello del resume: ${frame}`);
+  assert.match(frame, /--model opus/, `la nuda ha ereditato il modello del resume: ${frame}`);
 });
 
 test('detail: la riga azione risponde alle lettere e riscrive il prompt', { skip: !CAN_RUN }, () => {
@@ -349,7 +351,7 @@ test('detail: una cifra sulla riga azione è inerte, non finisce in un campo', {
   // fuoco su una riga a scelta non esiste un campo dove ricadere.
   const frame = lastFrame(capture('DD\r2\r', spawnProject));
   assert.doesNotMatch(frame, /--title-note/, `la cifra è finita nel titolo: ${frame}`);
-  assert.match(frame, /--model fable/, `il modello è cambiato con una cifra: ${frame}`);
+  assert.match(frame, /--model opus/, `il modello è cambiato con una cifra: ${frame}`);
 });
 
 test('detail: le lettere entrano nel campo solo quando la sua riga è in fuoco', {
@@ -383,20 +385,20 @@ test('detail: tab non è più il canale del modello', { skip: !CAN_RUN }, () => 
   // `T` = tab nel mapping del pty. Il modello si cambia con `←→` dalla sua riga;
   // `tab` resta senza binding e non deve muovere nulla di nascosto.
   const frame = lastFrame(capture('DD\rT\r', spawnProject));
-  assert.match(frame, /--model fable/, `tab ha cambiato modello: ${frame}`);
+  assert.match(frame, /--model opus/, `tab ha cambiato modello: ${frame}`);
 });
 
 test('detail: la riga modello risponde a ←→ quando è in fuoco', { skip: !CAN_RUN }, () => {
   // Due `D` portano dalla riga azione a quella modello; `R` (→) avanza di una
-  // voce nel giro di `MODELS`, cioè da `fable` (il modello dell'azione
-  // iniziale `open`, che una riga di catalogo non ce l'ha) a `opus`.
+  // voce nel giro di `MODELS`, cioè da `opus` (il modello dell'azione
+  // iniziale `open`) a `sonnet`.
   const frame = lastFrame(capture('DD\rDDR\r', spawnProject));
-  assert.match(frame, /--model opus/, `←→ non ha cambiato modello: ${frame}`);
+  assert.match(frame, /--model sonnet/, `←→ non ha cambiato modello: ${frame}`);
 });
 
 test('detail: la riga hint non nomina i tasti standard', { skip: !CAN_RUN }, () => {
   const frame = lastFrame(capture('DD\r'));
-  assert.match(frame, /\[ fable \]/, `riga modello non renderizzata: ${frame}`);
+  assert.match(frame, /\[ opus \]/, `riga modello non renderizzata: ${frame}`);
   // L'asserzione negativa vive sulla SOLA riga hint, non sul frame: sotto c'è il
   // testo del task file, che di quei glifi può parlare quanto vuole.
   const hint = frame.split('\n').find((l) => l.includes('PgUp/PgDn'));

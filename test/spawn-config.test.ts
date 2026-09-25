@@ -273,7 +273,7 @@ test('la nuda non ha un titolo da risolvere', () => {
   const r = resolveSpawn(spawnAction('bare')!, NONE, CATALOG, {});
   assert.equal(r.title, null);
   assert.equal(r.prompt, '');
-  assert.equal(r.model, 'fable');
+  assert.equal(r.model, 'opus');
 });
 
 test('project status: opus e la sua skill, senza titolo', () => {
@@ -290,13 +290,13 @@ test('col catalogo dati VERO le sette azioni su task restano quelle di prima', (
   const real = loadPromptCatalog();
   const model = (id: SpawnActionId) =>
     resolveSpawn(spawnAction(id)!, NONE, real, { TASK: 'T42', slug: 'x' }).model;
-  assert.equal(model('recap'), 'fable');
-  assert.equal(model('recap-task'), 'fable');
-  assert.equal(model('recap-epic'), 'fable');
+  assert.equal(model('recap'), 'opus');
+  assert.equal(model('recap-task'), 'opus');
+  assert.equal(model('recap-epic'), 'opus');
   assert.equal(model('preflight'), 'fable');
   assert.equal(model('run'), 'opus');
   assert.equal(model('checkpoint'), 'opus');
-  assert.equal(model('none'), 'fable');
+  assert.equal(model('none'), 'opus');
   assert.equal(
     resolveSpawn(spawnAction('none')!, NONE, real, { TASK: 'T42', slug: 'x' }).prompt,
     '',

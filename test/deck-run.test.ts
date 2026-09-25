@@ -487,7 +487,7 @@ test('--model senza flag: il modello del kind implicito, passato comunque', () =
   // invece di dipendere dal default del CLI, che cambia fra versioni.
   // Senza `--prompt-kind` il kind implicito è `recap`, quindi il valore non
   // viene dal fallback ma dalla sua riga di catalogo.
-  assert.match(inTabCmd(['T108']), /--model fable\b/);
+  assert.match(inTabCmd(['T108']), /--model opus\b/);
 });
 
 test('--model viaggia anche su --no-task e su --resume', () => {
