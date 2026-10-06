@@ -50,10 +50,11 @@ function deckRun(args: string[], env: Record<string, string | undefined> = {}): 
       LOOM_DECK_WORKDIR: workdir,
       LOOM_DECK_PERMISSION_MODE: 'manual',
       LOOM_DECK_ENTER_PROMPT: '',
-      // Settata a VUOTO = "niente lookup dconf": senza questo la suite
-      // leggerebbe il registry della macchina su cui gira, e il comando atteso
-      // dipenderebbe dai progetti registrati lì. I test che vogliono il
-      // prefisso lo passano esplicito via `env`.
+      // Settata a VUOTO = "nessuna chiave di stato": senza questo ogni test sul
+      // workdir col file config porterebbe `PTYXIS_PROFILE=<id>` in testa al
+      // comando, e le asserzioni ancorate all'inizio (`^LOOM_TASK=…`) dovrebbero
+      // saperlo. I test che vogliono il prefisso lo chiedono via `env`, o
+      // tolgono la chiave (`undefined`) per osservare il default dal file.
       LOOM_DECK_STATE_PROFILE: '',
       // Vuota per la stessa ragione del profilo di stato: senza, il comando
       // atteso dipenderebbe dall'ambiente di chi lancia la suite.
@@ -433,37 +434,67 @@ test('--title-note con --fork: il suffisso fork resta in coda', () => {
   assert.ok(cmd.includes("--name '🧵 demo · T64 ramo · fork'"), `titolo inatteso: ${cmd}`);
 });
 
-// Profilo di stato per compass. Il canale è invisibile al resto della suite: il
+// Chiave di stato per compass. Il canale è invisibile al resto della suite: il
 // titolo (match FINESTRA) e lo stato (annuncio D-Bus keyed su PTYXIS_PROFILE)
 // sono due canali distinti, e finora solo il primo era sotto gate — motivo per
 // cui una tab poteva risultare presente e insieme senza stato per sempre.
-const STATE_UUID = '64b5dc77eed04031ae0c0ab8431088b8';
+// La chiave è l'`id` del progetto; la variabile tiene il nome storico.
+const STATE_KEY = 'loom-works';
 
-test('profilo di stato: PTYXIS_PROFILE forzata in testa al comando in-tab', () => {
-  const cmd = inTabCmd(['T60'], { LOOM_DECK_STATE_PROFILE: STATE_UUID });
+test('chiave di stato: PTYXIS_PROFILE forzata in testa al comando in-tab', () => {
+  const cmd = inTabCmd(['T60'], { LOOM_DECK_STATE_PROFILE: STATE_KEY });
   // In TESTA e prima di LOOM_TASK: sono due assegnazioni env dello stesso
   // prefisso, ma l'ordine tiene stabile l'unica riga che i test leggono.
-  assert.match(cmd, new RegExp(`^PTYXIS_PROFILE=${STATE_UUID} LOOM_TASK=T60 claude `));
+  assert.match(cmd, new RegExp(`^PTYXIS_PROFILE=${STATE_KEY} LOOM_TASK=T60 claude `));
 });
 
-test('profilo di stato: presente anche sulla sessione nuda (--no-task)', () => {
+test('chiave di stato: presente anche sulla sessione nuda (--no-task)', () => {
   // Lo stato è proprietà della sessione, non della task: una sessione spot che
   // chiede conferma deve accendere il pallino come qualunque altra.
-  const cmd = inTabCmd(['--no-task'], { LOOM_DECK_STATE_PROFILE: STATE_UUID });
-  assert.match(cmd, new RegExp(`^PTYXIS_PROFILE=${STATE_UUID} claude `));
+  const cmd = inTabCmd(['--no-task'], { LOOM_DECK_STATE_PROFILE: STATE_KEY });
+  assert.match(cmd, new RegExp(`^PTYXIS_PROFILE=${STATE_KEY} claude `));
 });
 
-test('profilo di stato assente: comando invariato, nessun prefisso a vuoto', () => {
-  // Progetto non registrato nel registry → si degrada al comportamento di prima
-  // (stato orfano), non a uno spawn rotto.
+test('chiave di stato di default: l\'`id` del file config, senza dconf', () => {
+  // Il default non passa più dal registry: lo legge dal file del progetto, cioè
+  // dallo stesso posto da cui escono emoji e nome del titolo.
+  const cmd = inTabCmd(['T60'], { LOOM_DECK_STATE_PROFILE: undefined, LOOM_DECK_WORKDIR: labeledWd });
+  assert.match(cmd, /^PTYXIS_PROFILE=demo LOOM_TASK=T60 claude /);
+});
+
+test('chiave di stato di default senza file config: nessun prefisso', () => {
+  const cmd = inTabCmd(['T60'], { LOOM_DECK_STATE_PROFILE: undefined });
+  assert.match(cmd, /^LOOM_TASK=T60 claude /);
+});
+
+test('chiave di stato da un `id` fuori alfabeto: scartata con avviso', () => {
+  // Lo schema del file config non vincola la forma dell'`id`; il filtro sì,
+  // perché il valore entra in `bash -lc "…"`. Il caso è reale: `<id>:<kind>`
+  // come chiave cadrebbe qui per i due punti.
+  const wd = mkdtempSync(join(tmpdir(), 'loom-deck-wd-badid-'));
+  mkdirSync(join(wd, '.claude'), { recursive: true });
+  writeFileSync(
+    join(wd, '.claude', 'loom-works.json'),
+    JSON.stringify({ id: 'demo:claude', emoji: '🧵', owner: 'LOCAL', name: 'demo', surfaces: { claude: true } }),
+  );
+  const r = deckRun(['T60'], { LOOM_DECK_STATE_PROFILE: undefined, LOOM_DECK_WORKDIR: wd });
+  assert.equal(r.ok, true);
+  const cmd = r.out.trimEnd().split('\n').pop() ?? '';
+  assert.match(cmd, /^LOOM_TASK=T60 claude /);
+  assert.match(r.err, /profilo di stato ignorato/);
+});
+
+test('chiave di stato assente: comando invariato, nessun prefisso a vuoto', () => {
+  // Settata a vuoto → nessun annuncio: si degrada a stato orfano, non a uno
+  // spawn rotto.
   const cmd = inTabCmd(['T60'], { LOOM_DECK_STATE_PROFILE: '' });
   assert.match(cmd, /^LOOM_TASK=T60 claude /);
   assert.ok(!cmd.includes('PTYXIS_PROFILE'), `prefisso emesso a vuoto: ${cmd}`);
 });
 
-test('profilo di stato con caratteri non ammessi: scartato, non quotato', () => {
-  // Il valore arriva da dconf, che è un file editabile a mano, e finisce dentro
-  // `bash -lc "…"`: whitelist come per la nota del titolo.
+test('chiave di stato con caratteri non ammessi: scartata, non quotata', () => {
+  // Il valore finisce dentro `bash -lc "…"`: whitelist come per la nota del
+  // titolo.
   const r = deckRun(['T60'], { LOOM_DECK_STATE_PROFILE: 'abc"; id; #' });
   assert.equal(r.ok, true);
   const cmd = r.out.trimEnd().split('\n').pop() ?? '';

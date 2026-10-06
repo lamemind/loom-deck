@@ -405,8 +405,8 @@ Apre una tab Ptyxis nella window attiva con `LOOM_TASK=T18 claude 'recap stato t
 
 I testi del catalogo stanno in `scripts/prompt-catalog` (formato `kind<TAB>template`, `{TASK}` interpolato), non dentro lo script: li legge anche il deck, per mostrare nel detail il prompt prima dello spawn. `--prompt` passa invece un testo **letterale** ed è esclusivo con `--prompt-kind` — sono due modi di dire la stessa cosa, e accettarli insieme costringerebbe a stabilire quale vince. Il testo viene quotato per la shell in-tab, apici singoli compresi: è l'unico ingresso di testo libero in una riga che una shell parsa.
 
-La tab porta anche `PTYXIS_PROFILE` forzata al profilo bindato al progetto nel registry (`bindings/claude`), letto da dconf: è la chiave con cui loom-compass associa a un progetto lo stato annunciato dagli hook (running/ask/done). Una tab `ptyxis --tab` nuda erediterebbe il profilo di default, e l'annuncio finirebbe keyed su un UUID che nessun progetto dichiara — pallino fermo su idle, senza alcun errore visibile. Override o disattivazione via `LOOM_DECK_STATE_PROFILE`
-(settata a vuoto → nessun annuncio); progetto non registrato → nessun prefisso.
+La tab porta anche `PTYXIS_PROFILE` forzata all'`id` del progetto, letto da `.claude/loom-works.json`: è la chiave con cui loom-compass associa a un progetto lo stato annunciato dagli hook (running/ask/done). Il nome della variabile è storico — non contiene l'UUID di un profilo Ptyxis. Una tab `ptyxis --tab` nuda porterebbe l'UUID del profilo di default, e l'annuncio finirebbe keyed su una chiave che nessun progetto dichiara — badge fermo, senza alcun errore visibile. Un `id` fuori da `^[A-Za-z0-9_-]+$` viene scartato con un avviso su stderr, perché il valore entra in una riga che una shell parsa. Override o disattivazione via `LOOM_DECK_STATE_PROFILE`
+(settata a vuoto → nessun annuncio); progetto senza file config → nessun prefisso.
 
 ## Sviluppo (TUI Ink)
 
