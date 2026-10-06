@@ -45,17 +45,11 @@
 # Serve a chi spawna deck-run e vuole mostrare l'invocazione vera senza
 # ricomporla per conto proprio; le diagnostiche restano tutte su stderr.
 #
-# Modalità spawn (LOOM_DECK_SPAWN_MODE):
-#   inline   → ptyxis --tab -- <cmd>            (default)  comando inline, LOOM_TASK diretta, zero dconf
-#   profile  → ptyxis --tab-with-profile=<UUID>            riusa il profilo, riscrive il custom-command via dconf
-#
-# La scelta fra le due è la Decisione aperta §9 della proposta: la modalità
-# "inline" è il default perché non muta stato dconf condiviso. Vedi la nota
-# di decisione nella task folder di T18.
+# Spawn: `ptyxis --tab -- bash -lc <cmd>`, comando inline sul profilo di default
+# di Ptyxis — LOOM_TASK e chiave di stato viaggiano dentro il comando, nessuna
+# scrittura dconf e nessun profilo dedicato.
 #
 # Env:
-#   LOOM_DECK_SPAWN_MODE   inline|profile          (default: inline)
-#   LOOM_DECK_PROFILE_UUID UUID profilo Ptyxis     (default: cc-host)
 #   LOOM_DECK_WORKDIR      dir di lavoro della tab (default: $PWD)
 #   LOOM_DECK_ENTER_PROMPT override del prompt iniziale, {TASK}=TaskID (vince sul kind, tranne `none`)
 #                          T161: inerte sugli spawn che arrivano dal deck TUI —
@@ -89,7 +83,6 @@ FORK=0
 # la tab finisce nella finestra di un altro progetto, o in una a caso.
 #
 # Non è un quinto asse: non cambia cosa gira nella tab, solo dove la tab nasce.
-# Vale identico nei due rami di spawn (inline e profile).
 NEW_WINDOW=0
 TITLE_NOTE=""
 # Vuoto = flag non passato (≠ un default già risolto): serve a distinguere
@@ -272,8 +265,6 @@ if [[ $PROMPT_GIVEN -eq 1 && -n "$PROMPT_KIND" ]]; then
   exit 2
 fi
 
-MODE="${LOOM_DECK_SPAWN_MODE:-inline}"
-PROFILE_UUID="${LOOM_DECK_PROFILE_UUID:-5a36ae48df1c4d4882f43060e3e59656}"
 WORKDIR="${LOOM_DECK_WORKDIR:-$PWD}"
 
 # ── Titolo tab = label standard loom (matchabile da compass) ──────────────────
@@ -682,33 +673,10 @@ IN_TAB_CMD="${LOOM_DECK_INTAB_CMD:-$_default_intab}"
 # vedono comunque quello che vedevano prima.
 printf 'LOOM_DECK_INTAB %s\n' "$IN_TAB_CMD"
 
-# Verbo di apertura (T162): tab nella finestra attiva, o finestra nuova. Una
-# variabile e non due rami duplicati per ogni modalità di spawn — `--new-window`
-# è l'unica differenza fra i due casi.
+# Verbo di apertura (T162): tab nella finestra attiva, o finestra nuova —
+# `--new-window` è l'unica differenza fra i due casi.
 if [[ $NEW_WINDOW -eq 1 ]]; then WIN_FLAG="--new-window"; else WIN_FLAG="--tab"; fi
 
-case "$MODE" in
-  inline)
-    # --tab: tab nella window attiva. -- <cmd>: comando inline nella tab.
-    # LOOM_TASK viaggia dentro il comando → nessuna scrittura dconf.
-    exec ptyxis "$WIN_FLAG" -d "$WORKDIR" -T "${TITLE}" -- bash -lc "$IN_TAB_CMD"
-    ;;
-  profile)
-    # --tab-with-profile: riusa il profilo (custom-command FISSO) → per iniettare
-    # LOOM_TASK+task va riscritto il custom-command al volo via dconf (stato condiviso).
-    # Con --new-window i due flag convivono: la finestra nasce e il profilo
-    # decide cosa gira nella sua prima tab.
-    dpath="/org/gnome/Ptyxis/Profiles/${PROFILE_UUID}/"
-    dconf write "${dpath}use-custom-command" true
-    dconf write "${dpath}custom-command" "'bash -lc \"${IN_TAB_CMD//\"/\\\"}\"'"
-    if [[ $NEW_WINDOW -eq 1 ]]; then
-      exec ptyxis --new-window --tab-with-profile="$PROFILE_UUID" -d "$WORKDIR" -T "${TITLE}"
-    else
-      exec ptyxis --tab-with-profile="$PROFILE_UUID" -d "$WORKDIR" -T "${TITLE}"
-    fi
-    ;;
-  *)
-    echo "LOOM_DECK_SPAWN_MODE ignoto: '$MODE' (usa 'inline' o 'profile')" >&2
-    exit 2
-    ;;
-esac
+# -- <cmd>: comando inline nella tab. LOOM_TASK e chiave di stato viaggiano
+# dentro il comando → nessuna scrittura dconf, nessun profilo dedicato.
+exec ptyxis "$WIN_FLAG" -d "$WORKDIR" -T "${TITLE}" -- bash -lc "$IN_TAB_CMD"
