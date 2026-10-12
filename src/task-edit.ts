@@ -4,7 +4,7 @@
 // senza toccare il filesystem.
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { TASK_ID_RE, findTaskFile, headerColumns, type TaskColumns } from './tasks.js';
+import { TASK_ID_RE, findTaskFile, overviewRows } from './tasks.js';
 import type { PriName, ProgName } from './view.js';
 
 // Il task file scrive la priorità per NOME (`- **Priority**: Med`), tasks.md la
@@ -90,10 +90,13 @@ export function initialDetail(current: string, prog: ProgName, date: string = to
  * toccate restano i token grezzi originali: nessun re-flow della tabella, il
  * diff resta di una riga. `ok:false` = id assente → il chiamante non scrive nulla.
  *
- * Le posizioni vengono dall'HEADER (`headerColumns`, stessa fonte di
- * `parseTasks`), mai da un indice cablato: qui si SCRIVE su disco, quindi una
- * colonna in più o in meno non produrrebbe una lettura sbagliata ma un titolo
- * sovrascritto col glifo. Header assente → `ok:false`, non si tira a indovinare.
+ * Le righe candidate vengono da `overviewRows`, lo stesso confine di
+ * `parseTasks`: solo dentro la Tasks Overview, con le colonne del suo HEADER e
+ * mai un indice cablato. Qui si SCRIVE su disco, quindi senza confine una riga
+ * cross-deps con lo stesso id (`| T07 | — | ✔️T08 |`) sopra la tabella verrebbe
+ * riscritta al posto della riga task, con Pri/Prog/titolo sopra le celle Parent e
+ * Cross Deps; e una colonna in più o in meno darebbe un titolo sovrascritto col
+ * glifo. Header assente → nessuna riga → `ok:false`, non si tira a indovinare.
  *
  * `desc` undefined ≠ `desc` vuota: la prima non tocca la cella (chiamata
  * legacy, solo pri/prog), la seconda la svuota davvero.
@@ -116,18 +119,12 @@ export function updateTasksMdRow(
 ): { content: string; ok: boolean } {
   if (!TASK_ID_RE.test(id)) return { content, ok: false };
   const lines = content.split('\n');
-  const cols = lines.reduce<TaskColumns | null>((found, l) => found ?? headerColumns(l), null);
-  if (!cols) return { content, ok: false };
-  let ok = false;
-  const out = lines.map((line) => {
-    if (ok) return line;
-    if (!line.trim().startsWith('|')) return line;
+  for (const { index, line, id: rowId, cols } of overviewRows(lines)) {
+    if (rowId !== id) continue;
     const cells = line.split('|');
-    if ((cells[1] ?? '').trim() !== id) return line;
     // Serve la cella desc PIÙ la coda dopo il `|` finale: senza la coda lo
     // splice inserirebbe invece di sostituire.
-    if (cells.length < cols.desc + 2) return line; // riga malformata → non toccarla
-    ok = true;
+    if (cells.length < cols.desc + 2) continue; // riga malformata → non toccarla
     cells[cols.pri] = ` ${priGlyph} `;
     cells[cols.prog] = ` ${progGlyph} `;
     if (desc !== undefined) {
@@ -135,9 +132,10 @@ export function updateTasksMdRow(
       // ben formata) e va conservata, o la riga perderebbe il bordo destro.
       cells.splice(cols.desc, cells.length - cols.desc - 1, ` ${sanitizeCell(desc)} `);
     }
-    return cells.join('|');
-  });
-  return { content: ok ? out.join('\n') : content, ok };
+    lines[index] = cells.join('|');
+    return { content: lines.join('\n'), ok: true };
+  }
+  return { content, ok: false };
 }
 
 /**

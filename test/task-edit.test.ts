@@ -88,6 +88,52 @@ test('updateTasksMdRow: descrizione con `|` già presente collassa in una cella 
   assert.equal(content, '| ID | Pri | Prog | Task |\n| T39 | ⚡ | 🟡 | nuovo |\n');
 });
 
+// T172 — la riga cross-deps sbloccata (`| T07 | — | ✔️T08 |`) ha la forma di una
+// riga task. Senza confine sulla tabella, la scansione partiva dalla riga 0 del
+// file e riscriveva la PRIMA riga con quell'id: con la tabella cross-deps sopra
+// la Tasks Overview, Parent e Cross Deps diventavano Pri e Prog della task.
+// La fixture ha una colonna Note: a 3 colonne la riga cross-deps ha meno celle
+// della Overview e il vecchio codice la saltava come «malformata» — protetta per
+// caso dal conteggio, non dal confine, e il test non avrebbe morso.
+const CROSS_DEPS = [
+  'Cross-deps:',
+  '| Task  | Parent | Cross Deps | Note |',
+  '| ----- | ------ | ---------- | ---- |',
+  '| T07   | —      | ✔️T08      | x    |',
+];
+const OVERVIEW = [
+  '| ID  | Pri | Prog | Task  |',
+  '| --- | --- | ---- | ----- |',
+  '| T07 | ⚡ | 🔵 | Sette |',
+  '| T08 | ⚡ | ✔️ | Otto  |',
+];
+
+test('updateTasksMdRow: cross-deps PRIMA della Tasks Overview restano intatte', () => {
+  const md = ['```', ...CROSS_DEPS, '```', '', ...OVERVIEW, ''].join('\n');
+  const { content, ok } = updateTasksMdRow(md, 'T07', '🔥', '🟡', 'Sette bis');
+  assert.equal(ok, true);
+  assert.ok(content.includes('| T07   | —      | ✔️T08      | x    |'), 'riga cross-deps intatta');
+  assert.ok(content.includes('| T07 | 🔥 | 🟡 | Sette bis |'), 'riga Overview riscritta');
+  // diff di una riga sola
+  const diff = md.split('\n').filter((l, i) => l !== content.split('\n')[i]);
+  assert.deepEqual(diff, ['| T07 | ⚡ | 🔵 | Sette |']);
+});
+
+test('updateTasksMdRow: cross-deps DOPO la Tasks Overview restano intatte', () => {
+  const md = [...OVERVIEW, '', '```', ...CROSS_DEPS, '```', ''].join('\n');
+  const { content, ok } = updateTasksMdRow(md, 'T07', '⚡', '🟢');
+  assert.equal(ok, true);
+  assert.ok(content.includes('| T07   | —      | ✔️T08      | x    |'));
+  assert.ok(content.includes('| T07 | ⚡ | 🟢 | Sette |'));
+});
+
+test('updateTasksMdRow: un id presente solo nelle cross-deps non si scrive', () => {
+  const md = [...OVERVIEW, '', '```', ...CROSS_DEPS, '| T09   | —      | ✔️T08      | x    |', '```', ''].join('\n');
+  const { content, ok } = updateTasksMdRow(md, 'T09', '⚡', '🟡');
+  assert.equal(ok, false);
+  assert.equal(content, md);
+});
+
 const TASK_FILE = `# Task: Qualcosa
 
 - **ID**: T39
