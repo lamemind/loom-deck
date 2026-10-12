@@ -62,6 +62,93 @@ test('parseTasks senza header non parsa niente', () => {
   assert.deepEqual(parseTasks('| T01 | 🔥 | 🔵 | orfana |\n'), []);
 });
 
+// T172 — caso reale: `checkpoint-task` chiude T08 e toglie il 🔒 dalle righe
+// cross-deps di T07 e T09. Da lì `| T07 | — | ✔️T08 |` ha la forma di una riga
+// task, e senza confine il deck la leggeva come una seconda T07 (Pri `—`,
+// Prog `✔️T08`) → key React duplicata in TasksPane.
+const OVERVIEW_T01_T11 = `# Tasks
+
+## Tasks Overview
+
+| ID  | Pri | Prog | Task (max 64)          |
+| --- | --- | ---- | ---------------------- |
+| T01 | 🔥 | ✔️ | Uno                    |
+| T02 | 🔥 | ✔️ | Due                    |
+| T03 | 🔥 | 🔵 | Tre                    |
+| T04 | ⚡ | 🔵 | Quattro                |
+| T05 | ⚡ | 🔵 | Cinque                 |
+| T06 | ⚡ | 🔵 | Sei                    |
+| T07 | ⚡ | 🟢 | Sette                  |
+| T08 | ⚡ | ✔️ | Otto                   |
+| T09 | 🔹 | 🔵 | Nove                   |
+| T10 | 🔹 | 🔵 | Dieci                  |
+| T11 | 🔥 | 🟡 | Undici (epica)         |
+`;
+
+const EXECUTION_PLAN_SBLOCCATO = `## Execution Plan
+
+\`\`\`
+Legend: ✔️ Done  🟡 In Progress  🔒 Locked
+
+Epica T11 (archetipi), spot su main:   ✔️T08 · T04 · T05 · T06 → T07 · T09 → 🔒T03
+
+Cross-deps:
+| Task  | Parent | Cross Deps                   |
+| ----- | ------ | ---------------------------- |
+| T07   | —      | ✔️T08                        |
+| T09   | —      | ✔️T08                        |
+| 🔒T03 | —      | T04, T05, T06, T07, ✔️T08, T09 |
+\`\`\`
+`;
+
+test('parseTasks: le righe cross-deps sbloccate non diventano task', () => {
+  const conPlan = parseTasks(`${OVERVIEW_T01_T11}\n${EXECUTION_PLAN_SBLOCCATO}`);
+  // stesso elenco del file senza Execution Plan
+  assert.deepEqual(conPlan, parseTasks(OVERVIEW_T01_T11));
+  const ids = conPlan.map((t) => t.id);
+  assert.equal(ids.length, 11);
+  assert.equal(new Set(ids).size, ids.length, 'nessun id duplicato');
+  // Pri e Prog vengono dalla Tasks Overview, non dalle celle Parent/Cross Deps
+  const t07 = conPlan.find((t) => t.id === 'T07');
+  const t09 = conPlan.find((t) => t.id === 'T09');
+  assert.equal(t07?.pri, '⚡');
+  assert.equal(t07?.prog, '🟢');
+  assert.equal(t09?.pri, '🔹');
+  assert.equal(t09?.prog, '🔵');
+});
+
+test('parseTasks: la riga cross-deps col 🔒 resta ignorata', () => {
+  const ids = parseTasks(`${OVERVIEW_T01_T11}\n${EXECUTION_PLAN_SBLOCCATO}`).map((t) => t.id);
+  assert.equal(ids.filter((id) => id === 'T03').length, 1);
+});
+
+test('parseTasks: la tabella chiude alla prima riga che non inizia con `|`', () => {
+  const md = [
+    '| ID | Pri | Prog | Task |',
+    '| -- | --- | ---- | ---- |',
+    '| T01 | 🔥 | 🔵 | dentro |',
+    '',
+    '| T02 | 🔥 | 🔵 | fuori, dopo la riga vuota |',
+  ].join('\n');
+  assert.deepEqual(parseTasks(md).map((t) => t.id), ['T01']);
+});
+
+test('parseTasks: un secondo header riapre una tabella con le sue colonne', () => {
+  const md = [
+    '| ID | Pri | Prog | Task |',
+    '| T01 | 🔥 | 🔵 | prima |',
+    '',
+    'testo in mezzo',
+    '',
+    '| ID | Pri | K | Prog | Task |',
+    '| T02 | ⚡ | 📝 | 🟡 | seconda |',
+  ].join('\n');
+  const tasks = parseTasks(md);
+  assert.deepEqual(tasks.map((t) => t.id), ['T01', 'T02']);
+  assert.equal(tasks[1].prog, '🟡');
+  assert.equal(tasks[1].desc, 'seconda');
+});
+
 test('headerColumns riconosce solo l’header della overview', () => {
   assert.deepEqual(headerColumns('| ID | Pri | Prog | Task |'), { pri: 2, prog: 3, desc: 4 });
   assert.equal(headerColumns('| Lane | Repos | Branch | Task | Stato |'), null);

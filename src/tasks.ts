@@ -92,28 +92,68 @@ export function headerColumns(line: string): TaskColumns | null {
   return { pri, prog, desc: prog + 1 };
 }
 
-// Estrae le righe `| Tnn | Pri | Prog | Task |` della Tasks Overview. Righe
-// header/separatore non matchano `^T\d+$` → scartate.
+/** Una riga task dentro la Tasks Overview, con le colonne del SUO header. */
+export interface OverviewRow {
+  /** Indice della riga nel file — serve a chi la riscrive. */
+  index: number;
+  line: string;
+  id: string;
+  cols: TaskColumns;
+}
+
+/**
+ * Le righe task della Tasks Overview: FONTE UNICA del confine della tabella,
+ * condivisa da `parseTasks` (lettura) e `updateTasksMdRow` (scrittura su disco),
+ * come `TASK_ID_RE` e `headerColumns` — due confini scritti in due posti
+ * divergerebbero, e quello dello scrittore è quello che fa danno.
+ *
+ * La tabella apre all'header (`headerColumns`) e chiude alla PRIMA riga che non
+ * inizia con `|`; un secondo header ne riapre una, con le proprie colonne. Il
+ * confine serve perché la prima cella `^T\d+$` non basta a riconoscere una riga
+ * task: le righe della tabella cross-deps dell'Execution Plan
+ * (`| T07 | — | ✔️T08 |`) hanno la stessa forma appena perdono il 🔒 davanti
+ * all'id, e senza confine diventavano task doppie con Pri = cella Parent e
+ * Prog = cella Cross Deps.
+ *
+ * Il titolo `## Tasks Overview` non entra nel criterio: il gate è l'header, così
+ * il deck non dipende dal nome della sezione. Il prezzo: una riga vuota o un
+ * commento DENTRO la tabella la chiude, e le righe sotto spariscono dal deck
+ * senza errore.
+ */
+export function overviewRows(lines: readonly string[]): OverviewRow[] {
+  const rows: OverviewRow[] = [];
+  let cols: TaskColumns | null = null;
+  lines.forEach((line, index) => {
+    const header = headerColumns(line);
+    if (header) {
+      cols = header;
+      return;
+    }
+    if (!cols) return;
+    const t = line.trim();
+    if (!t.startsWith('|')) {
+      cols = null;
+      return;
+    }
+    // cells[0] = '' (prima del primo |): l'id è la seconda cella. Header e
+    // separatore non matchano `^T\d+$` → scartati.
+    const id = (t.split('|')[1] ?? '').trim();
+    if (TASK_ID_RE.test(id)) rows.push({ index, line, id, cols });
+  });
+  return rows;
+}
+
+// Estrae le righe `| Tnn | Pri | Prog | Task |` della Tasks Overview — il
+// confine della tabella sta in `overviewRows`.
 //
 // Le righe si parsano solo DOPO aver incontrato l'header: senza indici derivati
 // non si tira a indovinare, la lista resta vuota. Un fallimento visibile invece
 // di una cella letta al posto sbagliato.
 export function parseTasks(content: string): Task[] {
   const tasks: Task[] = [];
-  let cols: TaskColumns | null = null;
-  for (const line of content.split('\n')) {
-    const header = headerColumns(line);
-    if (header) {
-      cols = header;
-      continue;
-    }
-    if (!cols) continue;
-    const t = line.trim();
-    if (!t.startsWith('|')) continue;
-    const cells = t.split('|').map((c) => c.trim());
+  for (const { line, id, cols } of overviewRows(content.split('\n'))) {
     // cells[0] = '' (prima del primo |), cells[last] = '' (dopo l'ultimo |)
-    const id = cells[1];
-    if (!TASK_ID_RE.test(id)) continue;
+    const cells = line.trim().split('|').map((c) => c.trim());
     const pri = cells[cols.pri] ?? '';
     const prog = cells[cols.prog] ?? '';
     // desc = colonna finale; join per resistere a eventuali `|` nella descrizione.
