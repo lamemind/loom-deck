@@ -26,6 +26,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadLaunch } from '../src/config.js';
 import { launchRow } from '../src/frame.js';
+import { MODELS, MODEL_DEFAULT, spawnAction } from '../src/spawn-catalog.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = dirname(HERE);
@@ -412,15 +413,29 @@ test('detail: la riga hint non nomina i tasti standard', { skip: !CAN_RUN }, () 
 
 // ── T112 · l'azione distruttiva ───────────────────────────────────────────
 
-test('CANC sul pane sessioni è inerte e lo dice', { skip: !CAN_RUN }, () => {
-  // Inerzia che si annuncia, come `F` fuori dalla vista principale: un tasto
-  // che non fa niente in silenzio si legge come deck bloccato.
-  const frame = lastFrame(capture(`R${CANC}`));
-  // `CANC ›` è il TITOLO del modale, non una parola del vocabolario: la nota di
-  // inerzia contiene anch'essa «eliminare», quindi cercare quella direbbe che
-  // il modale si è aperto ogni volta che il rifiuto è scritto bene.
-  assert.doesNotMatch(frame, /CANC ›/, `la conferma si è aperta dal pane sbagliato: ${frame}`);
-  assert.match(frame, /seleziona una task/i, `nessuna nota di inerzia: ${frame}`);
+// Sul pane sessioni il bersaglio di `CANC` lo decide il FOCUS, come per `⏎`:
+// la conferma è quella della CONVERSAZIONE, mai quella della task. Progetto e
+// `HOME` finti (`singleSessionProject`): il test non manda `⏎`, ma un transcript
+// vero sotto `~/.claude/projects` non deve essere nemmeno raggiungibile.
+test('CANC sul pane sessioni apre la conferma della conversazione, non della task', {
+  skip: !CAN_RUN,
+}, () => {
+  const { proj, env } = singleSessionProject();
+  const frame = lastFrame(capture(`R${CANC}`, proj, env));
+  // Le due conferme aprono entrambe con `CANC › eliminare`: le distingue il
+  // bersaglio nominato e l'effetto sul disco.
+  assert.match(frame, /CANC › eliminare la conversazione sid1/, `la conferma della conversazione non si è aperta: ${frame}`);
+  assert.match(frame, /irreversibile/, `la conferma non dice l'effetto: ${frame}`);
+  assert.doesNotMatch(frame, /tasks\.md/, `si è aperta la conferma della task: ${frame}`);
+});
+
+test('CANC sul pane sessioni vuoto è inerte e lo dice', { skip: !CAN_RUN }, () => {
+  // Inerzia che si annuncia: un tasto che non fa niente in silenzio si legge
+  // come deck bloccato. `HOME` vuota → nessuna conversazione nel progetto.
+  const home = mkdtempSync(join(tmpdir(), 'loom-deck-emptyhome-'));
+  const frame = lastFrame(capture(`R${CANC}`, configProject(), { HOME: home }));
+  assert.doesNotMatch(frame, /CANC ›/, `una conferma si è aperta senza bersaglio: ${frame}`);
+  assert.match(frame, /nessuna conversazione da eliminare/i, `nessuna nota di inerzia: ${frame}`);
 });
 
 test('esc sulla conferma annulla e lo dice', { skip: !CAN_RUN }, () => {
@@ -945,11 +960,15 @@ test('pagina azioni: CANC su una riga mai toccata lo dice', { skip: !CAN_RUN }, 
 
 test('pagina azioni: il modello scelto finisce nel file di progetto', { skip: !CAN_RUN }, () => {
   // `⏎` apre l'area sulla prima riga (`none`), `D` scende sulla riga modello,
-  // `R` cicla al successivo (fable → opus), `⏎` congela nella bozza, `w` scrive.
+  // `R` cicla al successivo del default di `none`, `⏎` congela nella bozza, `w`
+  // scrive. L'atteso si deriva dal catalogo: scritto a mano è un calco che
+  // scade al primo cambio di default.
   const proj = configProject();
   const frame = capture(`${CTRL_S}\rDR\rw`, proj);
   const doc = JSON.parse(readFileSync(join(proj, '.claude', 'loom-works.json'), 'utf8'));
-  assert.deepEqual(doc.spawn, { none: { model: 'opus' } }, `frame: ${frame}`);
+  const base = spawnAction('none')?.model ?? MODEL_DEFAULT;
+  const next = MODELS[(MODELS.indexOf(base) + 1) % MODELS.length];
+  assert.deepEqual(doc.spawn, { none: { model: next } }, `frame: ${frame}`);
   // Il resto del file non è stato toccato: il saver è read-modify-write.
   assert.equal(doc.id, 'prova');
   assert.equal(doc.emoji, '🧵');
