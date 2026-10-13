@@ -48,6 +48,10 @@ export interface LiveSession {
    *  blocco preview: in lista sarebbe la colonna che `sessionTitle` già ripulisce. */
   name: string;
   cwd: string;
+  /** Epoch ms dell'avvio del processo, `0` se il registro non lo scrive. T181 —
+   *  ordina le conversazioni che entrano nell'insieme vivo nello stesso tick:
+   *  le tab si aprono in quest'ordine, quindi è l'ordine che il restore ricalca. */
+  startedAt: number;
 }
 
 function liveSessionsRoot(): string {
@@ -138,6 +142,7 @@ export function parseLiveEntry(
       status: d.status === 'busy' ? 'busy' : 'idle',
       name: typeof d.name === 'string' ? d.name : '',
       cwd,
+      startedAt: typeof d.startedAt === 'number' ? d.startedAt : 0,
     },
     procStart,
   };

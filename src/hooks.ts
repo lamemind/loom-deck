@@ -10,6 +10,7 @@ import { discoverProjectSessions, type Session } from './sessions.js';
 import { discoverLiveSessions, liveSig, type LiveSession } from './live-sessions.js';
 import { loadSessionIndex, type SessionIndex } from './task-index.js';
 import { fillSidecarGaps } from './session-meta.js';
+import { aliveIds, liveMarkPlan, writeLiveMarks, RESTORE_HOLD_MS } from './live-marks.js';
 import { archivableIds, SCAN_INTERVAL_MS } from './archivable.js';
 import { commitTimes } from './commit-times.js';
 import { scanEpicHierarchy, EMPTY_EPIC_HIERARCHY, type EpicHierarchy } from './epic-hierarchy.js';
@@ -165,6 +166,9 @@ export function useEpicHierarchy(tasksDir: string): EpicHierarchy {
 // vive già nel modello (`projectCore`), e una seconda copia toglierebbe dal
 // titolo scritto nel sidecar una stringa diversa da quella che la lista toglie
 // dalle proprie righe.
+//
+// T181 — ed è il posto dove CONVERGE la marca `live` del sidecar, per la stessa
+// ragione: l'insieme vivo e la marca su disco sono in mano nello stesso giro.
 export function useSessions(projectRoot: string, core: string | null) {
   const [state, setState] = useState<{
     sessions: Session[];
@@ -174,6 +178,8 @@ export function useSessions(projectRoot: string, core: string | null) {
     notes: Map<string, string>;
     priority: Set<string>;
     live: Map<string, LiveSession>;
+    liveMarks: Map<string, number>;
+    restoring: boolean;
   }>({
     sessions: [],
     bindings: new Map(),
@@ -182,14 +188,25 @@ export function useSessions(projectRoot: string, core: string | null) {
     notes: new Map(),
     priority: new Set(),
     live: new Map(),
+    liveMarks: new Map(),
+    restoring: false,
   });
   // T50 — pin/unpin scrive il sidecar e vuole feedback IMMEDIATO, non al
   // prossimo tick del poll (1.5s): la reload è esposta via ref così il toggle la
   // richiama senza risottoscrivere l'intervallo.
   const reloadRef = useRef<() => void>(() => {});
+  // T181 — le conversazioni che il restore sta riaprendo, con la scadenza della
+  // tenuta. In un ref e non nell'effect perché chi le scrive è un gesto
+  // (`holdLive`, dal restore), non il giro del poll.
+  const holds = useRef(new Map<string, number>());
 
   useEffect(() => {
     let lastSig = '';
+    // T181 — l'isteresi del ritiro (P3 preflight): le marcate viste mancare al
+    // giro precedente. È l'unico stato in memoria della convergenza, e parte
+    // vuoto a ogni avvio: un deck che riparte senza vive non scrive niente, e
+    // con delle vive rimisura da capo — un ritiro ritardato di un tick, mai perso.
+    let missingOnce = new Set<string>();
     const reload = () => {
       let sessions: Session[];
       let index: SessionIndex;
@@ -248,6 +265,38 @@ export function useSessions(projectRoot: string, core: string | null) {
         models: index.models,
         core,
       });
+      // T181 — la marca `live`: il piano dei buchi, poi la scrittura. Fuori dal
+      // gate della signature come i campi derivati sopra, e per la stessa
+      // ragione: un append fallito si ritenta al giro dopo, e la signature
+      // invariata non lo farebbe mai ripartire.
+      //
+      // La tenuta del restore si pota qui, prima del piano: una conversazione
+      // tenuta che è già viva non ha più niente da cui essere protetta, e una
+      // tenuta scaduta torna sotto l'isteresi normale.
+      const alive = aliveIds(live, sessions);
+      const now = Date.now();
+      for (const [id, until] of holds.current) {
+        if (until <= now || alive.includes(id)) holds.current.delete(id);
+      }
+      const plan = liveMarkPlan({
+        alive,
+        marked: index.liveMarks,
+        missingOnce,
+        held: new Set(holds.current.keys()),
+      });
+      missingOnce = plan.missing;
+      let liveMarks = index.liveMarks;
+      // Rilettura solo quando ha scritto, cioè a ogni cambio dell'insieme vivo e
+      // mai a regime: la mappa a schermo è quella su disco, rango compreso, e
+      // non una seconda derivazione del rango in memoria che potrebbe divergere.
+      if (writeLiveMarks(projectRoot, plan) > 0) {
+        try {
+          liveMarks = loadSessionIndex(projectRoot).liveMarks;
+        } catch {
+          // rilettura fallita: resta la mappa di prima, il giro dopo la rifà.
+        }
+      }
+      const restoring = holds.current.size > 0;
       // La signature copre anche fork, pin, note e marca di priorità: un record
       // di lineage, un toggle di pin, una nota appena scritta o un 🚨 acceso
       // cambiano la lista renderizzata, quindi devono forzare il re-render come
@@ -265,10 +314,14 @@ export function useSessions(projectRoot: string, core: string | null) {
         '#' +
         [...priority].sort().join(',') +
         '#' +
-        liveSig(live);
+        liveSig(live) +
+        // T181 — la marca e il restore in corso decidono il bottone in testata.
+        '#' +
+        [...liveMarks.entries()].map(([k, v]) => `${k}@${v}`).sort().join(',') +
+        (restoring ? '#restoring' : '');
       if (sig === lastSig) return;
       lastSig = sig;
-      setState({ sessions, bindings, forkOf, pinned, notes, priority, live });
+      setState({ sessions, bindings, forkOf, pinned, notes, priority, live, liveMarks, restoring });
     };
     reloadRef.current = reload;
     reload();
@@ -276,7 +329,20 @@ export function useSessions(projectRoot: string, core: string | null) {
     return () => clearInterval(id);
   }, [projectRoot, core]);
 
-  return { ...state, reload: () => reloadRef.current() };
+  /**
+   * T181 — tiene fuori dal ritiro le conversazioni che il restore sta per
+   * riaprire, per `RESTORE_HOLD_MS` da adesso. Il restore la chiama due volte:
+   * su tutte all'avvio, così il bottone sparisce subito e un secondo `^T` non
+   * riapre tutto una seconda volta; e su ognuna quando parte la sua tab, così la
+   * scadenza si conta da lì e non dall'inizio di una serie che può durare.
+   */
+  const holdLive = useCallback((ids: readonly string[]) => {
+    const until = Date.now() + RESTORE_HOLD_MS;
+    for (const id of ids) holds.current.set(id, until);
+    reloadRef.current();
+  }, []);
+
+  return { ...state, reload: () => reloadRef.current(), holdLive };
 }
 
 // T61 — conteggio delle Done oltre soglia, su una scala di refresh TUTTA SUA.
