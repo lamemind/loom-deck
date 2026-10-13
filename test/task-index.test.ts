@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  appendLive,
   appendNote,
   appendPin,
   appendPriority,
@@ -389,4 +390,75 @@ test('meta: il titolo NON è sanificato in lettura (la convergenza dipende da qu
   // valore derivato non combacerebbe mai e il deck appenderebbe a ogni tick.
   appendSessionMeta(r, 'sid', { title: 'done ✅' });
   assert.equal(loadSessionIndex(r).titles.get('sid'), 'done ✅');
+});
+
+test('live: append live:true → la conversazione è fra le marcate', () => {
+  const r = root();
+  appendLive(r, 'sid', true);
+  assert.equal(loadSessionIndex(r).liveMarks.has('sid'), true);
+});
+
+test('live last-wins: live:false finale toglie la marca', () => {
+  const r = root();
+  appendLive(r, 'sid', true);
+  appendLive(r, 'sid', false);
+  assert.equal(loadSessionIndex(r).liveMarks.has('sid'), false);
+});
+
+test('live: rango di entrata crescente nell’ordine di append (restore dalla più vecchia)', () => {
+  const r = root();
+  appendLive(r, 'a', true);
+  appendLive(r, 'b', true);
+  appendLive(r, 'c', true);
+  const { liveMarks } = loadSessionIndex(r);
+  const ordine = [...liveMarks.entries()].sort((x, y) => x[1] - y[1]).map(([k]) => k);
+  assert.deepEqual(ordine, ['a', 'b', 'c']);
+});
+
+test('live: un rientro dopo l’uscita va in coda (rango più alto)', () => {
+  const r = root();
+  appendLive(r, 'a', true);
+  appendLive(r, 'b', true);
+  appendLive(r, 'a', false);
+  appendLive(r, 'a', true);
+  const { liveMarks } = loadSessionIndex(r);
+  assert.ok(liveMarks.get('a')! > liveMarks.get('b')!);
+});
+
+test('live: campi indipendenti — la marca non tocca pin, priorità, nota e binding', () => {
+  const r = root();
+  appendTaskBinding(r, 'sid', 'T181');
+  appendPin(r, 'sid', true);
+  appendPriority(r, 'sid', true);
+  appendNote(r, 'sid', 'restore');
+  appendLive(r, 'sid', true);
+  appendLive(r, 'sid', false);
+  const idx = loadSessionIndex(r);
+  assert.equal(idx.bindings.get('sid'), 'T181');
+  assert.equal(idx.pinned.has('sid'), true);
+  assert.equal(idx.priority.has('sid'), true);
+  assert.equal(idx.notes.get('sid'), 'restore');
+  assert.equal(idx.liveMarks.has('sid'), false);
+});
+
+test('live: un record senza il campo non smarca, un valore non booleano si ignora', () => {
+  const r = root();
+  appendLive(r, 'sid', true);
+  appendPin(r, 'sid', true);
+  writeFileSync(taskIndexPath(r), '{"sessionId":"sid","live":"false"}\n', { flag: 'a' });
+  assert.equal(loadSessionIndex(r).liveMarks.has('sid'), true);
+});
+
+test('live: il rango delle marche non si mescola a quello di pin', () => {
+  const r = root();
+  appendPin(r, 'p1', true);
+  appendPin(r, 'p2', true);
+  appendLive(r, 'l1', true);
+  const idx = loadSessionIndex(r);
+  assert.equal(idx.liveMarks.get('l1'), 0, 'il contatore di entrata è suo, parte da 0');
+  assert.equal(idx.pinned.get('p2'), 1);
+});
+
+test('live: file assente → mappa vuota, nessun throw', () => {
+  assert.equal(loadSessionIndex(root()).liveMarks.size, 0);
 });

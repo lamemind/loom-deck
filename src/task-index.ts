@@ -65,6 +65,14 @@ import { sanitize } from './width.js';
 // CONSISTENTE: esiste una finestra in cui manca (chi legge deve avere un
 // fallback), e invecchia se il possessore non gira — chi rinomina una
 // conversazione cambia il titolo nel transcript, non qui.
+//
+// T181 — `live` è il terzo campo DERIVATO e il primo che serve al deck stesso:
+// marca l'ULTIMO INSIEME VIVO delle conversazioni del progetto, quello che il
+// bottone `restore N sessions` riapre quando il deck riparte senza vive. Sta
+// qui e non in un file dedicato perché il dato è per-conversazione e il sidecar
+// ne ha già la grammatica; non sta in `.claude/loom-works.json` perché un id di
+// conversazione vale solo sulla macchina che ha il transcript, e quel file è
+// committato. Lo scrive la convergenza di `live-marks.ts`, mai un gesto umano.
 
 export interface SessionRecord {
   sessionId: string;
@@ -91,6 +99,10 @@ export interface SessionRecord {
    *  Un id versionato obbligherebbe il consumer a rifare la mappa
    *  famiglia → alias. Stringa vuota = cancellazione. */
   model?: string;
+  /** T181 — la conversazione sta nell'ultimo insieme vivo del progetto.
+   *  true = entrata, false = uscita. Un insieme vivo VUOTO non scrive niente:
+   *  è ciò che fa sopravvivere l'ultimo insieme alla chiusura del deck. */
+  live?: boolean;
 }
 
 export function taskIndexPath(projectRoot: string): string {
@@ -162,6 +174,17 @@ export function appendSessionMeta(
   appendSessionRecord(projectRoot, rec);
 }
 
+/**
+ * T181 — entrata (`true`) o uscita (`false`) di una conversazione dall'insieme
+ * vivo: stessa forma di `appendPin`. Il nome del campo è un contratto di
+ * formato come `priority`: i lettori esterni (compass, `announce-state.sh`) lo
+ * ignorano perché leggono i campi per nome, e rinominarlo dopo vorrebbe una
+ * migrazione dei file già scritti.
+ */
+export function appendLive(projectRoot: string, sessionId: string, live: boolean): void {
+  appendSessionRecord(projectRoot, { sessionId, live });
+}
+
 export interface SessionIndex {
   /** sessionId → taskId (solo le scoped). */
   bindings: Map<string, string>;
@@ -187,6 +210,14 @@ export interface SessionIndex {
   titles: Map<string, string>;
   /** T162 — sessionId → alias di modello scritto nel sidecar, stessa regola. */
   models: Map<string, string>;
+  /** T181 — sessionId → rango di ENTRATA nell'insieme vivo (posizione nel file
+   *  dell'ultimo record `live:true`), stessa forma di `pinned`. Solo le marcate
+   *  correnti: un `live:false` finale toglie la chiave. Il rango crescente è
+   *  l'ordine in cui il restore riapre le tab, dalla più vecchia (P7 preflight).
+   *  Si chiama `liveMarks` e non `live` perché nel deck `live` è già il
+   *  registro dei processi vivi (`live-sessions.ts`): la marca è un'altra cosa,
+   *  l'insieme com'era l'ultima volta che non era vuoto. */
+  liveMarks: Map<string, number>;
 }
 
 // Una sola lettura del JSONL per entrambe le mappe: il deck poll-a l'indice a
@@ -202,13 +233,15 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
   const priority = new Set<string>();
   const titles = new Map<string, string>();
   const models = new Map<string, string>();
+  const liveMarks = new Map<string, number>();
   let content: string;
   try {
     content = readFileSync(taskIndexPath(projectRoot), 'utf8');
   } catch {
-    return { bindings, forkOf, pinned, notes, priority, titles, models };
+    return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks };
   }
   let order = 0; // posizione crescente dei record pinned → rango di pin (D2)
+  let liveOrder = 0; // T181 — idem per i record live:true → rango di entrata
   for (const line of content.split('\n')) {
     if (!line.trim()) continue;
     try {
@@ -221,6 +254,7 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
         priority?: unknown;
         title?: unknown;
         model?: unknown;
+        live?: unknown;
       };
       if (typeof d.sessionId !== 'string') continue;
       // T57 — last-wins con la stringa vuota come CANCELLAZIONE: `taskId:''`
@@ -277,9 +311,17 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
         if (d.model) models.set(d.sessionId, d.model);
         else models.delete(d.sessionId);
       }
+      // T181 — stesso last-wins di `pinned`, rango compreso. Un `live:true` su
+      // una conversazione già marcata RIASSEGNA il rango: la convergenza non lo
+      // scrive mai (appende solo i buchi), quindi succede solo con due deck
+      // sullo stesso progetto, e l'effetto è spostarla in coda al restore.
+      if (typeof d.live === 'boolean') {
+        if (d.live) liveMarks.set(d.sessionId, liveOrder++);
+        else liveMarks.delete(d.sessionId);
+      }
     } catch {
       // riga corrotta → skip
     }
   }
-  return { bindings, forkOf, pinned, notes, priority, titles, models };
+  return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks };
 }
