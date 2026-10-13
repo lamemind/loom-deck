@@ -105,7 +105,9 @@ export const CTRL_DEROGATIONS: Partial<Record<CapturingMode, readonly string[]>>
  *    darebbe due guardie per lo stesso tasto;
  *  - `^F`, `^G`/`^O`, `^W`/`^E`, `^U`, `^S`, `^B` — non dipendono dalla
  *    selezione task: cercano nelle conversazioni, misurano il progetto, aprono
- *    pagine. `^W` resta vivo mentre `w` è gated, e sono due tasti diversi.
+ *    pagine. `^W` resta vivo mentre `w` è gated, e sono due tasti diversi;
+ *  - `^T` — riapre le conversazioni dell'ultimo insieme vivo dal bottone in
+ *    testata, che è a schermo in entrambi i modi (T181).
  */
 export type Chord =
   | { kind: 'ctrl'; input: string }

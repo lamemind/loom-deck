@@ -26,6 +26,7 @@ import { type Mode } from './model.js';
 import {
   BARE_BUTTONS_WIDTH,
   BARE_LABEL,
+  HEADER_BUTTON_SEP,
   deckLegend,
   frameGeometry,
   headlineWidth,
@@ -344,6 +345,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     docCounts: model.docCounts,
     docViewId: model.docViewId,
     docHasDirs: model.docHasDirs,
+    restoreCount: model.restorable.length,
   });
 
   useDeckInput({
@@ -412,9 +414,26 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           label={status.label}
           building={status.building}
           failed={status.failed}
-          cols={headlineWidth(columns, frame.headerRight)}
+          cols={headlineWidth(columns, frame.headerBlock)}
         />
-        <Text dimColor>{frame.headerRight}</Text>
+        {/* T181 — il bottone di restore sta nello stesso blocco di destra,
+            prima di risoluzione e versione: un `Box` coi due `Text` fratelli e
+            non un `Text` che li annida, perché un `Text` di `Text` non si
+            stira alla larghezza del box (misurato su `IndicatorRow`). Il budget
+            a sinistra sottrae l'intero blocco (`headerBlock`). */}
+        {frame.headerButton ? (
+          <Box flexDirection="row">
+            <Text color="yellow" bold>
+              {frame.headerButton}
+            </Text>
+            <Text dimColor>
+              {HEADER_BUTTON_SEP}
+              {frame.headerRight}
+            </Text>
+          </Box>
+        ) : (
+          <Text dimColor>{frame.headerRight}</Text>
+        )}
       </Box>
       <HintBar
         mode={mode}
@@ -429,6 +448,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
           hasInbox: model.selInbox !== null,
           hasDoc: model.selDoc !== null,
           gitlink: gitlink.enabled,
+          restore: frame.headerButton !== null,
         })}
         indicators={indicators}
         columns={columns}

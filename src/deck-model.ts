@@ -26,6 +26,7 @@ import {
   useTasks,
 } from './hooks.js';
 import { DEFAULT_INBOX_STALE_HOURS, staleCount, type InboxFile } from './inbox.js';
+import { aliveIds, restoreSet } from './live-marks.js';
 import type { DocRow, DocScanData } from './doc-tree.js';
 import {
   cycleDocView,
@@ -225,6 +226,9 @@ export function useDeckModel({
     notes: sessionNotes,
     priority: sessionPriority,
     live,
+    liveMarks,
+    restoring,
+    holdLive,
     reload: reloadSessions,
   } = useSessions(cwd, projectCore);
 
@@ -463,6 +467,15 @@ export function useDeckModel({
     () => assembled.rows.filter((r) => live.has(r.sessionId)).length,
     [assembled, live],
   );
+  // T181 — le conversazioni che il bottone di restore riapre, nell'ordine di
+  // riapertura. L'insieme vivo è lo stesso incrocio `live ∩ sessions` che la
+  // convergenza usa per scrivere la marca (`aliveIds`): due definizioni
+  // diverse farebbero comparire il bottone accanto a una conversazione che per
+  // la marca è viva, o il contrario.
+  const restorable = useMemo(
+    () => restoreSet({ marked: liveMarks, sessions, alive: aliveIds(live, sessions), restoring }),
+    [liveMarks, sessions, live, restoring],
+  );
   const sessionCounts: SessionViewCounts = {
     total: assembled.contextTotal,
     live: liveCount,
@@ -694,6 +707,10 @@ export function useDeckModel({
     live,
     reloadSessions,
     detail,
+    // T181 — restore delle conversazioni dell'ultimo insieme vivo
+    restorable,
+    restoring,
+    holdLive,
     // progetto
     launch,
     identity,

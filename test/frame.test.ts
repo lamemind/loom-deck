@@ -13,10 +13,15 @@ import {
   BARE_LABEL,
   deckLegend,
   frameGeometry,
+  HEADER_BUTTON_SEP,
   headlineWidth,
   launchRow,
+  restoreButton,
+  restoreButtonForms,
+  RESTORE_KEY,
   SURFACE_SEGMENTS,
 } from '../src/frame.js';
+import { FRAME_TEXT_COL, hitRegion } from '../src/mouse.js';
 import { META_ROWS } from '../src/model.js';
 import { TASK_MODE_LEGEND } from '../src/input-modes.js';
 import { termWidth } from '../src/width.js';
@@ -86,6 +91,8 @@ const frameInput = (over: Partial<Parameters<typeof frameGeometry>[0]> = {}) =>
     selDocPath: null,
     docCounts: { total: 0, split: 0, merge: 0, tldr: 0, regroup: 0 },
     docViewId: 'all',
+    docHasDirs: false,
+    restoreCount: 0,
     ...over,
   });
 
@@ -367,4 +374,75 @@ test('headlineWidth: il budget sinistro lascia posto al segmento destro', () => 
   assert.ok(left + termWidth(right) < columns, 'i due segmenti devono stare nella riga');
   assert.ok(left >= 4, 'il budget non scende sotto il minimo nemmeno su un terminale stretto');
   assert.equal(headlineWidth(10, right), 4, 'su terminale strettissimo resta il pavimento');
+});
+
+// ── T181: il bottone di restore in testata ──────────────────────────────────
+
+const legendBase = {
+  focus: 'tasks' as const,
+  hasTask: true,
+  hasSession: false,
+  hasSessionId: false,
+  purgeBulk: false,
+  docMode: false,
+  hasInbox: false,
+  hasDoc: false,
+  gitlink: false,
+};
+
+test('restoreButton: niente da riaprire → niente bottone', () => {
+  assert.equal(restoreButton(0, 120, '120×40 · v1.0.0'), null);
+});
+
+test('restoreButton: la forma lunga quando c’è spazio, al singolare con una sola', () => {
+  assert.equal(restoreButton(3, 120, '120×40 · v1.0.0'), '[ restore 3 sessions ]');
+  assert.equal(restoreButton(1, 120, '120×40 · v1.0.0'), '[ restore 1 session ]');
+});
+
+test('restoreButton: su un terminale stretto cede alla forma corta, poi sparisce', () => {
+  const right = '40×24 · v1.0.0';
+  const forms = restoreButtonForms(12);
+  // La prima forma che lascia almeno 4 colonne al project status.
+  const fits = (form: string, cols: number) =>
+    cols - 4 - termWidth(form) - termWidth(HEADER_BUTTON_SEP) - termWidth(right) - 1 >= 4;
+  for (let cols = 10; cols <= 80; cols++) {
+    const got = restoreButton(12, cols, right);
+    const expected = forms.find((f) => fits(f, cols)) ?? null;
+    assert.equal(got, expected, `a ${cols} colonne`);
+  }
+  assert.equal(restoreButton(12, 10, right), null, 'nessuna forma entra in 10 colonne');
+});
+
+test('frameGeometry: senza restore la testata è quella di sempre, nessuna regione', () => {
+  const f = frameInput();
+  assert.equal(f.headerButton, null);
+  assert.equal(f.headerBlock, f.headerRight);
+  assert.deepEqual(f.headerRegions, []);
+});
+
+test('frameGeometry: il bottone sta a sinistra di risoluzione e versione, ancorato al bordo', () => {
+  for (const columns of [80, 100, 176]) {
+    const f = frameInput({ columns, restoreCount: 3 });
+    assert.equal(f.headerButton, '[ restore 3 sessions ]');
+    assert.equal(f.headerBlock, `${f.headerButton}${HEADER_BUTTON_SEP}${f.headerRight}`);
+    // Il blocco finisce sull'ultima colonna di testo del box esterno.
+    const lastTextCol = FRAME_TEXT_COL + columns - 4 - 1;
+    const [r] = f.headerRegions;
+    assert.ok(r, `nessuna regione a ${columns} colonne`);
+    assert.equal(r.key, RESTORE_KEY);
+    assert.equal(r.end - r.start + 1, termWidth(f.headerButton!));
+    assert.equal(r.start + termWidth(f.headerBlock) - 1, lastTextCol, `bordo a ${columns} colonne`);
+    // La sinistra riceve esattamente il resto: nessuna colonna in più, nessuna in meno.
+    assert.equal(headlineWidth(columns, f.headerBlock) + 1 + termWidth(f.headerBlock), columns - 4);
+    // Click sul bottone sì, sul separatore e sulla risoluzione no.
+    assert.equal(hitRegion(f.headerRegions, r.start), RESTORE_KEY);
+    assert.equal(hitRegion(f.headerRegions, r.end), RESTORE_KEY);
+    assert.equal(hitRegion(f.headerRegions, r.end + 1), null);
+    assert.equal(hitRegion(f.headerRegions, lastTextCol), null);
+  }
+});
+
+test('deckLegend: `^T restore` solo col bottone a schermo, e in testa', () => {
+  assert.equal(deckLegend(legendBase).includes('^T'), false);
+  assert.ok(deckLegend({ ...legendBase, restore: true }).startsWith('^T restore · '));
 });

@@ -51,13 +51,22 @@ import {
   DECK_RUN,
   type Spawned,
 } from './spawn.js';
-import { type ModelKind, type PromptKind, type SpawnActionId } from './spawn-catalog.js';
+import { MODEL_DEFAULT, type ModelKind, type PromptKind, type SpawnActionId } from './spawn-catalog.js';
+import { modelAlias } from './glyphs.js';
 import { resolveSpawnId, type ResolvedSpawn, type SpawnOverrides } from './spawn-config.js';
 import { useTaskOps } from './task-ops.js';
 import { inboxPrompt, inboxWords, type InboxFile } from './inbox.js';
 import { docTargetKind, docWords, type DocRow } from './doc-tree.js';
 import { wrapWords } from './wrap-scan.js';
 import type { DeckModel } from './deck-model.js';
+
+/**
+ * T181 — l'attesa massima di un passo del restore prima di passare al
+ * successivo. Un `deck-run` esce appena `ptyxis --tab` ha consegnato la tab
+ * all'istanza già aperta, cioè ben sotto questa soglia: il timeout esiste per il
+ * figlio che non esce mai, non per scandire la serie.
+ */
+const RESTORE_STEP_TIMEOUT_MS = 3_000;
 
 export function useDeckActions({
   cwd,
@@ -262,7 +271,7 @@ export function useDeckActions({
   // ricerca passa il modello ereditato dalla sessione senza superficie di
   // scelta (D1 preflight). I due chiamanti restano la stessa azione perché è
   // lo spawn a essere identico, non la sorgente del valore.
-  function resumeSession(sessionId: string, modelKind: ModelKind) {
+  function resumeSession(sessionId: string, modelKind: ModelKind): Spawned {
     const bound = model.bindings.get(sessionId) ?? null;
     const spawned = spawnDeckResume(
       bound,
@@ -273,6 +282,64 @@ export function useDeckActions({
     );
     spawned.child.on('error', () => setNote(`⚠ resume fallito (${DECK_RUN})`));
     noteSpawn(spawned);
+    return spawned;
+  }
+
+  /**
+   * T181 — `^T` e il bottone in testata: riapre le conversazioni dell'ultimo
+   * insieme vivo, una tab per conversazione, ognuna col proprio binding di
+   * task, la propria nota e il modello con cui girava.
+   *
+   * Passa da `resumeSession`, terzo chiamante dopo la lista e la ricerca, e
+   * come la ricerca non ha una superficie di scelta del modello: lo eredita
+   * dalla conversazione (`modelAlias(session.model) ?? MODEL_DEFAULT`, T148/D1).
+   *
+   * IN SERIE, e non tutte insieme (P7 preflight): la tab successiva parte
+   * quando il `deck-run` della precedente è uscito, così le tab si aprono
+   * nell'ordine dell'insieme e la finestra riaperta ricalca da sinistra a
+   * destra quella chiusa. Il timeout per passo tiene la serie in moto anche se
+   * un figlio non esce mai — uno spawn inerte dei test, un `ptyxis` che resta
+   * appeso: una tab fuori ordine è meglio di un restore che si ferma a metà.
+   *
+   * La tenuta (`holdLive`) va due volte: su tutte all'avvio, perché il bottone
+   * sparisca subito e un secondo `^T` non riapra tutto di nuovo; su ognuna alla
+   * partenza della sua tab, perché la scadenza si conti da lì. Nessuna
+   * conferma (P6): ricostruisce uno stato che l'utente aveva, ed è reversibile
+   * chiudendo le tab.
+   */
+  function restoreSessions() {
+    const list = model.restorable;
+    if (list.length === 0) {
+      setNote(model.restoring ? '^T → restore già in corso' : '^T → nessuna conversazione da riaprire');
+      return;
+    }
+    model.holdLive(list.map((s) => s.sessionId));
+    const step = (i: number) => {
+      if (i >= list.length) {
+        // L'ultimo annuncio in-tab arriva asincrono e scriverebbe sopra il
+        // riepilogo: avanzare la sequenza lo rende vecchio prima che arrivi.
+        spawnSeq.current++;
+        setNote(`↻ restore: ${list.length} ${list.length === 1 ? 'conversazione riaperta' : 'conversazioni riaperte'}`);
+        return;
+      }
+      const s = list[i]!;
+      model.holdLive([s.sessionId]);
+      const { child } = resumeSession(s.sessionId, modelAlias(s.model) ?? MODEL_DEFAULT);
+      let done = false;
+      const next = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        step(i + 1);
+      };
+      // `unref`: il timer non deve tenere vivo il processo se il deck esce a
+      // metà serie — lo schermo sarebbe già restituito al terminale.
+      const timer = setTimeout(next, RESTORE_STEP_TIMEOUT_MS);
+      timer.unref();
+      child.once('exit', next);
+      child.once('error', next);
+    };
+    step(0);
   }
 
   /** T148/T154(P2,P3) — `m` col bersaglio RESUME: `input.ts` instrada qui solo
@@ -690,6 +757,7 @@ export function useDeckActions({
     spawnForTask,
     spawnTaskSession,
     resumeSession,
+    restoreSessions,
     cycleResumeModel,
     cycleBareModel,
     writeNote,

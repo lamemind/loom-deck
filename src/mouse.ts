@@ -243,6 +243,15 @@ export const LAUNCH_ROW = 4;
  */
 export const HINT_ROW = LAUNCH_ROW - 1;
 
+/**
+ * T181 — riga della TESTATA (project status a sinistra, risoluzione e versione
+ * a destra), subito sotto il bordo superiore. Entra nell'hit-test col bottone di
+ * restore, che le sta a sinistra di risoluzione e versione; come le altre due
+ * righe fisse è incondizionata in modalità normale, e il click rientra dalla
+ * porta della tastiera con la combo che il bottone rappresenta.
+ */
+export const HEADER_ROW = HINT_ROW - 1;
+
 /** Colonna (1-based) del primo carattere di testo dentro il box esterno:
  *  bordo + `paddingX={1}`. */
 export const FRAME_TEXT_COL = 3;

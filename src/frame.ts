@@ -24,6 +24,7 @@ import {
 } from './pane-header.js';
 import {
   FRAME_TEXT_COL,
+  HEADER_ROW,
   HINT_ROW,
   inlineRegions,
   LAUNCH_ROW,
@@ -124,6 +125,9 @@ export function deckLegend(state: {
    *  non si annuncia. Stessa regola delle voci contestuali sopra — un tasto
    *  inerte non occupa colonne per dirlo. */
   gitlink: boolean;
+  /** T181 — il bottone di restore è a schermo in testata. Stessa regola: senza
+   *  il bottone `^T` non ha niente da riaprire, e la voce non si annuncia. */
+  restore?: boolean;
 }): string {
   const canSpawn = state.focus === 'tasks' && state.hasTask;
   const canResume = state.focus === 'sessions' && state.hasSession;
@@ -134,6 +138,10 @@ export function deckLegend(state: {
   const canPin = state.focus === 'sessions' && state.hasSessionId;
   return sanitize(
     [
+      // T181/P5 — in TESTA alla legenda, perché la legenda tronca dalla coda e
+      // questa voce vale proprio nel momento in cui il deck si è appena
+      // riaperto: è il primo gesto che si vuole fare, non uno fra venti.
+      ...(state.restore ? ['^T restore'] : []),
       ...(canSpawn
         ? ['⏎ detail', '^K/^P/^R spawn']
         : canResume
@@ -440,6 +448,41 @@ export function indicatorRow(
   return { segments, text, regions: rowRegions(segments, INDICATOR_SEP, start), width };
 }
 
+/**
+ * T181 — il bottone della testata: `[ restore 3 sessions ]`, a sinistra di
+ * risoluzione e versione.
+ *
+ * `key` come gli indicatori della riga legenda: la COMBO col prefisso `^`, e il
+ * click rientra dalla porta della tastiera premendola (`HEADER_ROW` in
+ * `mouse.ts`). La combo non sta nel testo del bottone (P5 preflight): la dice la
+ * legenda, come per gli indicatori di T134.
+ *
+ * Tre forme, dalla più lunga, e vince la prima che lascia al project status a
+ * sinistra almeno il pavimento di `headlineWidth`: il bottone entra nel budget
+ * della testata, e una forma che non ci sta spingerebbe la riga oltre il bordo.
+ * Nessuna delle tre ci sta → nessun bottone; `^T` resta valido, perché il
+ * tasto non dipende da cosa entra a schermo.
+ */
+/** Il pavimento del budget del project status: sotto, non resta niente di
+ *  leggibile. Il bottone di restore lo rispetta (`restoreButton`). */
+const HEADLINE_MIN = 4;
+
+export const RESTORE_KEY = '^t';
+export const HEADER_BUTTON_SEP = '  ';
+
+export function restoreButtonForms(n: number): string[] {
+  return [`[ restore ${n} ${n === 1 ? 'session' : 'sessions'} ]`, `[ restore ${n} ]`, `[ ${n} ]`];
+}
+
+export function restoreButton(n: number, columns: number, headerRight: string): string | null {
+  if (n <= 0) return null;
+  for (const form of restoreButtonForms(n)) {
+    const block = termWidth(form) + termWidth(HEADER_BUTTON_SEP) + termWidth(headerRight);
+    if ((columns || 80) - 4 - block - 1 >= HEADLINE_MIN) return form;
+  }
+  return null;
+}
+
 export type FrameInput = {
   rows: number;
   columns: number;
@@ -480,6 +523,9 @@ export type FrameInput = {
   /** La misura portava anche la tabella delle cartelle: l'header lo dice, e
    *  l'avviso occupa colonne che le regioni cliccabili devono contare. */
   docHasDirs: boolean;
+  /** T181 — quante conversazioni riapre il restore (`restoreSet`); 0 = niente
+   *  bottone in testata. */
+  restoreCount: number;
 };
 
 export type Frame = {
@@ -503,6 +549,13 @@ export type Frame = {
   listGeometry: ListGeometry | null;
   /** Segmento destro della testata: risoluzione in celle e versione. */
   headerRight: string;
+  /** T181 — il bottone di restore, già nella forma che entra; `null` = assente. */
+  headerButton: string | null;
+  /** Tutto ciò che sta a destra nella testata, bottone e separatore compresi:
+   *  è la stringa da cui `headlineWidth` sottrae il budget del project status. */
+  headerBlock: string;
+  /** Le colonne cliccabili della testata (`HEADER_ROW`). */
+  headerRegions: Region[];
   /** La riga launch è presente. */
   launchLine: boolean;
 };
@@ -625,6 +678,22 @@ export function frameGeometry(input: FrameInput): Frame {
         mode: input.deckMode,
       };
 
+  // Dimensione del terminale in CELLE (colonne×righe, mai pixel — un processo
+  // dentro un terminale vede solo la griglia di caratteri) e versione. La
+  // parte sinistra della testata riceve un budget derivato da questa stringa e
+  // non da una lunghezza fissa: la risoluzione cambia a ogni resize, quindi
+  // anche la larghezza che occupa.
+  const headerRight = `${input.columns}×${input.rows} · v${VERSION}`;
+  // T181 — il bottone sta a sinistra di `headerRight` nello stesso blocco
+  // ancorato a destra, quindi la sua prima colonna si ricava per sottrazione
+  // dal bordo, come per gli indicatori (`indicatorRow`).
+  const headerButton = restoreButton(input.restoreCount, input.columns, headerRight);
+  const headerBlock = headerButton ? headerButton + HEADER_BUTTON_SEP + headerRight : headerRight;
+  const blockStart = FRAME_TEXT_COL + Math.max(0, (input.columns || 80) - 4) - termWidth(headerBlock);
+  const headerRegions: Region[] = headerButton
+    ? [{ key: RESTORE_KEY, start: blockStart, end: blockStart + termWidth(headerButton) - 1 }]
+    : [];
+
   return {
     budget,
     taskWin,
@@ -636,19 +705,17 @@ export function frameGeometry(input: FrameInput): Frame {
     docWin,
     windowDoc,
     listGeometry,
-    // Dimensione del terminale in CELLE (colonne×righe, mai pixel — un processo
-    // dentro un terminale vede solo la griglia di caratteri) e versione. La
-    // parte sinistra della testata riceve un budget derivato da questa stringa e
-    // non da una lunghezza fissa: la risoluzione cambia a ogni resize, quindi
-    // anche la larghezza che occupa.
-    headerRight: `${input.columns}×${input.rows} · v${VERSION}`,
+    headerRight,
+    headerButton,
+    headerBlock,
+    headerRegions,
     launchLine,
   };
 }
 
-/** Il budget della testata sinistra, per sottrazione dal segmento destro. */
+/** Il budget della testata sinistra, per sottrazione dal blocco destro. */
 export function headlineWidth(columns: number, headerRight: string): number {
-  return Math.max(4, columns - 4 - termWidth(headerRight) - 1);
+  return Math.max(HEADLINE_MIN, columns - 4 - termWidth(headerRight) - 1);
 }
 
 /**
@@ -665,4 +732,4 @@ export function legendWidth(columns: number, indicatorW: number): number {
   return Math.max(4, (columns || 80) - 4 - indicatorW - termWidth(INDICATOR_SEP));
 }
 
-export { HINT_ROW, LAUNCH_ROW };
+export { HEADER_ROW, HINT_ROW, LAUNCH_ROW };

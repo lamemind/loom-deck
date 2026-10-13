@@ -29,7 +29,7 @@ import {
   type MouseEvent,
   type Region,
 } from './mouse.js';
-import { HINT_ROW, LAUNCH_ROW } from './frame.js';
+import { HEADER_ROW, HINT_ROW, LAUNCH_ROW } from './frame.js';
 import { moveSelection } from './session-list.js';
 import {
   captures,
@@ -274,6 +274,13 @@ export function useDeckInput({
       if (hit) onKey(hit.slice(1), { ...NO_MODIFIERS, ctrl: true });
       return;
     }
+    if (ev.row === HEADER_ROW) {
+      // T181 — il bottone di restore, stessa porta degli indicatori: la sua
+      // chiave è la combo `^t`, e il click la preme invece di chiamare l'azione.
+      const hit = hitRegion(frame.headerRegions, ev.col);
+      if (hit) onKey(hit.slice(1), { ...NO_MODIFIERS, ctrl: true });
+      return;
+    }
     onListClick(ev);
   }
 
@@ -459,6 +466,13 @@ export function useDeckInput({
         // un pseudo-terminale e pretende che la pagina si apra, quindi se il
         // byte non arrivasse il test fallirebbe invece di lasciare il dubbio.
         overlays.spawn.openPage();
+      } else if (input === 't') {
+        // T181/P4 preflight — `^T` riapre le conversazioni dell'ultimo insieme
+        // vivo. La `t` nuda apre un terminale: stesso schema «una lettera, due
+        // bersagli» di `^F`/`f`, che il ramo `ctrl` anteposto rende sicuro. Non
+        // è un tasto del mondo task (`TASK_MODE_KEYS`): il bottone sta in
+        // testata, visibile in entrambi i modi del deck.
+        actions.restoreSessions();
       } else if (input === 'b') {
         // T160 — `^B` scambia il MODO del deck, cioè entrambi gli slot insieme.
         // Erede del tasto di T134, che scambiava il solo pane destro: la

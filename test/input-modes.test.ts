@@ -140,6 +140,7 @@ test('restano vivi i tasti che non dipendono dalla selezione task', () => {
     ['o', true],
     ['e', true],
     ['u', true],
+    ['t', true],
   ] as const) {
     assert.equal(
       taskModeKey(input, ctrl, false),
