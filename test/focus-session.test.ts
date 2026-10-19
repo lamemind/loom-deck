@@ -5,7 +5,7 @@
 // (`LOOM_DECK_FOCUS_CMD`), quindi ogni binario finto vuole un file suo.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { focusSessionArgs, parseFocusReply } from '../src/focus-session.js';
+import { focusNote, focusSessionArgs, parseFocusReply } from '../src/focus-session.js';
 
 // L'argv È il contratto col metodo di compass (T183): un nome di interfaccia o
 // di metodo sbagliato da un lato si scoprirebbe solo come `UnknownMethod` a
@@ -43,4 +43,27 @@ test('parseFocusReply: una risposta di forma diversa non è un esito', () => {
   assert.equal(parseFocusReply('(true,)'), null);
   assert.equal(parseFocusReply("('tab', 'altro')"), null);
   assert.equal(parseFocusReply('tab'), null);
+});
+
+// Una nota a OGNI esito, successo compreso: la tab del deck va dietro, e la nota
+// si legge al ritorno.
+test('focusNote: sul successo il nome della conversazione raggiunta', () => {
+  assert.equal(focusNote({ reached: true, outcome: 'tab' }, 'T184 «focus»'), '→ T184 «focus»');
+  assert.equal(focusNote({ reached: true, outcome: 'esatta' }, 'T184 «focus»'), '→ T184 «focus»');
+});
+
+test('focusNote: ogni esito fuori dalla tab porta la sua parola e il nome', () => {
+  for (const outcome of ['ambigua', 'assente', 'fallita', 'errore', 'nessuna', 'sconosciuta']) {
+    assert.equal(
+      focusNote({ reached: false, outcome }, 'T184 «focus»'),
+      `⚠ focus ${outcome} — T184 «focus»`,
+    );
+  }
+});
+
+test('focusNote: il canale che fallisce non nomina un esito', () => {
+  assert.equal(
+    focusNote({ unreachable: 'ENOENT' }, 'T184 «focus»'),
+    '⚠ compass non raggiungibile — T184 «focus»',
+  );
 });
