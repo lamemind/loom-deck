@@ -58,6 +58,7 @@ import { useTaskOps } from './task-ops.js';
 import { inboxPrompt, inboxWords, type InboxFile } from './inbox.js';
 import { docTargetKind, docWords, type DocRow } from './doc-tree.js';
 import { wrapWords } from './wrap-scan.js';
+import { enterSession, focusSession } from './focus-session.js';
 import type { DeckModel } from './deck-model.js';
 
 /**
@@ -263,13 +264,21 @@ export function useDeckActions({
     spawnForTask(task.id, d.model, d.title ?? '', d.prompt ?? '');
   }
 
-  // T49 — resume di una conversazione in una nuova tab. Unico punto: lo chiamano
-  // il `⏎` della lista sessioni e quello sulla riga-sessione della ricerca, che
-  // devono restare la stessa azione.
+  // T49 — resume di una conversazione in una nuova tab. Unico punto dello spawn,
+  // con due chiamanti: `openSession` (il `⏎` della lista sessioni e quello
+  // sulla riga-sessione della ricerca) quando la conversazione NON è viva, e il
+  // restore di T181 (`restoreSessions`).
+  // T184 — riprende SEMPRE, e non chiede se la conversazione è viva: quella
+  // domanda è del chiamante, e i due chiamanti la pongono in modo diverso. Il
+  // `⏎` la pone a ogni pressione (`openSession`); il restore l'ha già posta
+  // per l'insieme intero, che `restoreSet` svuota appena una conversazione è
+  // viva. Il ramo di focus resta fuori da qui anche per il contratto di
+  // ritorno: il restore scandisce la serie sull'uscita del `deck-run` che
+  // questa funzione restituisce, e un focus non ha nessun figlio da aspettare.
   // T148 — il modello lo decide il CHIAMANTE, non questa funzione: la lista
   // principale passa il selettore della preview (`model.resumeModel`), la
-  // ricerca passa il modello ereditato dalla sessione senza superficie di
-  // scelta (D1 preflight). I due chiamanti restano la stessa azione perché è
+  // ricerca e il restore il modello ereditato dalla sessione senza superficie
+  // di scelta (D1 preflight). I chiamanti restano la stessa azione perché è
   // lo spawn a essere identico, non la sorgente del valore.
   function resumeSession(sessionId: string, modelKind: ModelKind): Spawned {
     const bound = model.bindings.get(sessionId) ?? null;
@@ -286,13 +295,37 @@ export function useDeckActions({
   }
 
   /**
+   * T184 — `⏎` su una conversazione, dalla lista sessioni e dalla riga-sessione
+   * della ricerca: la stessa azione dai due posti, come chiede T49.
+   *
+   * Viva → compass porta davanti la sua tab, e nessun `deck-run` parte: un
+   * secondo resume aprirebbe un secondo processo `claude` sullo stesso
+   * transcript. Non viva → `resumeSession`, come prima di T184. La scelta e il
+   * canale vivono in `focus-session.ts`; qui si cablano coi valori del deck.
+   *
+   * Il nome della nota viene dal registro (`LiveSession.name`, il titolo della
+   * tab); senza nome, il prefisso del `sessionId` come nelle altre note.
+   */
+  function openSession(sessionId: string, modelKind: ModelKind) {
+    enterSession(sessionId, {
+      isLive: (id) => model.live.has(id),
+      nameOf: (id) => model.live.get(id)?.name || id.slice(0, 8),
+      focus: focusSession,
+      resume: (id) => resumeSession(id, modelKind),
+      note: setNote,
+    });
+  }
+
+  /**
    * T181 — `^T` e il bottone in testata: riapre le conversazioni dell'ultimo
    * insieme vivo, una tab per conversazione, ognuna col proprio binding di
    * task, la propria nota e il modello con cui girava.
    *
-   * Passa da `resumeSession`, terzo chiamante dopo la lista e la ricerca, e
-   * come la ricerca non ha una superficie di scelta del modello: lo eredita
-   * dalla conversazione (`modelAlias(session.model) ?? MODEL_DEFAULT`, T148/D1).
+   * Passa da `resumeSession` diretto, non da `openSession` come il `⏎` (T184):
+   * l'insieme è vuoto appena una conversazione è viva, quindi qui non c'è
+   * nessuna viva da portare davanti. Come la ricerca non ha una superficie di
+   * scelta del modello: lo eredita dalla conversazione
+   * (`modelAlias(session.model) ?? MODEL_DEFAULT`, T148/D1).
    *
    * IN SERIE, e non tutte insieme (P7 preflight): la tab successiva parte
    * quando il `deck-run` della precedente è uscito, così le tab si aprono
@@ -757,6 +790,7 @@ export function useDeckActions({
     spawnForTask,
     spawnTaskSession,
     resumeSession,
+    openSession,
     restoreSessions,
     cycleResumeModel,
     cycleBareModel,
