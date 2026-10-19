@@ -128,8 +128,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
     setNote,
     // T148/D1 — nessun selettore nella ricerca: il modello è quello ereditato
     // dalla conversazione, senza superficie di scelta.
+    // T184 — `openSession` come il `⏎` della lista: una viva va davanti, solo
+    // una non viva si riprende.
     onResume: (row) =>
-      actions.resumeSession(row.session.sessionId, modelAlias(row.session.model) ?? MODEL_DEFAULT),
+      actions.openSession(row.session.sessionId, modelAlias(row.session.model) ?? MODEL_DEFAULT),
   });
 
   // T121 — il project status. Non è solo un overlay come i tre sopra: il suo

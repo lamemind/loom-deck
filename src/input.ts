@@ -577,6 +577,9 @@ export function useDeckInput({
       } else {
         // T49 — ⏎ su una sessione = resume in nuova tab. Il binding si rilegge
         // dal sidecar (non dal padre selezionato): vale anche per le spot.
+        // T184 — solo se NON è viva: su una viva compass porta davanti la sua
+        // tab, e nessun `deck-run` parte (`openSession`, la stessa azione del
+        // `⏎` nella ricerca).
         const s = model.selSessionObj;
         if (!s) {
           setNote(
@@ -585,7 +588,7 @@ export function useDeckInput({
               : 'nessuna sessione da riprendere',
           );
         } else {
-          actions.resumeSession(s.sessionId, model.resumeModel);
+          actions.openSession(s.sessionId, model.resumeModel);
         }
       }
     } else if (key.delete) {
