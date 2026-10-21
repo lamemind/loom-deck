@@ -1,0 +1,50 @@
+# Publish di @lamemind/loom-deck su npm con trusted publishing (OIDC).
+#
+# Il rilascio è il push di un tag v<versione> sul commit del bump: il runner
+# dimostra a npm la propria identità con un token OIDC firmato da GitHub e
+# pubblica senza nessun token npm salvato. Il Trusted Publisher si configura
+# una volta sola nelle impostazioni del pacchetto su npmjs.com, col nome di
+# questo file (publish.yml) — npm non lo valida al salvataggio: un nome
+# sbagliato si vede solo come run rossa al primo tag.
+#
+# Niente `npm test`: la suite porta gate su pseudo-terminale che su un runner
+# senza terminale sono rossi per costruzione. I test girano in locale prima del
+# bump; la build la fa `prepare` (tsc), dentro `npm ci` e dentro `npm publish`.
+
+name: publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Node 24 porta npm >= 11.5.1, il minimo per il trusted publishing.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      # Un tag che non coincide con la versione del manifest pubblicherebbe
+      # un numero diverso da quello annunciato dal tag: si ferma prima.
+      - name: Tag e versione del manifest coincidono
+        run: |
+          manifest="v$(node -p "require('./package.json').version")"
+          if [ "$manifest" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME, package.json $manifest"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - run: npm publish
