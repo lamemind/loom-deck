@@ -87,6 +87,7 @@ import { termWidth } from './width.js';
 import { MODELS, MODEL_DEFAULT, type ModelKind } from './spawn-catalog.js';
 import type { TaskLive } from './live-sessions.js';
 import type { Session } from './sessions.js';
+import { isAvailable } from './platform.js';
 
 /**
  * Conteggio dei figli per task, più il rollup delle VIVE e le conversazioni
@@ -337,7 +338,10 @@ export function useDeckModel({
   // limite si eredita invece di aprire qui una cascata che nessun percorso di
   // avvio reale userebbe (D1 preflight).
   const docsRoot = useMemo(() => docsRootName(), []);
-  const inbox = useInboxScan(cwd, docsRoot);
+  // T175 — coda inbox e albero doc li misura lo stesso script del plugin: dove
+  // non gira, nessuno dei due scan parte e i due pane dicono perché.
+  const pluginScripts = isAvailable('pluginScripts');
+  const inbox = useInboxScan(cwd, docsRoot, pluginScripts);
   const inboxCounts: InboxViewCounts = useMemo(
     () => deriveInboxCounts(inbox.files),
     [inbox.files],
@@ -359,7 +363,7 @@ export function useDeckModel({
   // vero, quindi il montaggio rimisura da sé — `toggleDeckMode` sotto non deve
   // chiamare `doc.scan()` come fa il gemello inbox, e chiamarlo darebbe due
   // spawn da quattro secondi per un gesto solo.
-  const doc = useDocScan(cwd, docsRoot, deckMode === 'doc');
+  const doc = useDocScan(cwd, docsRoot, deckMode === 'doc' && pluginScripts);
   // La misura GREZZA, memoizzata a parte: la consumano tre derivazioni (i
   // contatori, le righe della vista, l'elenco dei file di una cartella nello
   // sheet) e ricomporre l'oggetto a ogni render darebbe una identità nuova a
@@ -755,6 +759,7 @@ export function useDeckModel({
     deckMode,
     // derivazioni del pane inbox
     docsRoot,
+    pluginScripts,
     inboxScanned: inbox.scanned,
     inboxOk: inbox.ok,
     inboxViewId,

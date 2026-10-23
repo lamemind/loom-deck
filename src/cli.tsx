@@ -305,6 +305,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
             scanned: gitlink.scanned,
             ok: gitlink.ok,
             failed: gitlink.failed,
+            available: gitlink.available,
           }
         : null,
       inbox: {
@@ -312,8 +313,15 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
         stale: model.inboxStale,
         scanned: model.inboxScanned,
         ok: model.inboxOk,
+        available: model.pluginScripts,
       },
-      wrap: { count: wrap.count, mtime: wrap.mtime, ok: wrap.ok, scanning: wrap.scanning },
+      wrap: {
+        count: wrap.count,
+        mtime: wrap.mtime,
+        ok: wrap.ok,
+        scanning: wrap.scanning,
+        available: wrap.available,
+      },
     },
     columns,
   );
@@ -517,6 +525,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
             scanned={model.docScanned}
             scanning={model.docScanning}
             hasDirs={model.docHasDirs}
+            available={model.pluginScripts}
           />
         ) : (
           <TasksPane
@@ -557,6 +566,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
             columns={columns}
             ok={model.inboxOk}
             scanned={model.inboxScanned}
+            available={model.pluginScripts}
           />
         ) : (
           <SessionsPane

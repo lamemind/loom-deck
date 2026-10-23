@@ -24,6 +24,7 @@
 import type { Task } from './tasks.js';
 import type { AssembledList, SessionRow } from './session-list.js';
 import { isVisible, groupHierarchy, type BlockMark, type ViewState } from './view.js';
+import { isAvailable, offText, OFF_MARK } from './platform.js';
 
 export type TaskViewId = 'tasks' | 'hidden' | 'archivable';
 export type SessionViewId = 'context' | 'live' | 'pinned' | 'older';
@@ -170,12 +171,22 @@ export const SESSION_VIEWS: readonly SessionViewEntry[] = [
     empty: null,
   },
   {
+    // T175 — dove la liveness manca, la voce resta nel catalogo (D1 create: le
+    // voci non spariscono) ma il numero no: `●0 vive` direbbe «ho guardato e
+    // nessuna è aperta», cioè uno stato misurato che non esiste. Etichetta e
+    // nota vuota si leggono alla chiamata, non all'import, così la piattaforma
+    // dei test si cambia fra un caso e l'altro.
     id: 'live',
-    label: (c) => `${LIVE_GLYPH}${c.live} vive`,
+    label: (c) =>
+      isAvailable('liveSessions') ? `${LIVE_GLYPH}${c.live} vive` : `${LIVE_GLYPH} vive ${OFF_MARK}`,
     count: (c) => c.live,
     rows: (ctx) => ctx.assembled.rows.filter((r) => ctx.isLive(r.sessionId)),
     color: 'green',
-    empty: 'nessuna conversazione viva in questa lista',
+    get empty() {
+      return isAvailable('liveSessions')
+        ? 'nessuna conversazione viva in questa lista'
+        : offText('liveSessions');
+    },
   },
   {
     // T133 D7 — sola vista che NON filtra la lista: il suo insieme è più largo

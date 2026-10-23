@@ -18,6 +18,7 @@ import { NATURA_SHORT, NATURA_W, inboxMark, type InboxFile } from '../inbox.js';
 import { inboxView, type InboxViewCounts, type InboxViewId } from '../inbox-views.js';
 import { inboxHeaderParts } from '../pane-header.js';
 import { HeaderLine } from './header-line.js';
+import { offText } from '../platform.js';
 
 /**
  * Header del pane inbox: le parti e il loro taglio vengono da `pane-header.ts`,
@@ -70,6 +71,7 @@ export function InboxPane({
   columns,
   ok,
   scanned,
+  available = true,
 }: {
   /** Solo la finestra visibile della lista, e della vista attiva. */
   files: InboxFile[];
@@ -86,6 +88,8 @@ export function InboxPane({
   ok: boolean;
   /** Almeno uno scan è stato tentato. */
   scanned: boolean;
+  /** T175 — `false` = lo script della coda non gira su questa piattaforma. */
+  available?: boolean;
 }) {
   const width = paneTextWidth(columns);
   // La cella elastica si calcola per SOTTRAZIONE dalle colonne fisse, come il
@@ -120,7 +124,14 @@ export function InboxPane({
         focused={focused}
         columns={columns}
       />
-      {paneCount === 0 ? (
+      {!available ? (
+        // T175 — un quarto vuoto, il solo che non è uno stato della coda: la
+        // misura qui non esiste. Va detto per nome, o si leggerebbe come «coda
+        // non ancora misurata» per sempre.
+        <Text color="yellow" wrap="truncate-end">
+          {cut(offText('pluginScripts', 'coda inbox'), width)}
+        </Text>
+      ) : paneCount === 0 ? (
         // Tre vuoti diversi, e dirlo è il punto: «non ho ancora misurato» non è
         // «ho misurato e non c'è niente», e «la misura si è rotta» non è nessuno
         // dei due (D2 preflight). Una lista vuota che non dice quale dei tre è

@@ -32,6 +32,7 @@ import {
   type SpawnOverrides,
 } from './spawn-config.js';
 import { POLL_MS } from './model.js';
+import { isAvailable } from './platform.js';
 
 // Dimensioni del terminale, live sul resize.
 //
@@ -231,9 +232,12 @@ export function useSessions(projectRoot: string, core: string | null) {
       // un refresh più lento mostrerebbe `idle` su una sessione che lavora.
       // Il try è separato perché il registry è una fonte indipendente: se manca
       // (versione del CLI che non lo scrive) la lista deve restare, senza vive.
+      // T175 — dove la liveness manca non si interroga nemmeno il registry: la
+      // mappa vuota è il dato onesto, e chi ne dipende per una guardia (`CANC`)
+      // legge la mappa delle funzioni, non questa.
       let live: Map<string, LiveSession>;
       try {
-        live = discoverLiveSessions(projectRoot);
+        live = isAvailable('liveSessions') ? discoverLiveSessions(projectRoot) : new Map();
       } catch {
         live = new Map();
       }
@@ -463,7 +467,9 @@ export interface InboxState {
   scan: () => void;
 }
 
-export function useInboxScan(projectRoot: string, docsRoot: string): InboxState {
+/** T175 — `enabled` falso = la funzione è spenta su questa piattaforma: nessuno
+ *  spawn, né all'avvio né a richiesta, e lo stato resta quello di partenza. */
+export function useInboxScan(projectRoot: string, docsRoot: string, enabled = true): InboxState {
   const [state, setState] = useState<Omit<InboxState, 'scan'>>({
     files: [],
     ok: true,
@@ -502,10 +508,11 @@ export function useInboxScan(projectRoot: string, docsRoot: string): InboxState 
   }, [projectRoot, docsRoot]);
 
   useEffect(() => {
+    if (!enabled) return;
     run();
     const id = setInterval(run, INBOX_SCAN_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [run, epoch]);
+  }, [run, epoch, enabled]);
 
   // Lo scan a richiesta RESETTA il timer, come quello del wrap: senza,
   // l'intervallo continuerebbe a scorrere dall'ultimo tick automatico e potrebbe
@@ -633,7 +640,11 @@ export interface WrapState {
   scan: () => void;
 }
 
-export function useWrapScan(projectRoot: string): WrapState {
+/** T175 — `enabled` falso = scan spento su questa piattaforma: niente periodico
+ *  e niente scan a richiesta. Il periodico sarebbe il peggiore dei due — uno
+ *  spawn di `python3` ogni sei ore che nessuno ha chiesto, e su Windows quel
+ *  nome risolve nell'alias dello Store. */
+export function useWrapScan(projectRoot: string, enabled = true): WrapState {
   const path = useMemo(() => wrapCacheFile(projectRoot), [projectRoot]);
   const [cache, setCache] = useState<WrapCache | null>(() => readWrapCache(path));
   const [ok, setOk] = useState(true);
@@ -646,7 +657,7 @@ export function useWrapScan(projectRoot: string): WrapState {
   const busy = useRef(false);
 
   const run = useCallback(() => {
-    if (busy.current) return;
+    if (busy.current || !enabled) return;
     busy.current = true;
     setScanning(true);
     runWrapScan(projectRoot).then((good) => {
@@ -657,12 +668,13 @@ export function useWrapScan(projectRoot: string): WrapState {
       // piedi l'esito dell'ultimo riuscito, che resta vero e ancora apribile.
       if (good) setCache(readWrapCache(path));
     });
-  }, [projectRoot, path]);
+  }, [projectRoot, path, enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     const id = setInterval(run, SCAN_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [run, epoch]);
+  }, [run, epoch, enabled]);
 
   const scan = useCallback(() => {
     setEpoch((e) => e + 1);

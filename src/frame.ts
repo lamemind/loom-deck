@@ -50,6 +50,7 @@ import type { DocRow } from './doc-tree.js';
 import { rowIndexOf, type SessionRow } from './session-list.js';
 import type { Task } from './tasks.js';
 import { VERSION } from './version.js';
+import { OFF_MARK } from './platform.js';
 
 // La surface built-in del cappello, in testa alla riga launch. Non sta fra i
 // tasti perché ha la stessa natura delle voci `launch` — fire-once, cwd =
@@ -332,7 +333,11 @@ export function inboxButton(state: {
   stale: number;
   scanned: boolean;
   ok: boolean;
+  /** T175 — `false` = lo script che misura la coda non gira su questa
+   *  piattaforma: `n/d` al posto dei numeri, che sarebbero tre zeri mai misurati. */
+  available?: boolean;
 }): string {
+  if (state.available === false) return sanitize(`[ Doc 📄 ${OFF_MARK} ]`);
   const numbers = state.scanned
     ? `${state.counts.nozioni}/${state.counts.derivazione}/${state.counts.sweep}`
     : STATUS_MISSING;
@@ -369,7 +374,10 @@ export function wrapIndicator(state: {
   mtime: number | null;
   ok: boolean;
   scanning: boolean;
+  /** T175 — `false` = scan spento su questa piattaforma. */
+  available?: boolean;
 }): string {
+  if (state.available === false) return `wrap ${OFF_MARK}`;
   const body = state.scanning
     ? 'scan…'
     : state.mtime === null
@@ -405,7 +413,12 @@ export function gitlinkIndicator(state: {
   ok: boolean;
   /** L'ultimo bump si è fermato prima di committare. */
   failed: boolean;
+  /** T175 — `false` = il progetto ha submodule ma lo script che li misura non
+   *  gira su questa piattaforma. Il segmento resta, col marcatore al posto del
+   *  valore: sparire direbbe «repo senza `.gitmodules`». */
+  available?: boolean;
 }): string {
+  if (state.available === false) return `gitlink ${OFF_MARK}`;
   const body = !state.scanned
     ? STATUS_MISSING
     : !state.ok

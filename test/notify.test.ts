@@ -5,8 +5,18 @@
 // entri — e in `spawn.test.ts` è già importato in cima.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { isAvailable } from '../src/platform.js';
 
-test('un binario di notifica assente non abbatte il processo', async () => {
+// T175 — dove le notifiche sono spente `notifyDone` non spawna niente e
+// restituisce `null`: non c'è nessun binario assente da sopravvivere.
+const NOTIFY_OFF = isAvailable('notify') ? false : 'notifiche spente su questa piattaforma (T180)';
+
+test('una piattaforma senza notifiche non spawna niente', { skip: !NOTIFY_OFF }, async () => {
+  const { notifyDone } = await import('../src/spawn.js');
+  assert.equal(notifyDone('loom-deck · project status', 'recap pronto'), null);
+});
+
+test('un binario di notifica assente non abbatte il processo', { skip: NOTIFY_OFF }, async () => {
   process.env.LOOM_DECK_NOTIFY_CMD = '/non/esiste/notify-send-finto';
   const { notifyDone } = await import('../src/spawn.js');
 

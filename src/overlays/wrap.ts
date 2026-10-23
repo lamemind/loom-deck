@@ -17,6 +17,7 @@ import { cpLen, insertAt, removeAt } from '../layout.js';
 import { sanitizeTyped } from '../glyphs.js';
 import { WRAP_DEFAULT_PATH, type WrapFile } from '../wrap-scan.js';
 import type { Mode } from '../model.js';
+import { isAvailable, refuse } from '../platform.js';
 
 export interface WrapOverlayDeps {
   cwd: string;
@@ -38,7 +39,10 @@ export function useWrapOverlay(deps: WrapOverlayDeps) {
   // numeri si leggono in testata a schermata chiusa, e la lista è una delle sue
   // superfici invece che il suo contenuto. Tenerli in due posti significherebbe
   // che l'indicatore e la lista possono dire cose diverse dello stesso scan.
-  const measure = useWrapScan(cwd);
+  // T175 — su una piattaforma senza lo scan, nessun periodico e nessuno spawn:
+  // l'indicatore dice `n/d` e i due tasti lo spiegano.
+  const available = isAvailable('hardWrap');
+  const measure = useWrapScan(cwd, available);
 
   /** Le righe FOTOGRAFATE all'apertura: uno scan che finisse mentre la lista è
    *  a schermo la riscriverebbe sotto gli occhi, e la posizione di scroll non
@@ -60,6 +64,7 @@ export function useWrapOverlay(deps: WrapOverlayDeps) {
    * uno solo. È la stessa forma di `^O` senza cache.
    */
   function open() {
+    if (refuse('hardWrap', '^W', setNote, 'lista hard-wrap')) return;
     if (measure.files.length === 0) {
       setNote(
         measure.mtime === null
@@ -135,6 +140,7 @@ export function useWrapOverlay(deps: WrapOverlayDeps) {
    *  l'albero del progetto intero, quindi dura, e un tasto che non desse segno
    *  si leggerebbe come inerte. */
   function scan() {
+    if (refuse('hardWrap', '^E', setNote)) return;
     if (measure.scanning) {
       setNote('^E → scan hard-wrap già in corso');
       return;
@@ -155,6 +161,7 @@ export function useWrapOverlay(deps: WrapOverlayDeps) {
     mtime: measure.mtime,
     ok: measure.ok,
     scanning: measure.scanning,
+    available,
     open,
     scan,
     onKey,

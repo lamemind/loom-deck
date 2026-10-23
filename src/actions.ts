@@ -59,6 +59,7 @@ import { inboxPrompt, inboxWords, type InboxFile } from './inbox.js';
 import { docTargetKind, docWords, type DocRow } from './doc-tree.js';
 import { wrapWords } from './wrap-scan.js';
 import { enterSession, focusSession } from './focus-session.js';
+import { refuse } from './platform.js';
 import type { DeckModel } from './deck-model.js';
 
 /**
@@ -224,6 +225,9 @@ export function useDeckActions({
     prompt = '',
     priority = false,
   ) {
+    // T175 — prima del sidecar: un binding scritto per una tab che non si apre
+    // sarebbe una conversazione figlia della task che non esiste.
+    if (refuse('spawn', '⏎', setNote)) return;
     const sid = randomUUID();
     const note = spawnNote;
     appendTaskBinding(cwd, sid, id);
@@ -252,6 +256,7 @@ export function useDeckActions({
   // async: senza handler diventa uncaughtException e ucciderebbe il deck, che
   // invece deve restare vivo.
   function spawnTaskSession(kind: PromptKind, keyLabel: string) {
+    if (refuse('spawn', keyLabel, setNote)) return;
     const task = selectedTaskOr(keyLabel, 'spawnare');
     if (!task) return;
     // T161 — stessa risoluzione del detail, sullo stesso id di catalogo: senza,
@@ -307,6 +312,7 @@ export function useDeckActions({
    * tab); senza nome, il prefisso del `sessionId` come nelle altre note.
    */
   function openSession(sessionId: string, modelKind: ModelKind) {
+    if (refuse('spawn', '⏎', setNote, 'resume')) return;
     enterSession(sessionId, {
       isLive: (id) => model.live.has(id),
       nameOf: (id) => model.live.get(id)?.name || id.slice(0, 8),
@@ -341,6 +347,7 @@ export function useDeckActions({
    * chiudendo le tab.
    */
   function restoreSessions() {
+    if (refuse('spawn', '^T', setNote, 'restore delle conversazioni')) return;
     const list = model.restorable;
     if (list.length === 0) {
       setNote(model.restoring ? '^T → restore già in corso' : '^T → nessuna conversazione da riaprire');
@@ -454,6 +461,7 @@ export function useDeckActions({
   // ha per oggetto una conversazione, e senza focus lì non ce n'è una
   // selezionata su cui agire.
   function forkSession() {
+    if (refuse('spawn', 'f', setNote, 'fork')) return;
     if (model.focus !== 'sessions') {
       setNote('f → fork: seleziona una sessione (→ per il pane)');
       return;
@@ -554,6 +562,11 @@ export function useDeckActions({
       setNote('CANC → eliminare: seleziona una conversazione (→ per il pane)');
       return null;
     }
+    // T175 — il rifiuto della VIVA qui sotto legge `model.live`, e dove la
+    // liveness manca la mappa è sempre vuota: il rifiuto non scatterebbe mai, e
+    // `CANC` toglierebbe il transcript a una conversazione aperta. Spento finché
+    // la liveness non c'è, non degradato a «nessuna è viva».
+    if (refuse('liveSessions', 'CANC', setNote, 'eliminazione delle conversazioni')) return null;
     const sid = model.selSessionId;
     if (!sid) {
       setNote('CANC → nessuna conversazione da eliminare');
@@ -580,6 +593,9 @@ export function useDeckActions({
    * appena eliminata apposta.
    */
   function dropSession(draft: DropDraft) {
+    // La stessa guardia della bozza: chi arrivasse qui senza passare da lei non
+    // deve trovare un `rmSync` sguarnito.
+    if (refuse('liveSessions', 'CANC', setNote, 'eliminazione delle conversazioni')) return;
     const short = draft.sessionId.slice(0, 8);
     const landing = neighborId(model.sessionRows, draft.sessionId);
     try {
@@ -596,6 +612,7 @@ export function useDeckActions({
 
   /** `t` — terminale a project root, con un titolo che il matcher di compass riconosce. */
   function openTerminal() {
+    if (refuse('spawn', 't', setNote, 'terminale')) return;
     const title = model.identity ? `🖥️ ${model.identity.name} [term]` : null;
     const child = spawnTerminal(cwd, title);
     child.on('error', () => setNote('⚠ t → ptyxis non lanciabile'));
@@ -623,6 +640,7 @@ export function useDeckActions({
    * due superfici mostrano nasce da un valore solo.
    */
   function drainInbox(file: InboxFile, prompt: string) {
+    if (refuse('spawn', '⏎', setNote)) return;
     const sid = randomUUID();
     const d = spawnDefaults('drain', { file: inboxWords(file) });
     const title = d.title ?? '';
@@ -700,6 +718,7 @@ export function useDeckActions({
    */
   function rebalanceDoc(row: DocRow, prompt: string) {
     if (!prompt) return;
+    if (refuse('spawn', '⏎', setNote)) return;
     // Il bersaglio inbox prende la terna della riga `drain`, non quella di
     // `rebalance`: il prompt da solo non basterebbe — modello e titolo della tab
     // verrebbero comunque dalla riga sbagliata, e la conversazione si
@@ -734,6 +753,7 @@ export function useDeckActions({
    * non progettare niente.
    */
   function unwrapPath(path: string) {
+    if (refuse('spawn', '⏎', setNote)) return;
     const sid = randomUUID();
     const d = spawnDefaults('unwrap', { path: wrapWords(path) });
     const title = d.title ?? '';
@@ -747,6 +767,7 @@ export function useDeckActions({
    *  modello è quello del selettore proprio della nuda (`model.bareModel`),
    *  passato SEMPRE nell'argv anche sul default. */
   function openClaude() {
+    if (refuse('spawn', 'c', setNote, 'sessione claude')) return;
     const spawned = spawnClaudeEmpty(cwd, model.bareModel);
     spawned.child.on('error', () => setNote(`⚠ c → spawn claude fallito (${DECK_RUN})`));
     noteSpawn(spawned);
@@ -765,6 +786,7 @@ export function useDeckActions({
 
   /** `1`-`9` — le voci launch del progetto, per indice base-1. */
   function runLaunchAt(input: string) {
+    if (refuse('launch', input, setNote)) return;
     const entry = model.launch[Number(input) - 1];
     if (!entry) {
       setNote(`${input} → nessuna voce launch (${model.launch.length} configurate)`);

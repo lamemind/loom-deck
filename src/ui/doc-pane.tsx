@@ -19,6 +19,7 @@ import { DOC_FLAG_W, flagCell, type DocRow } from '../doc-tree.js';
 import { docView, type DocViewCounts, type DocViewId } from '../doc-views.js';
 import { docHeaderParts } from '../pane-header.js';
 import { HeaderLine } from './header-line.js';
+import { offText } from '../platform.js';
 
 /**
  * Rientro di un livello dell'albero: UNA colonna, non due.
@@ -86,6 +87,7 @@ export function DocPane({
   scanned,
   scanning,
   hasDirs,
+  available = true,
 }: {
   /** Solo la finestra visibile della lista, e della vista attiva. */
   rows: DocRow[];
@@ -106,6 +108,8 @@ export function DocPane({
   scanning: boolean;
   /** La misura portava anche la tabella delle cartelle. */
   hasDirs: boolean;
+  /** T175 — `false` = lo script dell'albero non gira su questa piattaforma. */
+  available?: boolean;
 }) {
   const width = paneTextWidth(columns);
   // Cella elastica per sottrazione dalle colonne fisse, come nel pane inbox e
@@ -131,7 +135,13 @@ export function DocPane({
         columns={columns}
         hasDirs={hasDirs}
       />
-      {paneCount === 0 ? (
+      {!available ? (
+        // T175 — gemello del pane inbox: la misura qui non esiste, e va detto
+        // per nome invece di restare su «albero non ancora misurato».
+        <Text color="yellow" wrap="truncate-end">
+          {cut(offText('pluginScripts', 'albero doc'), width)}
+        </Text>
+      ) : paneCount === 0 ? (
         // Quattro vuoti diversi, e dirlo è il punto. Ai tre del pane inbox se ne
         // aggiunge uno che solo questo scan ha: «sto misurando». Quattro secondi
         // di wall clock sono abbastanza da vedersi, e un pane vuoto per quattro

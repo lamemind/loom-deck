@@ -10,6 +10,7 @@ import type { IgnoredMode } from './purge.js';
 // è DATO PURO e non importa questo file: la dipendenza va in un verso solo.
 // Qui restano i soli effetti verso l'esterno — comporre un argv e lanciarlo.
 import { MODEL_DEFAULT, PROJECT_STATUS_MODEL, type ModelKind } from './spawn-catalog.js';
+import { isAvailable } from './platform.js';
 
 // scripts/deck-run è un sibling della dir del bundle: src/ (dev, tsx) e dist/
 // (build, node) stanno entrambi sotto la package root → risalita di un livello.
@@ -604,7 +605,12 @@ export const NOTIFY_CMD = process.env.LOOM_DECK_NOTIFY_CMD ?? 'notify-send';
 // Agganciato, la degradazione è MUTA (D6): un binario assente è una proprietà
 // stabile della macchina, e dirlo a ogni generazione sarebbe lo stesso messaggio
 // a ogni giro su una funzione che non è il deliverable.
-export function notifyDone(title: string, body: string) {
+//
+// T175 — dove le notifiche non ci sono, nessuno spawn e nessun avviso: non
+// hanno un tasto né un pane, e l'esito del project status è già nella riga di
+// stato. Il `null` dice al chiamante che niente è partito.
+export function notifyDone(title: string, body: string): ChildProcess | null {
+  if (!isAvailable('notify')) return null;
   const child = spawnOut(NOTIFY_CMD, ['--app-name=loom-deck', title, body], {
     detached: true,
     stdio: 'ignore',

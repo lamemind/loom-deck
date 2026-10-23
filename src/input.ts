@@ -46,6 +46,7 @@ import type { DocViewId } from './doc-views.js';
 import { loadTaskFileText } from './tasks.js';
 import { inboxPrompt, loadInboxText } from './inbox.js';
 import { dirListing, loadDocText } from './doc-tree.js';
+import { refuse } from './platform.js';
 import type { Frame } from './frame.js';
 import type { DeckActions } from './actions.js';
 import type { DeckModel } from './deck-model.js';
@@ -520,6 +521,14 @@ export function useDeckInput({
       else if (model.focus === 'doctree') model.moveDocSel(1);
       else model.setSelSessionId((id) => moveSelection(model.sessionRows, id, 1));
     } else if (key.return) {
+      // T175 — i due pane del modo doc li riempie uno script del plugin: dove non
+      // gira, `⏎` lo dice invece di rispondere «nessuna riga selezionata».
+      if (
+        (model.focus === 'doctree' || model.focus === 'inbox') &&
+        refuse('pluginScripts', '⏎', setNote, model.focus === 'inbox' ? 'coda inbox' : 'albero doc')
+      ) {
+        return;
+      }
       if (model.focus === 'doctree') {
         // T160 — `⏎` apre il DETAIL del bersaglio, non la sessione: la sessione
         // la apre il `⏎` di dentro, come sul pane inbox. Il gesto è lo stesso su

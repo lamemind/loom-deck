@@ -17,6 +17,7 @@ import {
   scanGitlink,
   type GitlinkMember,
 } from '../gitlink.js';
+import { isAvailable, refuse } from '../platform.js';
 
 export interface GitlinkDeps {
   /** Project root: la radice su cui gira `git submodule status`. */
@@ -39,6 +40,12 @@ export function useGitlink(deps: GitlinkDeps) {
    * qui invece che scoperto dopo.
    */
   const enabled = useMemo(() => hasGitmodules(cwd), [cwd]);
+  /** T175 — il segmento esiste (c'è `.gitmodules`) ma lo script che lo misura
+   *  non gira su questa piattaforma: l'indicatore dice `n/d` al posto del
+   *  valore, nessun timer parte, `^U` lo spiega. Due gate e non uno, perché sono
+   *  due fatti diversi: un repo senza submodule e una piattaforma senza bash. */
+  const available = isAvailable('pluginScripts');
+  const active = enabled && available;
 
   const [members, setMembers] = useState<GitlinkMember[]>([]);
   const [ok, setOk] = useState(true);
@@ -84,11 +91,11 @@ export function useGitlink(deps: GitlinkDeps) {
   }, [cwd]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!active) return;
     run();
     const id = setInterval(run, GITLINK_SCAN_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [enabled, run, epoch]);
+  }, [active, run, epoch]);
 
   /**
    * Rimisura adesso e riparte col timer da zero.
@@ -121,6 +128,7 @@ export function useGitlink(deps: GitlinkDeps) {
       setNote('^U → questo progetto non ha submodule: nessun gitlink da bumpare');
       return;
     }
+    if (refuse('pluginScripts', '^U', setNote, 'bump del gitlink')) return;
     if (busy.current || bumping) {
       setNote('^U → bump del gitlink già in corso');
       return;
@@ -162,6 +170,7 @@ export function useGitlink(deps: GitlinkDeps) {
 
   return {
     enabled,
+    available,
     members,
     ok,
     scanned,
