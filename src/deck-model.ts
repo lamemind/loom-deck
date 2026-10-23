@@ -44,7 +44,6 @@ import {
   type InboxViewCounts,
   type InboxViewId,
 } from './inbox-views.js';
-import { docsRootName } from './tasks.js';
 import { isDone } from './layout.js';
 import { TASK_EMPTY, modelAlias, relTime } from './glyphs.js';
 import {
@@ -181,12 +180,16 @@ export function childSessionsOf(
 
 export function useDeckModel({
   cwd,
+  docsRoot,
   tasksPath,
   tasksDir,
   bareModel: bareModelDefault,
   setNote,
 }: {
   cwd: string;
+  /** T175 — la docs-root risolta da `cli.tsx` (`docsRootName`), la stessa da cui
+   *  nascono `tasksPath` e `tasksDir`. */
+  docsRoot: string;
   tasksPath: string;
   tasksDir: string;
   /** T161 — il modello con cui il selettore della sessione nuda APRE, dalla riga
@@ -334,10 +337,8 @@ export function useDeckModel({
   const dirtyFolders = useDirtyFolders(archivableSig, tasksDir, cwd);
 
   // T134 — terzo scan della famiglia (D1): coda inbox per natura, età del più
-  // vecchio. La docs-root arriva dalla sola env, come `resolveTasksPath` — il
-  // limite si eredita invece di aprire qui una cascata che nessun percorso di
-  // avvio reale userebbe (D1 preflight).
-  const docsRoot = useMemo(() => docsRootName(), []);
+  // vecchio. T175 — la docs-root è quella di `tasksPath`, risolta una volta in
+  // `cli.tsx`: lista task e coda inbox guardano la stessa cartella.
   // T175 — coda inbox e albero doc li misura lo stesso script del plugin: dove
   // non gira, nessuno dei due scan parte e i due pane dicono perché.
   const pluginScripts = isAvailable('pluginScripts');

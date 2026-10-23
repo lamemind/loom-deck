@@ -32,31 +32,17 @@ export interface TaskDetail {
   description: string;
 }
 
-/**
- * Nome della cartella doc del progetto (`docs`, `runtime`, …).
- *
- * D1 (preflight T20): override via env `LOOM_DECK_DOCS_ROOT`, nessun
- * auto-detect e nessuna lettura del file config. Il deck non si lancia mai a
- * mano — nasce da compass, che legge `docsRoot` dal registry dconf e lo
- * antepone al comando, o dal custom-command del profilo Ptyxis, che ce l'ha
- * cablato — quindi l'env c'è sempre nei percorsi di avvio reali.
- *
- * T134 — funzione e non più letterale ripetuto: la legge anche lo scan della
- * coda inbox, e due copie della stessa cascata divergerebbero appena una delle
- * due imparasse a leggere il file config.
- */
-export function docsRootName(): string {
-  return process.env.LOOM_DECK_DOCS_ROOT || 'docs';
-}
-
-export function resolveTasksPath(cwd: string = process.cwd()): string {
-  return join(cwd, docsRootName(), 'tasks.md');
+// La docs-root arriva dal chiamante, già risolta: la cascata che la sceglie
+// (`docsRootName` in `config.ts`) gira una volta per vita del deck, e i due path
+// qui sotto devono nascere dallo stesso valore che leggono gli scan del modo doc.
+export function resolveTasksPath(cwd: string, docsRoot: string): string {
+  return join(cwd, docsRoot, 'tasks.md');
 }
 
 // I task file vivono in `<docsRoot>/tasks/` — sibling di tasks.md. Derivo la
-// dir dallo stesso path per rispettare l'override LOOM_DECK_DOCS_ROOT.
-export function resolveTasksDir(cwd: string = process.cwd()): string {
-  return join(dirname(resolveTasksPath(cwd)), 'tasks');
+// dir dallo stesso path, così le due non possono puntare a docs-root diverse.
+export function resolveTasksDir(cwd: string, docsRoot: string): string {
+  return join(dirname(resolveTasksPath(cwd, docsRoot)), 'tasks');
 }
 
 /** Posizione delle celle dentro `line.split('|')`, presa dall'header. */

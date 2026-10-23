@@ -419,7 +419,7 @@ npm test         # node:test sul core vista (src/view.ts), senza Ink né termina
 
 Il core di filtri e ordinamenti (`src/view.ts`) è **puro**: nessun import da Ink o React, nessun I/O. È il motivo per cui è testabile con `node:test` su array fixture, mentre la TUI resta un guscio sottile che lo consuma.
 
-Il deck cerca `tasks.md` in `$PWD/${LOOM_DECK_DOCS_ROOT:-docs}/tasks.md`. Progetti con docs-root non-standard esportano la variabile, es. `LOOM_DECK_DOCS_ROOT=runtime`.
+Il deck cerca `tasks.md` in `$PWD/<docs-root>/tasks.md`. La docs-root si risolve in quest'ordine: la variabile `LOOM_DECK_DOCS_ROOT`, se impostata; il campo `docsRoot` di `$PWD/.claude/loom-works.json`; `docs`. Un progetto con docs-root non-standard la dichiara nel file, e il deck la trova anche avviato a mano.
 
 La lista si **auto-aggiorna** quando `tasks.md` cambia sotto (poll su `mtime`, ~1.5s):
 crei/checkpoint una task da un'altra sessione → il deck la riflette senza riavvio.

@@ -139,12 +139,10 @@ export function launchLegend(
 // T61 — soglia d'età del contatore archiviabili, campo `archivableDays`.
 //
 // È il PRIMO scalare che il lato TypeScript legge dal file config: `launch` e
-// `identity` sopra sono strutture, e `docsRoot` arriva ancora dalla sola env
-// `LOOM_DECK_DOCS_ROOT` (vedi `tasks.ts`). La catena da percorrere si ferma
-// qui: nessun passaggio da `lib-config.sh`/`reg_pull`/dconf, perché il solo
-// consumer è il deck e il file ce l'ha sotto mano. Il precedente esatto è
-// `permissionMode`, che vive nel file, lo legge `deck-run` via jq e non è
-// propagato al registry.
+// `identity` sopra sono strutture. La catena da percorrere si ferma qui: nessun
+// passaggio da `lib-config.sh`/`reg_pull`/dconf, perché il solo consumer è il
+// deck e il file ce l'ha sotto mano. Il precedente esatto è `permissionMode`,
+// che vive nel file, lo legge `deck-run` via jq e non è propagato al registry.
 
 /** Interi positivi soltanto: uno 0 spegnerebbe la soglia (tutte le Done
  *  archiviabili), un negativo o un decimale sono un typo. Valore fuori dominio
@@ -174,6 +172,52 @@ export function loadArchivableDays(projectRoot: string): number {
     // file assente o malformato → default, come loadLaunch/loadIdentity
   }
   return DEFAULT_ARCHIVABLE_DAYS;
+}
+
+/** La docs-root di un progetto che non la dichiara: la stessa di `lw_docs_root`
+ *  nel plugin. */
+export const DEFAULT_DOCS_ROOT = 'docs';
+
+/** Stringa non vuota, presa così com'è: è il valore che il plugin legge con
+ *  `jq -r '.docsRoot'`, e due letture che normalizzassero in modo diverso
+ *  manderebbero deck e skill in due cartelle. */
+export function parseDocsRoot(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const v = (raw as { docsRoot?: unknown }).docsRoot;
+  return typeof v === 'string' && v.trim() ? v : null;
+}
+
+/**
+ * Nome della cartella doc del progetto (`docs`, `runtime`, …): `tasks.md`,
+ * `tasks/`, `inbox/` stanno lì sotto.
+ *
+ * T175 — precedenza `env → file → default`. Fino a T175 il deck leggeva la sola
+ * env `LOOM_DECK_DOCS_ROOT`, contando su chi lo avvia: compass la antepone al
+ * comando, il profilo Ptyxis la porta cablata. Un deck avviato a mano da una
+ * shell — su Linux, e su Windows sempre, perché lì nessuno dei due canali
+ * esiste — cercava `docs/` e mostrava una lista vuota invece di un errore. Il
+ * campo `docsRoot` del file è la fonte unica della famiglia (lo legge anche il
+ * plugin): il deck lo legge da sé.
+ *
+ * L'env resta IN TESTA, e non solo per i test: è il canale con cui compass
+ * passa il valore del registry, e una env impostata è una scelta esplicita di
+ * chi avvia, che batte il file come `LOOM_DECK_ARCHIVABLE_DAYS` batte
+ * `archivableDays`.
+ *
+ * Si risolve UNA volta per vita del deck, in `cli.tsx`, e il valore scende a
+ * chi lo usa: i path di `tasks.md` e dei task file e i due scan del modo doc
+ * devono vedere la stessa cartella.
+ */
+export function docsRootName(projectRoot: string): string {
+  const env = process.env.LOOM_DECK_DOCS_ROOT;
+  if (env) return env;
+  try {
+    const fromFile = parseDocsRoot(JSON.parse(readFileSync(configFilePath(projectRoot), 'utf8')));
+    if (fromFile !== null) return fromFile;
+  } catch {
+    // file assente o malformato → default, come loadLaunch/loadIdentity
+  }
+  return DEFAULT_DOCS_ROOT;
 }
 
 // T37 — identità del progetto. Serve a titolare le tab spawnate dal deck in modo

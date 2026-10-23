@@ -15,7 +15,7 @@
 import { render, Box, Text } from 'ink';
 import { useMemo, useState } from 'react';
 import { resolveTasksPath, resolveTasksDir } from './tasks.js';
-import { LAUNCH_SEP } from './config.js';
+import { LAUNCH_SEP, docsRootName } from './config.js';
 import { anchorFrame, enableMouse } from './mouse.js';
 import { sanitize } from './width.js';
 import { MODEL_SHORT_LIST, modelAlias } from './glyphs.js';
@@ -60,7 +60,17 @@ import { PreviewPane, detailMetaOf } from './ui/preview.js';
 import { CompactNotice, HintBar, TextBox, screenFor } from './ui/screens.js';
 import { VERSION } from './version.js';
 
-function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; tasksDir: string }) {
+function Deck({
+  cwd,
+  docsRoot,
+  tasksPath,
+  tasksDir,
+}: {
+  cwd: string;
+  docsRoot: string;
+  tasksPath: string;
+  tasksDir: string;
+}) {
   // La riga di STATO in fondo al frame: il feedback dell'ultima azione. Non è
   // la nota di una conversazione, che nel modello si chiama `sessionNotes`.
   const [note, setNote] = useState('');
@@ -82,6 +92,7 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
 
   const model = useDeckModel({
     cwd,
+    docsRoot,
     tasksPath,
     tasksDir,
     bareModel: bareDefault,
@@ -626,6 +637,10 @@ function Deck({ cwd, tasksPath, tasksDir }: { cwd: string; tasksPath: string; ta
 }
 
 const cwd = process.cwd();
+// T175 — la docs-root si risolve QUI, una volta, e scende a tutti: i path di
+// `tasks.md` e dei task file e i due scan del modo doc devono vedere la stessa
+// cartella, e due risoluzioni potrebbero non vederla.
+const docsRoot = docsRootName(cwd);
 // T116 — `exitOnCtrlC: false` toglie a Ink l'uscita immediata su `^C`: senza,
 // il tasto non arriverebbe mai a `useInput` e il doppio colpo non sarebbe
 // osservabile. In raw mode `^C` non è un SIGINT — è il byte `\x03` nello
@@ -638,6 +653,12 @@ const cwd = process.cwd();
 // esista qualcosa da cui uscire.
 anchorFrame();
 enableMouse();
-render(<Deck cwd={cwd} tasksPath={resolveTasksPath(cwd)} tasksDir={resolveTasksDir(cwd)} />, {
-  exitOnCtrlC: false,
-});
+render(
+  <Deck
+    cwd={cwd}
+    docsRoot={docsRoot}
+    tasksPath={resolveTasksPath(cwd, docsRoot)}
+    tasksDir={resolveTasksDir(cwd, docsRoot)}
+  />,
+  { exitOnCtrlC: false },
+);
