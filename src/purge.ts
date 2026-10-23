@@ -92,6 +92,7 @@ export function folderSurvivors(projectRoot: string, folder: string): string[] {
     const out = execFileSync('git', ['ls-files', '-o', '--', rel], {
       cwd: projectRoot,
       encoding: 'utf8',
+      windowsHide: true,
     });
     return out.split('\n').filter(Boolean);
   } catch {

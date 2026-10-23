@@ -43,7 +43,10 @@ export function commitLogSpawnCount(): number {
 
 async function headSha(projectRoot: string): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: projectRoot });
+    const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
+      cwd: projectRoot,
+      windowsHide: true,
+    });
     return stdout.trim();
   } catch {
     return null;
@@ -108,7 +111,7 @@ export async function commitTimes(
     const { stdout } = await execFileAsync(
       'git',
       ['log', '--format=#%ct', '--name-only', '--', tasksDir],
-      { cwd: projectRoot },
+      { cwd: projectRoot, windowsHide: true },
     );
     map = parseCommitLog(stdout);
   } catch {

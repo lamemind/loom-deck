@@ -122,7 +122,7 @@ async function resolveDoneDate(
  *  un throw: un contatore informativo non può rompere il deck. */
 async function gitOut(args: string[], cwd: string): Promise<string | null> {
   try {
-    const { stdout } = await execFileAsync('git', args, { cwd });
+    const { stdout } = await execFileAsync('git', args, { cwd, windowsHide: true });
     return stdout.trim() || null;
   } catch {
     return null;

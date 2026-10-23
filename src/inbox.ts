@@ -315,7 +315,7 @@ export async function scanInbox(projectRoot: string, docsRoot: string): Promise<
     const { stdout } = await execFileAsync(
       script,
       ['--docs-root', docsRoot, '--inbox', '--format', 'tsv'],
-      { cwd: projectRoot, maxBuffer: 4 * 1024 * 1024 },
+      { cwd: projectRoot, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
     );
     return { files: parseInboxTsv(stdout), ok: true };
   } catch {

@@ -11,6 +11,8 @@ import type { IgnoredMode } from './purge.js';
 // Qui restano i soli effetti verso l'esterno — comporre un argv e lanciarlo.
 import { MODEL_DEFAULT, PROJECT_STATUS_MODEL, type ModelKind } from './spawn-catalog.js';
 import { isAvailable } from './platform.js';
+import { claudeLauncher } from './claude-cmd.js';
+import { claudeEnv } from './git-bash.js';
 
 // scripts/deck-run è un sibling della dir del bundle: src/ (dev, tsx) e dist/
 // (build, node) stanno entrambi sotto la package root → risalita di un livello.
@@ -33,8 +35,13 @@ export const DECK_RUN = join(dirname(fileURLToPath(import.meta.url)), '..', 'scr
  */
 export const NO_SPAWN = process.env.LOOM_DECK_NO_SPAWN === '1';
 
+// T175 — `windowsHide` su OGNI figlio, qui e non a ogni chiamante: su Windows
+// un processo console lanciato senza apre una finestra (un `claude -p`, un
+// `git`), e ogni sede di spawn che la dimenticasse ne farebbe lampeggiare una a
+// ogni giro. Su Linux l'opzione non ha effetto. Un chiamante può ancora
+// sovrascriverla, perché `opts` viene dopo.
 export function spawnOut(cmd: string, args: string[], opts: SpawnOptions): ChildProcess {
-  if (!NO_SPAWN) return spawn(cmd, args, opts);
+  if (!NO_SPAWN) return spawn(cmd, args, { windowsHide: true, ...opts });
   // Figlio inerte: emette nulla, quindi i `.on('error'|'close')` dei chiamanti
   // restano appesi senza mai scattare — che è esattamente "non è successo niente".
   const fake = new EventEmitter() as ChildProcess;
@@ -424,8 +431,11 @@ export function spawnTerminal(cwd: string, title: string | null) {
   return child;
 }
 
-// Comando claude (override per ambienti dove non è su PATH; loom-deck → NPM).
-export const CLAUDE_CMD = process.env.LOOM_DECK_CLAUDE_CMD ?? 'claude';
+// Il NOME di claude nelle note della riga di stato: l'override se c'è,
+// `claude` altrimenti. Non è ciò che si esegue — quello lo risolve
+// `claudeLauncher` (`claude-cmd.ts`), che su Windows può arrivare a
+// `node …cli.js` da uno shim npm: nelle note resta il nome che l'utente conosce.
+export const CLAUDE_CMD = process.env.LOOM_DECK_CLAUDE_CMD || 'claude';
 
 // T30: invocazione di una skill del plugin da CC HEADLESS (`-p`), con
 // `--session-id` pinnato. È la TERZA strada per eseguire uno script del plugin
@@ -449,9 +459,14 @@ function spawnSkill(
   onResult: (ok: boolean, detail: string) => void,
   extraArgs: string[] = [],
 ) {
+  // T175 — il lanciatore risolto (shim npm compreso, mai una shell) e, su
+  // Windows, l'env col bash di Git: senza, un deck avviato da Git Bash passa al
+  // figlio il `PATH` che manda gli hook del plugin in PowerShell.
+  const claude = claudeLauncher();
   const child = spawnOut(
-    CLAUDE_CMD,
+    claude.cmd,
     [
+      ...claude.prefix,
       '-p',
       '--output-format',
       'stream-json',
@@ -461,7 +476,7 @@ function spawnSkill(
       ...extraArgs,
       prompt,
     ],
-    { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
+    { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: claudeEnv() },
   );
 
   let buf = '';

@@ -583,7 +583,7 @@ export async function scanDocTree(projectRoot: string, docsRoot: string): Promis
     const { stdout } = await execFileAsync(
       script,
       ['--docs-root', docsRoot, '--format', 'tsv'],
-      { cwd: projectRoot, maxBuffer: 8 * 1024 * 1024 },
+      { cwd: projectRoot, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
     );
     return { ...parseDocTsv(stdout), ok: true };
   } catch {

@@ -217,6 +217,7 @@ async function run(projectRoot: string, args: string[]): Promise<GitlinkScan> {
     const { stdout } = await execFileAsync(script, args, {
       cwd: projectRoot,
       maxBuffer: 1024 * 1024,
+      windowsHide: true,
     });
     return { members: parseGitlinkTsv(stdout), ok: true };
   } catch (e) {

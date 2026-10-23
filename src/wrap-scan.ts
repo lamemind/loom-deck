@@ -172,7 +172,7 @@ export async function runWrapScan(projectRoot: string): Promise<boolean> {
     const { stdout } = await execFileAsync(
       'python3',
       [script, '--root', projectRoot, '--scan'],
-      { cwd: projectRoot, maxBuffer: 16 * 1024 * 1024 },
+      { cwd: projectRoot, maxBuffer: 16 * 1024 * 1024, windowsHide: true },
     );
     const path = wrapCacheFile(projectRoot);
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
