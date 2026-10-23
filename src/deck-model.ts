@@ -87,6 +87,7 @@ import { MODELS, MODEL_DEFAULT, type ModelKind } from './spawn-catalog.js';
 import type { TaskLive } from './live-sessions.js';
 import type { Session } from './sessions.js';
 import { isAvailable } from './platform.js';
+import { projectBaseName } from './project-path.js';
 
 /**
  * Conteggio dei figli per task, più il rollup delle VIVE e le conversazioni
@@ -217,7 +218,9 @@ export function useDeckModel({
   // scrive nel sidecar il residuo del titolo, e quel residuo si ottiene
   // togliendo questo stesso core (§Riempimento dei buchi in `hooks.ts`).
   const projectCore = identity ? identity.name : null;
-  const projectName = cwd.split('/').pop() || cwd;
+  // T175 — `projectBaseName` e non uno split su `/`: su Windows restituiva il
+  // path intero.
+  const projectName = projectBaseName(cwd);
   // `notes` esce dall'indice come `sessionNotes`: nel deck `note` è già la riga
   // di STATO in fondo al frame (il feedback di un'azione). Due concetti diversi
   // a una lettera di distanza sarebbero una trappola di lettura — e di

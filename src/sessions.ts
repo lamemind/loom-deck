@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { sanitize } from './width.js';
+import { isWithin, matchingDirNames } from './project-path.js';
 
 // ADAPTER ISOLATO sullo store interno di Claude Code (T27).
 //
@@ -408,48 +409,77 @@ export function compareSessions(a: Session, b: Session): number {
   return b.ts - a.ts;
 }
 
-// Discovery read-only delle sessioni del SOLO progetto corrente (D2 preflight
-// T27): legge la project dir calcolata dal forward-transform, filtra per cwd
-// (difesa contro le collisioni lossy del naming), ordina con `compareSessions`.
-export function discoverProjectSessions(projectRoot: string): Session[] {
-  const dir = join(claudeProjectsRoot(), projectDirName(projectRoot));
-  let files: string[];
+/**
+ * T175 — le cartelle di transcript del progetto.
+ *
+ * Su Linux una sola, il nome esatto, e senza leggere la cartella madre: il poll
+ * gira ogni 1,5 s, e un `readdir` di `~/.claude/projects/` costerebbe a ogni
+ * tick per trovare un nome già noto. Su win32 tutte quelle che coincidono a
+ * meno delle maiuscole (`matchingDirNames`): Claude Code non normalizza la
+ * lettera del drive, e lo stesso progetto ne ha due.
+ */
+function transcriptDirs(projectRoot: string): string[] {
+  const root = claudeProjectsRoot();
+  const name = projectDirName(projectRoot);
+  if (process.platform !== 'win32') return [join(root, name)];
+  let entries: string[];
   try {
-    files = readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+    entries = readdirSync(root);
   } catch {
     return [];
   }
+  return matchingDirNames(entries, name).map((e) => join(root, e));
+}
 
-  const out: Session[] = [];
+// Discovery read-only delle sessioni del SOLO progetto corrente (D2 preflight
+// T27): legge le project dir calcolate dal forward-transform, filtra per cwd
+// (difesa contro le collisioni lossy del naming), ordina con `compareSessions`.
+//
+// D1 preflight T175 — restano fuori le conversazioni AVVIATE in una
+// sottocartella, su ogni piattaforma: Claude Code ne scrive il transcript nella
+// cartella che codifica la cwd di avvio, cioè un'altra. Il filtro accetta una
+// cwd sotto la root perché non scarta niente di legittimo, non per raccoglierle.
+export function discoverProjectSessions(projectRoot: string): Session[] {
+  // Keyed sul sessionId: su win32 due cartelle dello stesso progetto potrebbero
+  // portare lo stesso transcript, e due righe con un id solo romperebbero la
+  // selezione. Vince il più recente.
+  const out = new Map<string, Session>();
   const seen = new Set<string>();
-  for (const f of files) {
-    const path = join(dir, f);
-    seen.add(path);
-    let mtime: number;
-    let sizeBytes: number;
+  for (const dir of transcriptDirs(projectRoot)) {
+    let files: string[];
     try {
-      const st = statSync(path);
-      mtime = st.mtimeMs;
-      sizeBytes = st.size;
+      files = readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
     } catch {
       continue;
     }
-    const cached = cache.get(path);
-    let session: Session | null;
-    if (cached && cached.mtime === mtime) {
-      session = cached.session;
-    } else {
-      session = parseSessionFile(path, mtime, sizeBytes);
-      cache.set(path, { mtime, session });
-    }
-    if (session && (session.cwd === projectRoot || session.cwd.startsWith(projectRoot + '/'))) {
-      out.push(session);
+    for (const f of files) {
+      const path = join(dir, f);
+      seen.add(path);
+      let mtime: number;
+      let sizeBytes: number;
+      try {
+        const st = statSync(path);
+        mtime = st.mtimeMs;
+        sizeBytes = st.size;
+      } catch {
+        continue;
+      }
+      const cached = cache.get(path);
+      let session: Session | null;
+      if (cached && cached.mtime === mtime) {
+        session = cached.session;
+      } else {
+        session = parseSessionFile(path, mtime, sizeBytes);
+        cache.set(path, { mtime, session });
+      }
+      if (!session || !isWithin(session.cwd, projectRoot)) continue;
+      const prev = out.get(session.sessionId);
+      if (!prev || session.ts > prev.ts) out.set(session.sessionId, session);
     }
   }
   for (const key of cache.keys()) if (!seen.has(key)) cache.delete(key);
 
-  out.sort(compareSessions);
-  return out;
+  return [...out.values()].sort(compareSessions);
 }
 
 // Raggruppa per gitBranch (D2: group-by-branch nel progetto corrente). Ordine

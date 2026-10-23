@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
+import { isWithin } from './project-path.js';
 
 // ADAPTER ISOLATO sul registry dei processi Claude Code vivi (T62).
 //
@@ -183,7 +184,9 @@ export function discoverLiveSessions(projectRoot: string): Map<string, LiveSessi
     const parsed = parseLiveEntry(content, pid);
     if (!parsed) continue;
     const { entry, procStart } = parsed;
-    if (entry.cwd !== projectRoot && !entry.cwd.startsWith(projectRoot + '/')) continue;
+    // T175 — `isWithin` regge le grafie di Windows: il registry scrive `C:\…`,
+    // e la root del deck può arrivare con la lettera del drive in un altro case.
+    if (!isWithin(entry.cwd, projectRoot)) continue;
     if (!isAlive(pid, procStart)) continue;
     out.set(entry.sessionId, entry);
   }
