@@ -15,7 +15,6 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
   copyFileSync,
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -24,6 +23,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ptyGate } from './platform-gates.js';
 import { loadLaunch } from '../src/config.js';
 import { launchRow } from '../src/frame.js';
 import { MODELS, MODEL_DEFAULT, spawnAction } from '../src/spawn-catalog.js';
@@ -33,16 +33,10 @@ const PKG = dirname(HERE);
 const PROJECT = dirname(PKG);
 const TASKS = join(PROJECT, 'runtime', 'tasks.md');
 
-function hasPython(): boolean {
-  try {
-    execFileSync('python3', ['-c', 'pass'], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const CAN_RUN = hasPython() && existsSync(TASKS);
+// T175 — il motivo del salto lo dà `ptyGate`, e nomina la dipendenza vera:
+// su Windows il gate non parte nemmeno con Python installato.
+const SKIP = ptyGate(TASKS);
+const CAN_RUN = SKIP === false;
 
 const CTRL_F = '\x06';
 const ESC = '\x1b';
@@ -177,7 +171,7 @@ const MODES: Array<{ name: string; keys: string; expect: RegExp; env?: NodeJS.Pr
 ];
 
 for (const m of MODES) {
-  test(`modo ${m.name}: si apre`, { skip: !CAN_RUN }, () => {
+  test(`modo ${m.name}: si apre`, { skip: SKIP }, () => {
     const frame = capture(m.keys, PROJECT, m.env);
     assert.match(frame, m.expect, `il modo ${m.name} non ha disegnato il proprio frame`);
   });
@@ -185,14 +179,14 @@ for (const m of MODES) {
 
 // Il reader è l'unico modo che non si apre dalla lista: ci si arriva da dentro
 // la ricerca, con `⏎` su una riga occorrenza.
-test('modo reader: si apre da dentro la ricerca', { skip: !CAN_RUN }, () => {
+test('modo reader: si apre da dentro la ricerca', { skip: SKIP }, () => {
   const frame = capture(`${CTRL_F}task\r`);
   // Nel reader la barra dice `esc torna` (alla lista), non `esc chiude`.
   assert.match(frame, /reader|esc torna/i);
 });
 
 // I due punti dove la precedenza fra i rami è già stata corretta una volta.
-test('esc dal reader torna alla ricerca, non al deck', { skip: !CAN_RUN }, () => {
+test('esc dal reader torna alla ricerca, non al deck', { skip: SKIP }, () => {
   // Il reader è un modale DENTRO la ricerca: `esc` smonta uno strato solo, e la
   // lista occorrenze si ritrova com'era. Se smontasse due strati si tornerebbe
   // alla lista task, cioè si perderebbe la ricerca appena fatta.
@@ -201,7 +195,7 @@ test('esc dal reader torna alla ricerca, non al deck', { skip: !CAN_RUN }, () =>
 });
 
 test('^F dentro il detail apre la ricerca nel testo, non quella conversazioni', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   const frame = lastFrame(capture(`DD\r${CTRL_F}`));
   // La ricerca conversazioni ha il campo `hash`; quella del detail no — e la
@@ -213,7 +207,7 @@ test('^F dentro il detail apre la ricerca nel testo, non quella conversazioni', 
 // viveva solo nell'ordine testuale delle `if`, e che ora `input-modes.ts`
 // dichiara. Con NO_SPAWN un `^K` che passasse non aprirebbe una tab, ma
 // scriverebbe comunque la sua nota di spawn nella riga di stato.
-test('^K dentro il detail non spawna', { skip: !CAN_RUN }, () => {
+test('^K dentro il detail non spawna', { skip: SKIP }, () => {
   const frame = lastFrame(capture('DD\r\x0b'));
   // La riga di stato di uno spawn è il COMANDO: `--prompt-kind` è la sua firma,
   // e non compare in nessun altro punto del frame.
@@ -291,7 +285,7 @@ const DETAIL_TITLE_ROW = '\rDDD';
 // ── T154 · il selettore della nuda e il tasto `m` bifronte ───────────────
 
 test('c senza toccare il selettore apre comunque su un modello esplicito (il default)', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   const frame = lastFrame(capture('c', spawnProject));
   assert.match(frame, /--no-task/, `c non ha spawnato la nuda: ${frame}`);
@@ -299,7 +293,7 @@ test('c senza toccare il selettore apre comunque su un modello esplicito (il def
 });
 
 test('m senza una riga sessione in fuoco cicla il modello della nuda: c la spawna col valore ciclato', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   // Focus di apertura è `tasks` (D4): `m` deve cadere sul bersaglio nuda.
   const frame = lastFrame(capture('mc', spawnProject));
@@ -308,7 +302,7 @@ test('m senza una riga sessione in fuoco cicla il modello della nuda: c la spawn
 });
 
 test('m con una riga sessione selezionata cicla il modello di resume, non quello della nuda', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   const { proj, env } = singleSessionProject();
   // `R` porta il focus sul pane sessioni, sulla sola riga esistente. Il suo
@@ -319,7 +313,7 @@ test('m con una riga sessione selezionata cicla il modello di resume, non quello
   assert.match(frame, /--model opus/, `m sulla riga sessione non ha cambiato il resume: ${frame}`);
 });
 
-test('i due selettori non si contaminano: la nuda ciclata non muove il resume', { skip: !CAN_RUN }, () => {
+test('i due selettori non si contaminano: la nuda ciclata non muove il resume', { skip: SKIP }, () => {
   const { proj, env } = singleSessionProject();
   // `m` (nuda → sonnet) col focus ancora sui task, poi `R` porta il focus sulla
   // riga sessione e `⏎` fa resume: se i due stati fossero lo stesso, il
@@ -328,7 +322,7 @@ test('i due selettori non si contaminano: la nuda ciclata non muove il resume', 
   assert.match(frame, /--model fable/, `il resume ha ereditato il modello della nuda: ${frame}`);
 });
 
-test('i due selettori non si contaminano: il resume ciclato non muove la nuda', { skip: !CAN_RUN }, () => {
+test('i due selettori non si contaminano: il resume ciclato non muove la nuda', { skip: SKIP }, () => {
   const { proj, env } = singleSessionProject();
   // `R` seleziona la riga sessione, `mm` cicla il suo resume da `fable` a
   // `sonnet`; `L` torna sul pane task e `c` apre la nuda: se i due stati
@@ -340,13 +334,13 @@ test('i due selettori non si contaminano: il resume ciclato non muove la nuda', 
   assert.match(frame, /--model opus/, `la nuda ha ereditato il modello del resume: ${frame}`);
 });
 
-test('detail: la riga azione risponde alle lettere e riscrive il prompt', { skip: !CAN_RUN }, () => {
+test('detail: la riga azione risponde alle lettere e riscrive il prompt', { skip: SKIP }, () => {
   const frame = lastFrame(capture(`DD\rr\r`, spawnProject));
   assert.match(frame, /--prompt .\/loom-works:run-task/, `r non ha selezionato run: ${frame}`);
 });
 
 test('detail: una cifra sulla riga azione è inerte, non finisce in un campo', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   // Nessuna azione ha `2` per iniziale → il tasto non ha nulla da fare, e con il
   // fuoco su una riga a scelta non esiste un campo dove ricadere.
@@ -356,7 +350,7 @@ test('detail: una cifra sulla riga azione è inerte, non finisce in un campo', {
 });
 
 test('detail: le lettere entrano nel campo solo quando la sua riga è in fuoco', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   // `o` è l'iniziale di `open`: sulla riga azione seleziona, sulla riga titolo
   // dev'essere testo. È il caso che distingue il focus-gating da un catch-all.
@@ -364,7 +358,7 @@ test('detail: le lettere entrano nel campo solo quando la sua riga è in fuoco',
   assert.match(frame, /--title-note oro/, `il testo non è finito nel titolo: ${frame}`);
 });
 
-test('detail: il prompt modificato a mano è quello che parte', { skip: !CAN_RUN }, () => {
+test('detail: il prompt modificato a mano è quello che parte', { skip: SKIP }, () => {
   // `r` sceglie run (prompt pre-riempito col template), poi si scende sul campo
   // e si scrive in coda: quello che parte dev'essere il testo MODIFICATO, che
   // nessun `--prompt-kind` saprebbe più descrivere.
@@ -373,7 +367,7 @@ test('detail: il prompt modificato a mano è quello che parte', { skip: !CAN_RUN
   assert.doesNotMatch(frame, /--prompt-kind/, `kind e prompt insieme: ${frame}`);
 });
 
-test('detail: azione open → nessun prompt iniziale allo spawn', { skip: !CAN_RUN }, () => {
+test('detail: azione open → nessun prompt iniziale allo spawn', { skip: SKIP }, () => {
   // `open` è l'azione di default e il suo campo prompt è vuoto: lo spawn passa
   // `--prompt-kind none`, non un `--prompt ''` — deck-run cadrebbe altrimenti sul
   // proprio default `recap`, cioè su un prompt che nessuno ha chiesto.
@@ -382,14 +376,14 @@ test('detail: azione open → nessun prompt iniziale allo spawn', { skip: !CAN_R
   assert.doesNotMatch(frame, /--title-note/, `flag di titolo a vuoto: ${frame}`);
 });
 
-test('detail: tab non è più il canale del modello', { skip: !CAN_RUN }, () => {
+test('detail: tab non è più il canale del modello', { skip: SKIP }, () => {
   // `T` = tab nel mapping del pty. Il modello si cambia con `←→` dalla sua riga;
   // `tab` resta senza binding e non deve muovere nulla di nascosto.
   const frame = lastFrame(capture('DD\rT\r', spawnProject));
   assert.match(frame, /--model opus/, `tab ha cambiato modello: ${frame}`);
 });
 
-test('detail: la riga modello risponde a ←→ quando è in fuoco', { skip: !CAN_RUN }, () => {
+test('detail: la riga modello risponde a ←→ quando è in fuoco', { skip: SKIP }, () => {
   // Due `D` portano dalla riga azione a quella modello; `R` (→) avanza di una
   // voce nel giro di `MODELS`, cioè da `opus` (il modello dell'azione
   // iniziale `open`) a `sonnet`.
@@ -397,7 +391,7 @@ test('detail: la riga modello risponde a ←→ quando è in fuoco', { skip: !CA
   assert.match(frame, /--model sonnet/, `←→ non ha cambiato modello: ${frame}`);
 });
 
-test('detail: la riga hint non nomina i tasti standard', { skip: !CAN_RUN }, () => {
+test('detail: la riga hint non nomina i tasti standard', { skip: SKIP }, () => {
   const frame = lastFrame(capture('DD\r'));
   assert.match(frame, /\[ opus \]/, `riga modello non renderizzata: ${frame}`);
   // L'asserzione negativa vive sulla SOLA riga hint, non sul frame: sotto c'è il
@@ -418,7 +412,7 @@ test('detail: la riga hint non nomina i tasti standard', { skip: !CAN_RUN }, () 
 // `HOME` finti (`singleSessionProject`): il test non manda `⏎`, ma un transcript
 // vero sotto `~/.claude/projects` non deve essere nemmeno raggiungibile.
 test('CANC sul pane sessioni apre la conferma della conversazione, non della task', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   const { proj, env } = singleSessionProject();
   const frame = lastFrame(capture(`R${CANC}`, proj, env));
@@ -429,7 +423,7 @@ test('CANC sul pane sessioni apre la conferma della conversazione, non della tas
   assert.doesNotMatch(frame, /tasks\.md/, `si è aperta la conferma della task: ${frame}`);
 });
 
-test('CANC sul pane sessioni vuoto è inerte e lo dice', { skip: !CAN_RUN }, () => {
+test('CANC sul pane sessioni vuoto è inerte e lo dice', { skip: SKIP }, () => {
   // Inerzia che si annuncia: un tasto che non fa niente in silenzio si legge
   // come deck bloccato. `HOME` vuota → nessuna conversazione nel progetto.
   const home = mkdtempSync(join(tmpdir(), 'loom-deck-emptyhome-'));
@@ -438,13 +432,13 @@ test('CANC sul pane sessioni vuoto è inerte e lo dice', { skip: !CAN_RUN }, () 
   assert.match(frame, /nessuna conversazione da eliminare/i, `nessuna nota di inerzia: ${frame}`);
 });
 
-test('esc sulla conferma annulla e lo dice', { skip: !CAN_RUN }, () => {
+test('esc sulla conferma annulla e lo dice', { skip: SKIP }, () => {
   const frame = lastFrame(capture(`DD${CANC}${ESC}`));
   assert.match(frame, /annullata/i, `nessuna nota di annullamento: ${frame}`);
 });
 
 test('la conferma nomina la task e l\'effetto, non la parola "archiviare"', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   const frame = lastFrame(capture(`DD${CANC}`));
   // ② gli ID bersaglio: una conferma che non dice COSA sparisce non è informata.
@@ -456,7 +450,7 @@ test('la conferma nomina la task e l\'effetto, non la parola "archiviare"', {
 });
 
 test('CANC su una riga meta della vista archiviabili prende l\'insieme', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   // `TT` porta il pane task sulla vista `archiviabili` e riporta la selezione su
   // `≡ tutte` (il reset di `cycleView`), cioè una riga meta: è la condizione del
@@ -468,7 +462,7 @@ test('CANC su una riga meta della vista archiviabili prende l\'insieme', {
 });
 
 test('con una task selezionata CANC resta sulla singola, anche su archiviabili', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   // La SELEZIONE batte la vista: scesi su una riga task (`DD` dopo il cambio
   // vista), il tasto tocca quella task e basta. È la regola che tiene l'azione
@@ -479,7 +473,7 @@ test('con una task selezionata CANC resta sulla singola, anche su archiviabili',
   assert.doesNotMatch(frame, /eliminare \d+ task\?/i, `bersaglio di massa su riga task: ${frame}`);
 });
 
-test('il bulk nomina le scartate, non solo le potate', { skip: !CAN_RUN }, () => {
+test('il bulk nomina le scartate, non solo le potate', { skip: SKIP }, () => {
   // Promettere 7 e farne 5 è una bugia che non compare da nessuna parte: le 2
   // restano in lista come prima, indistinguibili da un fallimento parziale.
   // Su questo repo alcune task folder hanno file ignorati/untracked, quindi lo
@@ -501,18 +495,18 @@ const WAIT_OVER_WINDOW = 'W'.repeat(8);
 
 const alive = (captured: string) => /<<PROC alive>>/.test(captured);
 
-test('un ^C solo avverte e NON chiude', { skip: !CAN_RUN }, () => {
+test('un ^C solo avverte e NON chiude', { skip: SKIP }, () => {
   const captured = capture(CTRL_C);
   assert.ok(alive(captured), 'il deck si è chiuso alla prima pressione');
   assert.match(lastFrame(captured), /\^C di nuovo entro/i, 'nessun avviso in riga di stato');
 });
 
-test('due ^C ravvicinati chiudono il deck', { skip: !CAN_RUN }, () => {
+test('due ^C ravvicinati chiudono il deck', { skip: SKIP }, () => {
   const captured = capture(CTRL_C + CTRL_C);
   assert.match(captured, /<<PROC exit=0>>/, `il deck non si è chiuso: ${lastFrame(captured)}`);
 });
 
-test('oltre la finestra il secondo ^C riarma invece di chiudere', { skip: !CAN_RUN }, () => {
+test('oltre la finestra il secondo ^C riarma invece di chiudere', { skip: SKIP }, () => {
   // Il cuore della feature: il primo colpo SCADE. Senza questo scenario, un
   // armamento che non si disarma mai passerebbe entrambi i test sopra.
   const captured = capture(CTRL_C + WAIT_OVER_WINDOW + CTRL_C);
@@ -521,7 +515,7 @@ test('oltre la finestra il secondo ^C riarma invece di chiudere', { skip: !CAN_R
 });
 
 test('^C dentro un modale lo chiude e avverte, invece di restare muto', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   // Nel detail la riga di stato non è renderizzata: armare restando lì dentro
   // darebbe un deck che sembra ignorare il tasto e poi sparisce senza avviso.
@@ -534,7 +528,7 @@ test('^C dentro un modale lo chiude e avverte, invece di restare muto', {
 
 // ── T121 · project status ─────────────────────────────────────────────────
 
-test('^O senza cache lo dice invece di aprire un viewer vuoto', { skip: !CAN_RUN }, () => {
+test('^O senza cache lo dice invece di aprire un viewer vuoto', { skip: SKIP }, () => {
   // Il file non esiste: la cache assente è uno STATO del progetto, non un
   // documento da mostrare — un viewer vuoto direbbe «il recap è questo, ed è
   // nulla».
@@ -545,39 +539,39 @@ test('^O senza cache lo dice invece di aprire un viewer vuoto', { skip: !CAN_RUN
   assert.match(frame, /t 💻/, `il viewer si è aperto a vuoto: ${frame}`);
 });
 
-test('^O mostra il testo della cache, non un rigenerato', { skip: !CAN_RUN }, () => {
+test('^O mostra il testo della cache, non un rigenerato', { skip: SKIP }, () => {
   const frame = lastFrame(capture(CTRL_O, PROJECT, STATUS_ENV));
   assert.match(frame, /Due task aperte|Due .*task.* aperte/i, `testo della cache assente: ${frame}`);
   assert.match(frame, /generato alle \d\d:\d\d/i, `nessuna ora di generazione: ${frame}`);
 });
 
-test('la testata mostra missing finché non c\'è cache', { skip: !CAN_RUN }, () => {
+test('la testata mostra missing finché non c\'è cache', { skip: SKIP }, () => {
   const frame = lastFrame(
     capture('', PROJECT, { LOOM_DECK_STATUS_FILE: join(tmpdir(), 'loom-deck-mai-scritto.md') }),
   );
   assert.match(frame, /PROJECT STATUS \[ missing \]/, `stato missing non renderizzato: ${frame}`);
 });
 
-test('la testata mostra l\'ora quando la cache c\'è', { skip: !CAN_RUN }, () => {
+test('la testata mostra l\'ora quando la cache c\'è', { skip: SKIP }, () => {
   // Il recap sopravvive alla chiusura del deck: qui il processo nasce con la
   // cache già sul disco, che è esattamente la condizione di un deck riaperto.
   const frame = lastFrame(capture('', PROJECT, STATUS_ENV));
   assert.match(frame, /PROJECT STATUS \[ \d\d:\d\d \]/, `ora non renderizzata: ${frame}`);
 });
 
-test('^G avvia la generazione e la testata la conta', { skip: !CAN_RUN }, () => {
+test('^G avvia la generazione e la testata la conta', { skip: SKIP }, () => {
   // Con NO_SPAWN il figlio è inerte e non chiude mai: lo stato resta `building`,
   // che è ciò che questo scenario deve osservare.
   const frame = lastFrame(capture(CTRL_G, PROJECT, STATUS_ENV));
   assert.match(frame, /building \d+\.\.\./, `nessun contatore in testata: ${frame}`);
 });
 
-test('un secondo ^G non spawna una seconda generazione', { skip: !CAN_RUN }, () => {
+test('un secondo ^G non spawna una seconda generazione', { skip: SKIP }, () => {
   const frame = lastFrame(capture(CTRL_G + CTRL_G, PROJECT, STATUS_ENV));
   assert.match(frame, /generazione già in corso/i, `il secondo ^G non è stato rifiutato: ${frame}`);
 });
 
-test('il viewer scorre a riga e a pagina', { skip: !CAN_RUN }, () => {
+test('il viewer scorre a riga e a pagina', { skip: SKIP }, () => {
   // Una cache più alta del terminale: con un recap corto la posizione non si
   // muove e lo scenario passerebbe senza provare niente.
   const long = join(mkdtempSync(join(tmpdir(), 'loom-deck-status-')), 'lungo.md');
@@ -601,7 +595,7 @@ test('il viewer scorre a riga e a pagina', { skip: !CAN_RUN }, () => {
 });
 
 test('^O durante una generazione apre la cache vecchia e lo dichiara', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   // D3 — la generazione dura minuti, quindi la finestra in cui questo caso
   // capita è larga: leggere un recap di un'ora fa è quasi sempre meglio che non
@@ -610,7 +604,7 @@ test('^O durante una generazione apre la cache vecchia e lo dichiara', {
   assert.match(frame, /versione precedente/i, `il viewer non dichiara lo stale: ${frame}`);
 });
 
-test('^G e ^O sono inerti dentro un modo capturing', { skip: !CAN_RUN }, () => {
+test('^G e ^O sono inerti dentro un modo capturing', { skip: SKIP }, () => {
   // Come `^K`/`^P`/`^R`: chi è dentro il detail non deve poter far partire una
   // generazione da minuti con un tasto pensato per un'altra schermata.
   const frame = lastFrame(capture(`DD\r${CTRL_G}`, PROJECT, STATUS_ENV));
@@ -620,7 +614,7 @@ test('^G e ^O sono inerti dentro un modo capturing', { skip: !CAN_RUN }, () => {
 
 // Chiusura: ogni modale torna alla lista con `esc`, e il deck resta vivo.
 for (const m of MODES.filter((x) => x.name !== 'normal')) {
-  test(`modo ${m.name}: esc riporta alla lista`, { skip: !CAN_RUN }, () => {
+  test(`modo ${m.name}: esc riporta alla lista`, { skip: SKIP }, () => {
     const frame = lastFrame(capture(`${m.keys}${ESC}`, PROJECT, m.env));
     // La riga delle surface built-in esiste SOLO in modalità normale
     // (`launchLine`): è il marcatore che dice «siamo tornati alla lista».
@@ -645,20 +639,20 @@ const clickLaunch = (col: number) => `@${col},4;`;
 // 120 colonne: la stessa dimensione fissa con cui `captureRaw` apre il pty.
 const projectLaunchRow = () => launchRow(loadLaunch(PROJECT), 120);
 
-test('click su `t 💻` apre il terminale, come il tasto t', { skip: !CAN_RUN }, () => {
+test('click su `t 💻` apre il terminale, come il tasto t', { skip: SKIP }, () => {
   const captured = capture(clickLaunch(4));
   assert.ok(alive(captured), 'il deck è morto sul click');
   assert.match(lastFrame(captured), /terminale su/i, 'il click non ha attivato la surface t');
 });
 
-test('click su `c 🤖` spawna la sessione, come il tasto c', { skip: !CAN_RUN }, () => {
+test('click su `c 🤖` spawna la sessione, come il tasto c', { skip: SKIP }, () => {
   const bareCol = projectLaunchRow().regions.find((r) => r.key === 'c')!.start;
   const frame = lastFrame(capture(clickLaunch(bareCol)));
   assert.match(frame, /deck-run/, `il click non ha attivato la surface c: ${frame}`);
 });
 
 test('un click su un bottone modello del blocco nuda è inerte: nessun tasto lo nomina', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   // P9 — solo l'etichetta `c 🤖` è cliccabile: `m` cicla, non seleziona, quindi
   // un bottone non ha un tasto da sintetizzare.
@@ -667,7 +661,7 @@ test('un click su un bottone modello del blocco nuda è inerte: nessun tasto lo 
   assert.doesNotMatch(frame, /deck-run|terminale su/i, `un bottone ha risposto al click: ${frame}`);
 });
 
-test('lo spazio fra due superfici non attiva la vicina', { skip: !CAN_RUN }, () => {
+test('lo spazio fra due superfici non attiva la vicina', { skip: SKIP }, () => {
   // Colonna 8: il separatore fra `t 💻` e la prima voce `launch`. Un hit-test
   // che arrotondasse al segmento più vicino lancerebbe un'azione che nessuno
   // ha chiesto. La voce `codium` compare comunque nella riga launch STATICA —
@@ -678,14 +672,14 @@ test('lo spazio fra due superfici non attiva la vicina', { skip: !CAN_RUN }, () 
   assert.doesNotMatch(frame, /→ codium su/i, `il separatore ha attivato la voce launch: ${frame}`);
 });
 
-test('un click fuori dalla riga launch è inerte', { skip: !CAN_RUN }, () => {
+test('un click fuori dalla riga launch è inerte', { skip: SKIP }, () => {
   // Mandata 1: le liste non sono cliccabili. Riga 6 è dentro il pane task.
   const frame = lastFrame(capture('@4,6;'));
   assert.doesNotMatch(frame, /terminale su/i, `una riga estranea ha attivato t: ${frame}`);
 });
 
 test('col modale aperto il click non scrive nel campo né attiva la surface', {
-  skip: !CAN_RUN,
+  skip: SKIP,
 }, () => {
   // Due difetti in uno scenario. ① `useInput` riceve le sequenze come TESTO:
   // senza il filtro incondizionato, un click battuto col modale aperto ci
@@ -713,7 +707,7 @@ function linesAt(frame: string): number {
   return Number(m[1]);
 }
 
-test('la rotella scorre il project status di tre righe per tacca', { skip: !CAN_RUN }, () => {
+test('la rotella scorre il project status di tre righe per tacca', { skip: SKIP }, () => {
   // Cache più alta del terminale, come per `↑↓`: con un recap corto la
   // posizione non si muove e lo scenario passerebbe senza provare niente.
   const long = join(mkdtempSync(join(tmpdir(), 'loom-deck-wheel-')), 'lungo.md');
@@ -731,7 +725,7 @@ test('la rotella scorre il project status di tre righe per tacca', { skip: !CAN_
   assert.equal(back, 4, 'una tacca su non ha riavvolto tre righe');
 });
 
-test('nel detail la rotella scorre il testo, non il fuoco fra i campi', { skip: !CAN_RUN }, () => {
+test('nel detail la rotella scorre il testo, non il fuoco fra i campi', { skip: SKIP }, () => {
   // T117: `↑↓` nel detail muovono il fuoco fra le quattro righe dell'area di
   // compilazione. Una rotella che sintetizzasse `↓` sposterebbe il fuoco e
   // lascerebbe il testo fermo — il contrario di quello che la mano ha chiesto.
@@ -744,7 +738,7 @@ test('nel detail la rotella scorre il testo, non il fuoco fra i campi', { skip: 
   assert.match(after, /▸ azione/, `il fuoco ha lasciato la riga azione: ${after}`);
 });
 
-test('sulla lista la rotella non muove la selezione', { skip: !CAN_RUN }, () => {
+test('sulla lista la rotella non muove la selezione', { skip: SKIP }, () => {
   // D5: la rotella scorre testo, mai una scelta. La riga col caret deve restare
   // la stessa dopo due tacche, mentre una `↓` vera la sposta — il secondo
   // confronto è ciò che prova che il metodo vede il movimento.
@@ -762,7 +756,7 @@ test('sulla lista la rotella non muove la selezione', { skip: !CAN_RUN }, () => 
   assert.notEqual(selRow(lastFrame(capture('DDD'))), base);
 });
 
-test('col modale aperto la rotella non scrive nel campo', { skip: !CAN_RUN }, () => {
+test('col modale aperto la rotella non scrive nel campo', { skip: SKIP }, () => {
   // Stesso difetto del click: la sequenza `[<65;10;10M` è TESTO per `useInput`
   // e senza filtro finirebbe nel titolo della task che si sta creando.
   const frame = lastFrame(capture(`C${WHEEL_DOWN}${WHEEL_UP}`));
@@ -823,7 +817,7 @@ function assertTaskCaretAtRow(frame: string, n: number, what: string) {
   assert.match(line, /^│ │ *▸ *T ?\d+/, `${what} (riga ${n}): ${frame}`);
 }
 
-test('click su una riga task la seleziona senza aprire il detail', { skip: !CAN_RUN }, () => {
+test('click su una riga task la seleziona senza aprire il detail', { skip: SKIP }, () => {
   // Riga 13 = terza task della finestra (9 `≡`, 10 `○`, 11 prima task).
   const after = lastFrame(capture('@10,13;'));
   assertTaskCaretAtRow(after, 13, 'il caret non è sulla riga cliccata');
@@ -832,20 +826,20 @@ test('click su una riga task la seleziona senza aprire il detail', { skip: !CAN_
   assert.match(after, /⏎ detail/, `il fuoco non è sul pane task: ${after}`);
 });
 
-test('click su una riga meta riporta la selezione su di lei', { skip: !CAN_RUN }, () => {
+test('click su una riga meta riporta la selezione su di lei', { skip: SKIP }, () => {
   // Da una task (tre `↓`) si torna su `○ spot` (riga 10) con un click.
   const frame = lastFrame(capture('DDD@10,10;'));
   assert.match(frame, /▸ ○ spot/, `la riga spot non è selezionata: ${frame}`);
 });
 
-test('click sulla riga sort del pane task è inerte', { skip: !CAN_RUN }, () => {
+test('click sulla riga sort del pane task è inerte', { skip: SKIP }, () => {
   // Tre `↓` da `≡` (riga 9) portano il caret a riga 12; il click sulla riga
   // `sort:` non deve spostarlo. Si misura la RIGA e non l'id della task: quale
   // task ci sia a riga 12 dipende dall'ordinamento, che il click non tocca.
   assertTaskCaretAtRow(lastFrame(capture('DDD@10,8;')), 12, 'il click sulla riga sort ha mosso il caret');
 });
 
-test('click su una conversazione porta fuoco e selezione sul pane sessioni', { skip: !CAN_RUN }, () => {
+test('click su una conversazione porta fuoco e selezione sul pane sessioni', { skip: SKIP }, () => {
   // Riga 10 = terza conversazione (il corpo del pane sessioni parte da riga 8).
   // Colonna 70: dentro il pane destro a qualunque larghezza ≥ 100.
   const after = lastFrame(capture('@70,10;'));
@@ -857,7 +851,7 @@ test('click su una conversazione porta fuoco e selezione sul pane sessioni', { s
   assert.match(after, /⏎ resume/, `il fuoco non è passato al pane sessioni: ${after}`);
 });
 
-test('click su una voce dell\'header attiva quella vista', { skip: !CAN_RUN }, () => {
+test('click su una voce dell\'header attiva quella vista', { skip: SKIP }, () => {
   // La colonna di `nascoste` si legge dal frame: tutto ciò che la precede sulla
   // riga 7 è largo 1, quindi indice + 1 = colonna. Scriverla come numero sarebbe
   // un calco della larghezza di `Tasks (N/M)`, che cambia con le task.
@@ -868,13 +862,13 @@ test('click su una voce dell\'header attiva quella vista', { skip: !CAN_RUN }, (
   assert.match(after, /vista task: \d+ nascoste/, `la vista non è cambiata: ${after}`);
 });
 
-test('click sulla vista già attiva non muove la selezione', { skip: !CAN_RUN }, () => {
+test('click sulla vista già attiva non muove la selezione', { skip: SKIP }, () => {
   // `Tasks` comincia a colonna 5 (bordo + padding del pane): un click lì con
   // una task selezionata deve lasciarla dov'è, non riportarla su `≡ tutte`.
   assertTaskCaretAtRow(lastFrame(capture('DDD@6,7;')), 12, 'il click sulla vista attiva ha mosso il caret');
 });
 
-test('secondo click sulla task già selezionata apre il detail, come ⏎', { skip: !CAN_RUN }, () => {
+test('secondo click sulla task già selezionata apre il detail, come ⏎', { skip: SKIP }, () => {
   // Il primo click seleziona e mette a fuoco, il secondo — stessa riga, pane
   // già a fuoco — sintetizza `⏎`. Niente doppio-click a timer (D2): sono due
   // click qualsiasi, comunque distanti nel tempo.
@@ -884,7 +878,7 @@ test('secondo click sulla task già selezionata apre il detail, come ⏎', { ski
   assert.match(after, new RegExp(target), `il detail non è della task cliccata: ${after}`);
 });
 
-test('secondo click sulla conversazione già selezionata fa il resume, come ⏎', { skip: !CAN_RUN }, () => {
+test('secondo click sulla conversazione già selezionata fa il resume, come ⏎', { skip: SKIP }, () => {
   // Il bersaglio si legge dallo STESSO frame in cui si misura l'esito: la lista
   // conversazioni è ordinata su dati che arrivano asincroni, quindi la riga 10
   // di un secondo avvio del deck può portare un'altra conversazione.
@@ -903,7 +897,7 @@ test('secondo click sulla conversazione già selezionata fa il resume, come ⏎'
   );
 });
 
-test('secondo click su una riga meta già selezionata resta solo fuoco', { skip: !CAN_RUN }, () => {
+test('secondo click su una riga meta già selezionata resta solo fuoco', { skip: SKIP }, () => {
   // `⏎` su una riga meta non fa nulla: sintetizzarlo produrrebbe la nota di
   // scarto. Il deck deve restare sulla lista, senza note.
   const after = lastFrame(capture('@10,9;@10,9;'));
@@ -912,7 +906,7 @@ test('secondo click su una riga meta già selezionata resta solo fuoco', { skip:
   assert.doesNotMatch(after, /⏎ → /, `il click ha prodotto una nota di scarto: ${after}`);
 });
 
-test('il tracking si accende all\'avvio e si spegne all\'uscita', { skip: !CAN_RUN }, () => {
+test('il tracking si accende all\'avvio e si spegne all\'uscita', { skip: SKIP }, () => {
   // Un tracking lasciato acceso non è cosmetico: il terminale continua a
   // mandare sequenze a chi prende il posto del deck, che le stampa come testo.
   // Si misura sui BYTE, non sul frame — `stripAnsi` cancellerebbe la prova.
@@ -946,19 +940,19 @@ function configProject(): string {
   return root;
 }
 
-test('pagina azioni: ⏎ apre l\'area di compilazione della riga', { skip: !CAN_RUN }, () => {
+test('pagina azioni: ⏎ apre l\'area di compilazione della riga', { skip: SKIP }, () => {
   const frame = lastFrame(capture(`${CTRL_S}\r`, configProject()));
   assert.match(frame, /modello/, `l'area non si è aperta: ${frame}`);
   assert.match(frame, /esempio/, `manca l'anteprima resa: ${frame}`);
 });
 
-test('pagina azioni: CANC su una riga mai toccata lo dice', { skip: !CAN_RUN }, () => {
+test('pagina azioni: CANC su una riga mai toccata lo dice', { skip: SKIP }, () => {
   // Inerzia dichiarata invece che silenziosa, come `^K` fuori dal pane task.
   const frame = capture(`${CTRL_S}${CANC}`, configProject());
   assert.match(frame, /nessun override da togliere/, frame);
 });
 
-test('pagina azioni: il modello scelto finisce nel file di progetto', { skip: !CAN_RUN }, () => {
+test('pagina azioni: il modello scelto finisce nel file di progetto', { skip: SKIP }, () => {
   // `⏎` apre l'area sulla prima riga (`none`), `D` scende sulla riga modello,
   // `R` cicla al successivo del default di `none`, `⏎` congela nella bozza, `w`
   // scrive. L'atteso si deriva dal catalogo: scritto a mano è un calco che
@@ -974,7 +968,7 @@ test('pagina azioni: il modello scelto finisce nel file di progetto', { skip: !C
   assert.equal(doc.emoji, '🧵');
 });
 
-test('pagina azioni: senza un file di progetto `w` rifiuta e lo dice', { skip: !CAN_RUN }, () => {
+test('pagina azioni: senza un file di progetto `w` rifiuta e lo dice', { skip: SKIP }, () => {
   // Un progetto non registrato non riceve un `loom-works.json` generato dal
   // deck: quel file regge identità, label e registry di compass, e il deck non
   // li conosce nemmeno tutti.

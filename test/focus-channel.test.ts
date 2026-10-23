@@ -6,12 +6,18 @@
 // rifiuta e la risposta di forma inattesa. File separato perché il binario si
 // legge a import-time (`LOOM_DECK_FOCUS_CMD`): l'env va scritta prima che il
 // modulo entri.
-import { test } from 'node:test';
+import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FocusResult } from '../src/focus-session.js';
+import { unixOnly } from './platform-gates.js';
+
+// T175 — il `gdbus` finto è uno script sh con exec bit, che Windows non lancia;
+// il canale stesso (FocusSession di compass) esiste solo sotto GNOME.
+const SKIP = unixOnly('gdbus finto in sh, canale FocusSession di compass');
+const test = (name: string, fn: () => void | Promise<void>) => nodeTest(name, { skip: SKIP }, fn);
 
 const dir = mkdtempSync(join(tmpdir(), 'focus-channel-'));
 const fake = join(dir, 'gdbus');

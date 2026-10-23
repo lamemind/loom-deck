@@ -19,10 +19,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ptyGate } from './platform-gates.js';
 import stringWidth from 'string-width';
 import { termWidth } from '../src/width.js';
 import { VERSION } from '../src/version.js';
@@ -33,16 +34,10 @@ const PKG = dirname(HERE);
 const PROJECT = dirname(PKG);
 const TASKS = join(PROJECT, 'runtime', 'tasks.md');
 
-function hasPython(): boolean {
-  try {
-    execFileSync('python3', ['-c', 'pass'], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const CAN_RUN = hasPython() && existsSync(TASKS);
+// T175 — il motivo del salto lo dà `ptyGate`, e nomina la dipendenza vera:
+// su Windows il gate non parte nemmeno con Python installato.
+const SKIP = ptyGate(TASKS);
+const CAN_RUN = SKIP === false;
 
 /** Il verdetto di vitalità che `pty-frame.py` appende (`<<PROC …>>`): qui va
  *  POTATO. Questo gate misura ogni riga catturata contro la larghezza del
@@ -597,7 +592,7 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
 // Vivono fuori da `SCENARIOS` perché la cache va scritta prima, e un file
 // temporaneo creato al modulo sarebbe condiviso da scenari che non lo usano.
 for (const cols of [80, 100, 176]) {
-  test(`gate larghezza · viewer project status @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+  test(`gate larghezza · viewer project status @ ${cols} colonne`, { skip: SKIP }, () => {
     const raw = capture(cols, 38, CTRL_O, { LOOM_DECK_STATUS_FILE: statusCacheFile() });
     assertFrameFits(raw, cols, `project status@${cols}`);
   });
@@ -605,7 +600,7 @@ for (const cols of [80, 100, 176]) {
   // La testata durante una generazione porta il glifo di liveness più il
   // contatore: è la sua forma più larga, e su un terminale stretto compete con
   // `v<VERSION>` ancorata a destra.
-  test(`gate larghezza · testata in building @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+  test(`gate larghezza · testata in building @ ${cols} colonne`, { skip: SKIP }, () => {
     const raw = capture(cols, 38, CTRL_G, { LOOM_DECK_STATUS_FILE: statusCacheFile() });
     assertFrameFits(raw, cols, `testata building@${cols}`);
   });
@@ -615,7 +610,7 @@ for (const cols of [80, 100, 176]) {
 // project status: la cache va scritta prima, e un file temporaneo creato al
 // modulo sarebbe condiviso da scenari che non lo usano.
 for (const cols of [80, 100, 176]) {
-  test(`gate larghezza · lista hard-wrap @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+  test(`gate larghezza · lista hard-wrap @ ${cols} colonne`, { skip: SKIP }, () => {
     const raw = capture(cols, 38, CTRL_W, { LOOM_DECK_WRAP_FILE: wrapCacheFileFixture() });
     assertFrameFits(raw, cols, `lista hard-wrap@${cols}`);
   });
@@ -629,7 +624,7 @@ for (const cols of [80, 100, 176]) {
 // `W` non batte nulla: fa passare 0,7s, il tempo perché lo spawn del sensore
 // torni e il frame si ridisegni col numero al posto di `missing`.
 for (const cols of [80, 100, 176]) {
-  test(`gate larghezza · indicatore gitlink @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+  test(`gate larghezza · indicatore gitlink @ ${cols} colonne`, { skip: SKIP }, () => {
     const raw = capture(cols, 38, 'WW', { LOOM_DECK_PLUGIN_CACHE_ROOT: gitlinkCacheRoot() });
     assertFrameFits(raw, cols, `indicatore gitlink@${cols}`);
     // Il numero deve esserci davvero: senza, il gate misurerebbe la larghezza
@@ -645,7 +640,7 @@ for (const cols of [80, 100, 176]) {
 
 for (const [label, keys, widths, extraEnv] of SCENARIOS) {
   for (const cols of widths) {
-    test(`gate larghezza · ${label} @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+    test(`gate larghezza · ${label} @ ${cols} colonne`, { skip: SKIP }, () => {
       assertFrameFits(capture(cols, 38, keys, extraEnv), cols, `${label}@${cols}`);
     });
   }
@@ -707,7 +702,7 @@ const DOC_SCENARIOS: Array<[string, string, number[], string?]> = [
 
 for (const [label, keys, widths, needle] of DOC_SCENARIOS) {
   for (const cols of widths) {
-    test(`gate larghezza · ${label} @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+    test(`gate larghezza · ${label} @ ${cols} colonne`, { skip: SKIP }, () => {
       const raw = capture(cols, 38, keys, { LOOM_DECK_PLUGIN_CACHE_ROOT: docCacheRoot() });
       assertFrameFits(raw, cols, `${label}@${cols}`);
       // A 80 colonne la riga si tronca e l'ancora può cadere fuori: il controllo
@@ -802,7 +797,7 @@ function mixedIdProject(): string {
 // Il pane STRETTO è il caso che conta: è lì che la colonna riservata compete
 // davvero con la descrizione, l'unica cella elastica della riga.
 for (const cols of [80, 100, 176]) {
-  test(`gate larghezza · lista task a id misti @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+  test(`gate larghezza · lista task a id misti @ ${cols} colonne`, { skip: SKIP }, () => {
     const proj = mixedIdProject();
     const raw = capture(cols, 38, 'DD', { HOME: join(dirname(proj), 'home') }, proj);
     assertFrameFits(raw, cols, `id misti@${cols}`);
@@ -821,7 +816,7 @@ for (const cols of [80, 100, 176]) {
 // — e Ink che sfonda cade nel ramo `clearTerminal`, che su VTE versa un frame
 // nello scrollback a ogni tick del poll.
 for (const rows of [16, 20]) {
-  test(`altezza · detail con ricerca @ ${rows} righe`, { skip: !CAN_RUN }, () => {
+  test(`altezza · detail con ricerca @ ${rows} righe`, { skip: SKIP }, () => {
     const raw = capture(100, rows, `DD\r${CTRL_F}task`);
     const frame = lastFrame(raw).filter((l) => l !== '');
     assert.ok(
@@ -833,7 +828,7 @@ for (const rows of [16, 20]) {
   // T111/T117/T158 — le cinque righe dell'area di compilazione sono FISSE, quindi
   // si pagano anche senza ricerca aperta: è il caso che cade per primo se
   // `DETAIL_CHROME` resta al conteggio di prima.
-  test(`altezza · detail con l'area di compilazione @ ${rows} righe`, { skip: !CAN_RUN }, () => {
+  test(`altezza · detail con l'area di compilazione @ ${rows} righe`, { skip: SKIP }, () => {
     const raw = capture(100, rows, 'DD\rDDDX');
     const frame = lastFrame(raw).filter((l) => l !== '');
     assert.ok(
@@ -847,7 +842,7 @@ for (const rows of [16, 20]) {
   // `rows` e Ink cade nel ramo `clearTerminal` — su VTE un frame nello
   // scrollback a ogni tick del poll. Terminale stretto E basso insieme, che è
   // proprio la condizione in cui quel ramo scatta.
-  test(`altezza · conferma di eliminazione @ ${rows} righe`, { skip: !CAN_RUN }, () => {
+  test(`altezza · conferma di eliminazione @ ${rows} righe`, { skip: SKIP }, () => {
     const raw = capture(80, rows, 'DDK');
     const frame = lastFrame(raw).filter((l) => l !== '');
     assert.ok(
@@ -878,7 +873,7 @@ function restoreProject(): string {
 }
 
 for (const cols of [80, 100, 176]) {
-  test(`gate larghezza · testata col bottone di restore @ ${cols} colonne`, { skip: !CAN_RUN }, () => {
+  test(`gate larghezza · testata col bottone di restore @ ${cols} colonne`, { skip: SKIP }, () => {
     const proj = restoreProject();
     const raw = capture(cols, 38, 'W', { HOME: join(dirname(proj), 'home') }, proj);
     assertFrameFits(raw, cols, `restore@${cols}`);
@@ -895,7 +890,7 @@ for (const cols of [80, 100, 176]) {
 // `NO_SPAWN` il figlio non esce mai, quindi ogni passo della serie avanza sul
 // proprio timeout: dentro la cattura si vedono passare la prima e la seconda,
 // in quest'ordine — il rango di entrata, non quello del file delle sessioni.
-test('click sul bottone di restore → riprese in serie nell’ordine della marca', { skip: !CAN_RUN }, () => {
+test('click sul bottone di restore → riprese in serie nell’ordine della marca', { skip: SKIP }, () => {
   const proj = restoreProject();
   const cols = 100;
   const right = `[ restore 2 sessions ]  ${cols}×38 · v${VERSION}`;

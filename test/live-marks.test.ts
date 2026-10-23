@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -258,8 +259,10 @@ test('restore: durante un restore in corso il bottone non c’è (niente doppio 
 // `NO_SPAWN` è letto all'import, quindi i due regimi del freno non si misurano
 // nella stessa istanza della suite.
 function writeInSubprocess(root: string, brake: boolean, p: { enter: string[]; leave: string[] }) {
+  // T175 — un URL `file://` e non un path: su Windows `import('C:\…')` fallisce
+  // (`ERR_UNSUPPORTED_ESM_URL_SCHEME`), perché il loader legge `C:` come uno schema.
   const script = `
-    const {writeLiveMarks} = await import(${JSON.stringify(join(process.cwd(), 'dist', 'live-marks.js'))});
+    const {writeLiveMarks} = await import(${JSON.stringify(pathToFileURL(join(process.cwd(), 'dist', 'live-marks.js')).href)});
     const n = writeLiveMarks(${JSON.stringify(root)}, {
       enter: ${JSON.stringify(p.enter)}, leave: ${JSON.stringify(p.leave)}, missing: new Set(),
     });

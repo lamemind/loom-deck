@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
@@ -7,6 +7,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { saneNote } from '../src/sane-note.js';
 import { SPAWN_ACTIONS } from '../src/spawn-catalog.js';
+import { unixOnly } from './platform-gates.js';
+
+// T175 — l'intero file è Linux-only: `deck-run` è bash, lo shim `ptyxis` è uno
+// script con exec bit, il `PATH` si compone col `:`. Su Windows il comando
+// finiva appeso invece di fallire. Il composer per Windows è T176.
+const SKIP = unixOnly('deck-run è bash, con uno shim ptyxis eseguibile e un PATH a due punti');
+const test = (name: string, fn: () => void | Promise<void>) => nodeTest(name, { skip: SKIP }, fn);
 
 // T56 — gate sul COMANDO IN-TAB che deck-run compone: è la superficie dove il
 // prompt viene scelto e quotato, e nessun altro test la copre (il resto della

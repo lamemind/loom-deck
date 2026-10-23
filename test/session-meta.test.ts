@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -213,8 +214,10 @@ test('buchi: il task id del binding entra nello strip della pinnata', () => {
 // loader di `tsx`. Il prezzo è che il test pretende un `npm run build` prima —
 // che il publish fa da sé, e in locale è il comando che si lancia comunque.
 function fillInSubprocess(root: string, brake: boolean): { status: number | null; err: string } {
+  // T175 — un URL `file://` e non un path: su Windows `import('C:\…')` fallisce
+  // (`ERR_UNSUPPORTED_ESM_URL_SCHEME`), perché il loader legge `C:` come uno schema.
   const script = `
-    const {fillSidecarGaps} = await import(${JSON.stringify(join(process.cwd(), 'dist', 'session-meta.js'))});
+    const {fillSidecarGaps} = await import(${JSON.stringify(pathToFileURL(join(process.cwd(), 'dist', 'session-meta.js')).href)});
     const n = fillSidecarGaps(${JSON.stringify(root)}, {
       pinned: new Map([['a', 0]]),
       sessions: [{sessionId:'a', cwd:'/p', gitBranch:'', parentUuid:null, title:'titolo',
