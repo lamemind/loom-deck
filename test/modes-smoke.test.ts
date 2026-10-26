@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ptyGate } from './platform-gates.js';
+import { DETAIL_RUN_MODEL, DETAIL_RUN_TITLE, detailProject } from './detail-fixture.js';
 import { loadLaunch } from '../src/config.js';
 import { launchRow } from '../src/frame.js';
 import { MODELS, MODEL_DEFAULT, spawnAction } from '../src/spawn-catalog.js';
@@ -376,11 +377,77 @@ test('detail: azione open → nessun prompt iniziale allo spawn', { skip: SKIP }
   assert.doesNotMatch(frame, /--title-note/, `flag di titolo a vuoto: ${frame}`);
 });
 
-test('detail: tab non è più il canale del modello', { skip: SKIP }, () => {
-  // `T` = tab nel mapping del pty. Il modello si cambia con `←→` dalla sua riga;
-  // `tab` resta senza binding e non deve muovere nulla di nascosto.
-  const frame = lastFrame(capture('DD\rT\r', spawnProject));
+test('detail: tab alterna i due modi senza toccare il modello', { skip: SKIP }, () => {
+  // `T` = tab nel mapping del pty. T189 gli dà un binding — alterna area di
+  // compilazione e lista DLV — ma il modello resta un dato dei campi: si cambia
+  // con `←→` dalla sua riga, e `tab` non deve muoverlo di nascosto. Due `tab`
+  // tornano ai campi, e `⏎` parte col modello dell'azione iniziale.
+  const frame = lastFrame(capture('DD\rTT\r', spawnProject));
   assert.match(frame, /--model opus/, `tab ha cambiato modello: ${frame}`);
+});
+
+// ── T189 · il modo DLV del detail ────────────────────────────────────────
+//
+// Sul progetto SINTETICO di `detail-fixture.ts`: il modo di apertura dipende
+// dalla task, e sul cappello vero quella condizione cambia a ogni checkpoint.
+// L'argv si legge dalla riga di stato (`NO_SPAWN`), che `cutMiddle` taglia nel
+// mezzo: la coda — prompt, modello, titolo — resta a schermo, il flag
+// `--prompt` davanti a un perimetro lungo può cadere nel taglio.
+
+const RUN_TAIL = `--model ${DETAIL_RUN_MODEL} --title-note '${DETAIL_RUN_TITLE}'`;
+
+function captureDetail(keys: string): string {
+  const { proj, env } = detailProject();
+  return lastFrame(capture(keys, proj, env));
+}
+
+test('modo DLV: ⏎ coi DLV selezionati lancia run col perimetro, modello e titolo di run', {
+  skip: SKIP,
+}, () => {
+  // Il cursore parte dal primo aperto (2); `↓` salta il 3, fatto, e va al 4.
+  const frame = captureDetail('DD\r D \r');
+  assert.ok(
+    frame.includes(`'/loom-works:run-task T1 2,4' ${RUN_TAIL}`),
+    `perimetro, modello o titolo diversi da run: ${frame}`,
+  );
+});
+
+test('modo DLV: ↑↓ si fermano solo sui DLV aperti', { skip: SKIP }, () => {
+  // Dal 2, un `↓` salta il 3 (fatto): la selezione cade sul 4, non sul 3.
+  const frame = captureDetail('DD\rD \r');
+  assert.ok(frame.includes(`'/loom-works:run-task T1 4' ${RUN_TAIL}`), `cursore su un fatto: ${frame}`);
+});
+
+test('modo DLV: ⏎ senza selezione → cosa fare ora [R0], stessa sessione di run', { skip: SKIP }, () => {
+  const frame = captureDetail('DD\r\r');
+  assert.ok(frame.includes(`--prompt 'cosa fare ora [R0]' ${RUN_TAIL}`), `prompt di D4 assente: ${frame}`);
+});
+
+test('modo DLV: la selezione non sopravvive alla chiusura del detail', { skip: SKIP }, () => {
+  // Seleziona il 2, chiude con `esc`, riapre (`⏎` sulla lista) e lancia: il
+  // perimetro armato prima non deve partire.
+  const frame = captureDetail(`DD\r ${ESC}\r\r`);
+  assert.ok(frame.includes("--prompt 'cosa fare ora [R0]'"), `selezione sopravvissuta: ${frame}`);
+});
+
+test('modo DLV: Size L senza preflight → ⏎ inerte, il motivo a schermo', { skip: SKIP }, () => {
+  // T3 si apre sui campi (gate bloccato); `tab` porta alla lista, `⏎` non lancia.
+  const frame = captureDetail('DDDD\rT\r');
+  assert.match(frame, /preflight obbligatorio — Size L/, `motivo assente: ${frame}`);
+  assert.doesNotMatch(frame, /--model/, `è partito uno spawn: ${frame}`);
+});
+
+test('modo DLV: task chiusa → lista spuntata, ⏎ inerte', { skip: SKIP }, () => {
+  const frame = captureDetail('DDD\rT\r');
+  assert.match(frame, /task chiusa · ⏎ inerte/, `stato spento assente: ${frame}`);
+  assert.doesNotMatch(frame, /\[ \] \d/, `un DLV della task chiusa senza spunta: ${frame}`);
+  assert.doesNotMatch(frame, /--model/, `è partito uno spawn: ${frame}`);
+});
+
+test('modo DLV: una task non eseguibile si apre sui campi, come prima', { skip: SKIP }, () => {
+  // T4 non ha DLV: `⏎` all'apertura è l'azione `open` dei campi.
+  const frame = captureDetail('DDDDD\r\r');
+  assert.match(frame, /--prompt-kind none/, `non si è aperta sui campi: ${frame}`);
 });
 
 test('detail: la riga modello risponde a ←→ quando è in fuoco', { skip: SKIP }, () => {

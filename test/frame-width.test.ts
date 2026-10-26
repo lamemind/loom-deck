@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ptyGate } from './platform-gates.js';
+import { DETAIL_RUN_MODEL, detailProject } from './detail-fixture.js';
 import stringWidth from 'string-width';
 import { termWidth } from '../src/width.js';
 import { VERSION } from '../src/version.js';
@@ -506,24 +507,11 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // contenuto, dove uno scroll non clampato lascerebbe righe vuote e il box si
   // accorcerebbe sotto il budget.
   ['detail · fondo del testo', 'DD\rG', [100]],
-  // Quattro `→` portano sull'ultima azione (`checkpoint`, l'etichetta più
-  // lunga): il bottone selezionato è reso `inverse`, ed è la cella che deve
-  // restare dentro il frame anche in coda alla riga.
-  ['detail · ultima azione', 'DD\rRRRR', [100, 176]],
-  // T108 — la riga del selettore modello, con selezionata la voce più larga
-  // (`sonnet`): è quella che `cutParts` deve tenere a schermo per prima, quindi
-  // il caso in cui il taglio prioritario può sfondare la riga. T117 — due `D`
-  // portano il fuoco sulla riga modello, `R` avanza di una voce nel giro.
-  ['detail · modello sonnet', 'DD\rDDR', [100, 176]],
-  // T117 — il campo PROMPT pieno: è pre-riempito da un template (`checkpoint`,
-  // il più lungo) e per giunta editabile, quindi l'unica riga dell'area che
-  // porta due sorgenti di lunghezza libera insieme. `c` sceglie checkpoint, `D`
-  // scende sul campo, `X` incolla 60 caratteri in coda al template.
-  ['detail · prompt lungo', 'DD\rcDX', [100, 176]],
-  // T111 — la riga titolo piena: `X` incolla 60 caratteri in un chunk solo, cioè
-  // un titolo più largo della riga che lo ospita. Lo stato vuoto (segnaposto, più
-  // largo del campo) lo copre già `detail task`, che apre l'overlay e basta.
-  ['detail · titolo lungo', 'DD\rDDDX', [100, 176]],
+  // T189 — gli scenari che battono tasti sull'area di compilazione sono usciti
+  // da qui: il detail si apre sulla lista DLV o sui campi secondo la task, e sul
+  // cappello vero quella condizione cambia a ogni checkpoint. Stanno in
+  // `DETAIL_SCENARIOS`, sul progetto sintetico. Restano qui quelli che valgono
+  // in entrambi i modi — testo e ricerca.
   // T91 — la ricerca dentro il detail: modale dentro modale. Il campo è l'unico
   // testo a lunghezza libera della riga che lo ospita, e la riga stessa è la
   // seconda riga FISSA aggiunta dentro l'overlay.
@@ -636,6 +624,64 @@ for (const cols of [80, 100, 176]) {
       );
     }
   });
+}
+
+// T189 — gli scenari del DETAIL sul progetto sintetico di `detail-fixture.ts`:
+// l'area di compilazione (raggiunta con `T` da T1, che si apre sui DLV) e la
+// lista DLV nei suoi quattro stati. Il contenuto si asserisce come per il modo
+// doc: un gate di sola larghezza resterebbe verde anche sul modo sbagliato.
+const DETAIL_SCENARIOS: Array<[string, string, number[], string]> = [
+  // Quattro `→` portano sull'ultima azione (`checkpoint`, l'etichetta più
+  // lunga): il bottone selezionato è reso `inverse`, ed è la cella che deve
+  // restare dentro il frame anche in coda alla riga.
+  ['detail · ultima azione', 'DD\rTRRRR', [100, 176], 'priorità'],
+  // T108 — la riga del selettore modello, con selezionata la voce più larga
+  // (`sonnet`): è quella che `cutParts` deve tenere a schermo per prima, quindi
+  // il caso in cui il taglio prioritario può sfondare la riga. T117 — due `D`
+  // portano il fuoco sulla riga modello, `R` avanza di una voce nel giro.
+  ['detail · modello sonnet', 'DD\rTDDR', [100, 176], 'priorità'],
+  // T117 — il campo PROMPT pieno: è pre-riempito da un template (`checkpoint`,
+  // il più lungo) e per giunta editabile, quindi l'unica riga dell'area che
+  // porta due sorgenti di lunghezza libera insieme. `c` sceglie checkpoint, `D`
+  // scende sul campo, `X` incolla 60 caratteri in coda al template.
+  ['detail · prompt lungo', 'DD\rTcDX', [100, 176], 'priorità'],
+  // T111 — la riga titolo piena: `X` incolla 60 caratteri in un chunk solo, cioè
+  // un titolo più largo della riga che lo ospita.
+  ['detail · titolo lungo', 'DD\rTDDDX', [100, 176], 'priorità'],
+  // La lista DLV all'apertura: quattordici voci più larghe della riga, glifi
+  // larghi nel testo e la spunta (larga 2) dei fatti nella colonna di stato.
+  ['detail DLV · apertura', 'DD\r', [80, 100, 176], `cosa fare ora [R0] · ${DETAIL_RUN_MODEL}`],
+  // Due voci selezionate: la riga di stato porta il prompt col perimetro, il
+  // pezzo che il budget serve per primo.
+  ['detail DLV · selezione', 'DD\r D ', [80, 176], 'run-task T1 2,4'],
+  // `↑` dal primo aperto gira sull'ultimo: la finestra scende in fondo alla
+  // lista e la riga di stato conta le voci rimaste sopra — a 38 righe la lista
+  // ne mostra 13 su 14.
+  ['detail DLV · cursore in coda', 'DD\rU', [80, 176], '↑1 ↓0'],
+  // I tre stati senza lancio: il motivo prende il posto del prompt, ed è più
+  // lungo di lui — il caso che sfonda se il budget è tarato sul prompt.
+  ['detail DLV · task chiusa', 'DDD\rT', [80, 176], 'task chiusa · ⏎ inerte'],
+  ['detail DLV · Size L senza preflight', 'DDDD\rT', [80, 176], 'preflight obbligatorio'],
+  ['detail DLV · nessun deliverable', 'DDDDD\rT', [80, 176], 'nessun deliverable'],
+  // La ricerca aperta sopra la lista: due righe fisse in più, pagate dalla
+  // lista e dal testo insieme.
+  ['detail DLV · ricerca aperta', `DD\r${CTRL_F}glifo`, [100], 'cerca glifo'],
+];
+
+for (const [label, keys, widths, needle] of DETAIL_SCENARIOS) {
+  for (const cols of widths) {
+    test(`gate larghezza · ${label} @ ${cols} colonne`, { skip: SKIP }, () => {
+      const { proj, env } = detailProject();
+      const raw = capture(cols, 38, keys, env, proj);
+      assertFrameFits(raw, cols, `${label}@${cols}`);
+      if (cols >= 100) {
+        assert.ok(
+          lastFrame(raw).join('\n').includes(needle),
+          `${label}@${cols}: atteso "${needle}" a schermo — il gate stava misurando un'altra schermata`,
+        );
+      }
+    });
+  }
 }
 
 for (const [label, keys, widths, extraEnv] of SCENARIOS) {
@@ -827,15 +873,27 @@ for (const rows of [16, 20]) {
 
   // T111/T117/T158 — le cinque righe dell'area di compilazione sono FISSE, quindi
   // si pagano anche senza ricerca aperta: è il caso che cade per primo se
-  // `DETAIL_CHROME` resta al conteggio di prima.
-  test(`altezza · detail con l'area di compilazione @ ${rows} righe`, { skip: SKIP }, () => {
-    const raw = capture(100, rows, 'DD\rDDDX');
-    const frame = lastFrame(raw).filter((l) => l !== '');
-    assert.ok(
-      frame.length <= rows,
-      `frame di ${frame.length} righe in un terminale di ${rows}`,
-    );
-  });
+  // `DETAIL_FIELD_ROWS` resta al conteggio di prima. Sul progetto sintetico
+  // (T189): `T` porta ai campi da una task che si apre sulla lista DLV.
+  //
+  // T189 — e la lista DLV, più alta dello spazio a entrambe le altezze, con e
+  // senza ricerca aperta: è l'area di altezza VARIABILE, quella che sfonda se
+  // `dlvListRows` e `detailCapacity` non si dividono lo stesso spazio.
+  for (const [what, keys] of [
+    ["l'area di compilazione", 'DD\rTDDDX'],
+    ['la lista DLV', 'DD\r'],
+    ['la lista DLV e la ricerca', `DD\r${CTRL_F}glifo`],
+  ] as const) {
+    test(`altezza · detail con ${what} @ ${rows} righe`, { skip: SKIP }, () => {
+      const { proj, env } = detailProject();
+      const raw = capture(100, rows, keys, env, proj);
+      const frame = lastFrame(raw).filter((l) => l !== '');
+      assert.ok(
+        frame.length <= rows,
+        `frame di ${frame.length} righe in un terminale di ${rows}`,
+      );
+    });
+  }
 
   // T112 — la conferma è un modale IN FLUSSO: spinge giù i pane, quindi le sue
   // 7 righe vanno scalate dal budget delle liste. Non scalate, il frame supera
