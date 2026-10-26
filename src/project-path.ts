@@ -7,8 +7,9 @@
 // stringa È il path; su Windows no, per tre ragioni misurate (verdetto 1 di T174):
 //
 //  - NTFS non distingue le maiuscole, e Claude Code non normalizza la grafia
-//    della cwd: VS Code passa `c:\…`, Windows Terminal `C:\…`, e lo stesso
-//    progetto ha due cartelle di transcript (`c--…` e `C--…`);
+//    della cwd: VS Code passa `c:\…`, Windows Terminal `C:\…`. La cartella di
+//    transcript del progetto è una sola, ma il suo nome porta la grafia di chi
+//    l'ha creata (`c--…` o `C--…`);
 //  - `\` e `/` sono entrambi separatori;
 //  - nei transcript `cwd` compare anche in forma MSYS (`/c/…`), quella di Git
 //    Bash.
@@ -59,9 +60,11 @@ export function projectBaseName(cwd: string, platform: NodeJS.Platform = process
  * Le cartelle di transcript del progetto, fra i nomi di `~/.claude/projects/`.
  *
  * Su Linux una sola, il nome esatto. Su win32 ogni nome che coincide ignorando
- * le maiuscole: la stessa root avviata da VS Code (`c:\…`) e da Windows
- * Terminal (`C:\…`) scrive in `c--…` e in `C--…`, e leggerne una sola perde le
- * conversazioni dell'altra.
+ * le maiuscole: per NTFS `c--…` e `C--…` sono la stessa cartella, ma `readdir`
+ * ne restituisce il nome con la grafia di chi l'ha creata — `c--…` se la prima
+ * conversazione è nata da VS Code (`c:\…`) — mentre il nome cercato il deck lo
+ * ricava dalla propria root, che può avere l'altra grafia. Un confronto esatto
+ * non troverebbe la cartella.
  */
 export function matchingDirNames(
   entries: readonly string[],
@@ -76,12 +79,16 @@ export function matchingDirNames(
 /**
  * T176 — la cartella in cui nasce la tab che riprende o forka una conversazione.
  *
- * Su Linux la root del progetto, come prima. Su win32 la cwd che la
- * conversazione ha registrato, in forma Windows (P7 preflight): `claude
- * --resume` cerca il transcript nella cartella che ricava dalla PROPRIA cwd, e
- * Claude Code non normalizza la lettera del drive (T174 verdetto 1) — una
- * conversazione nata da VS Code (`c:\…`) sta in `c--…`, e un `claude` partito in
- * `C:\…` la cercherebbe in `C--…`, senza trovarla.
+ * Su Linux la root del progetto, come prima. Su win32 la cwd di avvio che la
+ * conversazione ha registrato, in forma Windows e con la grafia del drive
+ * d'origine (P7 preflight). La ragione non è trovare il transcript: per NTFS
+ * `c--…` e `C--…` sono la stessa cartella, e `claude --resume` lo trova da tutte
+ * e due le grafie (misurato in T176 con Claude Code 2.1.310, anche con
+ * `--fork-session`). La ragione è la fiducia della cartella: Claude Code la
+ * tiene in `~/.claude.json` per grafia esatta del path (`c:/…` e `C:/…` sono due
+ * voci), e una sessione interattiva in una grafia mai approvata si ferma sulla
+ * domanda di fiducia prima di caricare la conversazione. Una conversazione nata
+ * interattiva ha già la fiducia nella grafia in cui è nata.
  *
  * Una cwd in forma MSYS (`/c/…`) non dice la grafia del drive: la dice il nome
  * della cartella del transcript, che Claude Code ha derivato dalla cwd vera
