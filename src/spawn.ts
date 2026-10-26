@@ -18,6 +18,24 @@ import { claudeEnv } from './git-bash.js';
 // (build, node) stanno entrambi sotto la package root → risalita di un livello.
 export const DECK_RUN = join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'deck-run');
 
+// T176 — il punto d'ingresso che lo shim `scripts/deck-run` esegue, nel build.
+// Su Windows il deck lo lancia da sé: CreateProcess non esegue uno script bash
+// senza estensione.
+export const DECK_RUN_JS = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'deck-run.js');
+
+/**
+ * Come il deck lancia `deck-run`: lo shim su Linux, il node del deck sul punto
+ * d'ingresso su Windows. Le due forme eseguono lo stesso programma — lo shim è
+ * una riga che fa `exec node dist/deck-run.js` —, e su Linux resta lo shim
+ * perché è il comando che la riga di stato mostra e che si ripete a mano.
+ */
+export function deckRunLauncher(
+  platform: NodeJS.Platform = process.platform,
+  nodePath: string = process.execPath,
+): { cmd: string; prefix: string[] } {
+  return platform === 'win32' ? { cmd: nodePath, prefix: [DECK_RUN_JS] } : { cmd: DECK_RUN, prefix: [] };
+}
+
 /**
  * Freno agli effetti VERSO L'ESTERNO (tab Ptyxis, sessioni Claude, git commit).
  *
@@ -98,13 +116,15 @@ export interface Spawned {
 // comando in-tab (vedi `onInTabCommand`). Il figlio resta detached — la pipe
 // serve a leggere una riga, non a possedere il processo.
 function launchDeckRun(args: string[], cwd: string): Spawned {
-  const child = spawnOut(DECK_RUN, args, {
+  const run = deckRunLauncher();
+  const argv = [...run.prefix, ...args];
+  const child = spawnOut(run.cmd, argv, {
     cwd,
     detached: true,
     stdio: ['ignore', 'pipe', 'ignore'],
   });
   child.unref();
-  return { child, cmd: shellCommand(DECK_RUN, args) };
+  return { child, cmd: shellCommand(run.cmd, argv) };
 }
 
 /** Prefisso della riga con cui `deck-run` annuncia il comando in-tab. */
@@ -173,10 +193,9 @@ export function onInTabCommand(child: ChildProcess, cb: (cmd: string) => void): 
 // acceleratori della lista passavano `--prompt-kind` e lasciavano risolvere il
 // testo a `deck-run`, che consultava il proprio catalogo; il detail passava già
 // il letterale. Con un override di progetto sui prompt la risoluzione deve
-// stare da una parte sola, e quella parte è il deck — che è l'unico dei due a
-// leggere `.claude/loom-works.json` per questo (`jq` è dipendenza opzionale di
-// `deck-run`). Un percorso solo, quindi, e ciò che parte è verificabile
-// sull'argv.
+// stare da una parte sola, e quella parte è il deck — l'unico dei due che legge
+// il blocco `spawn` di `.claude/loom-works.json`. Un percorso solo, quindi, e
+// ciò che parte è verificabile sull'argv.
 //
 // Due conseguenze dichiarate: `--prompt-kind` resta in `deck-run` per chi lo
 // invoca a mano, e `LOOM_DECK_ENTER_PROMPT` non ha più effetto sugli spawn dal

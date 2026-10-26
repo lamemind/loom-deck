@@ -142,7 +142,7 @@ export function launchLegend(
 // `identity` sopra sono strutture. La catena da percorrere si ferma qui: nessun
 // passaggio da `lib-config.sh`/`reg_pull`/dconf, perché il solo consumer è il
 // deck e il file ce l'ha sotto mano. Il precedente esatto è `permissionMode`,
-// che vive nel file, lo legge `deck-run` via jq e non è propagato al registry.
+// che vive nel file, lo legge anche `deck-run` e non è propagato al registry.
 
 /** Interi positivi soltanto: uno 0 spegnerebbe la soglia (tutte le Done
  *  archiviabili), un negativo o un decimale sono un typo. Valore fuori dominio

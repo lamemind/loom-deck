@@ -481,7 +481,7 @@ export function docTargetKind(row: DocRow, docsRoot: string): DocTargetKind {
  * T160 — il buco `{words}` del titolo di una sessione di rebalance: il path reso
  * a parole.
  *
- * Gemello di `wrapWords`, e per la stessa ragione: l'alfabeto di `_sane_note`
+ * Gemello di `wrapWords`, e per la stessa ragione: l'alfabeto di `saneNote`
  * non ha né `/` né `.`, quindi un path lasciato cadere lì dentro esce con le
  * parole saldate (`runtimereferencedoc-systemmd`) mentre la lista del deck, che
  * legge la nota grezza dal sidecar, mostrerebbe il path intero — la stessa

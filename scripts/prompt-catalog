@@ -12,13 +12,12 @@
 # codice, il secondo lato dovrebbe riscriverlo, e le due copie divergono alla
 # prima voce aggiunta da una parte sola.
 #
-# T161 — questo file resta la FONTE UNICA dei sette kind, e non è diventato un
-# blocco JSON nel file di progetto per una ragione precisa: `jq` è dipendenza
-# OPZIONALE di deck-run, e un JSON da consultare la renderebbe obbligatoria su
-# un percorso che oggi degrada senza. Le sue righe sono il primo gradino del
-# default di un'azione su task; il secondo è la riga di catalogo in
-# `src/spawn-catalog.ts`, e sopra entrambi sta l'override di progetto nel blocco
-# `spawn` di `.claude/loom-works.json`, che legge il solo deck.
+# T161 — questo file resta la FONTE UNICA dei sette kind: lo leggono il deck e
+# deck-run con lo stesso parser (`loadPromptCatalog`, `src/prompt-catalog.ts`).
+# Le sue righe sono il primo gradino del default di un'azione su task; il
+# secondo è la riga di catalogo in `src/spawn-catalog.ts`, e sopra entrambi sta
+# l'override di progetto nel blocco `spawn` di `.claude/loom-works.json`, che
+# legge il solo deck.
 #
 # Le azioni SENZA kind (la sessione nuda, il drain di un file inbox, lo
 # srotolamento dell'hard-wrap, il project status) non hanno una riga qui e non
@@ -29,10 +28,6 @@
 # `none` non compare: nessun prompt non è un template vuoto, è l'assenza della
 # voce. Chi chiede un kind fuori da questo file riceve un prompt vuoto e nessun
 # modello (fallback sul default del chiamante).
-#
-# Vincolo sui template: nessun apice singolo. Il testo finisce dentro `'...'`
-# nel comando passato a `bash -lc`, e questo file è committato — un apice qui
-# sarebbe un errore di scrittura, non un input da quotare.
 #
 # La colonna modello: opus su ogni kind, tranne il preflight che resta su
 # fable. Cambiare una parola qui cambia il costo di OGNI sessione aperta su

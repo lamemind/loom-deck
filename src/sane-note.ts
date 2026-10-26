@@ -1,36 +1,30 @@
-// T161 — il gemello TypeScript di `_sane_note`, la riduzione che `deck-run`
-// applica a ogni nota del titolo.
+// La riduzione della nota del titolo di una tab: l'unica, per il deck e per
+// `deck-run`.
 //
-// Perché serve un gemello. La nota del titolo è l'UNICO ingresso di testo libero
-// nel titolo di una tab, quindi `deck-run` non la quota: la RIDUCE a una
-// whitelist chiusa di code point, e tutto ciò che non ci rientra sparisce senza
-// errore. Finché la nota nasceva da un campo scritto al volo, la divergenza fra
-// quello che si legge nel deck e quello che compare nella tab durava il tempo di
-// uno spawn. Da quando un TEMPLATE del titolo si scrive in una pagina e si salva
-// su disco, quella divergenza diventa permanente: il file direbbe una cosa e la
-// tab ne mostrerebbe un'altra, per sempre e senza un errore da nessuna parte.
+// La nota del titolo è l'UNICO ingresso di testo libero nel titolo di una tab,
+// quindi non si quota: si RIDUCE a una whitelist chiusa di code point, e tutto
+// ciò che non ci rientra sparisce senza errore. Da quando un TEMPLATE del titolo
+// si scrive in una pagina e si salva su disco (T161), la riduzione si applica
+// anche QUI, al confine — al salvataggio e alla lettura del blocco `spawn` —
+// così quello che sta nel file è quello che la tab mostrerà.
 //
-// La riduzione si applica quindi QUI, al confine — al salvataggio e alla
-// lettura del blocco `spawn` — così quello che sta nel file è quello che la tab
-// mostrerà.
-//
-// L'ALLINEAMENTO fra i due lati non è assunto: `test/sane-note.test.ts` passa la
-// stessa batteria di input a questa funzione e a `deck-run` vero (via lo shim
-// `ptyxis` di `deck-run.test.ts`) e pretende l'uguaglianza. La whitelist non si
-// allarga — e se un giorno lo facesse, sono tre le sedi da toccare insieme
-// (`deck-run`, questo file, le emoji dei titoli in `spawn-catalog.ts`), col test
-// che fallisce se una resta indietro.
+// T176 — fino a T176 questo modulo era il gemello di `_sane_note`, la stessa
+// riduzione scritta in bash dentro `deck-run`, e un test teneva uguali i due
+// lati. Il composer della tab ora è TypeScript (`src/tab-compose.ts`) e chiama
+// questa funzione: la whitelist ha due sedi da toccare insieme, questo file e le
+// emoji dei titoli in `spawn-catalog.ts`, e `test/deck-run.test.ts` fallisce se
+// un'emoji di un titolo del catalogo non passa.
 
 /**
  * L'alfabeto ammesso, negato: lettere, cifre, spazio, `_`, `-`, le accentate
  * italiane e sette emoji.
  *
- * Whitelist e non blacklist, come in bash: il titolo finisce dentro apici
- * singoli in `bash -lc "claude --name '…'"`, ed enumerare i caratteri pericolosi
- * significa sbagliarne uno.
+ * Whitelist e non blacklist: il titolo finisce in una riga di shell su Linux
+ * (`bash -lc "claude --name '…'"`) e nella riga di `wt.exe` su Windows, ed
+ * enumerare i caratteri pericolosi significa sbagliarne uno.
  *
  * Le sette emoji sono nominate una per una e NON come intervallo di code point,
- * per due ragioni che valgono su entrambi i lati: un'emoji arriva nella tab solo
+ * per due ragioni: un'emoji arriva nella tab solo
  * se il deck la mostra identica in lista, cioè se `sanitize` (`src/width.ts`) la
  * lascia passare invece di renderla `·`, e quel verdetto si verifica un glifo
  * alla volta; e l'ordine di un intervallo dentro un bracket expression segue la

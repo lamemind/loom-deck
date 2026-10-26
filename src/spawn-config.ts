@@ -4,7 +4,7 @@
 // ── La sede (P19 preflight) ─────────────────────────────────────────────────
 // Blocco `spawn` dentro `.claude/loom-works.json`, il file di progetto che il
 // deck già apre in tre loader (`launch`, `archivableDays`, `identity`) e che
-// `deck-run` legge con `jq`. Nessun file nuovo: sotto `.claude/` ci sono già tre
+// `deck-run` legge per label e permission mode. Nessun file nuovo: sotto `.claude/` ci sono già tre
 // file di loom, e le impostazioni di spawn sono decisioni di progetto che devono
 // viaggiare col repo — cioè committate, esattamente come `permissionMode` e
 // `order`, e a differenza della vista (`.claude/loom/deck-view.json`, che è
@@ -34,9 +34,9 @@
 // ── Chi legge cosa ──────────────────────────────────────────────────────────
 // Il blocco lo legge il SOLO deck, che risolve la terna e la passa a `deck-run`
 // sempre esplicita nell'argv (`--title-note`, `--model`, `--prompt`). `deck-run`
-// non lo legge e non deve: `jq` è dipendenza OPZIONALE di quello script, e
-// dargli un blocco JSON da consultare la renderebbe obbligatoria su un percorso
-// che oggi degrada senza. La cascata env → catalogo → `fable` di `deck-run`
+// non lo legge e non deve: la terna che parte è quella che il deck ha mostrato,
+// e una seconda risoluzione dall'altra parte del processo sarebbe una seconda
+// copia delle stesse regole. La cascata env → catalogo → `fable` di `deck-run`
 // resta intatta per chi lo invoca a mano.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { configFilePath } from './config.js';

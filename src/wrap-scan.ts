@@ -105,7 +105,7 @@ export const WRAP_DEFAULT_PATH = '.';
  * T161 — il buco `{path}` del titolo e del prompt di una sessione di
  * srotolamento: il path reso a parole.
  *
- * Le barre diventano spazi e l'estensione cade QUI, prima di `_sane_note`, il
+ * Le barre diventano spazi e l'estensione cade QUI, prima di `saneNote`, il
  * cui alfabeto non ha né `/` né `.`: lasciandoceli cadere le parole si
  * salderebbero (`runtimereferencedoc-systemmd`), e il titolo della tab
  * divergerebbe da quello che la lista del deck legge dal sidecar.

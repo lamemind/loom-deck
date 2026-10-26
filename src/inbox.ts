@@ -259,7 +259,7 @@ export function inboxPrompt(f: InboxFile): string {
  * riscriverla.
  *
  * Il `.md` si toglie QUI e non lo si lascia cadere a valle: l'alfabeto di
- * `_sane_note` non ha il punto, quindi il titolo della tab uscirebbe con le due
+ * `saneNote` non ha il punto, quindi il titolo della tab uscirebbe con le due
  * lettere saldate al nome (`…-prioritariamd`) mentre la lista del deck, che
  * legge la nota grezza dal sidecar, mostrerebbe il nome intero — la stessa
  * conversazione con due nomi, senza errore.

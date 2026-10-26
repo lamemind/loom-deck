@@ -15,6 +15,13 @@
 //
 // Gli argomenti dopo `npm test --` passano al test runner prima dei file
 // (`npm test -- --test-name-pattern=docs`).
+//
+// Il build. La suite gira sui sorgenti, ma tre file lanciano il BUILD in un
+// sottoprocesso: `deck-run.test.ts` esegue lo shim `scripts/deck-run`, che da
+// T176 fa `exec node dist/deck-run.js`, e `live-marks`/`session-meta` importano
+// `dist/` per misurare un freno letto all'import. Su un `dist/` vecchio quei
+// test misurerebbero il codice di prima e passerebbero: `npm test` builda prima
+// (`pretest`), e chi lancia questo file a mano builda da sé.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';

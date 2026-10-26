@@ -171,7 +171,7 @@ export function loadTasks(path: string): Task[] {
  * sciolti in spazi, cioè il buco `{slug}` dei template di titolo.
  *
  * Viene dal NOME del file e non dalla descrizione in `tasks.md` per una ragione
- * di alfabeto: il nome è già dentro quello di `_sane_note` per costruzione —
+ * di alfabeto: il nome è già dentro quello di `saneNote` per costruzione —
  * minuscolo, separato da trattini, senza punteggiatura — mentre la descrizione
  * porta apostrofi e `/`, che la riduzione toglie senza sostituto saldando le
  * parole (`l'epica/doc` → `lepicadoc`).

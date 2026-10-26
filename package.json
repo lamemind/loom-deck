@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "tsx src/cli.tsx",
     "build": "tsc",
+    "pretest": "tsc",
     "test": "node test/run.mjs",
     "start": "node dist/cli.js",
     "prepare": "tsc"

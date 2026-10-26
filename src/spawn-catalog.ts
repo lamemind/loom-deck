@@ -222,9 +222,9 @@ const UNWRAP_PROMPT =
  * non per gusto: `sanitize` (`src/width.ts`) sostituisce con `·` ogni glifo su
  * cui le due contabilità di larghezza divergono, e le emoji del BMP a
  * presentazione testo divergono sempre. Le stesse SETTE (T160 aggiunge `🧭`)
- * stanno nella whitelist di `_sane_note` in `deck-run` e nel suo gemello
- * `src/sane-note.ts`: un'emoji cambiata qui e non là sparisce fra la tabella e
- * la tab, senza errore.
+ * stanno nella whitelist di `saneNote` (`src/sane-note.ts`), la riduzione del
+ * titolo: un'emoji cambiata qui e non là sparisce fra la tabella e la tab,
+ * senza errore.
  */
 export const SPAWN_ACTIONS: readonly SpawnAction[] = [
   {
@@ -375,7 +375,7 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     // DUE buchi per lo stesso dato, e servono entrambi: `{target}` è il path
     // VERO, che la skill risolve contro la colonna `PATH` della misura, e
     // `{words}` lo stesso path reso a parole per il titolo. L'alfabeto di
-    // `_sane_note` non ha né `/` né `.`, quindi un `{target}` in un template di
+    // `saneNote` non ha né `/` né `.`, quindi un `{target}` in un template di
     // titolo uscirebbe con le parole saldate (`runtimereferencedoc-systemmd`) e
     // la tab mostrerebbe un nome diverso da quello che il deck legge dal
     // sidecar.
