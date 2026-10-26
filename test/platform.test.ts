@@ -39,8 +39,13 @@ test('su Linux nessuna funzione è spenta', () => {
   for (const f of ALL) assert.equal(isAvailable(f, 'linux'), true, f);
 });
 
-test('su Windows sono spente le sei funzioni delle figlie di fase 2', () => {
-  for (const f of ALL) assert.equal(isAvailable(f, 'win32'), false, f);
+// T176 — `spawn` è la prima funzione riaccesa: tab di Windows Terminal al
+// posto di Ptyxis. Le altre cinque restano alle loro figlie di fase 2.
+const WIN_OFF: Feature[] = ALL.filter((f) => f !== 'spawn');
+
+test('su Windows sono spente le cinque funzioni ancora senza figlia chiusa, spawn è accesa', () => {
+  for (const f of WIN_OFF) assert.equal(isAvailable(f, 'win32'), false, f);
+  assert.equal(isAvailable('spawn', 'win32'), true);
   // La mappa è il punto che una figlia tocca per riaccendere: nessuna voce
   // doppia, o togliere una voce sola lascerebbe la funzione spenta.
   const win = UNAVAILABLE.win32 ?? [];
@@ -67,9 +72,9 @@ test('LOOM_DECK_PLATFORM sostituisce la piattaforma vera, e si legge a ogni chia
   const real = process.platform;
   onPlatform('win32', () => {
     assert.equal(platform(), 'win32');
-    assert.equal(isAvailable('spawn'), false);
+    assert.equal(isAvailable('liveSessions'), false);
   });
-  onPlatform('linux', () => assert.equal(isAvailable('spawn'), true));
+  onPlatform('linux', () => assert.equal(isAvailable('liveSessions'), true));
   if (process.env.LOOM_DECK_PLATFORM === undefined) assert.equal(platform(), real);
 });
 

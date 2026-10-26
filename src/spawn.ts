@@ -12,7 +12,8 @@ import type { IgnoredMode } from './purge.js';
 import { MODEL_DEFAULT, PROJECT_STATUS_MODEL, type ModelKind } from './spawn-catalog.js';
 import { isAvailable } from './platform.js';
 import { claudeLauncher } from './claude-cmd.js';
-import { claudeEnv } from './git-bash.js';
+import { claudeEnv, gitBash } from './git-bash.js';
+import { windowsTabEnv, WT_CMD, wtNewTabArgs, wtProfile } from './windows-terminal.js';
 
 // scripts/deck-run è un sibling della dir del bundle: src/ (dev, tsx) e dist/
 // (build, node) stanno entrambi sotto la package root → risalita di un livello.
@@ -440,7 +441,42 @@ export function terminalArgs(cwd: string, title: string | null): string[] {
   return title ? ['--tab', '-T', title, '-d', cwd] : ['--tab', '-d', cwd];
 }
 
+/**
+ * T176 — il tasto `t` su Windows (P10 preflight): una tab di Windows Terminal
+ * nella finestra attiva, col profilo del deck e il titolo bloccato, SENZA
+ * comando — la shell è il `commandline` del profilo, come `ptyxis --tab` apre
+ * quella del profilo di Ptyxis.
+ */
+export function windowsTerminalArgs(
+  cwd: string,
+  title: string | null,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string[] {
+  return wtNewTabArgs({ newWindow: false, profile: wtProfile(env), cwd, title });
+}
+
+/** Il terminale del tasto `t`, per nome: è ciò che la nota dice quando non parte. */
+export function terminalName(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? WT_CMD : 'ptyxis';
+}
+
 export function spawnTerminal(cwd: string, title: string | null) {
+  if (process.platform === 'win32') {
+    // La tab eredita l'env del deck (T174 verdetto 5): senza i marker di
+    // sessione e senza `LOOM_TASK`, col bash di Git — come una conversazione
+    // `--no-task`, perché un `claude` lanciato da questa shell nascerebbe con
+    // l'env che riceve. `windowsHide: false`: `wt.exe` è un'app GUI, e con
+    // `true` una finestra nuova partirebbe nascosta.
+    const child = spawnOut(WT_CMD, windowsTerminalArgs(cwd, title), {
+      cwd,
+      detached: true,
+      stdio: 'ignore',
+      env: windowsTabEnv(process.env, null, gitBash()) as NodeJS.ProcessEnv,
+      windowsHide: false,
+    });
+    child.unref();
+    return child;
+  }
   const child = spawnOut('ptyxis', terminalArgs(cwd, title), {
     cwd,
     detached: true,

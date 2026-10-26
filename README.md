@@ -387,10 +387,32 @@ npx @lamemind/loom-deck
 ## Requisiti runtime
 
 - **Node.js ≥ 18** (dichiarato in `engines`).
-- **[Ptyxis](https://gitlab.gnome.org/chergert/ptyxis)** (terminale GNOME) — **dipendenza di runtime, non risolvibile da npm**. Lo spawn di una tab (`scripts/deck-run`) invoca il binario `ptyxis`: l'**install riesce anche senza**, ma al momento dello spawn il comando
+- **[Ptyxis](https://gitlab.gnome.org/chergert/ptyxis)** (terminale GNOME), su Linux — **dipendenza di runtime, non risolvibile da npm**. Lo spawn di una tab (`scripts/deck-run`) invoca il binario `ptyxis`: l'**install riesce anche senza**, ma al momento dello spawn il comando
   fallisce (gestito: handler `error` → la TUI resta viva, mostra la nota). Senza una GUI
   GNOME con Ptyxis installato, il deck naviga i task ma **non apre sessioni**.
 - **[Claude Code](https://claude.com/claude-code)** nel `PATH` — la tab spawnata avvia `claude`.
+
+### Su Windows
+
+Le tab si aprono in **Windows Terminal** (`wt.exe`, l'alias d'esecuzione che l'installazione dello Store mette nel `PATH`), nella finestra usata per ultima: `wt.exe -w 0 new-tab -p loom-deck -d <root> --title <titolo> --suppressApplicationTitle -- <node> <dist/tab-wrapper.js>`. L'argv di `claude` — nome, flag, prompt — non sta su quella riga: viaggia come JSON nella variabile `LOOM_DECK_TAB_ARGV`, che la tab eredita dal processo che lancia `wt.exe`, e il wrapper lo passa a `claude` senza shell. Il prompt non passa quindi né dal parser di `wt`, che legge `;` come separatore di sottocomandi in qualunque argomento, né da cmd o PowerShell.
+
+Le tab usano il profilo di Windows Terminal **`loom-deck`**, uno solo per tutti i progetti. Il deck non lo crea e non scrive `settings.json`: lo si aggiunge a mano in `%LOCALAPPDATA%\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json`, sotto `profiles.list`, nascosto dal menu. Porta solo ciò che i flag di `wt` non sanno dire — titolo, cartella e comando li passa il deck, e battono quelli del profilo:
+
+```jsonc
+{
+  "name": "loom-deck",
+  "guid": "{<un GUID nuovo>}",
+  "hidden": true,
+  "commandline": "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo",
+  "closeOnExit": "graceful"
+}
+```
+
+`commandline` è la shell del tasto `t`; nelle conversazioni il comando del deck prende il suo posto. `closeOnExit` decide cosa resta della tab quando `claude` esce (il wrapper esce col suo codice). Senza il profilo la tab si apre comunque, col profilo di default. Il nome si cambia con `LOOM_DECK_WT_PROFILE` (vuota = nessun `-p`).
+
+La tab eredita tutto l'env del deck, tranne i marker che una sessione Claude Code inietta nei figli (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, …): con quelli una conversazione aperta da un deck lanciato dentro Claude Code non salverebbe il transcript. Se manca, il deck aggiunge `CLAUDE_CODE_GIT_BASH_PATH`: col `PATH` di Git Bash `claude` eseguirebbe gli hook del plugin in PowerShell, e la task non arriverebbe in contesto.
+
+Su Windows il resume di una conversazione e il restore (`^T`) restano spenti con un avviso finché il deck non sa quali conversazioni sono vive: senza quella informazione un resume può riaprire una conversazione già aperta in un'altra tab. Il fork resta acceso, perché apre un transcript nuovo.
 
 ## Uso (spike ①)
 

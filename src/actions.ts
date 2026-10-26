@@ -49,6 +49,7 @@ import {
   spawnDeckFork,
   spawnDeckResume,
   spawnTerminal,
+  terminalName,
   CLAUDE_CMD,
   DECK_RUN,
   type Spawned,
@@ -640,7 +641,7 @@ export function useDeckActions({
     if (refuse('spawn', 't', setNote, 'terminale')) return;
     const title = model.identity ? `🖥️ ${model.identity.name} [term]` : null;
     const child = spawnTerminal(cwd, title);
-    child.on('error', () => setNote('⚠ t → ptyxis non lanciabile'));
+    child.on('error', () => setNote(`⚠ t → ${terminalName()} non lanciabile`));
     setNote(`t → terminale su ${model.projectName}`);
   }
 
