@@ -403,12 +403,13 @@ Le tab usano il profilo di Windows Terminal **`loom-deck`**, uno solo per tutti 
   "name": "loom-deck",
   "guid": "{<un GUID nuovo>}",
   "hidden": true,
+  "colorScheme": "<nome dello schema, es. One Half Light>",
   "commandline": "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoLogo",
   "closeOnExit": "graceful"
 }
 ```
 
-`commandline` è la shell del tasto `t`; nelle conversazioni il comando del deck prende il suo posto. `closeOnExit` decide cosa resta della tab quando `claude` esce (il wrapper esce col suo codice). Senza il profilo la tab si apre comunque, col profilo di default. Il nome si cambia con `LOOM_DECK_WT_PROFILE` (vuota = nessun `-p`).
+`colorScheme` fissa i colori di tutte le tab del deck: è il nome di uno schema predefinito di Windows Terminal o di uno dichiarato sotto `schemes` nello stesso `settings.json`. `commandline` è la shell del tasto `t`; nelle conversazioni il comando del deck prende il suo posto. `closeOnExit` decide cosa resta della tab quando `claude` esce (il wrapper esce col suo codice). Senza il profilo la tab si apre comunque, col profilo di default. Il nome si cambia con `LOOM_DECK_WT_PROFILE` (vuota = nessun `-p`).
 
 La tab eredita tutto l'env del deck, tranne i marker che una sessione Claude Code inietta nei figli (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, …): con quelli una conversazione aperta da un deck lanciato dentro Claude Code non salverebbe il transcript. Se manca, il deck aggiunge `CLAUDE_CODE_GIT_BASH_PATH`: col `PATH` di Git Bash `claude` eseguirebbe gli hook del plugin in PowerShell, e la task non arriverebbe in contesto.
 
