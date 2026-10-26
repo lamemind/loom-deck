@@ -24,6 +24,7 @@
 // comune.
 //
 // Logica pura, zero React/Ink.
+import { parseTaskDetail } from './tasks.js';
 
 export interface Deliverable {
   /** Posizione 1-based fra le checkbox a colonna zero: l'indirizzo che
@@ -69,4 +70,101 @@ export function parseDeliverables(text: string | null): Deliverable[] {
     });
   }
   return out;
+}
+
+/**
+ * Lo stato del modo DLV per una task, deciso all'apertura del detail.
+ *
+ *  - `ready` — `⏎` lancia `run-task`;
+ *  - `blocked` — ci sono DLV aperti, ma `run-task` si rifiuterebbe: il motivo è
+ *    quello che la skill direbbe;
+ *  - `off` — non c'è niente da lanciare (task chiusa, nessun DLV aperto).
+ *
+ * `blocked` e `off` sono due stati e non uno perché dicono due cose diverse a chi
+ * legge: il primo ha un rimedio (`preflight-task`), il secondo no.
+ */
+export type DlvGate =
+  | { kind: 'ready' }
+  | { kind: 'blocked'; reason: string }
+  | { kind: 'off'; reason: string };
+
+/** L'esito dei blocchi `### Preflight` dentro `## Decisions`. */
+export type PreflightState = 'none' | 'done' | 'decayed';
+
+const DECISIONS_RE = /^## Decisions\b/;
+const PREFLIGHT_RE = /^### Preflight\b/;
+/** La dicitura che `preflight-task` mette nel heading quando si ferma davanti a
+ *  una premessa smentita (§0b della skill). */
+const DECAYED_RE = /premessa decaduta/i;
+
+/**
+ * L'ULTIMO blocco `### Preflight` di `## Decisions` decide: `preflight-task`
+ * appende in fondo alla sezione, quindi l'ultimo nel file è il più recente.
+ * Una premessa decaduta seguita da un preflight riuscito non blocca più; il
+ * contrario sì.
+ */
+export function preflightState(text: string | null): PreflightState {
+  if (!text) return 'none';
+  let inDecisions = false;
+  let last: PreflightState = 'none';
+  for (const line of text.split('\n')) {
+    if (SECTION_RE.test(line)) {
+      inDecisions = DECISIONS_RE.test(line);
+      continue;
+    }
+    if (inDecisions && PREFLIGHT_RE.test(line)) last = DECAYED_RE.test(line) ? 'decayed' : 'done';
+  }
+  return last;
+}
+
+/**
+ * La Size della task, ridotta alla sua prima parola maiuscola (`L`, `M`, `S`,
+ * `EPIC`). Assente o vuota → `M`, come in `run-task` §4: la mancanza del campo
+ * non deve far scattare il ramo più severo.
+ */
+export function taskSize(id: string, text: string | null): string {
+  if (!text) return 'M';
+  const raw = parseTaskDetail(id, text).fields['Size'] ?? '';
+  return /^\s*([A-Za-z]+)/.exec(raw)?.[1]?.toUpperCase() ?? 'M';
+}
+
+export const DLV_REASON = {
+  closed: 'task chiusa',
+  empty: 'nessun deliverable in ## Deliverables Checklist',
+  allDone: 'tutti i deliverable sono chiusi',
+  decayed: 'premessa decaduta — ricostruisci le premesse, poi preflight-task',
+  sizeL: 'preflight obbligatorio — Size L senza ### Preflight in ## Decisions',
+} as const;
+
+/**
+ * Il gate di `run-task` §3 visto dal deck, più i due casi in cui non c'è niente
+ * da lanciare.
+ *
+ * L'ordine dei controlli è quello della domanda «cosa partirebbe?»: prima se c'è
+ * qualcosa da eseguire, poi se la skill lo eseguirebbe. Su una task chiusa con
+ * una premessa decaduta il motivo utile è «chiusa», non il preflight.
+ *
+ * `done` viene da `tasks.md` (la Prog ✔️ della lista, `isDone`) e non dal campo
+ * `Progress` del task file: è la stessa fonte che usa il resto del deck, e il
+ * testo che il detail ha in mano è già sanificato — il glifo di Done lì non è
+ * più quello scritto su disco.
+ *
+ * `Size: Epic` non esclude (D2): un'epica con DLV propri resta lanciabile, e se
+ * `run-task` si rifiuta il rifiuto è della skill, non del deck.
+ */
+export function dlvGate(
+  id: string,
+  text: string | null,
+  dlvs: readonly Deliverable[],
+  done: boolean,
+): DlvGate {
+  if (done) return { kind: 'off', reason: DLV_REASON.closed };
+  if (dlvs.length === 0) return { kind: 'off', reason: DLV_REASON.empty };
+  if (!dlvs.some((d) => !d.done)) return { kind: 'off', reason: DLV_REASON.allDone };
+  const preflight = preflightState(text);
+  if (preflight === 'decayed') return { kind: 'blocked', reason: DLV_REASON.decayed };
+  if (taskSize(id, text) === 'L' && preflight === 'none') {
+    return { kind: 'blocked', reason: DLV_REASON.sizeL };
+  }
+  return { kind: 'ready' };
 }

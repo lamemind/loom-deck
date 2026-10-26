@@ -4,7 +4,14 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseDeliverables, type Deliverable } from '../src/deliverables.js';
+import {
+  DLV_REASON,
+  dlvGate,
+  parseDeliverables,
+  preflightState,
+  taskSize,
+  type Deliverable,
+} from '../src/deliverables.js';
 import { sanitize } from '../src/width.js';
 import { unixOnly } from './platform-gates.js';
 
@@ -75,6 +82,83 @@ test('un fence non sospende il conteggio: lo script non lo vede, quindi nemmeno 
 test('CRLF: la numerazione non cambia', () => {
   const dlvs = parseDeliverables(TASK.replace(/\n/g, '\r\n'));
   assert.deepEqual(summary(dlvs), ['1: ', '2:x', '3:x', '4: ']);
+});
+
+// ── Gate di eseguibilità (run-task §3, D1/D2) ────────────────────────────────
+
+/** Un task file minimo: header con la Size, DLV, e i blocchi `### Preflight`
+ *  dati, nell'ordine dato, dentro `## Decisions`. */
+function taskFile(size: string | null, dlvs: string[], preflights: string[] = []): string {
+  return [
+    '# Task: esempio',
+    '',
+    '- **ID**: T7',
+    ...(size === null ? [] : [`- **Size**: ${size}`]),
+    '',
+    '## Deliverables Checklist',
+    '',
+    ...dlvs,
+    '',
+    '## Decisions',
+    '',
+    ...preflights.flatMap((h) => [`### Preflight ${h}`, '', '- nessuna ambiguità', '']),
+    '## Implementation Notes',
+    '',
+    '### Preflight fuori da Decisions: non conta',
+  ].join('\n');
+}
+
+const gate = (text: string, done = false) => dlvGate('T7', text, parseDeliverables(text), done);
+
+test('Size L senza preflight → bloccata col motivo; con preflight → eseguibile', () => {
+  assert.deepEqual(gate(taskFile('L', ['- [ ] uno'])), { kind: 'blocked', reason: DLV_REASON.sizeL });
+  assert.deepEqual(gate(taskFile('L', ['- [ ] uno'], ['2026-10-26 11:56'])), { kind: 'ready' });
+});
+
+test('Size S, M e assente non chiedono il preflight', () => {
+  for (const size of ['S', 'M', '', null]) {
+    assert.deepEqual(gate(taskFile(size, ['- [ ] uno'])), { kind: 'ready' }, `Size ${size}`);
+  }
+  assert.equal(taskSize('T7', taskFile(null, [])), 'M');
+  assert.equal(taskSize('T7', taskFile('', [])), 'M');
+  assert.equal(taskSize('T7', taskFile('l (grande)', [])), 'L');
+});
+
+test('ultimo preflight con premessa decaduta → bloccata a ogni Size', () => {
+  for (const size of ['S', 'M', 'L', 'Epic', null]) {
+    const text = taskFile(size, ['- [ ] uno'], ['2026-10-20 10:00', '2026-10-26 11:56 — premessa decaduta']);
+    assert.deepEqual(gate(text), { kind: 'blocked', reason: DLV_REASON.decayed }, `Size ${size}`);
+  }
+});
+
+test('una premessa decaduta seguita da un preflight riuscito non blocca più', () => {
+  const text = taskFile('L', ['- [ ] uno'], ['2026-10-20 10:00 — premessa decaduta', '2026-10-26 11:56']);
+  assert.equal(preflightState(text), 'done');
+  assert.deepEqual(gate(text), { kind: 'ready' });
+});
+
+test('un ### Preflight fuori da ## Decisions non conta come preflight', () => {
+  // `taskFile` ne mette sempre uno sotto Implementation Notes.
+  assert.equal(preflightState(taskFile('L', ['- [ ] uno'])), 'none');
+});
+
+test('Epic con DLV aperti: eseguibile come le altre (D2)', () => {
+  assert.deepEqual(gate(taskFile('Epic', ['- [ ] uno'])), { kind: 'ready' });
+});
+
+test('disattivato: task chiusa, tutti i DLV fatti, nessun DLV', () => {
+  assert.deepEqual(gate(taskFile('M', ['- [ ] uno']), true), { kind: 'off', reason: DLV_REASON.closed });
+  assert.deepEqual(gate(taskFile('M', ['- [x] uno', '- [x] due'])), {
+    kind: 'off',
+    reason: DLV_REASON.allDone,
+  });
+  assert.deepEqual(gate(taskFile('M', [])), { kind: 'off', reason: DLV_REASON.empty });
+  assert.deepEqual(dlvGate('T7', null, [], false), { kind: 'off', reason: DLV_REASON.empty });
+});
+
+test('su una task chiusa vince «chiusa», anche con una premessa decaduta o Size L', () => {
+  const text = taskFile('L', ['- [ ] uno'], ['2026-10-26 11:56 — premessa decaduta']);
+  assert.deepEqual(gate(text, true), { kind: 'off', reason: DLV_REASON.closed });
 });
 
 // ── Parità con lo script del plugin ──────────────────────────────────────────
