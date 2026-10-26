@@ -1,11 +1,13 @@
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync } from 'node:fs';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { procStartOf } from '../src/live-sessions.js';
 import { saneNote } from '../src/sane-note.js';
+import { TWIN_MARKS } from '../src/twin-title.js';
 import { SPAWN_ACTIONS } from '../src/spawn-catalog.js';
 import { unixOnly } from './platform-gates.js';
 
@@ -39,6 +41,11 @@ chmodSync(join(shimDir, 'ptyxis'), 0o755);
 const workdir = mkdtempSync(join(tmpdir(), 'loom-deck-wd-'));
 mkdirSync(workdir, { recursive: true });
 
+// T182 — il registro delle conversazioni vive di default è una cartella VUOTA:
+// senza, deck-run leggerebbe `~/.claude/sessions` di chi lancia la suite, e una
+// conversazione viva che ha chiesto `cc T56` cambierebbe il titolo atteso.
+const emptyRegistry = mkdtempSync(join(tmpdir(), 'loom-deck-reg-'));
+
 type Run = { ok: boolean; out: string; err: string };
 
 // spawnSync e non execFileSync: quest'ultimo espone lo stderr solo lanciando,
@@ -66,6 +73,7 @@ function deckRun(args: string[], env: Record<string, string | undefined> = {}): 
       // Vuota per la stessa ragione del profilo di stato: senza, il comando
       // atteso dipenderebbe dall'ambiente di chi lancia la suite.
       LOOM_DECK_MODEL: '',
+      LOOM_DECK_LIVE_SESSIONS_ROOT: emptyRegistry,
       ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -763,4 +771,105 @@ test('ripresa spot: nessuna LOOM_TASK', () => {
   const cmd = inTabCmd(['--no-task', '--resume', SID, '--model', 'opus']);
   assert.match(cmd, /^claude /);
   assert.ok(cmd.includes(`--resume ${SID}`), cmd);
+});
+
+// ── T182 — la conversazione gemella ─────────────────────────────────────────
+//
+// Un gemello è una conversazione VIVA che ha chiesto lo stesso `--name`. Il
+// test la costruisce vera: un processo che porta `--name '<titolo>'` nei propri
+// argomenti (`bash -c 'sleep …; :' bash --name …` — il `; :` impedisce a bash di
+// fare exec di `sleep` e perdere l'argv), più una voce in un registro finto col
+// suo pid e il suo `starttime` reale. deck-run lo legge con la guardia di
+// sempre, quindi il test passa dal codice vero e non da un ramo scritto per lui.
+
+const TWIN_BASE = '🧵 demo · T182';
+
+interface FakeLive {
+  pid: number;
+  child: ChildProcess;
+}
+
+/** Un processo vivo che ha chiesto `name`, pronto quando `/proc` mostra il suo argv. */
+async function liveProcess(name: string): Promise<FakeLive> {
+  const child = spawn('bash', ['-c', 'sleep 30; :', 'bash', '--name', name], { stdio: 'ignore' });
+  const pid = child.pid!;
+  for (let i = 0; i < 200; i++) {
+    try {
+      if (readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').includes(name)) return { pid, child };
+    } catch {
+      // processo non ancora visibile
+    }
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  child.kill();
+  throw new Error(`processo finto per '${name}' mai visibile in /proc`);
+}
+
+/** Una voce di registro per `live`: `procStart` vero, salvo override. */
+function registryEntry(dir: string, live: FakeLive, over: Record<string, unknown> = {}): void {
+  const procStart = procStartOf(readFileSync(`/proc/${live.pid}/stat`, 'utf8'));
+  writeFileSync(
+    join(dir, `${live.pid}.json`),
+    JSON.stringify({ pid: live.pid, sessionId: `sid-${live.pid}`, procStart, cwd: '/altrove', name: 'x', ...over }),
+  );
+}
+
+/** Registro finto con una conversazione viva per ogni nome; restituisce `-T` e
+ *  `--name` del lancio di `deck-run T182` sul workdir con la label `🧵 demo`. */
+async function launchWithLive(
+  names: string[],
+  over: Record<string, unknown> = {},
+): Promise<{ tab: string; name: string | undefined }> {
+  const dir = mkdtempSync(join(tmpdir(), 'loom-deck-reg-'));
+  const lives: FakeLive[] = [];
+  try {
+    for (const n of names) {
+      const live = await liveProcess(n);
+      lives.push(live);
+      registryEntry(dir, live, over);
+    }
+    const env = { LOOM_DECK_WORKDIR: labeledWd, LOOM_DECK_LIVE_SESSIONS_ROOT: dir };
+    const argv = ptyxisArgv(['T182', '--prompt-kind', 'none'], env);
+    const cmd = argv[argv.length - 1] ?? '';
+    return { tab: argv[argv.indexOf('-T') + 1] ?? '', name: cmd.match(/--name '([^']*)'/)?.[1] };
+  } finally {
+    for (const l of lives) l.child.kill();
+  }
+}
+
+test('gemello: nessuna viva sul nome → titolo base, identico in -T e --name', async () => {
+  // Una viva con un altro nome non conta: il confronto è per uguaglianza intera.
+  const r = await launchWithLive(['🧵 demo · T18']);
+  assert.equal(r.tab, TWIN_BASE);
+  assert.equal(r.name, TWIN_BASE);
+});
+
+test('gemello: la base è viva → il primo carattere, dopo uno spazio, in -T e --name', async () => {
+  // La viva sta in un'altra cartella (`/altrove`): il gemello vale su tutte le
+  // conversazioni, non solo su quelle del progetto.
+  const r = await launchWithLive([TWIN_BASE]);
+  assert.equal(r.tab, `${TWIN_BASE} ${TWIN_MARKS[0]}`);
+  assert.equal(r.name, `${TWIN_BASE} ${TWIN_MARKS[0]}`);
+});
+
+test('gemello: base e primo carattere vivi → il secondo', async () => {
+  const r = await launchWithLive([TWIN_BASE, `${TWIN_BASE} ${TWIN_MARKS[0]}`]);
+  assert.equal(r.tab, `${TWIN_BASE} ${TWIN_MARKS[1]}`);
+});
+
+test('gemello: insieme esaurito → nome base, il lancio parte', async () => {
+  const r = await launchWithLive([TWIN_BASE, ...TWIN_MARKS.map((m) => `${TWIN_BASE} ${m}`)]);
+  assert.equal(r.tab, TWIN_BASE);
+  assert.equal(r.name, TWIN_BASE);
+});
+
+test('gemello: una voce col procStart sbagliato non è viva → nome base', async () => {
+  // Il caso del pid riciclato o del `kill -9`: il file c'è, la conversazione no.
+  const r = await launchWithLive([TWIN_BASE], { procStart: '1' });
+  assert.equal(r.tab, TWIN_BASE);
+});
+
+test('gemello: un job in background non ha una tab → nome base', async () => {
+  const r = await launchWithLive([TWIN_BASE], { kind: 'bg' });
+  assert.equal(r.tab, TWIN_BASE);
 });
