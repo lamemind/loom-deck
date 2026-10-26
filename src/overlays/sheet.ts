@@ -31,6 +31,7 @@ import {
 } from '../spawn-catalog.js';
 import { taskIsEpic } from '../tasks.js';
 import { fieldsKey, type FieldSpec, type FieldsCursor, type FieldsIO } from '../fields.js';
+import { useDlvMode } from './dlv-mode.js';
 import type { ResolvedSpawn } from '../spawn-config.js';
 import type { Mode } from '../model.js';
 
@@ -38,6 +39,10 @@ export interface Sheet {
   id: string;
   title: string;
   text: string | null;
+  /** T189 — la task è ✔️ in `tasks.md`: il modo DLV resta leggibile ma spento.
+   *  Facoltativo perché è un dato della LISTA, e il detail si può aprire anche
+   *  su una task che la lista non ha ancora riletto. */
+  done?: boolean;
 }
 
 export interface FindState {
@@ -120,6 +125,9 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
    *  riparserebbe l'intero task file per un campo dell'header. */
   const [epic, setEpic] = useState(false);
   const [cursor, setCursor] = useState<FieldsCursor>({ row: DROW.action, caret: 0 });
+  // T189 — il secondo modo del detail: la lista dei DLV al posto dell'area di
+  // compilazione, alternata da `tab`.
+  const dlv = useDlvMode();
 
   // T91 — ricerca dentro il detail. `open` distingue i due modi in cui la si
   // lascia: `esc` butta via ciò che il modale ha prodotto (`find` a null,
@@ -197,6 +205,9 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     setCursor({ row: DROW.action, caret: 0 });
     setFind(null);
     setOccIdx(0);
+    // T189/D3 — il modo DLV è una variante di `run`: la terna gli arriva già
+    // risolta, override di progetto compreso, come all'azione che replica.
+    dlv.open({ id: next.id, text: next.text, done: next.done === true, run: defaults('run', next.id) });
     setNote('');
     setMode('detail');
   }
@@ -324,6 +335,14 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       return;
     }
 
+    if (key.tab) {
+      // T189 — `tab` alterna area di compilazione e lista DLV. Nel detail era
+      // inerte (`fieldsKey` non lo consuma), e il `tab` che cicla le viste vive
+      // solo nella lista: nessun significato tolto.
+      dlv.toggle();
+      return;
+    }
+
     if (key.escape) {
       // Uno strato alla volta: se resta un'evidenziazione congelata, `esc`
       // smonta quella; il detail lo chiude il secondo.
@@ -331,6 +350,17 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       // toccata, quindi si ritrova esattamente dov'era.
       if (find) setFind(null);
       else close();
+      return;
+    }
+    if (key.return && dlv.active) {
+      // T189 — nel modo DLV `⏎` lancia `run` col perimetro scelto. Gate non
+      // pronto → inerte: il motivo è già scritto sotto la lista, e chiudere il
+      // detail lo porterebbe via.
+      const launch = dlv.launch();
+      if (!launch) return;
+      const id = sheet?.id;
+      close();
+      if (id) onAction(id, launch.model, launch.title, launch.prompt, false);
       return;
     }
     if (key.return) {
@@ -352,6 +382,11 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     }
     if (key.pageDown) {
       scroll(pageStep(capacity));
+      return;
+    }
+
+    if (dlv.active) {
+      dlv.onKey(input, key);
       return;
     }
 
@@ -378,6 +413,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     maxTop,
     findRes,
     occCur,
+    dlv,
     open,
     onKey,
     scroll,

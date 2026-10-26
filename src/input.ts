@@ -44,6 +44,7 @@ import { TASK_VIEWS, taskView, type SessionViewId, type TaskViewId } from './pan
 import type { InboxViewId } from './inbox-views.js';
 import type { DocViewId } from './doc-views.js';
 import { loadTaskFileText } from './tasks.js';
+import { isDone } from './layout.js';
 import { inboxPrompt, loadInboxText } from './inbox.js';
 import { dirListing, loadDocText } from './doc-tree.js';
 import { refuse } from './platform.js';
@@ -581,6 +582,9 @@ export function useDeckInput({
             // restare senza intestazione solo perché il file manca.
             title: model.detail?.title || task.desc,
             text: loadTaskFileText(tasksDir, task.id),
+            // T189 — la Prog della lista, non il campo del task file: è la
+            // fonte che il resto del deck legge come «chiusa».
+            done: isDone(task.prog),
           });
         }
       } else {
