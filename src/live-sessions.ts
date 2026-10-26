@@ -55,8 +55,10 @@ export interface LiveSession {
   startedAt: number;
 }
 
-function liveSessionsRoot(): string {
-  return join(homedir(), '.claude', 'sessions');
+/** La cartella del registry. `LOOM_DECK_LIVE_SESSIONS_ROOT` la sposta, per i
+ *  test che costruiscono un registro finto invece di leggere quello vero. */
+export function liveSessionsRoot(env: Readonly<Record<string, string | undefined>> = process.env): string {
+  return env.LOOM_DECK_LIVE_SESSIONS_ROOT || join(homedir(), '.claude', 'sessions');
 }
 
 /**
@@ -150,6 +152,40 @@ export function parseLiveEntry(
 }
 
 /**
+ * Le entry VIVE del registry, nell'ordine di `readdir`.
+ *
+ * `keep` scarta un'entry PRIMA del controllo di liveness: chi filtra per
+ * progetto risparmia così lo `stat` di `/proc` sui processi degli altri.
+ */
+function liveEntries(root: string, keep: (entry: LiveSession) => boolean = () => true): LiveSession[] {
+  const out: LiveSession[] = [];
+  let files: string[];
+  try {
+    files = readdirSync(root).filter((f) => f.endsWith('.json'));
+  } catch {
+    return out; // registry assente (CLI mai avviato, o versione che non lo scrive)
+  }
+
+  for (const f of files) {
+    const pid = Number(basename(f, '.json'));
+    if (!Number.isInteger(pid) || pid <= 0) continue;
+    let content: string;
+    try {
+      content = readFileSync(join(root, f), 'utf8');
+    } catch {
+      continue; // il processo può finire fra readdir e read
+    }
+    const parsed = parseLiveEntry(content, pid);
+    if (!parsed) continue;
+    const { entry, procStart } = parsed;
+    if (!keep(entry)) continue;
+    if (!isAlive(pid, procStart)) continue;
+    out.push(entry);
+  }
+  return out;
+}
+
+/**
  * Le sessioni VIVE del solo progetto corrente, indicizzate per `sessionId` —
  * la stessa chiave del sidecar `session-tasks.jsonl` e di `deck-run --resume`,
  * quindi il join con la riga di lista è diretto.
@@ -165,32 +201,73 @@ export function parseLiveEntry(
  */
 export function discoverLiveSessions(projectRoot: string): Map<string, LiveSession> {
   const out = new Map<string, LiveSession>();
-  let files: string[];
-  try {
-    files = readdirSync(liveSessionsRoot()).filter((f) => f.endsWith('.json'));
-  } catch {
-    return out; // registry assente (CLI mai avviato, o versione che non lo scrive)
-  }
-
-  for (const f of files) {
-    const pid = Number(basename(f, '.json'));
-    if (!Number.isInteger(pid) || pid <= 0) continue;
-    let content: string;
-    try {
-      content = readFileSync(join(liveSessionsRoot(), f), 'utf8');
-    } catch {
-      continue; // il processo può finire fra readdir e read
-    }
-    const parsed = parseLiveEntry(content, pid);
-    if (!parsed) continue;
-    const { entry, procStart } = parsed;
-    // T175 — `isWithin` regge le grafie di Windows: il registry scrive `C:\…`,
-    // e la root del deck può arrivare con la lettera del drive in un altro case.
-    if (!isWithin(entry.cwd, projectRoot)) continue;
-    if (!isAlive(pid, procStart)) continue;
+  // T175 — `isWithin` regge le grafie di Windows: il registry scrive `C:\…`,
+  // e la root del deck può arrivare con la lettera del drive in un altro case.
+  for (const entry of liveEntries(liveSessionsRoot(), (e) => isWithin(e.cwd, projectRoot))) {
     out.set(entry.sessionId, entry);
   }
   return out;
+}
+
+/**
+ * Il nome CHIESTO in un argv di `claude` — il valore di `--name` o del suo alias
+ * `-n`, staccato o con `=` — oppure `null` se l'argv non ne chiede uno.
+ *
+ * Non è il campo `name` del registry, ed è la ragione per cui serve: il registry
+ * porta il nome EFFETTIVO, e quando il nome chiesto è già preso il CLI rinomina
+ * la sessione (`🧵 loom-works` → `🧵 loom-works-cryptic-hopper`, con
+ * `nameSource: "collision"`), mentre il titolo della tab resta il nome chiesto.
+ *
+ * GEMELLA di `procRequestedName` in `loom-compass/compass@lamemind/model.js`:
+ * le due letture devono riconoscere le stesse quattro forme.
+ */
+export function requestedNameIn(argv: readonly string[]): string | null {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === '--name' || a === '-n') return argv[i + 1] ?? null;
+    if (a.startsWith('--name=')) return a.slice('--name='.length);
+    if (a.startsWith('-n=')) return a.slice('-n='.length);
+  }
+  return null;
+}
+
+/** Gli argomenti del processo: `/proc/<pid>/cmdline` li separa con NUL e ne
+ *  mette uno anche in coda. Ogni argomento arriva intero, spazi compresi. */
+function procArgv(pid: number): string[] | null {
+  let raw: string;
+  try {
+    raw = readFileSync(`/proc/${pid}/cmdline`, 'utf8');
+  } catch {
+    return null; // processo finito fra la liveness e la lettura
+  }
+  const argv = raw.split('\0');
+  if (argv.length && argv[argv.length - 1] === '') argv.pop();
+  return argv;
+}
+
+/**
+ * T182 — i nomi chiesti con `--name` dalle conversazioni vive di TUTTI i
+ * progetti: l'ingresso di `twinTitle` (`src/twin-title.ts`).
+ *
+ * Nessun filtro per `cwd`, al contrario di `discoverLiveSessions`: chi cerca la
+ * tab per titolo la cerca in tutte le finestre Ptyxis, quindi una conversazione
+ * dello stesso progetto aperta da un worktree di lane (altro `cwd`, stesso
+ * titolo) è un gemello a tutti gli effetti. Il titolo porta già la label del
+ * progetto, e il confronto per uguaglianza intera non scambia un progetto con
+ * un altro.
+ *
+ * Una viva senza `--name` non entra: il suo titolo di tab non è un nome
+ * chiesto. Dove `/proc` non esiste nessuna entry risulta viva, e la lista
+ * esce vuota: il lancio usa il nome base.
+ */
+export function liveRequestedNames(root: string = liveSessionsRoot()): string[] {
+  const names: string[] = [];
+  for (const entry of liveEntries(root)) {
+    const argv = procArgv(entry.pid);
+    const name = argv ? requestedNameIn(argv) : null;
+    if (name !== null) names.push(name);
+  }
+  return names;
 }
 
 /** Signature del poll: cambia quando cambia l'insieme delle vive O lo stato di

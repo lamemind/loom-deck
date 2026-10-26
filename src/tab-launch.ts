@@ -21,6 +21,7 @@ import { isUsageError, parseTabArgs } from './tab-args.js';
 import { composeTab, ptyxisArgv } from './tab-compose.js';
 import { loadPromptCatalog, PROMPT_CATALOG } from './prompt-catalog.js';
 import { configFilePath } from './config.js';
+import { liveRequestedNames, liveSessionsRoot } from './live-sessions.js';
 import { resolveGitBash } from './git-bash.js';
 import {
   semicolonArg,
@@ -113,6 +114,9 @@ export async function runDeckRun(argv: readonly string[], io: DeckRunIo): Promis
     catalog: loadPromptCatalog(catalogPath),
     catalogPath,
     platform: io.platform,
+    // Su Windows niente `/proc`, quindi nessuna liveness (T177): il titolo
+    // resta quello base, cioè il comportamento di prima del gemello.
+    liveRequestedNames: io.platform === 'win32' ? [] : liveRequestedNames(liveSessionsRoot(io.env)),
   });
   for (const w of plan.warnings) io.stderr(`${w}\n`);
 

@@ -17,6 +17,7 @@ import { MODEL_DEFAULT, MODELS, type PromptKind } from './spawn-catalog.js';
 import type { CatalogEntry } from './prompt-catalog.js';
 import { shellQuote } from './spawn.js';
 import type { TabRequest } from './tab-args.js';
+import { twinTitle } from './twin-title.js';
 
 /** Gli ingressi della composizione oltre alla richiesta. */
 export interface ComposeContext {
@@ -28,6 +29,10 @@ export interface ComposeContext {
   /** Il path del catalogo, per l'avviso quando manca. */
   catalogPath: string;
   platform: NodeJS.Platform;
+  /** T182 — i nomi chiesti con `--name` dalle conversazioni vive
+   *  (`liveRequestedNames`): decidono il carattere del gemello in coda al
+   *  titolo. Assente = nessuna conversazione viva, titolo base. */
+  liveRequestedNames?: readonly string[];
 }
 
 /** Cosa gira nella tab, in due forme che non divergono: la stessa terna di
@@ -204,6 +209,12 @@ export function posixQuote(text: string): string {
 /**
  * La composizione intera.
  *
+ * Il titolo è `tabTitle` più, solo se una conversazione viva ha già chiesto lo
+ * stesso nome, il carattere del gemello (`twinTitle`, T182). Il carattere entra
+ * nel titolo intero — label, task, nota e fork compresi — perché due
+ * conversazioni della stessa task con note diverse hanno già titoli distinti e
+ * non sono gemelle. Lo stesso `title` alimenta `-T` di Ptyxis e `--name`.
+ *
  * Ordine degli argomenti di `claude`: nome, permission mode e modello prima dei
  * flag di continuità, il prompt sempre ultimo. Il modello sta accanto al
  * permission mode perché sono la stessa cosa — la scelta di chi apre la
@@ -217,7 +228,7 @@ export function posixQuote(text: string): string {
  */
 export function composeTab(req: TabRequest, ctx: ComposeContext): TabPlan {
   const warnings: string[] = [];
-  const title = tabTitle(req, projectLabel(ctx.config));
+  const title = twinTitle(tabTitle(req, projectLabel(ctx.config)), ctx.liveRequestedNames ?? []);
   const mode = permissionMode(ctx, warnings);
   const model = modelOf(req, ctx, warnings);
   const key = stateKey(ctx, warnings);
