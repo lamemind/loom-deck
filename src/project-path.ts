@@ -72,3 +72,37 @@ export function matchingDirNames(
   const want = name.toLowerCase();
   return entries.filter((e) => e.toLowerCase() === want);
 }
+
+/**
+ * T176 — la cartella in cui nasce la tab che riprende o forka una conversazione.
+ *
+ * Su Linux la root del progetto, come prima. Su win32 la cwd che la
+ * conversazione ha registrato, in forma Windows (P7 preflight): `claude
+ * --resume` cerca il transcript nella cartella che ricava dalla PROPRIA cwd, e
+ * Claude Code non normalizza la lettera del drive (T174 verdetto 1) — una
+ * conversazione nata da VS Code (`c:\…`) sta in `c--…`, e un `claude` partito in
+ * `C:\…` la cercherebbe in `C--…`, senza trovarla.
+ *
+ * Una cwd in forma MSYS (`/c/…`) non dice la grafia del drive: la dice il nome
+ * della cartella del transcript, che Claude Code ha derivato dalla cwd vera
+ * (`c--…` o `C--…`). Una cwd che non è un path assoluto Windows ricade sulla
+ * root.
+ */
+export function conversationCwd(
+  sessionCwd: string,
+  transcriptPath: string,
+  root: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform !== 'win32') return root;
+  if (/^[a-zA-Z]:[\\/]/.test(sessionCwd)) return sessionCwd.replace(/\//g, '\\');
+  if (sessionCwd.startsWith('\\\\')) return sessionCwd;
+  const msys = /^\/([a-zA-Z])(?:\/(.*))?$/.exec(sessionCwd);
+  if (!msys) return root;
+  const folder = win32.basename(win32.dirname(transcriptPath));
+  const letter =
+    folder.length > 2 && folder.slice(1, 3) === '--' && folder[0]!.toLowerCase() === msys[1]!.toLowerCase()
+      ? folder[0]!
+      : msys[1]!.toUpperCase();
+  return `${letter}:\\${(msys[2] ?? '').replace(/\//g, '\\')}`;
+}

@@ -7,7 +7,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { comparablePath, isWithin, matchingDirNames, projectBaseName } from '../src/project-path.js';
+import {
+  comparablePath,
+  conversationCwd,
+  isWithin,
+  matchingDirNames,
+  projectBaseName,
+} from '../src/project-path.js';
 
 const ROOT = 'C:\\Users\\enrico_ballardini\\loom-works\\loom-works';
 
@@ -69,3 +75,30 @@ test('win32: entrambe le cartelle di transcript della stessa root, `C--…` e `c
 test('linux: una cartella sola, il nome esatto', () => {
   assert.deepEqual(matchingDirNames(['-home-u-p', '-Home-u-p'], '-home-u-p', 'linux'), ['-home-u-p']);
 });
+
+// T176 — la cartella della tab di un fork (P7 preflight): su Windows la cwd
+// registrata dalla conversazione, perché `claude --resume` cerca il transcript
+// nella cartella che ricava dalla propria cwd, lettera del drive compresa.
+const TRANSCRIPT = 'C:\\Users\\u\\.claude\\projects\\c--coface-x\\s.jsonl';
+
+test('win32: la tab di un fork nasce nella cwd della conversazione, con la sua grafia', () => {
+  assert.equal(conversationCwd('c:\\coface\\x', TRANSCRIPT, 'C:\\coface\\x', 'win32'), 'c:\\coface\\x');
+  assert.equal(conversationCwd('C:/coface/x', TRANSCRIPT, 'C:\\r', 'win32'), 'C:\\coface\\x');
+});
+
+test('win32: una cwd MSYS prende la grafia del drive dalla cartella del transcript', () => {
+  assert.equal(conversationCwd('/c/coface/x', TRANSCRIPT, 'C:\\r', 'win32'), 'c:\\coface\\x');
+  assert.equal(
+    conversationCwd('/c/coface/x', 'C:\\p\\C--coface-x\\s.jsonl', 'C:\\r', 'win32'),
+    'C:\\coface\\x',
+  );
+});
+
+test('una cwd che non è un path assoluto ricade sulla root; su Linux sempre la root', () => {
+  assert.equal(conversationCwd('relativa', TRANSCRIPT, 'C:\\r', 'win32'), 'C:\\r');
+  assert.equal(
+    conversationCwd('/home/u/p/sub', '/home/u/.claude/projects/-home-u-p-sub/s.jsonl', '/home/u/p', 'linux'),
+    '/home/u/p',
+  );
+});
+

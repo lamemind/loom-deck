@@ -17,6 +17,8 @@
 // migliorano di passaggio.
 import { useRef } from 'react';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { conversationCwd } from './project-path.js';
 import { loadTasks, taskSlug, type Task } from './tasks.js';
 import type { CatalogEntry } from './prompt-catalog.js';
 import {
@@ -160,7 +162,7 @@ export function useDeckActions({
 
   /** I buchi di un'azione su task. Lo slug viene dal NOME del task file, non
    *  dalla descrizione di `tasks.md`: il nome è già dentro l'alfabeto di
-   *  `_sane_note` per costruzione — minuscolo, separato da trattini, senza
+   *  `saneNote` per costruzione — minuscolo, separato da trattini, senza
    *  punteggiatura — mentre la descrizione porta apostrofi e `/` che la riduzione
    *  toglie senza sostituto, saldando le parole. Task file assente → slug vuoto,
    *  e il titolo si spegne invece di ridursi al solo prefisso. */
@@ -285,11 +287,24 @@ export function useDeckActions({
   // ricerca e il restore il modello ereditato dalla sessione senza superficie
   // di scelta (D1 preflight). I chiamanti restano la stessa azione perché è
   // lo spawn a essere identico, non la sorgente del valore.
+  /**
+   * T176 — la cartella della tab di una ripresa o di un fork: la root su Linux,
+   * la cwd registrata dalla conversazione su Windows (`conversationCwd`, P7
+   * preflight). Una cartella che non esiste più ricade sulla root: lo spawn
+   * fallirebbe prima ancora di aprire la tab.
+   */
+  function tabCwdOf(sessionId: string): string {
+    const s = model.sessions.find((x) => x.sessionId === sessionId);
+    if (!s) return cwd;
+    const dir = conversationCwd(s.cwd, s.path, cwd);
+    return dir === cwd || existsSync(dir) ? dir : cwd;
+  }
+
   function resumeSession(sessionId: string, modelKind: ModelKind): Spawned {
     const bound = model.bindings.get(sessionId) ?? null;
     const spawned = spawnDeckResume(
       bound,
-      cwd,
+      tabCwdOf(sessionId),
       sessionId,
       modelKind,
       model.sessionNotes.get(sessionId),
@@ -313,6 +328,11 @@ export function useDeckActions({
    */
   function openSession(sessionId: string, modelKind: ModelKind) {
     if (refuse('spawn', '⏎', setNote, 'resume')) return;
+    // T176 — il resume vuole sapere se la conversazione è viva, non solo poter
+    // aprire una tab (D4 preflight): senza liveness un `⏎` su una conversazione
+    // aperta in un'altra tab avvierebbe un secondo `claude` sullo stesso
+    // transcript. Spento finché la piattaforma non ha le sessioni vive.
+    if (refuse('liveSessions', '⏎', setNote, 'resume')) return;
     enterSession(sessionId, {
       isLive: (id) => model.live.has(id),
       nameOf: (id) => model.live.get(id)?.name || id.slice(0, 8),
@@ -347,6 +367,11 @@ export function useDeckActions({
    * chiudendo le tab.
    */
   function restoreSessions() {
+    // T176 — la guardia delle sessioni vive PRIMA di quella dello spawn (P8
+    // preflight): l'insieme da riaprire è l'ultimo insieme vivo, e senza
+    // liveness sarebbe vuoto — «nessuna conversazione da riaprire» direbbe uno
+    // stato dove manca una funzione.
+    if (refuse('liveSessions', '^T', setNote, 'restore delle conversazioni')) return;
     if (refuse('spawn', '^T', setNote, 'restore delle conversazioni')) return;
     const list = model.restorable;
     if (list.length === 0) {
@@ -489,7 +514,7 @@ export function useDeckActions({
     // T148 — il fork è l'altra continuità che condivide la stessa riga
     // selezionata: porta via lo stesso `model.resumeModel` del resume, non un
     // default fisso (P2 preflight).
-    const spawned = spawnDeckFork(bound, cwd, s.sessionId, newId, model.resumeModel);
+    const spawned = spawnDeckFork(bound, tabCwdOf(s.sessionId), s.sessionId, newId, model.resumeModel);
     spawned.child.on('error', () => setNote(`⚠ fork fallito (${DECK_RUN})`));
     noteSpawn(spawned);
   }
