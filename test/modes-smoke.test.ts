@@ -407,7 +407,7 @@ test('modo DLV: ⏎ coi DLV selezionati lancia run col perimetro, modello e tito
   // Il cursore parte dal primo aperto (2); `↓` salta il 3, fatto, e va al 4.
   const frame = captureDetail('DD\r D \r');
   assert.ok(
-    frame.includes(`'/loom-works:run-task T1 2,4' ${RUN_TAIL}`),
+    frame.includes(`'/loom-works:run-task T1 DLV 2,4' ${RUN_TAIL}`),
     `perimetro, modello o titolo diversi da run: ${frame}`,
   );
 });
@@ -415,7 +415,7 @@ test('modo DLV: ⏎ coi DLV selezionati lancia run col perimetro, modello e tito
 test('modo DLV: ↑↓ si fermano solo sui DLV aperti', { skip: SKIP }, () => {
   // Dal 2, un `↓` salta il 3 (fatto): la selezione cade sul 4, non sul 3.
   const frame = captureDetail('DD\rD \r');
-  assert.ok(frame.includes(`'/loom-works:run-task T1 4' ${RUN_TAIL}`), `cursore su un fatto: ${frame}`);
+  assert.ok(frame.includes(`'/loom-works:run-task T1 DLV 4' ${RUN_TAIL}`), `cursore su un fatto: ${frame}`);
 });
 
 test('modo DLV: ⏎ senza selezione → cosa fare ora [R0], stessa sessione di run', { skip: SKIP }, () => {
@@ -430,11 +430,17 @@ test('modo DLV: la selezione non sopravvive alla chiusura del detail', { skip: S
   assert.ok(frame.includes("--prompt 'cosa fare ora [R0]'"), `selezione sopravvissuta: ${frame}`);
 });
 
-test('modo DLV: Size L senza preflight → ⏎ inerte, il motivo a schermo', { skip: SKIP }, () => {
-  // T3 si apre sui campi (gate bloccato); `tab` porta alla lista, `⏎` non lancia.
-  const frame = captureDetail('DDDD\rT\r');
-  assert.match(frame, /preflight obbligatorio — Size L/, `motivo assente: ${frame}`);
-  assert.doesNotMatch(frame, /--model/, `è partito uno spawn: ${frame}`);
+test('modo DLV: Size L senza preflight → avviso a schermo, sulla lista DLV', { skip: SKIP }, () => {
+  // Il gate avvisa e non blocca: T3 si apre sulla lista, col motivo accanto al
+  // prompt. Il rifiuto, se arriva, è di `run-task`.
+  const frame = captureDetail('DDDD\r');
+  assert.match(frame, /Size L senza preflight/, `avviso assente: ${frame}`);
+  assert.match(frame, /\[ \] 1/, `non si è aperta sulla lista DLV: ${frame}`);
+});
+
+test('modo DLV: Size L senza preflight → ⏎ lancia lo stesso', { skip: SKIP }, () => {
+  const frame = captureDetail('DDDD\r \r');
+  assert.ok(frame.includes(`'/loom-works:run-task T3 DLV 1' ${RUN_TAIL}`), `lo spawn non è partito: ${frame}`);
 });
 
 test('modo DLV: task chiusa → lista spuntata, ⏎ inerte', { skip: SKIP }, () => {

@@ -14,7 +14,7 @@
 //
 //   T1  M, preflight fatto, 14 DLV (1, 3, 8 fatti) → si apre sulla lista DLV
 //   T2  ✔️ in tasks.md, DLV tutti fatti            → campi; lista spenta
-//   T3  Size L senza `### Preflight`               → campi; lista bloccata
+//   T3  Size L senza `### Preflight`               → lista DLV con l'avviso
 //   T4  nessun `## Deliverables Checklist`          → campi; lista vuota
 //
 // Il blocco `spawn` sovrascrive modello e titolo di `run`: il modo DLV deve

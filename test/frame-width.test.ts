@@ -653,15 +653,16 @@ const DETAIL_SCENARIOS: Array<[string, string, number[], string]> = [
   ['detail DLV · apertura', 'DD\r', [80, 100, 176], `cosa fare ora [R0] · ${DETAIL_RUN_MODEL}`],
   // Due voci selezionate: la riga di stato porta il prompt col perimetro, il
   // pezzo che il budget serve per primo.
-  ['detail DLV · selezione', 'DD\r D ', [80, 176], 'run-task T1 2,4'],
+  ['detail DLV · selezione', 'DD\r D ', [80, 176], 'run-task T1 DLV 2,4'],
   // `↑` dal primo aperto gira sull'ultimo: la finestra scende in fondo alla
   // lista e la riga di stato conta le voci rimaste sopra — a 38 righe la lista
   // ne mostra 13 su 14.
   ['detail DLV · cursore in coda', 'DD\rU', [80, 176], '↑1 ↓0'],
-  // I tre stati senza lancio: il motivo prende il posto del prompt, ed è più
+  // Gli stati senza lancio: il motivo prende il posto del prompt, ed è più
   // lungo di lui — il caso che sfonda se il budget è tarato sul prompt.
   ['detail DLV · task chiusa', 'DDD\rT', [80, 176], 'task chiusa · ⏎ inerte'],
-  ['detail DLV · Size L senza preflight', 'DDDD\rT', [80, 176], 'preflight obbligatorio'],
+  // L'avviso: motivo in testa E prompt dietro, la riga di stato più lunga.
+  ['detail DLV · Size L senza preflight', 'DDDD\r', [80, 176], 'Size L senza preflight'],
   ['detail DLV · nessun deliverable', 'DDDDD\rT', [80, 176], 'nessun deliverable'],
   // La ricerca aperta sopra la lista: due righe fisse in più, pagate dalla
   // lista e dal testo insieme.

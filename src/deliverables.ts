@@ -76,17 +76,23 @@ export function parseDeliverables(text: string | null): Deliverable[] {
  * Lo stato del modo DLV per una task, deciso all'apertura del detail.
  *
  *  - `ready` — `⏎` lancia `run-task`;
- *  - `blocked` — ci sono DLV aperti, ma `run-task` si rifiuterebbe: il motivo è
- *    quello che la skill direbbe;
+ *  - `warn` — `⏎` lancia lo stesso, ma `run-task` potrebbe rifiutare il lavoro:
+ *    il motivo è quello che la skill direbbe, e sta a schermo accanto al prompt;
  *  - `off` — non c'è niente da lanciare (task chiusa, nessun DLV aperto).
  *
- * `blocked` e `off` sono due stati e non uno perché dicono due cose diverse a chi
- * legge: il primo ha un rimedio (`preflight-task`), il secondo no.
+ * `warn` non blocca per scelta dell'utente: il rifiuto è un diritto della
+ * skill, e il deck non lo anticipa. Il deck lo DICE, perché l'umano lanci
+ * sapendo cosa la sessione risponderà, ma la decisione resta di chi preme.
  */
 export type DlvGate =
   | { kind: 'ready' }
-  | { kind: 'blocked'; reason: string }
+  | { kind: 'warn'; reason: string }
   | { kind: 'off'; reason: string };
+
+/** `⏎` nel modo DLV lancia qualcosa: in `ready` e in `warn`, non in `off`. */
+export function dlvLaunchable(gate: DlvGate): boolean {
+  return gate.kind !== 'off';
+}
 
 /** L'esito dei blocchi `### Preflight` dentro `## Decisions`. */
 export type PreflightState = 'none' | 'done' | 'decayed';
@@ -132,8 +138,8 @@ export const DLV_REASON = {
   closed: 'task chiusa',
   empty: 'nessun deliverable in ## Deliverables Checklist',
   allDone: 'tutti i deliverable sono chiusi',
-  decayed: 'premessa decaduta — ricostruisci le premesse, poi preflight-task',
-  sizeL: 'preflight obbligatorio — Size L senza ### Preflight in ## Decisions',
+  decayed: 'premessa decaduta, run-task può rifiutare',
+  sizeL: 'Size L senza preflight, run-task può rifiutare',
 } as const;
 
 /**
@@ -162,9 +168,9 @@ export function dlvGate(
   if (dlvs.length === 0) return { kind: 'off', reason: DLV_REASON.empty };
   if (!dlvs.some((d) => !d.done)) return { kind: 'off', reason: DLV_REASON.allDone };
   const preflight = preflightState(text);
-  if (preflight === 'decayed') return { kind: 'blocked', reason: DLV_REASON.decayed };
+  if (preflight === 'decayed') return { kind: 'warn', reason: DLV_REASON.decayed };
   if (taskSize(id, text) === 'L' && preflight === 'none') {
-    return { kind: 'blocked', reason: DLV_REASON.sizeL };
+    return { kind: 'warn', reason: DLV_REASON.sizeL };
   }
   return { kind: 'ready' };
 }

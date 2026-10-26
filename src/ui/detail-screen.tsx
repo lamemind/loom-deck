@@ -10,6 +10,7 @@ import { DROW, PRIORITY_CHOICES } from '../overlays/sheet.js';
 import type { FieldsCursor } from '../fields.js';
 import { CARET, CARET_OFF, WARN } from '../glyphs.js';
 import { DlvArea } from './dlv-area.js';
+import { dlvLaunchable } from '../deliverables.js';
 import type { useDlvMode } from '../overlays/dlv-mode.js';
 
 /** Resa di ogni costrutto markdown (T75 · D4): un solo livello di enfasi per
@@ -208,8 +209,8 @@ export function DetailScreen({
         <Text dimColor wrap="truncate-end">
           {/* T189 — qui `↑↓`, `spazio` e `⏎` si nominano: non fanno la cosa
               dell'area a righe (`↑↓` saltano i fatti, `⏎` lancia la selezione).
-              Fuori da `ready` sono inerti, e la legenda smette di annunciarli. */}
-          {dlv.gate.kind === 'ready' ? (
+              In `off` sono inerti, e la legenda smette di annunciarli. */}
+          {dlvLaunchable(dlv.gate) ? (
             <>
               <Text color="yellow">↑↓</Text> DLV aperti · <Text color="yellow">spazio</Text>{' '}
               seleziona · <Text color="yellow">⏎</Text> run ·{' '}

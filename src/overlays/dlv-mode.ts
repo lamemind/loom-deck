@@ -11,7 +11,13 @@
 // rispettare — numerazione e gate di `run-task` — stanno in `deliverables.ts`.
 import { useState } from 'react';
 import type { Key } from 'ink';
-import { dlvGate, parseDeliverables, type Deliverable, type DlvGate } from '../deliverables.js';
+import {
+  dlvGate,
+  dlvLaunchable,
+  parseDeliverables,
+  type Deliverable,
+  type DlvGate,
+} from '../deliverables.js';
 import type { ModelKind } from '../spawn-catalog.js';
 import type { ResolvedSpawn } from '../spawn-config.js';
 
@@ -22,17 +28,19 @@ export const DLV_IDLE_PROMPT = 'cosa fare ora [R0]';
  * D3/D4 — il prompt che parte da `⏎` nel modo DLV.
  *
  * Con una selezione: il prompt dell'azione `run` GIÀ RISOLTO (default del deck ←
- * override di progetto, buchi riempiti) con il perimetro in coda, in ordine
- * crescente — `run-task` normalizza da sé, ma il prompt è anche ciò che l'umano
- * legge nella riga di stato prima di premere. Lista semplice e non range: la
- * grammatica `1,3-5` di `run-task` la accetta, e compattare non toglie ambiguità.
+ * override di progetto, buchi riempiti) con `DLV` e il perimetro in coda, in
+ * ordine crescente — `run-task T99 DLV 2,5,7`. La parola `DLV` dice alla skill
+ * che i numeri sono deliverable e non un'altra cosa; l'ordine crescente serve a
+ * chi legge la riga di stato prima di premere, `run-task` normalizza da sé.
+ * Lista semplice e non range: la grammatica `1,3-5` di `run-task` la accetta, e
+ * compattare non toglie ambiguità.
  *
  * Senza selezione: `cosa fare ora [R0]`, nella stessa sessione bound di `run`.
  */
 export function dlvPrompt(runPrompt: string | null, selected: Iterable<number>): string {
   const scope = [...selected].sort((a, b) => a - b);
   if (scope.length === 0) return DLV_IDLE_PROMPT;
-  return `${(runPrompt ?? '').trim()} ${scope.join(',')}`.trim();
+  return `${(runPrompt ?? '').trim()} DLV ${scope.join(',')}`.trim();
 }
 
 /**
@@ -91,9 +99,9 @@ export function useDlvMode() {
    * che sopravvive alla chiusura farebbe partire un perimetro che a schermo non
    * si vede più.
    *
-   * Il modo di apertura è il gate: si apre sui DLV solo se `⏎` lì lancerebbe
-   * davvero qualcosa — su una task bloccata o chiusa l'area di compilazione resta
-   * quella di sempre, e la lista si raggiunge con `tab`.
+   * Il modo di apertura è il gate: si apre sui DLV quando `⏎` lì lancia
+   * qualcosa, avviso compreso — su una task chiusa o senza DLV aperti l'area di
+   * compilazione resta quella di sempre, e la lista si raggiunge con `tab`.
    */
   function open(input: DlvOpenInput) {
     const list = parseDeliverables(input.text);
@@ -101,9 +109,9 @@ export function useDlvMode() {
     setDlvs(list);
     setGate(g);
     setRun(input.run);
-    setCursor(g.kind === 'ready' ? stepOpen(list, 0, 1) : 0);
+    setCursor(dlvLaunchable(g) ? stepOpen(list, 0, 1) : 0);
     setSelected(NONE);
-    setActive(g.kind === 'ready');
+    setActive(dlvLaunchable(g));
   }
 
   function toggle() {
@@ -112,18 +120,18 @@ export function useDlvMode() {
 
   const prompt = dlvPrompt(run?.prompt ?? null, selected);
 
-  /** Lo spawn di `⏎`, o `null` se il gate non lo permette: la ragione è già a
-   *  schermo nella riga di stato della lista, quindi il tasto resta inerte. */
+  /** Lo spawn di `⏎`, o `null` se non c'è niente da lanciare: la ragione è già
+   *  a schermo nella riga di stato della lista, quindi il tasto resta inerte. */
   function launch(): DlvLaunch | null {
-    if (gate.kind !== 'ready' || !run) return null;
+    if (!dlvLaunchable(gate) || !run) return null;
     return { model: run.model, title: (run.title ?? '').trim(), prompt };
   }
 
   /** I tasti della lista. Il chiamante gestisce prima i suoi (`tab`, `⏎`, `esc`,
-   *  `^F`, `PgUp`/`PgDn`); qui resta ciò che muove cursore e selezione. Fuori
-   *  da `ready` nessun DLV è selezionabile, quindi ogni tasto è inerte. */
+   *  `^F`, `PgUp`/`PgDn`); qui resta ciò che muove cursore e selezione. In `off`
+   *  nessun DLV è selezionabile, quindi ogni tasto è inerte. */
   function onKey(input: string, key: Key) {
-    if (gate.kind !== 'ready') return;
+    if (!dlvLaunchable(gate)) return;
     if (key.upArrow || key.downArrow) {
       setCursor((c) => stepOpen(dlvs, c, key.upArrow ? -1 : 1));
     } else if (input === ' ' && !key.ctrl && !key.meta && cursor > 0) {

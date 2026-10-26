@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   DLV_REASON,
   dlvGate,
+  dlvLaunchable,
   parseDeliverables,
   preflightState,
   taskSize,
@@ -110,8 +111,9 @@ function taskFile(size: string | null, dlvs: string[], preflights: string[] = []
 
 const gate = (text: string, done = false) => dlvGate('T7', text, parseDeliverables(text), done);
 
-test('Size L senza preflight → bloccata col motivo; con preflight → eseguibile', () => {
-  assert.deepEqual(gate(taskFile('L', ['- [ ] uno'])), { kind: 'blocked', reason: DLV_REASON.sizeL });
+test('Size L senza preflight → avviso col motivo, lanciabile; con preflight → eseguibile', () => {
+  assert.deepEqual(gate(taskFile('L', ['- [ ] uno'])), { kind: 'warn', reason: DLV_REASON.sizeL });
+  assert.equal(dlvLaunchable(gate(taskFile('L', ['- [ ] uno']))), true);
   assert.deepEqual(gate(taskFile('L', ['- [ ] uno'], ['2026-10-26 11:56'])), { kind: 'ready' });
 });
 
@@ -124,10 +126,10 @@ test('Size S, M e assente non chiedono il preflight', () => {
   assert.equal(taskSize('T7', taskFile('l (grande)', [])), 'L');
 });
 
-test('ultimo preflight con premessa decaduta → bloccata a ogni Size', () => {
+test('ultimo preflight con premessa decaduta → avviso a ogni Size', () => {
   for (const size of ['S', 'M', 'L', 'Epic', null]) {
     const text = taskFile(size, ['- [ ] uno'], ['2026-10-20 10:00', '2026-10-26 11:56 — premessa decaduta']);
-    assert.deepEqual(gate(text), { kind: 'blocked', reason: DLV_REASON.decayed }, `Size ${size}`);
+    assert.deepEqual(gate(text), { kind: 'warn', reason: DLV_REASON.decayed }, `Size ${size}`);
   }
 });
 
@@ -154,6 +156,7 @@ test('disattivato: task chiusa, tutti i DLV fatti, nessun DLV', () => {
   });
   assert.deepEqual(gate(taskFile('M', [])), { kind: 'off', reason: DLV_REASON.empty });
   assert.deepEqual(dlvGate('T7', null, [], false), { kind: 'off', reason: DLV_REASON.empty });
+  assert.equal(dlvLaunchable({ kind: 'off', reason: DLV_REASON.closed }), false);
 });
 
 test('su una task chiusa vince «chiusa», anche con una premessa decaduta o Size L', () => {

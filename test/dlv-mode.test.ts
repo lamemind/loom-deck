@@ -46,16 +46,16 @@ const CATALOG = new Map<string, CatalogEntry>([
 ]);
 const HOLES = { TASK: 'T189', slug: 'deck dlv selezionabili detail' };
 
-test('D3 — con una selezione: il prompt di run risolto, perimetro crescente in coda', () => {
+test('D3 — con una selezione: il prompt di run risolto, DLV e perimetro crescente in coda', () => {
   const run = resolveSpawn(spawnAction('run')!, new Map(), CATALOG, HOLES);
-  assert.equal(dlvPrompt(run.prompt, new Set([4, 2])), '/loom-works:run-task T189 2,4');
-  assert.equal(dlvPrompt(run.prompt, [3]), '/loom-works:run-task T189 3');
+  assert.equal(dlvPrompt(run.prompt, new Set([4, 2])), '/loom-works:run-task T189 DLV 2,4');
+  assert.equal(dlvPrompt(run.prompt, [3]), '/loom-works:run-task T189 DLV 3');
 });
 
 test('D3 — l’override di progetto sul prompt di run vale anche qui', () => {
   const ov = new Map([['run' as const, { prompt: '/loom-works:run-task {TASK} yolo' }]]);
   const run = resolveSpawn(spawnAction('run')!, ov, CATALOG, HOLES);
-  assert.equal(dlvPrompt(run.prompt, [5, 1]), '/loom-works:run-task T189 yolo 1,5');
+  assert.equal(dlvPrompt(run.prompt, [5, 1]), '/loom-works:run-task T189 yolo DLV 1,5');
 });
 
 test('D4 — senza selezione: cosa fare ora [R0], qualunque sia il prompt di run', () => {
