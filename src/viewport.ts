@@ -82,7 +82,7 @@ export const MODAL_HEIGHT = {
   // Le quattro righe sono FISSE, non condizionali: la quarta ospita tanto gli
   // scarti del bulk quanto la scelta keep/purge della singola task sporca, e due
   // condizionali mutuamente esclusivi obbligherebbero il budget a sapere QUALE
-  // dei due è a schermo (stessa ragione della riga nota in DETAIL_CHROME, T111).
+  // dei due è a schermo (stessa ragione della riga nota in DETAIL_FIELD_ROWS, T111).
   purge: 7,
   // Conferma di eliminazione di una conversazione: marginTop + 2 bordi + 3
   // righe (domanda con l'id, titolo, effetto sul disco + tasti). Nessuna riga
@@ -353,30 +353,40 @@ export function readerCapacity(rows: number): number {
   return Math.max(0, (rows || 24) - SLACK - READER_CHROME);
 }
 
-// T66 — cornice del detail della task.
+// T66 — cornice del detail della task, comune ai due modi (T189).
 //   2  bordi del box esterno
 //   1  titolo "loom-deck"
 //   1  riga meta (id · titolo · posizione nel testo)
 //   1  riga hint
 //   1  marginTop del box testo
 //   2  bordi del box testo
-//   1  marginTop dell'area di compilazione
+//   1  marginTop dell'area sotto il testo
+//
+// Il detail non può riusare READER_CHROME perché sotto il testo porta un'AREA
+// in più dentro l'overlay, e ogni riga di quell'area va scalata dalla capienza
+// del contenuto o il frame sfonda `rows` (stessa invariante di
+// TASKS_PANE_CHROME).
+const DETAIL_BASE_CHROME = 9;
+
+// L'area di compilazione: righe FISSE, una per campo.
 //   1  riga azione   (T66)
 //   1  riga prompt   (T117)
 //   1  riga modello  (T108)
 //   1  riga titolo   (T111)
 //   1  riga priorità (T158)
 //
-// Le ultime sei sono il motivo per cui il detail non può riusare READER_CHROME:
-// le cinque righe dell'area di compilazione sono righe FISSE in più dentro
-// l'overlay, e ogni riga fissa aggiunta va scalata dalla capienza del contenuto o
-// il frame sfonda `rows` (stessa invariante di TASKS_PANE_CHROME).
-//
-// Sono fisse e non `extra` condizionali di `detailCapacity` (T111 · D1): due
+// Fisse e non `extra` condizionali dei singoli campi (T111 · D1): due
 // condizionali mutuamente esclusivi obbligherebbero il parametro a dire QUALE è
 // a schermo — un solo booleano per entrambi sottostima quando quello aperto è il
 // più alto, e sommarli toglie righe al testo per un campo che non c'è.
-const DETAIL_CHROME = 14;
+export const DETAIL_FIELD_ROWS = 5;
+
+// T189 — il modo DLV mette al posto dei campi la lista dei deliverable più una
+// riga di stato (cosa parte su `⏎`, o perché non parte niente). È l'altezza che
+// `detailCapacity` riceve come `area` quando il modo è attivo: il chiamante
+// dice cosa c'è a schermo con un numero di righe, non con un flag, per la
+// stessa ragione scritta sopra sui condizionali.
+export const DLV_STATUS_ROWS = 1;
 
 // T91 — la ricerca dentro il detail: marginTop + riga del campo.
 //
@@ -389,10 +399,26 @@ const DETAIL_CHROME = 14;
 const DETAIL_SEARCH_CHROME = 2;
 
 /** Righe di task file che entrano nel terminale; con la ricerca aperta il campo
- *  si paga qui, non altrove. */
-export function detailCapacity(rows: number, searching = false): number {
+ *  si paga qui, non altrove. `area` = righe dell'area sotto il testo: i campi
+ *  per default, `dlvListRows(…) + DLV_STATUS_ROWS` nel modo DLV. */
+export function detailCapacity(rows: number, searching = false, area = DETAIL_FIELD_ROWS): number {
   const extra = searching ? DETAIL_SEARCH_CHROME : 0;
-  return Math.max(0, (rows || 24) - SLACK - DETAIL_CHROME - extra);
+  return Math.max(0, (rows || 24) - SLACK - DETAIL_BASE_CHROME - area - extra);
+}
+
+/**
+ * T189 — righe della lista DLV: tutte quelle che ci sono, ma mai più di METÀ
+ * dello spazio sotto la cornice. Il resto resta al testo della task, che è ciò
+ * per cui il detail si apre; una lista più lunga si finestra sul cursore
+ * (`windowRange`) e la riga di stato dice quante righe stanno fuori.
+ *
+ * Su un terminale basso può valere 0 anche con dei DLV: resta la sola riga di
+ * stato, e il frame non sfonda.
+ */
+export function dlvListRows(rows: number, searching: boolean, total: number): number {
+  const extra = searching ? DETAIL_SEARCH_CHROME : 0;
+  const free = (rows || 24) - SLACK - DETAIL_BASE_CHROME - DLV_STATUS_ROWS - extra;
+  return Math.max(0, Math.min(total, Math.floor(free / 2)));
 }
 
 // T121 — cornice del viewer del project status. Gemella di READER_CHROME: il
@@ -468,7 +494,7 @@ const SPAWN_CHROME = 8;
 // si modificano. Un'altezza che dipendesse dalla riga selezionata farebbe
 // saltare la tabella di due righe a ogni movimento del caret, e il budget
 // dovrebbe sapere quale riga è aperta per non sottostimare — lo stesso motivo
-// per cui le cinque righe del detail sono dentro `DETAIL_CHROME` invece che
+// per cui le cinque righe del detail sono fisse in `DETAIL_FIELD_ROWS` invece che
 // condizionali (T111 · D1).
 const SPAWN_FIELDS_CHROME = 5;
 

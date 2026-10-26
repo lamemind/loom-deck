@@ -132,6 +132,24 @@ export const INBOX_MARK: Record<'broken' | 'branched' | 'held' | 'queued', strin
  *  `held` sposterebbero a sinistra tutto ciò che segue. */
 export const INBOX_MARK_W = 2;
 
+/**
+ * T189 — colonna di stato di un DLV nella lista del detail, larga 3 in tutte e
+ * tre le forme: il numero e il testo che seguono restano incolonnati.
+ *
+ * La selezione è `[•]` e non `[x]`: nel task file `[x]` vuol dire FATTO, e sulla
+ * stessa schermata il testo reso sopra la lista lo mostra proprio con quel
+ * significato. Un `[x]` che sotto vuol dire «scelto» sarebbe un falso amico. Il
+ * fatto porta la spunta del Done della lista task, lo stesso glifo per la
+ * stessa idea.
+ */
+export const DLV_MARK = {
+  done: sanitize('✔'),
+  open: '[ ]',
+  picked: '[•]',
+} as const;
+
+export const DLV_MARK_W = 3;
+
 // Marker Done per il DISPLAY. `task.prog` resta il `✔️` letto da tasks.md —
 // `isDone()` e le lookup di `view.ts` ci confrontano sopra, e `task-edit` lo
 // riscrive sul file: è una chiave semantica, non testo. Qui `sanitize` lo

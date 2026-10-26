@@ -13,7 +13,13 @@
 // `onAction`, per lo stesso confine di `useSearchOverlay`.
 import { useEffect, useMemo, useState } from 'react';
 import type { Key } from 'ink';
-import { detailCapacity, pageStep } from '../viewport.js';
+import {
+  DETAIL_FIELD_ROWS,
+  DLV_STATUS_ROWS,
+  detailCapacity,
+  dlvListRows,
+  pageStep,
+} from '../viewport.js';
 import { wrapWithOffsets } from '../width.js';
 import { scanText, topForOffset, type Occurrence } from '../text-search.js';
 import { parseMarkdown } from '../markdown.js';
@@ -154,7 +160,15 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
   // RESO, ed è l'unica coordinata coerente che resti — il sorgente non è più
   // ciò che sta a schermo.
   const lines = useMemo(() => (doc ? wrapWithOffsets(doc.text, width) : []), [doc, width]);
-  const capacity = detailCapacity(rows, find?.open === true);
+  // T189 — l'area sotto il testo cambia altezza col modo: cinque righe di campi,
+  // oppure la lista DLV più la sua riga di stato. Il testo prende il resto.
+  const searching = find?.open === true;
+  const dlvRows = dlvListRows(rows, searching, dlv.dlvs.length);
+  const capacity = detailCapacity(
+    rows,
+    searching,
+    dlv.active ? dlvRows + DLV_STATUS_ROWS : DETAIL_FIELD_ROWS,
+  );
   const maxTop = Math.max(0, lines.length - capacity);
 
   // Lo scan gira sulla STESSA stringa che si renderizza: cercare su un testo
@@ -414,6 +428,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     findRes,
     occCur,
     dlv,
+    dlvRows,
     open,
     onKey,
     scroll,

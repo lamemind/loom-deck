@@ -6,6 +6,9 @@ import assert from 'node:assert/strict';
 import {
   assignListCapacity,
   detailCapacity,
+  DETAIL_FIELD_ROWS,
+  DLV_STATUS_ROWS,
+  dlvListRows,
   isCompact,
   readerCapacity,
   searchListCapacity,
@@ -194,7 +197,7 @@ test("detail: l'area di compilazione costa sei righe in più del reader", () => 
 });
 
 // T91 — il campo di ricerca è l'unica riga CONDIZIONALE dentro l'overlay: le
-// cinque dell'area di compilazione sono fisse e stanno in DETAIL_CHROME.
+// cinque dell'area di compilazione sono fisse e stanno in DETAIL_FIELD_ROWS.
 // Gemello del gate qui sopra: se un domani il campo si prendesse una riga in più
 // senza dirlo alla cornice, il frame sfonderebbe `rows` a terminale basso e Ink
 // cadrebbe nel ramo `clearTerminal`.
@@ -267,5 +270,49 @@ test('lista + anteprima insieme non superano mai le righe del terminale', () => 
         assert.ok(frame + SLACK <= rows, `sforo: rows=${rows} lista=${listRows} prev=${prev}`);
       }
     }
+  }
+});
+
+// T189 — il modo DLV: al posto delle cinque righe dei campi, la lista dei DLV
+// (altezza variabile) più una riga di stato. La cornice comune è quella del
+// detail senza area: 14 − 5 = 9 righe.
+const DETAIL_BASE = 14 - DETAIL_FIELD_ROWS;
+
+test('detail nel modo DLV: il frame non supera mai le righe del terminale', () => {
+  for (const searching of [false, true]) {
+    const field = searching ? 2 : 0;
+    for (const rows of [12, 16, 20, 24, 38, 60]) {
+      for (const total of [0, 1, 5, 12, 40]) {
+        const list = dlvListRows(rows, searching, total);
+        const area = list + DLV_STATUS_ROWS;
+        const text = detailCapacity(rows, searching, area);
+        // Capienza nulla → il detail non si disegna: lo sostituisce la riga
+        // della `CompactNotice` (`isCompact`), e la cornice non conta più.
+        if (isCompact(text)) continue;
+        assert.ok(
+          DETAIL_BASE + field + area + text + SLACK <= rows,
+          `sforo a ${rows} righe con ${total} DLV (ricerca: ${searching})`,
+        );
+        assert.ok(list >= 0 && list <= total, `lista fuori dai DLV a ${rows} righe`);
+      }
+    }
+  }
+});
+
+test('detail nel modo DLV: la lista prende al più metà dello spazio, il resto è del testo', () => {
+  // 38 righe: 38 − 1 − 9 − 1 = 27 libere → la lista arriva a 13, il testo ne
+  // tiene almeno altrettante.
+  assert.equal(dlvListRows(38, false, 5), 5);
+  assert.equal(dlvListRows(38, false, 40), 13);
+  assert.ok(detailCapacity(38, false, 13 + DLV_STATUS_ROWS) >= 13);
+  // Terminale basso: la lista si accorcia fino a sparire, la riga di stato resta.
+  assert.equal(dlvListRows(12, false, 5), 0);
+  assert.ok(dlvListRows(16, false, 5) > 0);
+});
+
+test('detail: l’area di default sono i campi, come prima del modo DLV', () => {
+  for (const rows of [20, 38, 60]) {
+    assert.equal(detailCapacity(rows), detailCapacity(rows, false, DETAIL_FIELD_ROWS));
+    assert.equal(detailCapacity(rows, true), detailCapacity(rows, true, DETAIL_FIELD_ROWS));
   }
 });

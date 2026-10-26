@@ -337,6 +337,8 @@ export function screenFor(input: ScreensInput) {
         find={sheet.find}
         occ={sheet.findRes.occ}
         occCur={sheet.occCur}
+        dlv={sheet.dlv}
+        dlvRows={sheet.dlvRows}
       />
     );
   }

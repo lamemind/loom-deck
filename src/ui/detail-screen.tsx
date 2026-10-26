@@ -9,6 +9,8 @@ import { DETAIL_ACTIONS, MODELS, type ModelKind } from '../spawn-catalog.js';
 import { DROW, PRIORITY_CHOICES } from '../overlays/sheet.js';
 import type { FieldsCursor } from '../fields.js';
 import { CARET, CARET_OFF, WARN } from '../glyphs.js';
+import { DlvArea } from './dlv-area.js';
+import type { useDlvMode } from '../overlays/dlv-mode.js';
 
 /** Resa di ogni costrutto markdown (T75 · D4): un solo livello di enfasi per
  *  costrutto, senza un secondo alfabeto da imparare. Heading uguali a ogni
@@ -133,6 +135,8 @@ export function DetailScreen({
   find,
   occ,
   occCur,
+  dlv,
+  dlvRows,
 }: {
   id: string;
   title: string;
@@ -163,6 +167,13 @@ export function DetailScreen({
   find: { q: string; caret: number; open: boolean } | null;
   occ: readonly Occurrence[];
   occCur: number;
+  /** T189 — il modo DLV: quando è attivo la lista prende il posto dei campi. */
+  dlv: Pick<
+    ReturnType<typeof useDlvMode>,
+    'active' | 'dlvs' | 'cursor' | 'selected' | 'gate' | 'prompt' | 'model'
+  >;
+  /** Righe concesse alla lista DLV (`dlvListRows`). */
+  dlvRows: number;
 }) {
   const last = Math.min(total, top + capacity);
   // Il taglio lo fa il chiamante (invariante ③ di width.ts): le righe bottoni
@@ -193,6 +204,20 @@ export function DetailScreen({
           <Text color="yellow">^U</Text> svuota · <Text color="yellow">⏎</Text> tieni ·{' '}
           <Text color="yellow">esc</Text> annulla
         </Text>
+      ) : dlv.active ? (
+        <Text dimColor wrap="truncate-end">
+          {/* T189 — qui `↑↓`, `spazio` e `⏎` si nominano: non fanno la cosa
+              dell'area a righe (`↑↓` saltano i fatti, `⏎` lancia la selezione).
+              Fuori da `ready` sono inerti, e la legenda smette di annunciarli. */}
+          {dlv.gate.kind === 'ready' ? (
+            <>
+              <Text color="yellow">↑↓</Text> DLV aperti · <Text color="yellow">spazio</Text>{' '}
+              seleziona · <Text color="yellow">⏎</Text> run ·{' '}
+            </>
+          ) : null}
+          <Text color="yellow">tab</Text> campi · <Text color="yellow">PgUp/PgDn</Text> testo ·{' '}
+          <Text color="yellow">^F</Text> cerca
+        </Text>
       ) : (
         <Text dimColor wrap="truncate-end">
           {/* T117 — `↑↓`, `←→`, `⏎` ed `esc` non compaiono: dentro un'area a
@@ -202,7 +227,8 @@ export function DetailScreen({
               perché `↑↓` sono passate al fuoco fra le righe. */}
           <Text color="yellow">PgUp/PgDn</Text> testo ·{' '}
           <Text color="yellow">{ACTION_KEYS}</Text> azione ·{' '}
-          <Text color="yellow">^U</Text> svuota campo · <Text color="yellow">^F</Text> cerca
+          <Text color="yellow">^U</Text> svuota campo · <Text color="yellow">^F</Text> cerca ·{' '}
+          <Text color="yellow">tab</Text> DLV
         </Text>
       )}
       <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
@@ -242,61 +268,76 @@ export function DetailScreen({
           </Text>
         </Box>
       ) : null}
-      {/* Le quattro righe dell'area di compilazione, nell'ordine in cui si
-          decide: cosa lanciare, con quale prompt, con quale modello, sotto quale
-          titolo. */}
-      <Box marginTop={1} flexDirection="column">
-        <ChoiceRow
-          label="azione"
-          values={DETAIL_ACTIONS.map((a) => a.label)}
-          index={action}
-          focused={cursor.row === DROW.action}
+      {/* T189 — nel modo DLV la lista prende il posto dei campi: stessa
+          posizione, altezza propria (`dlvListRows` + la riga di stato). */}
+      {dlv.active ? (
+        <DlvArea
+          dlvs={dlv.dlvs}
+          cursor={dlv.cursor}
+          selected={dlv.selected}
+          gate={dlv.gate}
+          prompt={dlv.prompt}
+          model={dlv.model}
+          rows={dlvRows}
           width={width}
         />
-        <Text wrap="truncate-end">
-          {mark(DROW.prompt)}
-          <Text dimColor>{'prompt'.padEnd(LABEL_W)}</Text>
-          <FieldText
-            value={prompt}
-            caret={cursor.caret}
-            focused={cursor.row === DROW.prompt}
-            cols={textW(prompt ? 0 : PROMPT_HINT.length)}
+      ) : (
+        /* Le quattro righe dell'area di compilazione, nell'ordine in cui si
+            decide: cosa lanciare, con quale prompt, con quale modello, sotto quale
+            titolo. */
+        <Box marginTop={1} flexDirection="column">
+          <ChoiceRow
+            label="azione"
+            values={DETAIL_ACTIONS.map((a) => a.label)}
+            index={action}
+            focused={cursor.row === DROW.action}
+            width={width}
           />
-          {/* Prompt vuoto = nessun prompt allo spawn, che è l'esito voluto di
-              `open` ma anche di un campo svuotato a mano: dirlo evita di leggere
-              un campo vuoto come «non ancora caricato». */}
-          {prompt ? null : <Text dimColor>{PROMPT_HINT}</Text>}
-        </Text>
-        <ChoiceRow
-          label="modello"
-          values={MODELS}
-          index={Math.max(0, MODELS.indexOf(model))}
-          focused={cursor.row === DROW.model}
-          width={width}
-        />
-        <Text wrap="truncate-end">
-          {mark(DROW.title)}
-          <Text dimColor>{'titolo'.padEnd(LABEL_W)}</Text>
-          <FieldText
-            value={spawnNote}
-            caret={cursor.caret}
-            focused={cursor.row === DROW.title}
-            cols={textW(spawnNote ? 0 : NOTE_HINT.length)}
+          <Text wrap="truncate-end">
+            {mark(DROW.prompt)}
+            <Text dimColor>{'prompt'.padEnd(LABEL_W)}</Text>
+            <FieldText
+              value={prompt}
+              caret={cursor.caret}
+              focused={cursor.row === DROW.prompt}
+              cols={textW(prompt ? 0 : PROMPT_HINT.length)}
+            />
+            {/* Prompt vuoto = nessun prompt allo spawn, che è l'esito voluto di
+                `open` ma anche di un campo svuotato a mano: dirlo evita di leggere
+                un campo vuoto come «non ancora caricato». */}
+            {prompt ? null : <Text dimColor>{PROMPT_HINT}</Text>}
+          </Text>
+          <ChoiceRow
+            label="modello"
+            values={MODELS}
+            index={Math.max(0, MODELS.indexOf(model))}
+            focused={cursor.row === DROW.model}
+            width={width}
           />
-          {spawnNote ? null : <Text dimColor>{NOTE_HINT}</Text>}
-        </Text>
-        {/* T158 — la marca di priorità: non un parametro del comando come le
-            quattro sopra, ma un attributo della conversazione che nasce. Sta in
-            coda per questo, e la riga la dichiara con lo stesso glifo che poi
-            comparirà nella sua riga di lista. */}
-        <ChoiceRow
-          label="priorità"
-          values={PRIORITY_CHOICES}
-          index={priority ? 1 : 0}
-          focused={cursor.row === DROW.priority}
-          width={width}
-        />
-      </Box>
+          <Text wrap="truncate-end">
+            {mark(DROW.title)}
+            <Text dimColor>{'titolo'.padEnd(LABEL_W)}</Text>
+            <FieldText
+              value={spawnNote}
+              caret={cursor.caret}
+              focused={cursor.row === DROW.title}
+              cols={textW(spawnNote ? 0 : NOTE_HINT.length)}
+            />
+            {spawnNote ? null : <Text dimColor>{NOTE_HINT}</Text>}
+          </Text>
+          {/* T158 — la marca di priorità: non un parametro del comando come le
+              quattro sopra, ma un attributo della conversazione che nasce. Sta in
+              coda per questo, e la riga la dichiara con lo stesso glifo che poi
+              comparirà nella sua riga di lista. */}
+          <ChoiceRow
+            label="priorità"
+            values={PRIORITY_CHOICES}
+            index={priority ? 1 : 0}
+            focused={cursor.row === DROW.priority}
+            width={width}
+          />
+        </Box>
+      )}
     </Box>
   );
 }
