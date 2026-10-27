@@ -213,6 +213,9 @@ export function foldersSurvivors(projectRoot: string, folders: readonly string[]
         cwd: projectRoot,
         encoding: 'utf8',
         maxBuffer: MAX_BUFFER,
+        // Lo stderr di un git muto (`fatal: not a git repository`) andrebbe
+        // sullo stderr del deck, cioè sopra lo schermo di Ink.
+        stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
       });
     } catch {
