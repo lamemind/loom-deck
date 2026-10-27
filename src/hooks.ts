@@ -25,7 +25,7 @@ import {
   type WrapCache,
   type WrapFile,
 } from './wrap-scan.js';
-import { purgeTargets } from './purge.js';
+import { purgeTargetsAsync } from './purge.js';
 import {
   loadSpawnOverrides,
   saveSpawnOverrides,
@@ -406,26 +406,36 @@ export function useArchivable(doneSig: string, tasksDir: string, projectRoot: st
 // Ne discende che il dato è CAMPIONATO e può essere stale nell'istante in cui
 // si preme il tasto — perciò il momento dell'azione lo ricalcola da sé
 // (`purgeTargets`), e questo hook serve solo a mostrarlo in lista.
+//
+// T186 — asincrono, con la guardia `alive` di `useArchivable`. La versione
+// sincrona fermava l'event loop per tutta la misura: l'insieme passa da vuoto
+// a pieno quando `archivableIds` finisce, qualche secondo dopo l'avvio, e su
+// Windows il deck smetteva di disegnare e di leggere i tasti per il tempo degli
+// spawn di git. `alive` scarta l'esito di uno scan partito con un insieme
+// vecchio e il `setState` dopo lo smontaggio.
 export function useDirtyFolders(idsSig: string, tasksDir: string, projectRoot: string) {
   const [dirty, setDirty] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
+    let alive = true;
     const ids = idsSig ? idsSig.split(',') : [];
     const scan = () => {
-      try {
-        const found = purgeTargets(ids, tasksDir, projectRoot)
-          .filter((t) => t.survivors > 0)
-          .map((t) => t.id);
-        setDirty(new Set(found));
-      } catch {
+      purgeTargetsAsync(ids, tasksDir, projectRoot)
+        .then((targets) => {
+          if (alive) setDirty(new Set(targets.filter((t) => t.survivors > 0).map((t) => t.id)));
+        })
         // git muto o task file illeggibili → nessun marker. Il gate del plugin
         // resta la rete: un marker mancante non autorizza niente, fa solo
         // arrivare il rifiuto più tardi.
-        setDirty(new Set());
-      }
+        .catch(() => {
+          if (alive) setDirty(new Set());
+        });
     };
     scan();
     const id = setInterval(scan, SCAN_INTERVAL_MS);
-    return () => clearInterval(id);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
   }, [idsSig, tasksDir, projectRoot]);
   return dirty;
 }

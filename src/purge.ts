@@ -19,10 +19,14 @@
 // headless — non è rifacibile on-demand, cioè al momento in cui il tasto viene
 // premuto.
 
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
+import { setImmediate as yieldToLoop } from 'node:timers/promises';
+import { promisify } from 'node:util';
 import { findTaskFile } from './tasks.js';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * T186 (D4) — budget in caratteri dei pathspec di UNA chiamata git. Su Windows
@@ -218,6 +222,29 @@ export function foldersSurvivors(projectRoot: string, folders: readonly string[]
   return collect(plan, outputs);
 }
 
+/** `foldersSurvivors` senza fermare l'event loop: lo usa lo scan periodico. */
+export async function foldersSurvivorsAsync(
+  projectRoot: string,
+  folders: readonly string[],
+): Promise<string[][]> {
+  const plan = surveyPlan(projectRoot, folders);
+  const outputs: string[] = [];
+  for (const chunk of plan.chunks) {
+    try {
+      const { stdout } = await execFileAsync('git', lsOthersArgs(chunk), {
+        cwd: projectRoot,
+        encoding: 'utf8',
+        maxBuffer: MAX_BUFFER,
+        windowsHide: true,
+      });
+      outputs.push(stdout);
+    } catch {
+      outputs.push('');
+    }
+  }
+  return collect(plan, outputs);
+}
+
 /** I superstiti di una folder sola: il caso N=1 del nucleo. */
 export function folderSurvivors(projectRoot: string, folder: string): string[] {
   return foldersSurvivors(projectRoot, [folder])[0]!;
@@ -251,6 +278,27 @@ export function purgeTargets(ids: string[], tasksDir: string, projectRoot: strin
   const folders = ids.map((id) => targetFolder(id, tasksDir, projectRoot));
   const present = folders.filter((folder): folder is string => folder !== null);
   return toTargets(ids, folders, foldersSurvivors(projectRoot, present));
+}
+
+/**
+ * `purgeTargets` per lo scan periodico della lista (`useDirtyFolders`): stesso
+ * esito, senza fermare l'event loop. Git gira in asincrono, e fra un task file e
+ * il successivo il ciclo cede il turno: la lettura dei task file scala col
+ * numero delle archiviabili, e su Windows, fatta in un colpo, basta già a far
+ * saltare un frame.
+ */
+export async function purgeTargetsAsync(
+  ids: string[],
+  tasksDir: string,
+  projectRoot: string,
+): Promise<PurgeTarget[]> {
+  const folders: (string | null)[] = [];
+  for (const id of ids) {
+    folders.push(targetFolder(id, tasksDir, projectRoot));
+    await yieldToLoop();
+  }
+  const present = folders.filter((folder): folder is string => folder !== null);
+  return toTargets(ids, folders, await foldersSurvivorsAsync(projectRoot, present));
 }
 
 /** Conformi al gate (potabili in blocco) e non conformi (da scartare a monte). */
