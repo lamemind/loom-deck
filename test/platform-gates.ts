@@ -16,6 +16,12 @@ export function unixOnly(why: string): string | false {
   return process.platform === 'win32' ? `solo Unix: ${why}` : false;
 }
 
+/** Il gemello di `unixOnly`: il test interroga uno strumento che c'è solo su
+ *  Windows. */
+export function windowsOnly(why: string): string | false {
+  return process.platform === 'win32' ? false : `solo Windows: ${why}`;
+}
+
 function hasPython(): boolean {
   try {
     execFileSync('python3', ['-c', 'pass'], { stdio: 'ignore', windowsHide: true });

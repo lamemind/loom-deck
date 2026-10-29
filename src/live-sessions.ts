@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { isWithin } from './project-path.js';
+import { createWindowsLiveness, type Liveness, type WindowsLiveness } from './windows-liveness.js';
 
 // ADAPTER ISOLATO sul registry dei processi Claude Code vivi (T62).
 //
@@ -98,6 +99,27 @@ function isAlive(pid: number, procStart: string): boolean {
   return procStartOf(stat) === procStart;
 }
 
+/** La liveness via `/proc`: una lettura per pid, nessuno stato fra un giro e
+ *  l'altro. */
+const procLiveness: Liveness = (pairs) => pairs.map((p) => isAlive(p.pid, p.procStart));
+
+let windowsLiveness: WindowsLiveness | null = null;
+
+/**
+ * T177 — la liveness della piattaforma VERA, non di quella delle funzioni
+ * (`platform.ts`): `/proc` c'è o non c'è a seconda del sistema su cui il deck
+ * gira, e `LOOM_DECK_PLATFORM` non lo fa comparire.
+ *
+ * Su Windows il verificatore è uno per processo, creato al primo uso: i suoi
+ * verdetti valgono da un giro del poll all'altro, ed è quello che evita una
+ * query di PowerShell a ogni giro (`windows-liveness.ts`).
+ */
+function platformLiveness(): Liveness {
+  if (process.platform !== 'win32') return procLiveness;
+  windowsLiveness ??= createWindowsLiveness();
+  return windowsLiveness.check;
+}
+
 /**
  * Semantica di UNA entry del registry, separata dalla lettura del disco: qui
  * c'è solo cosa rende un record utilizzabile, ed è l'unica parte che vale la
@@ -155,15 +177,23 @@ export function parseLiveEntry(
  * Le entry VIVE del registry, nell'ordine di `readdir`.
  *
  * `keep` scarta un'entry PRIMA del controllo di liveness: chi filtra per
- * progetto risparmia così lo `stat` di `/proc` sui processi degli altri.
+ * progetto risparmia così lo `stat` di `/proc` sui processi degli altri, e su
+ * Windows la loro ora di avvio nella query.
+ *
+ * La liveness gira una volta sola, su tutte le entry tenute: su Windows le
+ * coppie da verificare finiscono in una query sola (`windows-liveness.ts`).
  */
-function liveEntries(root: string, keep: (entry: LiveSession) => boolean = () => true): LiveSession[] {
-  const out: LiveSession[] = [];
+function liveEntries(
+  root: string,
+  keep: (entry: LiveSession) => boolean = () => true,
+  liveness: Liveness = platformLiveness(),
+): LiveSession[] {
+  const kept: { entry: LiveSession; procStart: string }[] = [];
   let files: string[];
   try {
     files = readdirSync(root).filter((f) => f.endsWith('.json'));
   } catch {
-    return out; // registry assente (CLI mai avviato, o versione che non lo scrive)
+    return []; // registry assente (CLI mai avviato, o versione che non lo scrive)
   }
 
   for (const f of files) {
@@ -176,13 +206,11 @@ function liveEntries(root: string, keep: (entry: LiveSession) => boolean = () =>
       continue; // il processo può finire fra readdir e read
     }
     const parsed = parseLiveEntry(content, pid);
-    if (!parsed) continue;
-    const { entry, procStart } = parsed;
-    if (!keep(entry)) continue;
-    if (!isAlive(pid, procStart)) continue;
-    out.push(entry);
+    if (!parsed || !keep(parsed.entry)) continue;
+    kept.push(parsed);
   }
-  return out;
+  const alive = liveness(kept.map(({ entry, procStart }) => ({ pid: entry.pid, procStart })));
+  return kept.filter((_, i) => alive[i]).map(({ entry }) => entry);
 }
 
 /**
@@ -257,8 +285,8 @@ function procArgv(pid: number): string[] | null {
  * un altro.
  *
  * Una viva senza `--name` non entra: il suo titolo di tab non è un nome
- * chiesto. Dove `/proc` non esiste nessuna entry risulta viva, e la lista
- * esce vuota: il lancio usa il nome base.
+ * chiesto. Dove `/proc` non esiste l'argv non si legge, e la lista esce vuota:
+ * il lancio usa il nome base.
  */
 export function liveRequestedNames(root: string = liveSessionsRoot()): string[] {
   const names: string[] = [];
