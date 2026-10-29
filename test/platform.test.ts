@@ -40,12 +40,14 @@ test('su Linux nessuna funzione è spenta', () => {
 });
 
 // T176 — `spawn` è la prima funzione riaccesa: tab di Windows Terminal al
-// posto di Ptyxis. Le altre cinque restano alle loro figlie di fase 2.
-const WIN_OFF: Feature[] = ALL.filter((f) => f !== 'spawn');
+// posto di Ptyxis. T177 — la seconda è `liveSessions`: liveness senza `/proc`.
+// Le altre quattro restano alle loro figlie di fase 2.
+const WIN_ON: Feature[] = ['spawn', 'liveSessions'];
+const WIN_OFF: Feature[] = ALL.filter((f) => !WIN_ON.includes(f));
 
-test('su Windows sono spente le cinque funzioni ancora senza figlia chiusa, spawn è accesa', () => {
+test('su Windows sono spente le quattro funzioni ancora senza figlia chiusa, spawn e liveSessions sono accese', () => {
   for (const f of WIN_OFF) assert.equal(isAvailable(f, 'win32'), false, f);
-  assert.equal(isAvailable('spawn', 'win32'), true);
+  for (const f of WIN_ON) assert.equal(isAvailable(f, 'win32'), true, f);
   // La mappa è il punto che una figlia tocca per riaccendere: nessuna voce
   // doppia, o togliere una voce sola lascerebbe la funzione spenta.
   const win = UNAVAILABLE.win32 ?? [];
@@ -72,9 +74,9 @@ test('LOOM_DECK_PLATFORM sostituisce la piattaforma vera, e si legge a ogni chia
   const real = process.platform;
   onPlatform('win32', () => {
     assert.equal(platform(), 'win32');
-    assert.equal(isAvailable('liveSessions'), false);
+    assert.equal(isAvailable('launch'), false);
   });
-  onPlatform('linux', () => assert.equal(isAvailable('liveSessions'), true));
+  onPlatform('linux', () => assert.equal(isAvailable('launch'), true));
   if (process.env.LOOM_DECK_PLATFORM === undefined) assert.equal(platform(), real);
 });
 
@@ -112,15 +114,46 @@ test('gli indicatori senza il campo `available` restano quelli di prima', () => 
   assert.equal(gitlinkIndicator({ count: 0, attention: 0, scanned: true, ok: true, failed: false }), 'gitlink ok');
 });
 
-test('vista vive: su Windows nessun numero e la nota vuota nomina la piattaforma', () => {
+/** Esegue `fn` su una piattaforma finta che ha spente le sole `off`, poi la
+ *  toglie dalla mappa. Serve al ramo «funzione spenta» di una funzione che
+ *  nessuna piattaforma vera spegne più: il ramo resta nel codice, e va tenuto
+ *  verde per la prossima piattaforma che non l'avesse. */
+function onFakePlatform<T>(off: Feature[], fn: () => T): T {
+  const fake = 'aix' as NodeJS.Platform;
+  assert.equal(UNAVAILABLE[fake], undefined, 'la piattaforma finta non deve averne una vera');
+  UNAVAILABLE[fake] = off;
+  try {
+    return onPlatform(fake, fn);
+  } finally {
+    delete UNAVAILABLE[fake];
+  }
+}
+
+test('vista vive: su Windows il numero, come su Linux (T177)', () => {
+  const counts = { total: 5, live: 2, pinned: 0, older: 0 };
+  const live = sessionView('live');
+  for (const p of ['win32', 'linux'] as const) {
+    onPlatform(p, () => {
+      assert.equal(live.label(counts, 'tutte'), '●2 vive', p);
+      assert.equal(live.empty, 'nessuna conversazione viva in questa lista', p);
+    });
+  }
+});
+
+test('vista vive: dove la liveness manca nessun numero e la nota vuota nomina la piattaforma', () => {
   const counts = { total: 5, live: 0, pinned: 0, older: 0 };
   const live = sessionView('live');
-  onPlatform('win32', () => {
+  onFakePlatform(['liveSessions'], () => {
     assert.equal(live.label(counts, 'tutte'), '● vive n/d');
-    assert.equal(live.empty, 'sessioni vive n/d su Windows');
+    assert.equal(live.empty, 'sessioni vive n/d su aix');
   });
-  onPlatform('linux', () => {
-    assert.equal(live.label(counts, 'tutte'), '●0 vive');
-    assert.equal(live.empty, 'nessuna conversazione viva in questa lista');
-  });
+});
+
+test('CANC sulle conversazioni: su Windows la guardia di piattaforma lascia passare (T177)', () => {
+  const notes: string[] = [];
+  const blocked = onPlatform('win32', () =>
+    refuse('liveSessions', 'CANC', (s) => notes.push(s), 'eliminazione delle conversazioni'),
+  );
+  assert.equal(blocked, false);
+  assert.deepEqual(notes, []);
 });

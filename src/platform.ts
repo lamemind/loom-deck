@@ -16,10 +16,12 @@ export type Feature =
   /** Tab e conversazioni: `deck-run` e il terminale `t` — Ptyxis su Linux,
    *  Windows Terminal su Windows (T176). */
   | 'spawn'
-  /** Liveness delle conversazioni: `/proc/<pid>/stat`. Ne dipendono anche la
-   *  guardia di `CANC` sulle conversazioni, che non deve eliminare il transcript
-   *  di una conversazione aperta, e il resume e il restore (T176), che senza
-   *  liveness riaprirebbero una conversazione già aperta in un'altra tab. */
+  /** Liveness delle conversazioni: `/proc/<pid>/stat` su Linux, esistenza del
+   *  pid e ora di avvio da `Get-Process` su Windows (T177,
+   *  `windows-liveness.ts`). Ne dipendono anche la guardia di `CANC` sulle
+   *  conversazioni, che non deve eliminare il transcript di una conversazione
+   *  aperta, e il resume e il restore (T176), che senza liveness riaprirebbero
+   *  una conversazione già aperta in un'altra tab. */
   | 'liveSessions'
   /** Gli script `.sh` del plugin: pane doc, coda inbox, gitlink. */
   | 'pluginScripts'
@@ -38,7 +40,6 @@ export type Feature =
  */
 export const UNAVAILABLE: Partial<Record<NodeJS.Platform, readonly Feature[]>> = {
   win32: [
-    'liveSessions', // T177 — liveness senza /proc; spegne anche resume e restore
     'pluginScripts', // T178 — .sh del plugin via Git Bash
     'hardWrap', // T178 — python del wrap-scan
     'launch', // T179 — comando per piattaforma nelle voci launch[]

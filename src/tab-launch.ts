@@ -114,8 +114,11 @@ export async function runDeckRun(argv: readonly string[], io: DeckRunIo): Promis
     catalog: loadPromptCatalog(catalogPath),
     catalogPath,
     platform: io.platform,
-    // Su Windows niente `/proc`, quindi nessuna liveness (T177): il titolo
-    // resta quello base, cioè il comportamento di prima del gemello.
+    // Su Windows il nome chiesto non si legge: viene dall'argv di
+    // `/proc/<pid>/cmdline`, che lì non esiste. La liveness c'è (T177), ma
+    // interrogarla qui lancerebbe la query di PowerShell e terrebbe `deck-run`
+    // in vita fino alla sua risposta, per una lista che esce comunque vuota: il
+    // titolo resta quello base, il comportamento di prima del gemello.
     liveRequestedNames: io.platform === 'win32' ? [] : liveRequestedNames(liveSessionsRoot(io.env)),
   });
   for (const w of plan.warnings) io.stderr(`${w}\n`);
