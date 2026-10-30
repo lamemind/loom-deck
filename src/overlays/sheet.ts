@@ -23,7 +23,7 @@ import {
 import { wrapWithOffsets } from '../width.js';
 import { scanText, topForOffset, type Occurrence } from '../text-search.js';
 import { parseMarkdown } from '../markdown.js';
-import { cpLen, insertAt, removeAt } from '../layout.js';
+import { cpLen, insertAt, isDone, removeAt } from '../layout.js';
 import { sanitizeTyped } from '../glyphs.js';
 import {
   ACTION_HOTKEYS,
@@ -35,7 +35,7 @@ import {
   type PromptKind,
   type SpawnActionId,
 } from '../spawn-catalog.js';
-import { taskIsEpic } from '../tasks.js';
+import { loadTaskFileText, taskIsEpic, type Task } from '../tasks.js';
 import { fieldsKey, type FieldSpec, type FieldsCursor, type FieldsIO } from '../fields.js';
 import { useDlvMode } from './dlv-mode.js';
 import type { ResolvedSpawn } from '../spawn-config.js';
@@ -49,6 +49,27 @@ export interface Sheet {
    *  Facoltativo perché è un dato della LISTA, e il detail si può aprire anche
    *  su una task che la lista non ha ancora riletto. */
   done?: boolean;
+}
+
+/**
+ * T169 — lo `Sheet` di una task, composto in un posto solo: `⏎` sul pane task e
+ * `⏎` nel finder aprono lo stesso detail, e due composizioni scritte a mano
+ * divergerebbero alla prima modifica (un titolo preso da una fonte diversa, una
+ * `done` dimenticata su un lato).
+ *
+ * `detailTitle` è l'H1 del task file quando il chiamante l'ha già letto: è la
+ * forma lunga, mentre la riga di `tasks.md` è troncata a 64 colonne. Assente,
+ * il detail non resta senza intestazione — prende la riga di `tasks.md`.
+ */
+export function taskSheet(tasksDir: string, task: Task, detailTitle: string | undefined): Sheet {
+  return {
+    id: task.id,
+    title: detailTitle || task.desc,
+    text: loadTaskFileText(tasksDir, task.id),
+    // T189 — la Prog della lista, non il campo del task file: è la fonte che il
+    // resto del deck legge come «chiusa».
+    done: isDone(task.prog),
+  };
 }
 
 export interface FindState {

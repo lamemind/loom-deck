@@ -38,7 +38,7 @@ import { useDeckModel } from './deck-model.js';
 import { useDeckActions } from './actions.js';
 import { useDeckInput } from './input.js';
 import { useSearchOverlay } from './overlays/search.js';
-import { useSheetOverlay } from './overlays/sheet.js';
+import { taskSheet, useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
 import { useFinderOverlay } from './overlays/finder.js';
 import { useProjectStatus } from './overlays/status.js';
@@ -119,17 +119,6 @@ function Deck({
     onSubmit: actions.assignSession,
   });
 
-  // T169 — il finder legge la lista GREZZA di tasks.md (`model.tasks`), non
-  // `viewTasks`: trovare una task nascosta dai filtri è la sua ragione d'essere.
-  const finder = useFinderOverlay({
-    tasks: model.tasks,
-    tasksDir,
-    rows,
-    hasNote: Boolean(note),
-    setMode,
-    setNote,
-  });
-
   const sheet = useSheetOverlay({
     rows,
     columns,
@@ -140,6 +129,21 @@ function Deck({
     // fornitori dei buchi.
     defaults: actions.spawnTaskDefaults,
     onAction: actions.spawnForTask,
+  });
+
+  // T169 — il finder legge la lista GREZZA di tasks.md (`model.tasks`), non
+  // `viewTasks`: trovare una task nascosta dai filtri è la sua ragione d'essere.
+  // Sta dopo il detail perché `⏎` lo apre: stesso `Sheet` del `⏎` sul pane task
+  // (`taskSheet`), col titolo lungo dal task file che la preview ha già letto.
+  const finder = useFinderOverlay({
+    tasks: model.tasks,
+    tasksDir,
+    rows,
+    hasNote: Boolean(note),
+    setMode,
+    setNote,
+    onOpen: (task, detail) => sheet.open(taskSheet(tasksDir, task, detail?.title)),
+    onJump: model.jumpToTask,
   });
 
   const search = useSearchOverlay({

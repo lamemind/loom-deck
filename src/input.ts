@@ -43,8 +43,6 @@ import { LEFT_PANE, META_ROWS, QUIT_WINDOW_MS, RIGHT_PANE, type Mode } from './m
 import { TASK_VIEWS, taskView, type SessionViewId, type TaskViewId } from './pane-views.js';
 import type { InboxViewId } from './inbox-views.js';
 import type { DocViewId } from './doc-views.js';
-import { loadTaskFileText } from './tasks.js';
-import { isDone } from './layout.js';
 import { inboxPrompt, loadInboxText } from './inbox.js';
 import { dirListing, loadDocText } from './doc-tree.js';
 import { refuse } from './platform.js';
@@ -53,7 +51,7 @@ import type { DeckActions } from './actions.js';
 import type { DeckModel } from './deck-model.js';
 import type { useAssignOverlay } from './overlays/assign.js';
 import type { useFinderOverlay } from './overlays/finder.js';
-import type { useSheetOverlay } from './overlays/sheet.js';
+import { taskSheet, type useSheetOverlay } from './overlays/sheet.js';
 import type { useSearchOverlay } from './overlays/search.js';
 import type { useProjectStatus } from './overlays/status.js';
 import type { useFileSheet } from './overlays/file-sheet.js';
@@ -577,19 +575,7 @@ export function useDeckInput({
         // shortcut CTRL restano per chi sa già cosa vuole, `⏎` apre il ventaglio.
         // Lo spawn a mani nude di prima è `open`, cioè `⏎ ⏎` (è il focus iniziale).
         const task = actions.selectedTaskOr('⏎', 'aprire');
-        if (task) {
-          overlays.sheet.open({
-            id: task.id,
-            // Il titolo del task file quando c'è (è l'H1, cioè la forma
-            // lunga), la riga di tasks.md altrimenti: il detail non deve
-            // restare senza intestazione solo perché il file manca.
-            title: model.detail?.title || task.desc,
-            text: loadTaskFileText(tasksDir, task.id),
-            // T189 — la Prog della lista, non il campo del task file: è la
-            // fonte che il resto del deck legge come «chiusa».
-            done: isDone(task.prog),
-          });
-        }
+        if (task) overlays.sheet.open(taskSheet(tasksDir, task, model.detail?.title));
       } else {
         // T49 — ⏎ su una sessione = resume in nuova tab. Il binding si rilegge
         // dal sidecar (non dal padre selezionato): vale anche per le spot.

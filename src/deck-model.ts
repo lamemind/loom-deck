@@ -80,7 +80,14 @@ import {
   type Focus,
   type Parent,
 } from './model.js';
-import { applyView, epicRollup, taskColumns, type TaskRowData, type ViewState } from './view.js';
+import {
+  applyView,
+  epicRollup,
+  isVisible,
+  taskColumns,
+  type TaskRowData,
+  type ViewState,
+} from './view.js';
 import { loadView } from './view-store.js';
 import { termWidth } from './width.js';
 import { MODELS, MODEL_DEFAULT, type ModelKind } from './spawn-catalog.js';
@@ -702,6 +709,53 @@ export function useDeckModel({
     return true;
   }
 
+  /**
+   * T169/P7 — il salto dal finder: la task `id` selezionata nel pane task e il
+   * fuoco sul pane conversazioni, dove `⏎` apre una conversazione come sempre.
+   *
+   * Un mutatore solo, e non `selectTaskView` più `setSel` dal chiamante:
+   * `selectTaskView` azzera la selezione su `≡ tutte`, e il cambio di vista, la
+   * selezione e il fuoco devono arrivare nello STESSO handler — è il batch di
+   * React a far sì che il render dopo trovi la task già nella vista nuova,
+   * invece dell'effect di validità che la farebbe cadere sulla prima riga.
+   *
+   * La vista resta quella attiva se la task ci sta; altrimenti passa a quella
+   * che la contiene, e `Tasks` e `nascoste` sono complementari esatte
+   * (`isVisible` e il suo contrario), quindi una delle due la contiene sempre.
+   * I filtri non si toccano: il salto mostra la task, non riscrive la vista
+   * salvata. Dal modo doc il deck torna prima in modo task, l'unico che monta il
+   * pane conversazioni.
+   *
+   * La vista del pane conversazioni torna a quella del parent (`context`): le
+   * altre mostrano un sottoinsieme (`vive`, `+più vecchie`) o un insieme di
+   * tutt'altro parent (`📌`, le pinnate dell'intero progetto), e il salto esiste
+   * per vedere le conversazioni di QUELLA task.
+   */
+  function jumpToTask(id: string) {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) {
+      setNote(`→ ${id}: non è più in tasks.md`);
+      return;
+    }
+    const parts = [`→ ${id}`];
+    if (deckMode !== 'task') {
+      setDeckMode('task');
+      parts.push('modo task');
+    }
+    if (!paneTasks.some((t) => t.id === id)) {
+      const target: TaskViewId = isVisible(task, view) ? 'tasks' : 'hidden';
+      setTaskViewId(target);
+      parts.push(`vista ${taskView(target).label(taskCounts)}`);
+    }
+    if (sessionViewId !== 'context') {
+      setSessionViewId('context');
+      setSelSessionId(null);
+    }
+    setSel(id);
+    setFocus('sessions');
+    setNote(`${parts.join(' · ')} · conversazioni`);
+  }
+
   return {
     // fonti
     tasks,
@@ -801,6 +855,7 @@ export function useDeckModel({
     toggleDeckMode,
     closeDocMode,
     cycleView,
+    jumpToTask,
   };
 }
 

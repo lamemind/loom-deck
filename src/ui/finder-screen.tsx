@@ -113,7 +113,8 @@ function FinderScreen({
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
       <Text bold color="cyan">loom-deck</Text>
       <Text dimColor wrap="truncate-end">
-        trova task · <Text color="yellow">↑↓</Text> naviga · <Text color="yellow">^U</Text> pulisci ·{' '}
+        trova task · <Text color="yellow">↑↓</Text> naviga · <Text color="yellow">⏎</Text> detail ·{' '}
+        <Text color="yellow">→</Text> conversazioni · <Text color="yellow">^U</Text> pulisci ·{' '}
         <Text color="yellow">esc</Text> chiudi
       </Text>
       <Box borderStyle="round" borderColor="yellow" paddingX={1} marginTop={1}>
