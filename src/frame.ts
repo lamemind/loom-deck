@@ -167,6 +167,11 @@ export function deckLegend(state: {
       // focus sul pane e una riga selezionata, stale compresa) e la forma: due
       // attributi della stessa conversazione, scritti nello stesso sidecar.
       ...(canPin ? ['p pin', 'a priorità', 'N titolo', 'A assegna'] : []),
+      // T169 — in testa alle voci fisse, perché la legenda tronca dalla coda e
+      // il finder è la via d'accesso a ogni task, nascoste dai filtri comprese:
+      // in fondo, a 120 colonne, cadeva nel taglio. Vive in entrambi i modi,
+      // come `^F`, perché non legge la selezione del pane task (P6).
+      'T trova',
       // T121 — le due voci nominano il GESTO e non l'oggetto: «status» da solo
       // sarebbe indistinguibile dal recap della task su `^K`, che è un'altra
       // cosa e sta a due voci di distanza.

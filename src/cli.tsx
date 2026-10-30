@@ -40,6 +40,7 @@ import { useDeckInput } from './input.js';
 import { useSearchOverlay } from './overlays/search.js';
 import { useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
+import { useFinderOverlay } from './overlays/finder.js';
 import { useProjectStatus } from './overlays/status.js';
 import { useFileSheet } from './overlays/file-sheet.js';
 import type { InboxFile } from './inbox.js';
@@ -116,6 +117,17 @@ function Deck({
     setMode,
     setNote,
     onSubmit: actions.assignSession,
+  });
+
+  // T169 — il finder legge la lista GREZZA di tasks.md (`model.tasks`), non
+  // `viewTasks`: trovare una task nascosta dai filtri è la sua ragione d'essere.
+  const finder = useFinderOverlay({
+    tasks: model.tasks,
+    tasksDir,
+    rows,
+    hasNote: Boolean(note),
+    setMode,
+    setNote,
   });
 
   const sheet = useSheetOverlay({
@@ -252,6 +264,7 @@ function Deck({
 
   const overlays = {
     assign,
+    finder,
     sheet,
     search,
     status,
@@ -398,7 +411,7 @@ function Deck({
     projectName: model.projectName,
     taskRowData: model.taskRowData,
     hiddenTasks: model.hiddenTasks,
-    overlays: { assign, sheet, search, status, inbox, doc: docSheet, wrap, spawn },
+    overlays: { assign, finder, sheet, search, status, inbox, doc: docSheet, wrap, spawn },
   });
   if (screen) return screen;
 

@@ -34,6 +34,7 @@ export const CAPTURING_MODES = [
   'reader',
   'search',
   'assign',
+  'finder',
   'create',
   'note',
   'sort',

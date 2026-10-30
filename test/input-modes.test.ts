@@ -25,6 +25,7 @@ const ALL_MODES: Mode[] = [
   'reader',
   'note',
   'assign',
+  'finder',
   'detail',
   'purge',
   'drop',
@@ -91,6 +92,7 @@ test('la rotella è inerte in normal e nelle liste', () => {
   assert.equal(scrolls('normal'), false);
   assert.equal(scrolls('search'), false);
   assert.equal(scrolls('assign'), false);
+  assert.equal(scrolls('finder'), false);
 });
 
 // ── T160 · i tasti del mondo task ────────────────────────────────────────

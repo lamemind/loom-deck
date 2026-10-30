@@ -127,6 +127,11 @@ export const MODAL_HEIGHT = {
   // tabella più l'area di compilazione: in un box sopra i pane resterebbero due
   // colonne per il prompt. Altezza da `spawnListCapacity`.
   spawn: 0,
+  // T169 — il finder delle task: decima sostitutiva. La lista intera di
+  // `tasks.md` è un contenuto ad altezza variabile, e un modale in flusso ha
+  // un'altezza fissa per modo da cui il budget dei pane si calcola. Altezza da
+  // `finderLayout`.
+  finder: 0,
 } as const;
 
 export type Mode = keyof typeof MODAL_HEIGHT;
@@ -337,6 +342,48 @@ const ASSIGN_CHROME = 12;
  *  sta → schermata sostituita dalla riga compatta (`isCompact`). */
 export function assignListCapacity(rows: number, noteLine: boolean): number {
   return Math.max(0, (rows || 24) - SLACK - ASSIGN_CHROME - (noteLine ? 1 : 0));
+}
+
+// T169 — cornice del finder delle task. Gemella di ASSIGN_CHROME riga per
+// riga: un campo di una riga sopra una lista con il suo header.
+//
+//   2  bordi del box esterno
+//   1  titolo "loom-deck"
+//   1  riga hint/legenda tasti
+//   1  marginTop del box campo
+//   2  bordi del box campo
+//   1  riga del campo
+//   1  marginTop del box lista
+//   2  bordi del box lista
+//   1  header della lista (conteggi)
+const FINDER_CHROME = 12;
+
+// Il blocco preview sotto la lista: righe RISERVATE, non misurate sul task file
+// selezionato. Titolo, meta e commit ne prendono al più tre, la descrizione il
+// resto. Un'altezza che seguisse il contenuto farebbe saltare la lista di una o
+// due righe a ogni `↑↓`, quando la task successiva ha un campo meta in più o in
+// meno — e la finestra scorrerebbe sotto il cursore senza che lo si sia mosso.
+const FINDER_PREVIEW_ROWS = 6;
+
+/** Sotto questa soglia la lista del finder non serve più: si sacrifica la
+ *  preview, non la lista — è da lì che si sceglie. */
+const MIN_FINDER_ROWS = 3;
+
+/**
+ * T169 — righe del finder: quante alla lista e quante alla preview della task
+ * selezionata (`0` = blocco preview omesso).
+ *
+ * A differenza della ricerca sulle conversazioni la preview non vive delle sole
+ * righe che la lista lascia libere: lì il contesto è il premio di una ricerca
+ * già stretta, qui la preview è ciò che dice QUALE task si sta per aprire — e il
+ * finder apre a campo vuoto, cioè con la lista intera, proprio quando la lista
+ * le lascerebbe zero righe.
+ */
+export function finderLayout(rows: number, noteLine: boolean): { list: number; preview: number } {
+  const avail = (rows || 24) - SLACK - FINDER_CHROME - (noteLine ? 1 : 0);
+  const cost = PREVIEW_CHROME + FINDER_PREVIEW_ROWS;
+  if (avail - cost >= MIN_FINDER_ROWS) return { list: avail - cost, preview: FINDER_PREVIEW_ROWS };
+  return { list: Math.max(0, avail), preview: 0 };
 }
 
 // T52 — cornice del reader fullscreen.

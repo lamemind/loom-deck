@@ -40,7 +40,9 @@ import { FileSheetScreen, docSheetHead, inboxSheetHead } from './file-sheet-scre
 import { WrapScreen } from './wrap-screen.js';
 import { SpawnScreen } from './spawn-screen.js';
 import { ReaderScreen, SearchScreen } from './search-screen.js';
+import { finderScreen } from './finder-screen.js';
 import type { useAssignOverlay } from '../overlays/assign.js';
+import type { useFinderOverlay } from '../overlays/finder.js';
 import type { useSheetOverlay } from '../overlays/sheet.js';
 import type { useSearchOverlay } from '../overlays/search.js';
 import type { useProjectStatus } from '../overlays/status.js';
@@ -51,6 +53,7 @@ import type { useWrapOverlay } from '../overlays/wrap.js';
 import type { useSpawnPage } from '../overlays/spawn.js';
 
 type AssignOverlay = ReturnType<typeof useAssignOverlay>;
+type FinderOverlay = ReturnType<typeof useFinderOverlay>;
 type SheetOverlay = ReturnType<typeof useSheetOverlay>;
 type SearchOverlay = ReturnType<typeof useSearchOverlay>;
 type StatusOverlay = ReturnType<typeof useProjectStatus>;
@@ -224,6 +227,7 @@ export type ScreensInput = {
   hiddenTasks: number;
   overlays: {
     assign: AssignOverlay;
+    finder: FinderOverlay;
     sheet: SheetOverlay;
     search: SearchOverlay;
     status: StatusOverlay;
@@ -245,7 +249,7 @@ export type ScreensInput = {
  */
 export function screenFor(input: ScreensInput) {
   const { mode, rows, columns, note, overlays } = input;
-  const { assign, sheet, search, status, inbox, doc, wrap, spawn } = overlays;
+  const { assign, finder, sheet, search, status, inbox, doc, wrap, spawn } = overlays;
 
   // ── T57 · schermata di assegnazione ─────────────────────────────────────
   // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
@@ -301,6 +305,17 @@ export function screenFor(input: ScreensInput) {
         note={note}
       />
     );
+  }
+
+  // ── T169 · finder delle task ────────────────────────────────────────────
+  // Decima sostitutiva, gemella dell'assegnazione nella forma: campo sopra una
+  // lista di righe task. Finestra, colonne e preview li compone
+  // `finderScreen`; qui resta il ripiego del terminale troppo basso.
+  if (mode === 'finder') {
+    if (isCompact(finder.layout.list)) {
+      return <CompactNotice what="trova task" esc="chiude" rows={rows} columns={columns} />;
+    }
+    return finderScreen({ finder, columns, note, taskRowData: input.taskRowData });
   }
 
   // ── T66 · detail della task ─────────────────────────────────────────────

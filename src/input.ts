@@ -52,6 +52,7 @@ import type { Frame } from './frame.js';
 import type { DeckActions } from './actions.js';
 import type { DeckModel } from './deck-model.js';
 import type { useAssignOverlay } from './overlays/assign.js';
+import type { useFinderOverlay } from './overlays/finder.js';
 import type { useSheetOverlay } from './overlays/sheet.js';
 import type { useSearchOverlay } from './overlays/search.js';
 import type { useProjectStatus } from './overlays/status.js';
@@ -95,6 +96,7 @@ export const NO_MODIFIERS: Key = {
 
 export type DeckOverlays = {
   assign: ReturnType<typeof useAssignOverlay>;
+  finder: ReturnType<typeof useFinderOverlay>;
   sheet: ReturnType<typeof useSheetOverlay>;
   search: ReturnType<typeof useSearchOverlay>;
   status: ReturnType<typeof useProjectStatus>;
@@ -179,6 +181,7 @@ export function useDeckInput({
     reader: overlays.search.onReaderKey,
     search: overlays.search.onSearchKey,
     assign: overlays.assign.onKey,
+    finder: overlays.finder.onKey,
     create: overlays.text.onCreateKey,
     note: overlays.text.onNoteKey,
     sort: overlays.view.onSortKey,
@@ -695,6 +698,13 @@ export function useDeckInput({
       } else {
         overlays.assign.open(model.selSessionId, model.bindings.get(model.selSessionId));
       }
+    } else if (input === 'T') {
+      // T169 — il finder delle task: trovarne una per numero o per titolo fra
+      // TUTTE le righe di tasks.md, viste e filtri ignorati. MAIUSCOLA perché
+      // apre una schermata (convenzione T39), `A` è il precedente esatto; `^T`
+      // è il restore delle conversazioni (T181). Vivo anche in modo doc (P6):
+      // non legge la selezione del pane task, come `^F`.
+      overlays.finder.open();
     } else if (input === 't') {
       actions.openTerminal();
     } else if (input === 'c') {

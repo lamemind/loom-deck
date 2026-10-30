@@ -1,5 +1,5 @@
-// La riga di lista di UNA task, condivisa fra il pane task e la schermata di
-// assegnazione (T124).
+// La riga di lista di UNA task, condivisa fra il pane task, la schermata di
+// assegnazione (T124) e il finder (T169).
 //
 // Prima viveva solo nel pane, e la schermata di assegnazione ne teneva una copia
 // ricomposta a mano: id non paddato alla colonna, coda non ancorata al bordo,
@@ -8,12 +8,14 @@
 // diverse — quindi nessun test le vedeva e ogni evoluzione della lista si
 // fermava al suo confine. Un componente solo è ciò che toglie il gemello.
 //
-// Le due sedi differiscono per tre cose sole, tutte parametri: la larghezza
-// utile, il concetto di fuoco (la schermata di assegnazione è sempre a fuoco) e
-// la finestra di righe che il chiamante ha già ritagliato.
+// Le sedi differiscono per poche cose, tutte parametri: la larghezza utile, il
+// concetto di fuoco (le schermate sostitutive sono sempre a fuoco), la finestra
+// di righe che il chiamante ha già ritagliato e, nel solo finder, il testo da
+// evidenziare.
 import { Text } from 'ink';
 import { cut, pad, sanitize, termWidth } from '../width.js';
 import { isDone } from '../layout.js';
+import { scanText, sliceLine } from '../text-search.js';
 import {
   CARET,
   CARET_OFF,
@@ -37,6 +39,7 @@ export function TaskRow({
   tailW,
   data,
   blockMark,
+  mark,
 }: {
   task: Task;
   sel: boolean;
@@ -55,6 +58,9 @@ export function TaskRow({
    *  blocco) non avrebbe più il significato posizionale che porta in lista.
    *  Assente = nessuna riga marcata, resa identica a prima di T67. */
   blockMark?: ReadonlyMap<string, BlockMark>;
+  /** T169 — testo da evidenziare nella descrizione, dal finder. Assente o vuoto
+   *  = nessuna evidenza, resa identica a prima. */
+  mark?: string;
 }) {
   // T124 — il predicato è UNO e si valuta qui una volta sola: da lui dipendono
   // tutte e tre le evidenze (id in grassetto+colore, glifo, numeratore in coda).
@@ -105,6 +111,11 @@ export function TaskRow({
   const spina = termWidth(spinaFull) <= avail - reserve ? spinaFull : '';
   const descW = Math.max(0, avail - reserve - termWidth(spina));
   const desc = cut(task.desc, descW);
+  // T169 — le occorrenze si cercano sulla descrizione GIÀ TAGLIATA, non su
+  // `task.desc`: `cut` collassa gli spazi e mette l'ellissi, quindi gli offset
+  // del testo intero non indicizzerebbero la stringa a schermo. Un match che il
+  // taglio spezza resta senza evidenza invece che evidenziato a metà sull'ellissi.
+  const segs = mark ? sliceLine(desc, 0, scanText(desc, mark).occ, -1) : [];
   return (
     <Text
       inverse={sel && focused}
@@ -117,7 +128,18 @@ export function TaskRow({
         {id}
         {glyph}
       </Text>
-      {` ${sanitize(task.pri)}  ${displayProg(task.prog, isEpic)}  ${spina}${desc}`}
+      {` ${sanitize(task.pri)}  ${displayProg(task.prog, isEpic)}  ${spina}`}
+      {segs.length > 0
+        ? segs.map((s, i) =>
+            s.hit ? (
+              <Text key={i} backgroundColor="yellow" color="black">
+                {s.text}
+              </Text>
+            ) : (
+              <Text key={i}>{s.text}</Text>
+            ),
+          )
+        : desc}
       {' '.repeat(Math.max(0, descW - termWidth(desc)))}
       {pad(tail, reserve, 'right')}
     </Text>
