@@ -52,6 +52,11 @@ import signal
 # otto 'W' superano. Un tasto vero non andrebbe bene: sposterebbe lo stato.
 # I tasti CTRL non hanno voce qui: `\x03`, `\x06` … si scrivono nudi dentro
 # `--keys`, perché ogni carattere fuori mappa viene digitato tale e quale.
+# '`' = LETTERALE: il carattere che segue si digita tale e quale, anche quando
+# la mappa lo lega a un tasto. T169 — il finder si apre con `T` maiuscola, che
+# qui è il tab, e un titolo cercato può contenere `D` o `R`, che qui sono
+# frecce: senza un escape quei caratteri non sarebbero digitabili da nessuno
+# scenario. Il backtick è scelto come `<` e `>`, fuori dalle lettere.
 KEYS = {
     'D': b'\x1b[B',
     'U': b'\x1b[A',
@@ -97,6 +102,10 @@ def tokenize(keys):
             col, row = (int(v) for v in keys[i + 1:end].split(','))
             out.extend(b'\x1b[<%d;%d;%d%s' % (b, col, row, kind) for b, kind in MOUSE[ch])
             i = end + 1
+            continue
+        if ch == '`' and i + 1 < len(keys):
+            out.append(keys[i + 1].encode())
+            i += 2
             continue
         out.append(KEYS.get(ch, ch.encode()))
         i += 1

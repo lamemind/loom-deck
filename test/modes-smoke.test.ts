@@ -169,6 +169,9 @@ const MODES: Array<{ name: string; keys: string; expect: RegExp; env?: NodeJS.Pr
   // che è l'unica a nominare la pagina: le celle della tabella portano valori
   // che il progetto può aver cambiato.
   { name: 'spawn', keys: CTRL_S, expect: /azioni di spawn/i },
+  // T169 — il finder si apre con `T` maiuscola, che nel driver pty è il tab: il
+  // backtick la manda letterale. L'attesa è la riga hint, l'unica a nominarlo.
+  { name: 'finder', keys: '`T', expect: /trova task/i },
 ];
 
 for (const m of MODES) {
@@ -184,6 +187,55 @@ test('modo reader: si apre da dentro la ricerca', { skip: SKIP }, () => {
   const frame = capture(`${CTRL_F}task\r`);
   // Nel reader la barra dice `esc torna` (alla lista), non `esc chiude`.
   assert.match(frame, /reader|esc torna/i);
+});
+
+// ── T169 · il finder delle task ──────────────────────────────────────────
+//
+// Sul progetto SINTETICO di `detail-fixture.ts`, con la vista salvata che
+// nasconde le chiuse: T2 (✔️) è proprio la task che il pane non mostra, cioè il
+// caso per cui il finder esiste. Sul cappello vero gli id cambiano a ogni purga.
+
+function finderProject(): { proj: string; env: NodeJS.ProcessEnv } {
+  const p = detailProject();
+  writeFileSync(
+    join(p.proj, '.claude', 'loom', 'deck-view.json'),
+    JSON.stringify({ sort: [{ key: 'id', dir: 'asc' }], hiddenPri: [], hiddenProg: ['done'] }),
+  );
+  return p;
+}
+
+test('finder: esc chiude senza effetti, il deck torna alla lista', { skip: SKIP }, () => {
+  const { proj, env } = finderProject();
+  const frame = lastFrame(capture(`\`T2${ESC}`, proj, env));
+  assert.doesNotMatch(frame, /trova task/i, `il finder è rimasto aperto: ${frame}`);
+  assert.match(frame, /PROJECT STATUS/, `il deck non è tornato alla lista: ${frame}`);
+  // Nessun salto: il pane resta sulla vista principale, sulla riga d'apertura.
+  assert.doesNotMatch(frame, /→ T2/, `esc ha fatto il salto: ${frame}`);
+});
+
+test('finder: un id nascosto dai filtri si trova, e ⏎ lo apre nel detail', { skip: SKIP }, () => {
+  const { proj, env } = finderProject();
+  const frame = lastFrame(capture('`T2\r', proj, env));
+  // La riga meta del detail porta id e titolo della task aperta: il titolo è
+  // l'H1 del task file, la forma lunga, non la riga di tasks.md («chiusa»).
+  assert.match(frame, /T2 · T2 del collaudo/, `il detail non è quello di T2: ${frame}`);
+});
+
+test('finder: → su una task nascosta porta il pane su nascoste e il fuoco sulle conversazioni', {
+  skip: SKIP,
+}, () => {
+  const { proj, env } = finderProject();
+  const frame = lastFrame(capture('`T2R', proj, env));
+  assert.match(frame, /→ T2 · vista 1 nascoste · conversazioni/, `riga di stato del salto: ${frame}`);
+  // L'header del pane conversazioni nomina il parent: è la task selezionata.
+  assert.match(frame, /Sessions · T2/, `il pane conversazioni non segue T2: ${frame}`);
+});
+
+test('finder: → dal modo doc riporta il deck in modo task', { skip: SKIP }, () => {
+  const { proj, env } = finderProject();
+  const frame = lastFrame(capture(`\x02\`T2R`, proj, env));
+  assert.match(frame, /→ T2 · modo task · vista 1 nascoste/, `il salto non ha cambiato modo: ${frame}`);
+  assert.match(frame, /Sessions · T2/, `il pane conversazioni non è montato: ${frame}`);
 });
 
 // I due punti dove la precedenza fra i rami è già stata corretta una volta.

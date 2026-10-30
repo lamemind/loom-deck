@@ -498,6 +498,14 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // della schermata, cioè l'unico che può sfondarne il box.
   ['assegna sessione a task', 'RA', [100, 176]],
   ['assegna · filtro lungo', 'RAX', [100]],
+  // T169 — il finder: la stessa riga task dell'assegnazione, più la preview
+  // riservata sotto la lista. Il backtick manda la `T` letterale (nel driver
+  // pty `T` è il tab). A campo vuoto la lista è intera, cioè il caso più alto;
+  // `deck` accende l'evidenza del testo, che spezza la descrizione in segmenti;
+  // `X` incolla 60 caratteri nel campo, l'unico testo libero della schermata.
+  ['finder · lista intera', '`T', [100, 176]],
+  ['finder · testo evidenziato', '`Tdeck', [100, 176]],
+  ['finder · campo lungo', '`TX', [100]],
   // T66 — il detail: `DD` porta la selezione sulla prima task (il deck atterra
   // su `≡ tutte`), `\r` apre l'overlay. Le righe del task file sono l'unico
   // testo a lunghezza libera lì dentro, e la riga bottoni l'unica riga fissa
@@ -895,6 +903,19 @@ for (const rows of [16, 20]) {
       );
     });
   }
+
+  // T169 — il finder riserva righe FISSE alla preview sotto la lista: è la
+  // riserva che sfonda `rows` se `finderLayout` e la schermata non contano le
+  // stesse righe. A 16 righe la preview non entra e cade per prima; a 20 entra.
+  test(`altezza · finder @ ${rows} righe`, { skip: SKIP }, () => {
+    const raw = capture(100, rows, '`T');
+    const frame = lastFrame(raw).filter((l) => l !== '');
+    assert.ok(frame.join('\n').includes('trova task'), 'il gate non sta misurando il finder');
+    assert.ok(
+      frame.length <= rows,
+      `frame di ${frame.length} righe in un terminale di ${rows}`,
+    );
+  });
 
   // T112 — la conferma è un modale IN FLUSSO: spinge giù i pane, quindi le sue
   // 7 righe vanno scalate dal budget delle liste. Non scalate, il frame supera
