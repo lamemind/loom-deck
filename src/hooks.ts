@@ -94,8 +94,8 @@ export function useTasks(tasksPath: string) {
  * `commit`. D1 (preflight): sullo STESSO poll di `tasks.md` (`POLL_MS`), non
  * su una scala propria come `useArchivable`.
  *
- * T153 — `commitTimes` gatea da sé su `rev-parse HEAD` (davanti allo spawn
- * caro del log, vedi `commit-times.ts`) e a sha invariato torna la STESSA
+ * T153 — `commitTimes` gatea da sé sullo sha di HEAD (davanti allo spawn
+ * caro del log, vedi `commit-times.ts`; letto dal filesystem da T191) e a sha invariato torna la STESSA
  * istanza di mappa. L'hook confronta quindi per IDENTITÀ, non più per firma
  * ricostruita: la firma evitava solo il re-render, il gate a monte evita il
  * lavoro. `lastMtime` in `useTasks` resta il gemello sullo stesso schema.

@@ -11,7 +11,8 @@
 // già il suo ultimo commit, quindi si tiene solo il primo e si ignorano gli
 // hit successivi dello stesso id.
 import { execFile } from 'node:child_process';
-import { basename } from 'node:path';
+import { readFile, realpath, stat } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -27,7 +28,7 @@ const EMPTY_MAP: ReadonlyMap<string, number> = new Map();
  * T153 — gate module-level: `git log` gira solo se lo sha di HEAD è cambiato
  * dall'ultima chiamata su questa stessa coppia (tasksDir, projectRoot). Le
  * date di ultimo commit cambiano SOLO se HEAD si muove (§Implementation
- * Notes T153): un rev-parse fallito degrada come degradava il log, mai un
+ * Notes T153): uno sha non risolvibile degrada come degradava il log, mai un
  * throw. `key` tiene le due coppie separate — un test che passa tmpdir
  * diversi a chiamate successive non deve leggere la cache dell'altro.
  */
@@ -41,7 +42,113 @@ export function commitLogSpawnCount(): number {
   return logSpawns;
 }
 
+let headSpawns = 0;
+
+/** T191 — quante volte il gate ha dovuto chiedere lo sha a `git rev-parse`
+ *  invece di leggerlo dal filesystem. Su un repo ordinario resta fermo: è il
+ *  numero che dimostra «nessun processo per tick». */
+export function headSpawnCount(): number {
+  return headSpawns;
+}
+
+const SHA_RE = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+// Ref che git tiene nel gitdir del worktree invece che nella cartella comune
+// (`git help worktree`, §Details). Un ref di branch sta sempre nella comune.
+const PER_WORKTREE_REF_RE = /^refs\/(?:bisect|worktree|rewritten)\//;
+// Catena di ref simbolici: HEAD → refs/heads/x è un passo; oltre, git stesso
+// rifiuta presto (`SYMREF_MAXDEPTH` = 5).
+const SYMREF_MAX_DEPTH = 5;
+
+async function readTrimmed(path: string): Promise<string | null> {
+  try {
+    return (await readFile(path, 'utf8')).trim();
+  } catch {
+    return null;
+  }
+}
+
+/** Il gitdir del repo che contiene `start`, risalendo come fa git: `.git`
+ *  cartella, oppure `.git` file con `gitdir: <path>` (worktree di lane,
+ *  submodule), relativo alla cartella del file. */
+async function findGitDir(start: string): Promise<string | null> {
+  let dir = start;
+  for (;;) {
+    const dotGit = join(dir, '.git');
+    try {
+      const st = await stat(dotGit);
+      if (st.isDirectory()) return dotGit;
+      if (st.isFile()) {
+        const m = /^gitdir:\s*(.+)$/m.exec((await readFile(dotGit, 'utf8')).trim());
+        return m ? resolve(dir, m[1]!.trim()) : null;
+      }
+    } catch {
+      // nessun `.git` qui: si sale
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/** Lo sha di `refname`: file sciolto prima, `packed-refs` poi — lo stesso
+ *  ordine di git, perché un ref sciolto batte la sua copia impacchettata. */
+async function readRef(gitDir: string, commonDir: string, refname: string): Promise<string | null> {
+  const base = PER_WORKTREE_REF_RE.test(refname) ? gitDir : commonDir;
+  const loose = await readTrimmed(join(base, ...refname.split('/')));
+  if (loose !== null) return loose;
+  const packed = await readTrimmed(join(commonDir, 'packed-refs'));
+  if (packed === null) return null;
+  for (const line of packed.split('\n')) {
+    if (line.startsWith('#') || line.startsWith('^')) continue;
+    const sp = line.indexOf(' ');
+    if (sp > 0 && line.slice(sp + 1).trim() === refname) return line.slice(0, sp);
+  }
+  return null;
+}
+
+/**
+ * T191 — lo sha di HEAD letto dal filesystem, senza processi: `.git` (o il
+ * gitdir che il file `.git` nomina), `HEAD`, il ref che HEAD nomina nella
+ * cartella comune (`commondir` di un worktree), `packed-refs`. `null` = il
+ * filesystem non basta: unborn branch, reftable, file a metà scrittura, env che
+ * sposta il repo. Il chiamante allora chiede a git.
+ */
+async function headShaFromFs(projectRoot: string): Promise<string | null> {
+  // GIT_DIR / GIT_COMMON_DIR spostano il repo fuori da dove la risalita guarda.
+  if (process.env.GIT_DIR || process.env.GIT_COMMON_DIR) return null;
+  let start: string;
+  try {
+    // git risale dal path fisico (getcwd), non da quello col symlink.
+    start = await realpath(projectRoot);
+  } catch {
+    return null;
+  }
+  const gitDir = await findGitDir(start);
+  if (gitDir === null) return null;
+  const common = await readTrimmed(join(gitDir, 'commondir'));
+  const commonDir = common ? resolve(gitDir, common) : gitDir;
+
+  let value = await readTrimmed(join(gitDir, 'HEAD'));
+  for (let depth = 0; value !== null && depth <= SYMREF_MAX_DEPTH; depth++) {
+    if (SHA_RE.test(value)) return value;
+    const m = /^ref:\s*(\S+)$/.exec(value);
+    if (!m) return null;
+    value = await readRef(gitDir, commonDir, m[1]!);
+  }
+  return null;
+}
+
+/**
+ * Lo sha di HEAD per il gate. T191: dal filesystem, perché su Windows un
+ * `git rev-parse HEAD` lanciato da node sono due processi e circa un decimo di
+ * secondo di CPU, e il gate gira a ogni tick. Quando il filesystem non risolve,
+ * decide git, come prima di T191: il ripiego costa come il gate di T153, mai
+ * di più, e non produce mai uno sha diverso da quello di git.
+ */
 async function headSha(projectRoot: string): Promise<string | null> {
+  const fromFs = await headShaFromFs(projectRoot);
+  if (fromFs !== null) return fromFs;
+  headSpawns++;
   try {
     const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
       cwd: projectRoot,
@@ -88,9 +195,9 @@ export function parseCommitLog(output: string): Map<string, number> {
  * `desc` finiscono in coda — dove un timestamp assente e uno vecchio si
  * confonderebbero.
  *
- * T153 — gate su `rev-parse HEAD` (un ordine di grandezza più economico
- * dello spawn del log che sostituisce, cifre misurate nel Progress Log): a
- * sha invariato torna la STESSA istanza di mappa, non una ricostruita — è
+ * T153 — gate sullo sha di HEAD, letto dal filesystem da T191 (`headSha`:
+ * nessun processo per tick, `git rev-parse` solo dove il filesystem non
+ * basta): a sha invariato torna la STESSA istanza di mappa, non una ricostruita — è
  * ciò che rende inutile il confronto per firma in `useCommitTimes` (P1
  * preflight).
  */
