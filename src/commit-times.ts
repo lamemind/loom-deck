@@ -113,7 +113,7 @@ async function readRef(gitDir: string, commonDir: string, refname: string): Prom
  * filesystem non basta: unborn branch, reftable, file a metà scrittura, env che
  * sposta il repo. Il chiamante allora chiede a git.
  */
-async function headShaFromFs(projectRoot: string): Promise<string | null> {
+export async function headShaFromFs(projectRoot: string): Promise<string | null> {
   // GIT_DIR / GIT_COMMON_DIR spostano il repo fuori da dove la risalita guarda.
   if (process.env.GIT_DIR || process.env.GIT_COMMON_DIR) return null;
   let start: string;

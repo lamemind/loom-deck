@@ -7,10 +7,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { commitLogSpawnCount, commitTimes, parseCommitLog } from '../src/commit-times.js';
+import { basename, join } from 'node:path';
+import {
+  commitLogSpawnCount,
+  commitTimes,
+  headShaFromFs,
+  headSpawnCount,
+  parseCommitLog,
+} from '../src/commit-times.js';
 
 // Forma reale di `git log --format=#%ct --name-only`: riga di formato, riga
 // vuota (anche qui, non solo a fine blocco), i path, un'altra riga vuota prima
@@ -118,5 +124,170 @@ test('commitTimes: a HEAD fermo il gate evita un secondo spawn di `git log`', as
     assert.notStrictEqual(third, first, 'HEAD mosso: nuova istanza');
     assert.ok(third.get('T2'), 'il nuovo commit compare nella mappa ricostruita');
     assert.equal(third.get('T1'), first.get('T1'), 'la voce vecchia resta, la mappa non è un cap sulla storia');
+  });
+});
+
+// T191 — il gate legge lo sha di HEAD dal filesystem. Ogni test confronta lo
+// sha letto con quello di `git rev-parse HEAD` sullo stesso albero: il gate non
+// deve mai vedere un HEAD diverso da quello di git. `headSpawnCount` dice se il
+// gate ha dovuto ripiegare su un processo. Delta sui contatori, come sopra.
+
+function revParse(cwd: string): string {
+  return execFileSync('git', ['rev-parse', 'HEAD'], { cwd }).toString().trim();
+}
+
+function commitTask(repo: string, tasksDir: string, name: string): void {
+  writeFileSync(join(tasksDir, name), `# ${name}\n`);
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-q', '-m', name);
+}
+
+test('gate T191: HEAD invariato → nessun processo git, né per il gate né per il log', async () => {
+  await withRealRepo(async (repoRoot, tasksDir) => {
+    assert.equal(await headShaFromFs(repoRoot), revParse(repoRoot));
+    const first = await commitTimes(tasksDir, repoRoot);
+    const heads = headSpawnCount();
+    const logs = commitLogSpawnCount();
+    for (let i = 0; i < 5; i++) {
+      assert.strictEqual(await commitTimes(tasksDir, repoRoot), first, `giro ${i}: stessa istanza`);
+    }
+    assert.equal(headSpawnCount(), heads, 'nessun rev-parse: lo sha viene dal filesystem');
+    assert.equal(commitLogSpawnCount(), logs, 'nessun log: HEAD fermo');
+  });
+});
+
+test('gate T191: HEAD cambiato → la mappa si aggiorna alla chiamata dopo, senza rev-parse', async () => {
+  await withRealRepo(async (repoRoot, tasksDir) => {
+    const first = await commitTimes(tasksDir, repoRoot);
+    const heads = headSpawnCount();
+    commitTask(repoRoot, tasksDir, 'T2-due.md');
+    assert.equal(await headShaFromFs(repoRoot), revParse(repoRoot));
+    const next = await commitTimes(tasksDir, repoRoot);
+    assert.notStrictEqual(next, first);
+    assert.ok(next.get('T2'));
+    assert.equal(headSpawnCount(), heads);
+  });
+});
+
+test('gate T191: worktree di lane — `.git` è un file, il ref sta nella cartella comune', async () => {
+  await withRealRepo(async (repoRoot) => {
+    const wt = `${repoRoot}-lane`;
+    try {
+      git(repoRoot, 'worktree', 'add', '-q', '-b', 'feat/lane', wt);
+      const wtTasks = join(wt, 'tasks');
+      assert.equal(await headShaFromFs(wt), revParse(wt));
+      const heads = headSpawnCount();
+      const first = await commitTimes(wtTasks, wt);
+      commitTask(wt, wtTasks, 'T3-lane.md');
+      assert.equal(await headShaFromFs(wt), revParse(wt), 'commit nel worktree: lo sha nuovo si legge');
+      assert.notEqual(revParse(wt), revParse(repoRoot), 'il worktree ha il suo HEAD, non quello del principale');
+      const next = await commitTimes(wtTasks, wt);
+      assert.notStrictEqual(next, first);
+      assert.ok(next.get('T3'));
+      assert.equal(headSpawnCount(), heads, 'nessun ripiego nel worktree');
+    } finally {
+      rmSync(wt, { recursive: true, force: true });
+    }
+  });
+});
+
+test('gate T191: ref solo in `packed-refs` — si legge, e un HEAD che si muove lì si vede', async () => {
+  await withRealRepo(async (repoRoot, tasksDir) => {
+    git(repoRoot, 'pack-refs', '--all');
+    assert.equal(await headShaFromFs(repoRoot), revParse(repoRoot), 'ref impacchettato');
+    const heads = headSpawnCount();
+    const first = await commitTimes(tasksDir, repoRoot);
+    commitTask(repoRoot, tasksDir, 'T4-packed.md');
+    git(repoRoot, 'pack-refs', '--all'); // il ref sciolto sparisce, packed-refs porta lo sha nuovo
+    assert.equal(await headShaFromFs(repoRoot), revParse(repoRoot), 'sha nuovo solo in packed-refs');
+    const next = await commitTimes(tasksDir, repoRoot);
+    assert.notStrictEqual(next, first);
+    assert.ok(next.get('T4'));
+    assert.equal(headSpawnCount(), heads);
+  });
+});
+
+test('gate T191: un ref sciolto batte la sua copia vecchia in `packed-refs`', async () => {
+  await withRealRepo(async (repoRoot, tasksDir) => {
+    git(repoRoot, 'pack-refs', '--all');
+    commitTask(repoRoot, tasksDir, 'T5-loose.md'); // ref sciolto nuovo, packed-refs fermo sul vecchio
+    assert.equal(await headShaFromFs(repoRoot), revParse(repoRoot));
+  });
+});
+
+test('gate T191: HEAD staccato (sha nudo in HEAD)', async () => {
+  await withRealRepo(async (repoRoot) => {
+    git(repoRoot, 'checkout', '-q', '--detach');
+    assert.equal(await headShaFromFs(repoRoot), revParse(repoRoot));
+  });
+});
+
+test('gate T191: file `.git` con gitdir relativo, risolto dalla cartella del file', async () => {
+  await withRealRepo(async (repoRoot) => {
+    const store = `${repoRoot}-store`;
+    try {
+      mkdirSync(store);
+      renameSync(join(repoRoot, '.git'), join(store, 'repo.git'));
+      writeFileSync(join(repoRoot, '.git'), `gitdir: ../${basename(store)}/repo.git\n`);
+      assert.equal(await headShaFromFs(repoRoot), revParse(repoRoot));
+    } finally {
+      rmSync(store, { recursive: true, force: true });
+    }
+  });
+});
+
+test('gate T191: da una sottocartella del repo si risale al `.git` come fa git', async () => {
+  await withRealRepo(async (repoRoot, tasksDir) => {
+    assert.equal(await headShaFromFs(tasksDir), revParse(repoRoot));
+  });
+});
+
+test('git muto T191: branch senza commit → il filesystem non risolve, ripiego su git, mappa vuota', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deck-commits-unborn-'));
+  try {
+    git(dir, 'init', '-q');
+    assert.equal(await headShaFromFs(dir), null);
+    const heads = headSpawnCount();
+    const map = await commitTimes(dir, dir);
+    assert.equal(map.size, 0);
+    assert.equal(headSpawnCount(), heads + 1, 'il ripiego chiede a git, che decide come prima di T191');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('git muto T191: path che non esiste → null dal filesystem, mappa vuota, nessun throw', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'deck-commits-norepo-'));
+  try {
+    const missing = join(dir, 'non-esiste');
+    assert.equal(await headShaFromFs(missing), null);
+    assert.deepEqual(await commitTimes(missing, missing), new Map());
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('git muto T191: git non installato → sha dal filesystem, log in errore, mappa vuota, nessun throw', async () => {
+  await withRealRepo(async (repoRoot, tasksDir) => {
+    const path = process.env.PATH;
+    process.env.PATH = '';
+    try {
+      // tasksDir diverso da quello già in cache: il log deve davvero partire e fallire.
+      const map = await commitTimes(join(tasksDir, 'altro'), repoRoot);
+      assert.equal(map.size, 0);
+    } finally {
+      process.env.PATH = path;
+    }
+  });
+});
+
+test('gate T191: GIT_DIR nell env → il filesystem si fa da parte, decide git', async () => {
+  await withRealRepo(async (repoRoot) => {
+    process.env.GIT_DIR = join(repoRoot, '.git');
+    try {
+      assert.equal(await headShaFromFs(repoRoot), null);
+    } finally {
+      delete process.env.GIT_DIR;
+    }
   });
 });
