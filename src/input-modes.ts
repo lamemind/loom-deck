@@ -125,13 +125,13 @@ export interface TaskModeKey {
    *  inerzia. */
   label: string;
   /**
-   * La voce di legenda che questo tasto porta, o `null` quando la voce è già
-   * condizionata dal focus e quindi sparisce da sé in modo doc.
+   * La voce di legenda che questo tasto porta, o `null` quando la voce la compone
+   * `deckLegend`.
    *
-   * I quattro a `null` sono `^K`/`^P`/`^R` (una voce sola per tre tasti, emessa
-   * solo con una task selezionata) e `CANC`, che ha due forme a seconda del
-   * bersaglio. Scriverli qui obbligherebbe questo elenco a conoscere il focus e
-   * il bulk, cioè a diventare una seconda copia della logica della legenda.
+   * I quattro a `null` sono `^K`/`^P`/`^R` (una voce sola per tre tasti) e `CANC`,
+   * che ha due forme a seconda del bersaglio. Scriverli qui obbligherebbe questo
+   * elenco a conoscere il bulk, cioè a diventare una seconda copia della logica
+   * della legenda.
    */
   legend: string | null;
 }

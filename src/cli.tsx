@@ -27,13 +27,12 @@ import {
   BARE_BUTTONS_WIDTH,
   BARE_LABEL,
   HEADER_BUTTON_SEP,
-  deckLegend,
   frameGeometry,
   headlineWidth,
-  hintLegend,
   indicatorRow,
   launchRow,
 } from './frame.js';
+import { deckLegend, hintLegend } from './combo-catalog.js';
 import { choiceButtons } from './ui/fields.js';
 import { useDeckModel } from './deck-model.js';
 import { useDeckActions } from './actions.js';
@@ -270,7 +269,7 @@ function Deck({
 
   // T194 — il modale delle combo. Le voci gli arrivano all'apertura, dal dispatch:
   // dipendono dalla geometria, che qui sotto si calcola dopo gli overlay.
-  const combo = useComboOverlay({ rows, setMode, setNote });
+  const combo = useComboOverlay({ rows, columns, setMode, setNote });
 
   const overlays = {
     assign,
@@ -393,16 +392,11 @@ function Deck({
     restoreCount: model.restorable.length,
   });
   const legend = deckLegend({
-    focus: model.focus,
-    hasTask: model.selTask !== null,
-    hasSession: model.selSessionObj !== null,
-    hasSessionId: model.selSessionId !== null,
     purgeBulk: model.purgeBulk,
     docMode: model.deckMode === 'doc',
-    hasInbox: model.selInbox !== null,
-    hasDoc: model.selDoc !== null,
     gitlink: gitlink.enabled,
     restore: frame.headerButton !== null,
+    launchCount: model.launch.length,
   });
 
   useDeckInput({

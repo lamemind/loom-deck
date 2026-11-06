@@ -4,9 +4,8 @@
 // Modulo PURO — nessun React, nessuno stato, nessun effetto. Prende le misure
 // del terminale e le liste intere, restituisce il budget d'altezza, le finestre
 // di rendering e la mappa dell'hit-test. Ne discende che è testabile a unità,
-// che è la ragione principale per cui è uscito da `cli.tsx`: qui vivono due
-// invarianti che prima erano affidate a un commento — la legenda che non deve
-// mentire sul bersaglio di `CANC`, e le righe cliccabili che devono essere
+// che è la ragione principale per cui è uscito da `cli.tsx`: qui vive un'invariante
+// che prima era affidata a un commento — le righe cliccabili devono essere
 // esattamente quelle disegnate.
 //
 // T131 — l'ordine di calcolo è vincolante rispetto al cablaggio dell'input.
@@ -40,8 +39,7 @@ import { layoutBudget, windowRange, type Budget, type PreviewKind } from './view
 import { sanitize, termWidth } from './width.js';
 import { MODEL_SHORT_LIST, WARN } from './glyphs.js';
 import { STATUS_MISSING } from './project-status.js';
-import { META_ROWS, type DeckMode, type Focus, type Mode } from './model.js';
-import { TASK_MODE_LEGEND } from './input-modes.js';
+import { META_ROWS, type DeckMode, type Mode } from './model.js';
 import type { SessionViewCounts, SessionViewId, TaskViewCounts, TaskViewId } from './pane-views.js';
 import type { InboxViewCounts, InboxViewId } from './inbox-views.js';
 import type { InboxFile } from './inbox.js';
@@ -95,155 +93,6 @@ const BARE_LABEL_GAP = ' ';
  */
 const BARE_BLOCK_WIDTH =
   termWidth(BARE_LABEL.text) + termWidth(BARE_LABEL_GAP) + BARE_BUTTONS_WIDTH;
-
-/** T181 — la voce del restore: la portano il modale e la riga due. */
-const RESTORE_VOICE = '^T restore';
-
-/**
- * La legenda della modalità normale, una voce per tasto: è ciò che il modale su
- * `H` elenca (T194). Elenca SOLO i tasti che fanno qualcosa qui e ora: le voci
- * contestuali compaiono quando il pane a fuoco le rende possibili e altrimenti
- * spariscono, invece di annunciarsi inerti con un `—`.
- *
- * Fuori: la navigazione (`↑↓` `←→`), universale in qualunque TUI, e
- * l'indicatore `focus:` — il pane a fuoco si vede già dall'evidenziazione.
- * Nessuna voce di uscita: non esiste più un tasto che chiuda il deck.
- */
-export function deckLegend(state: {
-  focus: Focus;
-  /** Una task vera è selezionata (non una riga meta). */
-  hasTask: boolean;
-  /** La riga sessioni selezionata ha un transcript (non è un pin stale). */
-  hasSession: boolean;
-  /** C'è una riga sessioni selezionata, stale compresa. */
-  hasSessionId: boolean;
-  /** `CANC` pota in blocco invece della sola selezionata. */
-  purgeBulk: boolean;
-  /** T160 — il deck è in modo doc (albero doc + coda inbox). */
-  docMode: boolean;
-  /** T134 — c'è una riga inbox selezionata da aprire. */
-  hasInbox: boolean;
-  /** T160 — c'è una riga doc selezionata da aprire. */
-  hasDoc: boolean;
-  /** T155 — il progetto ha submodule: senza, `^U` non ha bersaglio e la voce
-   *  non si annuncia. Stessa regola delle voci contestuali sopra. */
-  gitlink: boolean;
-  /** T181 — il bottone di restore è a schermo in testata. Stessa regola: senza
-   *  il bottone `^T` non ha niente da riaprire, e la voce non si annuncia. */
-  restore?: boolean;
-}): string[] {
-  const canSpawn = state.focus === 'tasks' && state.hasTask;
-  const canResume = state.focus === 'sessions' && state.hasSession;
-  const canOpenInbox = state.focus === 'inbox' && state.hasInbox;
-  const canOpenDoc = state.focus === 'doctree' && state.hasDoc;
-  // T50 — il pin agisce su qualunque riga selezionata (anche stale, per
-  // spinnarla); basta il focus sul pane e una selezione.
-  const canPin = state.focus === 'sessions' && state.hasSessionId;
-  return [
-    // T181/P5 — in TESTA, perché questa voce vale proprio nel momento in cui il
-    // deck si è appena riaperto: è il primo gesto che si vuole fare, non uno fra
-    // venti.
-    ...(state.restore ? [RESTORE_VOICE] : []),
-    ...(canSpawn
-      ? ['⏎ detail', '^K/^P/^R spawn']
-      : canResume
-        ? ['⏎ resume']
-        : canOpenInbox || canOpenDoc
-          ? ['⏎ apri']
-          : []),
-    // T112 — la voce nomina il BERSAGLIO, che cambia di taglia senza che
-    // cambi il tasto. Legge `purgeBulk`, la stessa condizione del ramo di
-    // apertura: una legenda che annunciasse «tutte» dove il tasto ne pota una
-    // sola sarebbe peggio di nessuna legenda.
-    ...(state.focus === 'tasks' ? [state.purgeBulk ? 'CANC elimina tutte' : 'CANC elimina'] : []),
-    // `CANC` sul pane sessioni: stessa condizione del fork (una conversazione
-    // VERA sotto il cursore), perché una stale non ha un transcript da
-    // eliminare — da lì si esce con `p`.
-    ...(canResume ? ['f fork', 'm modello', 'CANC elimina'] : []),
-    // T117 · D3 — «titolo» anche qui: è lo stesso valore che il detail chiede
-    // allo spawn, e due nomi per una cosa sola li paga chi legge le due
-    // schermate. Rename di sola ETICHETTA: il dato resta `note` nel sidecar e
-    // `--title-note` in deck-run, dove rinominarlo sarebbe un breaking.
-    // T158 — `a` sta accanto a `p` perché condivide la condizione (`canPin`:
-    // focus sul pane e una riga selezionata, stale compresa) e la forma: due
-    // attributi della stessa conversazione, scritti nello stesso sidecar.
-    ...(canPin ? ['p pin', 'a priorità', 'N titolo', 'A assegna'] : []),
-    // T169 — in testa alle voci fisse: il finder è la via d'accesso a ogni task,
-    // nascoste dai filtri comprese. Vive in entrambi i modi, come `^F`, perché
-    // non legge la selezione del pane task (P6).
-    'T trova',
-    // T121 — le due voci nominano il GESTO e non l'oggetto: «status» da solo
-    // sarebbe indistinguibile dal recap della task su `^K`, che è un'altra
-    // cosa e sta a due voci di distanza.
-    '^G genera status',
-    '^O apri status',
-    // T155 — la voce nomina il GESTO, come le due sopra: «gitlink» da solo
-    // direbbe l'oggetto e non che il tasto lo allinea con un commit.
-    ...(state.gitlink ? ['^U bumpa gitlink'] : []),
-    // T160 — la voce nomina il MODO che il tasto monta, non quello montato:
-    // `^B` li scambia, e annunciare quello che si sta già guardando direbbe il
-    // contrario di ciò che il tasto fa. Stessa regola di `CANC elimina tutte`,
-    // che nomina il bersaglio e non il tasto.
-    state.docMode ? '^B task' : '^B doc',
-    // T161 — la voce nomina l'OGGETTO e non il gesto, al contrario di `^G`/
-    // `^O`/`^U`: lì il tasto fa qualcosa (genera, bumpa) e il nome dell'oggetto
-    // da solo sarebbe ambiguo, qui apre una pagina e basta.
-    '^S azioni',
-    '^F cerca',
-    // T160 — le voci dei tasti del mondo task vengono dall'ELENCO che governa
-    // anche il dispatch (`input-modes.ts` §TASK_MODE_KEYS), non da cinque
-    // stringhe scritte qui: due elenchi divergono al primo tasto aggiunto, e
-    // il tasto nuovo resterebbe annunciato mentre è inerte — cioè una legenda
-    // che descrive un deck che non esiste.
-    //
-    // In modo doc spariscono tutte. Le altre voci del mondo task (`⏎ detail`,
-    // `^K/^P/^R spawn`, `CANC elimina`) non sono qui perché sono già
-    // condizionate dal focus, che in modo doc non è mai `tasks`: spariscono da
-    // sé, senza una seconda guardia.
-    ...(state.docMode ? [] : TASK_MODE_LEGEND),
-  ].map((voce) => sanitize(voce));
-}
-
-/**
- * T194 — la legenda di RIGA DUE in modalità normale: la voce che apre il modale
- * delle combo e, col bottone di restore a schermo, `^T restore`.
- *
- * `^T` resta qui anche se il modale lo elenca: il bottone in testata non porta la
- * combo nel testo (P5 di T181), e vale appena il deck si è riaperto, cioè quando
- * nessuno ha ancora motivo di aprire un modale per scoprirla.
- *
- * `H combo` sta in testa perché la riga tronca dalla coda: è la voce da cui si
- * raggiungono tutte le altre, compresa quella che il taglio toglierebbe.
- */
-export function hintLegend(state: { restore: boolean }): string {
-  return ['H combo', ...(state.restore ? [RESTORE_VOICE] : [])].join(' · ');
-}
-
-export type ComboRow = {
-  /** Il tasto, così come la voce lo annuncia: `^K/^P/^R`, `CANC`, `T`. */
-  key: string;
-  /** Ciò che il tasto fa: `spawn`, `elimina tutte`, `trova`. */
-  label: string;
-};
-
-/**
- * T194 — le voci della legenda come righe del modale, col tasto a sinistra e
- * l'effetto a destra.
- *
- * Ogni voce apre col tasto che annuncia e lo separa con uno spazio
- * (`input-modes.test.ts` lo fissa per le voci di `TASK_MODE_LEGEND`), quindi il
- * taglio sta sul primo spazio. Le righe si derivano dalle voci invece di stare in
- * un secondo elenco: è ciò che tiene il modale allineato al dispatch e alle
- * condizioni di `deckLegend`.
- */
-export function comboRows(legend: readonly string[]): ComboRow[] {
-  return legend.map((voce) => {
-    const at = voce.indexOf(' ');
-    return at < 0
-      ? { key: voce, label: '' }
-      : { key: voce.slice(0, at), label: voce.slice(at + 1) };
-  });
-}
 
 export type LaunchRow = {
   /** I segmenti di SINISTRA, nell'ordine in cui si disegnano: la surface `t`,

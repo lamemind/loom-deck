@@ -172,9 +172,9 @@ const MODES: Array<{ name: string; keys: string; expect: RegExp; env?: NodeJS.Pr
   // T169 — il finder si apre con `T` maiuscola, che nel driver pty è il tab: il
   // backtick la manda letterale. L'attesa è la riga hint, l'unica a nominarlo.
   { name: 'finder', keys: '`T', expect: /trova task/i },
-  // T194 — il modale delle combo: la sua testata è l'unica a dire che le voci
-  // seguono il pane a fuoco.
-  { name: 'combo', keys: 'H', expect: /voci attive sul pane a fuoco/ },
+  // T194 — il modale delle combo: l'attesa è sulla sua testata, perché le voci
+  // stanno anche in altre schermate.
+  { name: 'combo', keys: 'H', expect: /tutte le azioni del deck/ },
 ];
 
 for (const m of MODES) {
@@ -245,30 +245,36 @@ test('finder: → dal modo doc riporta il deck in modo task', { skip: SKIP }, ()
 
 test('combo: esc torna alla lista, col fuoco sul pane da cui si è entrati', { skip: SKIP }, () => {
   const closed = lastFrame(capture(`RH${ESC}`));
-  assert.doesNotMatch(closed, /voci attive/, `il modale è rimasto aperto: ${closed}`);
+  assert.doesNotMatch(closed, /tutte le azioni/, `il modale è rimasto aperto: ${closed}`);
   assert.match(closed, /PROJECT STATUS/, `il deck non è tornato alla lista: ${closed}`);
-  // Il fuoco si legge riaprendo: `⏎ resume` vive solo sul pane conversazioni.
-  assert.match(lastFrame(capture(`RH${ESC}H`)), /⏎\s+resume/, 'il fuoco non è rimasto sul pane');
+  // Il modale è uguale da ogni pane, quindi il fuoco si legge da `N`: dal pane
+  // conversazioni apre il campo del titolo (`✎`), dal pane task lo rifiuta con una
+  // nota.
+  assert.match(lastFrame(capture(`RH${ESC}N`)), /✎ ›/, 'il fuoco non è rimasto a destra');
+  assert.match(lastFrame(capture(`H${ESC}N`)), /seleziona una sessione/, 'il fuoco non è rimasto a sinistra');
 });
 
-test('combo: le voci seguono il pane a fuoco, e tutte le voci hanno la loro riga', { skip: SKIP }, () => {
+test('combo: le tre liste stanno insieme, qualunque sia il pane a fuoco', { skip: SKIP }, () => {
   const onTask = lastFrame(capture('DDH'));
-  assert.match(onTask, /⏎\s+detail/, `manca ⏎ detail sul pane task: ${onTask}`);
-  assert.match(onTask, /\^K\/\^P\/\^R\s+spawn/, `manca lo spawn: ${onTask}`);
-  assert.doesNotMatch(onTask, /\bfork\b/, `il fork annunciato sul pane task: ${onTask}`);
-  // Le voci in coda, le stesse che su riga due non si vedevano mai.
-  for (const voce of [/C\s+nuova/, /E\s+edit/, /S\s+sort/, /F\s+filtri/, /w\s+salva/]) {
-    assert.match(onTask, voce, `voce in coda assente dal modale: ${onTask}`);
+  const lists: Array<[string, RegExp[]]> = [
+    ['generali', [/tab\s+vista/, /←→\s+pane/, /T\s+trova/, /\^F\s+cerca/, /\^W\s+lista hard-wrap/, /\^E\s+scan hard-wrap/, /t\s+terminale/, /c\s+claude/]],
+    ['task', [/⏎\s+detail/, /\^K\/\^P\/\^R\s+spawn/, /C\s+nuova/, /E\s+edit/, /S\s+sort/, /F\s+filtri/, /w\s+salva/]],
+    ['conversazioni', [/⏎\s+resume/, /f\s+fork/, /m\s+modello/, /p\s+pin/, /a\s+priorità/, /N\s+titolo/, /A\s+assegna/]],
+  ];
+  for (const [name, voices] of lists) {
+    for (const voice of voices) assert.match(onTask, voice, `voce di ${name} assente: ${onTask}`);
   }
-  const onSession = lastFrame(capture('RH'));
-  assert.match(onSession, /⏎\s+resume/, `manca ⏎ resume: ${onSession}`);
-  assert.match(onSession, /f\s+fork/, `manca il fork: ${onSession}`);
+  assert.match(onTask, /task\s+conversazioni/, `le colonne non sono affiancate: ${onTask}`);
+  assert.match(onTask, /⏎\s+detail\s+⏎\s+resume/, `le colonne non sono affiancate: ${onTask}`);
+  assert.ok(onTask.indexOf('tab') < onTask.indexOf('⏎'), `le generali non stanno in alto: ${onTask}`);
+  assert.equal(lastFrame(capture('RH')), onTask, 'il modale cambia col pane a fuoco');
 });
 
-test('combo: in modo doc tace sui tasti del mondo task', { skip: SKIP }, () => {
+test('combo: in modo doc le colonne seguono i pane montati', { skip: SKIP }, () => {
   const frame = lastFrame(capture('\x02H'));
   assert.match(frame, /\^B\s+task/, `manca la via di ritorno: ${frame}`);
-  assert.doesNotMatch(frame, /C\s+nuova|w\s+salva/, `voce del mondo task in modo doc: ${frame}`);
+  assert.match(frame, /albero doc\s+coda inbox/, `colonne del modo doc assenti: ${frame}`);
+  assert.doesNotMatch(frame, /C\s+nuova|w\s+salva|f\s+fork/, `voce inerte in modo doc: ${frame}`);
 });
 
 test('riga due: resta la voce del modale, la legenda intera non c\'è più', { skip: SKIP }, () => {
@@ -997,9 +1003,9 @@ test('click su una riga task la seleziona senza aprire il detail', { skip: SKIP 
   assertTaskCaretAtRow(after, 13, 'il caret non è sulla riga cliccata');
   // D2: solo fuoco. La lista è ancora a schermo e `⏎` aprirebbe il detail ora.
   assert.match(after, /t 💻/, `il click ha lasciato la lista: ${after}`);
-  // Il fuoco si legge dal modale delle combo: `⏎ detail` vive solo sul pane task.
-  const combo = lastFrame(capture('@10,13;H'));
-  assert.match(combo, /⏎\s+detail/, `il fuoco non è sul pane task: ${combo}`);
+  // Il fuoco si legge da `N`: dal pane task rifiuta con una nota.
+  const refused = lastFrame(capture('@10,13;N'));
+  assert.match(refused, /seleziona una sessione/, `il fuoco non è sul pane task: ${refused}`);
 });
 
 test('click su una riga meta riporta la selezione su di lei', { skip: SKIP }, () => {
@@ -1024,9 +1030,9 @@ test('click su una conversazione porta fuoco e selezione sul pane sessioni', { s
   // Il caret precede l'hash sulla stessa riga senza un bordo in mezzo: il
   // caret del pane task, a sinistra, è separato da `│ │`.
   assert.match(line, new RegExp(`▸[^│]*${target}`), `il caret non è sulla conversazione cliccata: ${line}`);
-  // Il fuoco si legge dal modale delle combo: `⏎ resume` vive solo sul pane sessioni.
-  const combo = lastFrame(capture('@70,10;H'));
-  assert.match(combo, /⏎\s+resume/, `il fuoco non è passato al pane sessioni: ${combo}`);
+  // Il fuoco si legge da `N`: dal pane sessioni apre il campo del titolo (`✎`).
+  const opened = lastFrame(capture('@70,10;N'));
+  assert.match(opened, /✎ ›/, `il fuoco non è passato al pane sessioni: ${opened}`);
 });
 
 test('click su una voce dell\'header attiva quella vista', { skip: SKIP }, () => {

@@ -47,6 +47,7 @@ import { inboxPrompt, loadInboxText } from './inbox.js';
 import { dirListing, loadDocText } from './doc-tree.js';
 import { refuse } from './platform.js';
 import type { Frame } from './frame.js';
+import type { DeckLegend } from './combo-catalog.js';
 import type { DeckActions } from './actions.js';
 import type { DeckModel } from './deck-model.js';
 import type { useAssignOverlay } from './overlays/assign.js';
@@ -147,9 +148,9 @@ export function useDeckInput({
   /** T134 — le colonne cliccabili degli indicatori sulla riga legenda
    *  (`indicatorRow` in `frame.ts`). Le loro chiavi portano il prefisso `^`. */
   indicatorRegions: Region[];
-  /** T194 — le voci che `H` elenca nel modale, già composte per il fuoco e la
-   *  selezione di questo render (`deckLegend` in `frame.ts`). */
-  comboLegend: readonly string[];
+  /** T194 — le tre liste che `H` mostra nel modale (`deckLegend` in
+   *  `combo-catalog.ts`). */
+  comboLegend: DeckLegend;
 }) {
   // T116 — uscita a doppio `^C`. Il timer È lo stato dell'armamento: finché il
   // handle esiste la finestra è aperta, e non serve un secondo stato da tenere
@@ -701,8 +702,8 @@ export function useDeckInput({
       overlays.finder.open();
     } else if (input === 'H') {
       // T194 — il modale delle combo. MAIUSCOLA perché apre una schermata
-      // (convenzione T39). Vivo anche in modo doc: non agisce su una selezione,
-      // e le voci che elenca seguono già il modo.
+      // (convenzione T39). Vivo anche in modo doc: non agisce su una selezione, e
+      // le liste che mostra seguono già il modo.
       overlays.combo.open(comboLegend);
     } else if (input === 't') {
       actions.openTerminal();

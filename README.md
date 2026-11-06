@@ -91,6 +91,7 @@ Assegnazioni correnti:
 | modale | `E` | edit priorità/stato della task selezionata (salva + commit) |
 | modale | `S` | sort chain |
 | modale | `F` | filtri |
+| modale | `H` | **combo**: tutte le azioni del deck, generali, di task e di conversazione |
 | modale | `^F` | **ricerca full-text** nelle conversazioni del progetto |
 | modale | `⏎` | **detail** della task selezionata: task file scrollabile + area di compilazione a quattro righe |
 | modale | `CANC` | **elimina** — la task selezionata; su una riga meta della vista `archiviabili`, l'intero insieme |
@@ -110,12 +111,11 @@ Assegnazioni correnti:
 Il footer è **due righe con due nature diverse**:
 
 ```
-⏎ detail · ^K/^P/^R spawn · ^G genera status · ^O apri status · ^U bumpa gitlink · ^S azioni · ^F cerca · C nuova · E edit · S sort · F filtri · w salva
+H combo
 t 💻 · c 🤖 · 1 📝 codium · 2 ☕ idea
 ```
 
-- **tasti** — cosa puoi fare *qui e ora*. Solo le voci attive: quelle contestuali compaiono quando il pane a fuoco le rende possibili e altrimenti spariscono,
-  invece di mostrarsi inerti. Fuori navigazione (`↑↓` `←→`) e indicatore `focus:` — la prima è universale in qualunque TUI, il pane a fuoco si vede già dall'evidenziazione.
+- **tasti** — `H` apre il modale delle combo: una sola schermata, la stessa da qualunque pane, con le azioni generali in alto, quelle di task a sinistra e quelle di conversazione a destra (in modo doc: albero doc e coda inbox). Una voce manca solo se il suo tasto non può fare niente su questo progetto o in questo modo del deck. Fuori `↑↓`, universale in qualunque TUI.
   Nessuna voce di uscita: `^C` non ha bisogno di essere annunciato — è il tasto che si prova per primo, e la prima pressione risponde da sé con l'avviso.
 - **surface** — *dove* puoi aprire qualcosa: prima le due built-in (`t`/`c`), poi le voci `launch` del progetto. Stanno insieme perché hanno la stessa natura — fire-once, `cwd` = project root, nessuno stato — e differiscono solo per essere universali invece che custom.
 

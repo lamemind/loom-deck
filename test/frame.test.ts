@@ -1,22 +1,17 @@
 // T131 — la geometria del frame, estratta da `cli.tsx` e finalmente misurabile.
 //
-// Due invarianti che il render non difende da solo e che finora vivevano in un
-// commento: la legenda non deve MENTIRE sul bersaglio di `CANC` (una voce che
-// annuncia «tutte» dove il tasto ne pota una sola è peggio di nessuna voce), e
-// le righe dichiarate cliccabili devono essere ESATTAMENTE quelle disegnate —
-// un hit-test più lungo della lista fa reagire un click sul vuoto, uno più
-// corto rende inerte l'ultima riga.
+// Un'invariante che il render non difende da solo e che finora viveva in un
+// commento: le righe dichiarate cliccabili devono essere ESATTAMENTE quelle
+// disegnate — un hit-test più lungo della lista fa reagire un click sul vuoto,
+// uno più corto rende inerte l'ultima riga.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BARE_LABEL,
-  comboRows,
-  deckLegend,
   frameGeometry,
   HEADER_BUTTON_SEP,
   headlineWidth,
-  hintLegend,
   launchRow,
   restoreButton,
   restoreButtonForms,
@@ -25,7 +20,6 @@ import {
 } from '../src/frame.js';
 import { FRAME_TEXT_COL, hitRegion } from '../src/mouse.js';
 import { META_ROWS } from '../src/model.js';
-import { TASK_MODE_LEGEND } from '../src/input-modes.js';
 import { termWidth } from '../src/width.js';
 import type { LaunchEntry } from '../src/config.js';
 import type { Task } from '../src/tasks.js';
@@ -64,11 +58,6 @@ const row = (sessionId: string): SessionRow => ({
   session: session(sessionId),
 });
 
-/** La legenda come testo unico: le asserzioni qui sotto cercano SOTTOSTRINGHE
- *  (`CANC` dentro `CANC elimina`). Sull'array `includes` confronterebbe la voce
- *  intera, e un `!legend.includes('CANC')` passerebbe sempre. */
-const legendText = (state: Parameters<typeof deckLegend>[0]) => deckLegend(state).join(' · ');
-
 const frameInput = (over: Partial<Parameters<typeof frameGeometry>[0]> = {}) =>
   frameGeometry({
     rows: 40,
@@ -102,160 +91,6 @@ const frameInput = (over: Partial<Parameters<typeof frameGeometry>[0]> = {}) =>
     restoreCount: 0,
     ...over,
   });
-
-// ── deckLegend: la voce che nomina il bersaglio ───────────────────────────
-
-test('deckLegend: CANC nomina il bersaglio singolo quando il bulk è spento', () => {
-  const legend = legendText({
-    focus: 'tasks',
-    hasTask: true,
-    hasSession: false,
-    hasSessionId: false,
-    purgeBulk: false,
-    docMode: false,
-    hasDoc: false,
-  });
-  assert.ok(legend.includes('CANC elimina'), 'la voce deve esserci');
-  assert.ok(
-    !legend.includes('CANC elimina tutte'),
-    `la voce annuncia il bulk dove il tasto pota una sola task: ${legend}`,
-  );
-});
-
-test('deckLegend: CANC nomina il bulk quando il bulk è acceso', () => {
-  const legend = legendText({
-    focus: 'tasks',
-    hasTask: false,
-    hasSession: false,
-    hasSessionId: false,
-    purgeBulk: true,
-    docMode: false,
-    hasDoc: false,
-  });
-  assert.ok(legend.includes('CANC elimina tutte'), `bulk non annunciato: ${legend}`);
-});
-
-test('deckLegend: sul pane sessioni CANC elimina la conversazione, mai «tutte»', () => {
-  // Il bersaglio del tasto lo decide il focus: qui è la conversazione sotto il
-  // cursore, e il bulk delle task (`purgeBulk`) non deve trapelare — una voce
-  // «elimina tutte» su questo pane prometterebbe una strage che non parte.
-  const legend = legendText({
-    focus: 'sessions',
-    hasTask: true,
-    hasSession: true,
-    hasSessionId: true,
-    purgeBulk: true,
-    docMode: false,
-    hasDoc: false,
-  });
-  assert.ok(legend.includes('CANC elimina'), `voce CANC assente sul pane sessioni: ${legend}`);
-  assert.ok(!legend.includes('CANC elimina tutte'), `bulk task trapelato: ${legend}`);
-});
-
-test('deckLegend: su una pinnata stale CANC non si annuncia — non c\'è un transcript', () => {
-  const legend = legendText({
-    focus: 'sessions',
-    hasTask: false,
-    hasSession: false,
-    hasSessionId: true,
-    purgeBulk: false,
-    docMode: false,
-    hasDoc: false,
-  });
-  assert.ok(!legend.includes('CANC'), `voce CANC su una stale: ${legend}`);
-  assert.ok(legend.includes('p pin'), 'da una stale si esce spinnando');
-});
-
-test('deckLegend: le voci contestuali seguono il pane a fuoco', () => {
-  const suTask = legendText({
-    focus: 'tasks',
-    hasTask: true,
-    hasSession: false,
-    hasSessionId: false,
-    purgeBulk: false,
-    docMode: false,
-    hasDoc: false,
-  });
-  assert.ok(suTask.includes('⏎ detail'), 'sul pane task ⏎ apre il detail');
-  assert.ok(!suTask.includes('f fork'), 'il fork non vive sul pane task');
-
-  const suSessioni = legendText({
-    focus: 'sessions',
-    hasTask: false,
-    hasSession: true,
-    hasSessionId: true,
-    purgeBulk: false,
-    docMode: false,
-    hasDoc: false,
-  });
-  assert.ok(suSessioni.includes('⏎ resume'), 'sul pane sessioni ⏎ fa il resume');
-  assert.ok(suSessioni.includes('f fork'), 'il fork vive qui');
-  // T148 — stesso guard del fork: serve un transcript vero (`hasSession`),
-  // non basta una riga selezionata.
-  assert.ok(suSessioni.includes('m modello'), 'il cambio modello vive qui');
-});
-
-test('deckLegend: su una pinnata stale restano pin/titolo/assegna, non il fork', () => {
-  // Il transcript non c'è più (`hasSession` falso) ma la riga è selezionata:
-  // spinnarla, annotarla e riassegnarla restano legittimi, forkarla no.
-  const legend = legendText({
-    focus: 'sessions',
-    hasTask: false,
-    hasSession: false,
-    hasSessionId: true,
-    purgeBulk: false,
-    docMode: false,
-    hasDoc: false,
-  });
-  assert.ok(legend.includes('p pin'), `il pin deve restare: ${legend}`);
-  assert.ok(legend.includes('A assegna'), `l'assegnazione deve restare: ${legend}`);
-  assert.ok(!legend.includes('f fork'), `niente da forkare: ${legend}`);
-  // T148 — nessun blocco preview su una pinnata stale: niente bottone da
-  // cambiare, quindi la voce non deve promettere un'azione che non parte.
-  assert.ok(!legend.includes('m modello'), `nessun modello da cambiare: ${legend}`);
-});
-
-// ── T160 · la legenda tace sui tasti che il modo doc rende inerti ─────────
-
-test('deckLegend: in modo doc nessun tasto del mondo task resta annunciato', () => {
-  // Un tasto inerte che resta in legenda descrive un deck che non esiste. Le
-  // voci si tolgono dall'ELENCO che governa anche il dispatch, quindi qui si
-  // misura proprio che i due lettori non divergano.
-  const doc = legendText({
-    focus: 'doctree',
-    hasTask: false,
-    hasSession: false,
-    hasSessionId: false,
-    purgeBulk: false,
-    docMode: true,
-    hasDoc: true,
-  });
-  for (const voce of TASK_MODE_LEGEND) {
-    assert.ok(!doc.includes(voce), `voce del mondo task annunciata in modo doc: ${voce}`);
-  }
-  assert.ok(!doc.includes('CANC'), `CANC annunciato in modo doc: ${doc}`);
-  assert.ok(!doc.includes('^K'), `gli acceleratori di spawn sono annunciati: ${doc}`);
-  // Quello che DEVE restare: `^B` nomina il modo che monta, e `⏎` apre il
-  // bersaglio doc selezionato.
-  assert.ok(doc.includes('^B task'), `la via di ritorno non è annunciata: ${doc}`);
-  assert.ok(doc.includes('⏎ apri'), `l'apertura del bersaglio non è annunciata: ${doc}`);
-});
-
-test('deckLegend: in modo task le stesse voci ci sono tutte', () => {
-  const task = legendText({
-    focus: 'tasks',
-    hasTask: true,
-    hasSession: false,
-    hasSessionId: false,
-    purgeBulk: false,
-    docMode: false,
-    hasDoc: false,
-  });
-  for (const voce of TASK_MODE_LEGEND) {
-    assert.ok(task.includes(voce), `voce del mondo task sparita dal suo modo: ${voce}`);
-  }
-  assert.ok(task.includes('^B doc'), `la via d'andata non è annunciata: ${task}`);
-});
 
 // ── launchRow: le colonne cliccabili sono quelle disegnate ────────────────
 
@@ -385,18 +220,6 @@ test('headlineWidth: il budget sinistro lascia posto al segmento destro', () => 
 
 // ── T181: il bottone di restore in testata ──────────────────────────────────
 
-const legendBase = {
-  focus: 'tasks' as const,
-  hasTask: true,
-  hasSession: false,
-  hasSessionId: false,
-  purgeBulk: false,
-  docMode: false,
-  hasInbox: false,
-  hasDoc: false,
-  gitlink: false,
-};
-
 test('restoreButton: niente da riaprire → niente bottone', () => {
   assert.equal(restoreButton(0, 120, '120×40 · v1.0.0'), null);
 });
@@ -447,71 +270,4 @@ test('frameGeometry: il bottone sta a sinistra di risoluzione e versione, ancora
     assert.equal(hitRegion(f.headerRegions, r.end + 1), null);
     assert.equal(hitRegion(f.headerRegions, lastTextCol), null);
   }
-});
-
-test('deckLegend: `^T restore` solo col bottone a schermo, e in testa', () => {
-  assert.equal(legendText(legendBase).includes('^T'), false);
-  assert.ok(legendText({ ...legendBase, restore: true }).startsWith('^T restore · '));
-});
-
-// ── T194: il modale delle combo e la riga due ───────────────────────────────
-
-const sessionsBase = {
-  ...legendBase,
-  focus: 'sessions' as const,
-  hasSession: true,
-  hasSessionId: true,
-};
-
-test('deckLegend: una voce per elemento, nessun separatore dentro una voce', () => {
-  for (const state of [legendBase, sessionsBase, { ...legendBase, restore: true, gitlink: true }]) {
-    for (const voce of deckLegend(state)) {
-      assert.ok(!voce.includes(' · '), `due voci fuse in una: ${voce}`);
-    }
-  }
-});
-
-test('comboRows: ogni voce diventa una riga, e tasto più etichetta la ricompongono', () => {
-  // È la proprietà che il modale promette: nessuna voce persa e nessuna tagliata,
-  // sui due pane e nelle due forme con più voci.
-  for (const state of [
-    { ...legendBase, restore: true, gitlink: true },
-    { ...sessionsBase, restore: true, gitlink: true },
-    { ...legendBase, focus: 'doctree' as const, docMode: true, hasDoc: true },
-  ]) {
-    const legend = deckLegend(state);
-    const rows = comboRows(legend);
-    assert.deepEqual(rows.map((r) => `${r.key} ${r.label}`), legend);
-    assert.equal(rows.some((r) => r.label === ''), false, 'una voce senza etichetta');
-  }
-});
-
-test('comboRows: il taglio sta sul primo spazio, l\'etichetta tiene i successivi', () => {
-  assert.deepEqual(comboRows(['CANC elimina tutte', '^K/^P/^R spawn']), [
-    { key: 'CANC', label: 'elimina tutte' },
-    { key: '^K/^P/^R', label: 'spawn' },
-  ]);
-});
-
-test('il modale segue condizioni e modo della legenda: una voce inerte non compare', () => {
-  const keys = (state: Parameters<typeof deckLegend>[0]) =>
-    comboRows(deckLegend(state)).map((r) => r.key);
-  assert.ok(keys(sessionsBase).includes('f'), 'il fork vive sul pane conversazioni');
-  assert.ok(!keys(legendBase).includes('f'), 'il fork non vive sul pane task');
-  // Le voci del mondo task vengono dall'elenco del dispatch: in modo doc nessuna.
-  const doc = comboRows(deckLegend({ ...legendBase, focus: 'doctree', docMode: true, hasDoc: true }));
-  for (const voce of TASK_MODE_LEGEND) {
-    assert.ok(!doc.some((r) => `${r.key} ${r.label}` === voce), `voce gated nel modale: ${voce}`);
-  }
-  for (const voce of TASK_MODE_LEGEND) {
-    assert.ok(
-      comboRows(deckLegend(legendBase)).some((r) => `${r.key} ${r.label}` === voce),
-      `voce del mondo task assente dal modale: ${voce}`,
-    );
-  }
-});
-
-test('hintLegend: resta la voce che apre il modale, `^T` solo col bottone a schermo', () => {
-  assert.equal(hintLegend({ restore: false }), 'H combo');
-  assert.equal(hintLegend({ restore: true }), 'H combo · ^T restore');
 });

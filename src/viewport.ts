@@ -407,6 +407,12 @@ export function comboListCapacity(rows: number): number {
   return Math.max(0, (rows || 24) - SLACK - COMBO_CHROME);
 }
 
+/** Colonne di testo del modale delle combo: bordo e padding del box esterno e del
+ *  box lista, che sta dentro il primo. */
+export function comboTextWidth(columns: number): number {
+  return Math.max(0, (columns || 80) - 8);
+}
+
 // T52 — cornice del reader fullscreen.
 //   2  bordi del box esterno
 //   1  titolo "loom-deck"

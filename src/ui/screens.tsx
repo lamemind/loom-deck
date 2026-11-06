@@ -326,19 +326,17 @@ export function screenFor(input: ScreensInput) {
   // Undicesima sostitutiva: l'elenco che riga due non poteva più contenere. Il
   // clamp serve anche qui, perché un resize può allargare la capienza sotto uno
   // scroll già dato.
-  if (mode === 'combo' && combo.list) {
+  if (mode === 'combo' && combo.lines) {
     if (isCompact(combo.capacity)) {
       return <CompactNotice what="combo" esc="chiude" rows={rows} columns={columns} />;
     }
     const start = Math.min(combo.top, combo.maxTop);
     return (
       <ComboScreen
-        rows={combo.list.slice(start, start + combo.capacity)}
-        keyW={combo.keyW}
+        lines={combo.lines.slice(start, start + combo.capacity)}
         top={start}
-        total={combo.list.length}
+        total={combo.lines.length}
         capacity={combo.capacity}
-        columns={columns}
       />
     );
   }

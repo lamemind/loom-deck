@@ -569,11 +569,9 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // riempie `space-between`. Se il budget fosse sbagliato di una colonna, il
   // bordo sparirebbe proprio qui.
   ['legenda con indicatori', 'W', [80, 100, 176]],
-  // T194 — il modale delle combo, sui due pane: il pane conversazioni porta
-  // l'elenco più lungo. Il box lista sta dentro quello esterno, e l'etichetta
-  // prende il resto per sottrazione.
-  ['modale combo · pane task', 'H', [80, 100, 176]],
-  ['modale combo · pane conversazioni', 'RH', [80, 100, 176]],
+  // T194 — il modale delle combo: le generali vanno a capo fra le voci e le colonne
+  // si dividono la riga, dentro due box annidati.
+  ['modale combo', 'H', [80, 100, 176]],
   // T161 — la pagina delle azioni di spawn. Quattro colonne calcolate per
   // sottrazione, due delle quali elastiche: è la stessa aritmetica che ha fatto
   // uscire dal pane la lista sessioni due volte. A 80 colonne il prompt scende
@@ -731,6 +729,8 @@ const DOC_SCENARIOS: Array<[string, string, number[], string?]> = [
   ['modo doc · vista SPLIT attiva', `${CTRL_B}T`, [80, 100], 'SPLIT'],
   // `←→` fra i due pane dello stesso modo: il fuoco si sposta, i bordi no.
   ['modo doc · fuoco a destra e ritorno', `${CTRL_B}RL`, [80, 100]],
+  // T194 — il modale delle combo in modo doc: le colonne sono quelle dei due pane.
+  ['modo doc · modale combo', `${CTRL_B}H`, [80, 100, 176], 'albero doc'],
   // Il pane inbox, che in modo doc occupa lo slot destro. Due colonne fisse
   // (natura, marker) più una cella elastica: il nome di un file inbox arriva ai
   // 45 caratteri, cioè sfora da solo il pane a 80 colonne.
@@ -927,7 +927,7 @@ for (const rows of [16, 20]) {
   test(`altezza · modale combo @ ${rows} righe`, { skip: SKIP }, () => {
     const raw = capture(100, rows, 'RH');
     const frame = lastFrame(raw).filter((l) => l !== '');
-    assert.ok(frame.join('\n').includes('voci attive'), 'il gate non sta misurando il modale');
+    assert.ok(frame.join('\n').includes('tutte le azioni'), 'il gate non sta misurando il modale');
     assert.ok(
       frame.length <= rows,
       `frame di ${frame.length} righe in un terminale di ${rows}`,
@@ -949,6 +949,19 @@ for (const rows of [16, 20]) {
     );
   });
 }
+
+// T194 — a 40 colonne le due liste non stanno affiancate e si impilano. Il frame
+// normale che precede il modale è più alto del terminale, e Ink non va a capo dopo
+// un frame così: il `╭` del modale resta sulla riga del `╯` di chiusura, e senza
+// separarli il gate misurerebbe il frame normale.
+test('il modale combo a 40 colonne impila le liste senza uscire dal box', { skip: SKIP }, () => {
+  const raw = capture(40, 38, 'H').replace(/╯((?:\x1b\[[0-9;?]*[A-Za-z])*)╭/g, '╯\n$1╭');
+  assertFrameFits(raw, 40, 'modale combo@40');
+  const text = lastFrame(raw).join('\n');
+  assert.match(text, /│ task +│/, `liste non impilate: ${text}`);
+  assert.match(text, /│ conversazioni +│/, `liste non impilate: ${text}`);
+  assert.match(text, /A +assegna/, `voce persa: ${text}`);
+});
 
 // T194 — su un terminale basso l'elenco non entra: ogni voce si raggiunge
 // scorrendo, con le tre vie del viewer. A 16 righe la capienza è 8, quindi mezza
