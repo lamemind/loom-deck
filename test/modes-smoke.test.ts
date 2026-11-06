@@ -172,6 +172,9 @@ const MODES: Array<{ name: string; keys: string; expect: RegExp; env?: NodeJS.Pr
   // T169 — il finder si apre con `T` maiuscola, che nel driver pty è il tab: il
   // backtick la manda letterale. L'attesa è la riga hint, l'unica a nominarlo.
   { name: 'finder', keys: '`T', expect: /trova task/i },
+  // T194 — il modale delle combo: la sua testata è l'unica a dire che le voci
+  // seguono il pane a fuoco.
+  { name: 'combo', keys: 'H', expect: /voci attive sul pane a fuoco/ },
 ];
 
 for (const m of MODES) {
@@ -236,6 +239,50 @@ test('finder: → dal modo doc riporta il deck in modo task', { skip: SKIP }, ()
   const frame = lastFrame(capture(`\x02\`T2R`, proj, env));
   assert.match(frame, /→ T2 · modo task · vista 1 nascoste/, `il salto non ha cambiato modo: ${frame}`);
   assert.match(frame, /Sessions · T2/, `il pane conversazioni non è montato: ${frame}`);
+});
+
+// ── T194 · il modale delle combo ─────────────────────────────────────────
+
+test('combo: esc torna alla lista, col fuoco sul pane da cui si è entrati', { skip: SKIP }, () => {
+  const closed = lastFrame(capture(`RH${ESC}`));
+  assert.doesNotMatch(closed, /voci attive/, `il modale è rimasto aperto: ${closed}`);
+  assert.match(closed, /PROJECT STATUS/, `il deck non è tornato alla lista: ${closed}`);
+  // Il fuoco si legge riaprendo: `⏎ resume` vive solo sul pane conversazioni.
+  assert.match(lastFrame(capture(`RH${ESC}H`)), /⏎\s+resume/, 'il fuoco non è rimasto sul pane');
+});
+
+test('combo: le voci seguono il pane a fuoco, e tutte le voci hanno la loro riga', { skip: SKIP }, () => {
+  const onTask = lastFrame(capture('DDH'));
+  assert.match(onTask, /⏎\s+detail/, `manca ⏎ detail sul pane task: ${onTask}`);
+  assert.match(onTask, /\^K\/\^P\/\^R\s+spawn/, `manca lo spawn: ${onTask}`);
+  assert.doesNotMatch(onTask, /\bfork\b/, `il fork annunciato sul pane task: ${onTask}`);
+  // Le voci in coda, le stesse che su riga due non si vedevano mai.
+  for (const voce of [/C\s+nuova/, /E\s+edit/, /S\s+sort/, /F\s+filtri/, /w\s+salva/]) {
+    assert.match(onTask, voce, `voce in coda assente dal modale: ${onTask}`);
+  }
+  const onSession = lastFrame(capture('RH'));
+  assert.match(onSession, /⏎\s+resume/, `manca ⏎ resume: ${onSession}`);
+  assert.match(onSession, /f\s+fork/, `manca il fork: ${onSession}`);
+});
+
+test('combo: in modo doc tace sui tasti del mondo task', { skip: SKIP }, () => {
+  const frame = lastFrame(capture('\x02H'));
+  assert.match(frame, /\^B\s+task/, `manca la via di ritorno: ${frame}`);
+  assert.doesNotMatch(frame, /C\s+nuova|w\s+salva/, `voce del mondo task in modo doc: ${frame}`);
+});
+
+test('riga due: resta la voce del modale, la legenda intera non c\'è più', { skip: SKIP }, () => {
+  const line = lastFrame(capture('')).split('\n')[2] ?? '';
+  assert.match(line, /H combo/, `voce del modale assente: ${line}`);
+  assert.match(line, /\[ Doc/, `indicatori assenti: ${line}`);
+  assert.doesNotMatch(line, /genera status|T trova|\^B doc/, `legenda ancora in riga due: ${line}`);
+});
+
+test('riga due: il click su un indicatore rientra dalla sua combo', { skip: SKIP }, () => {
+  // Il bottone doc finisce sull'ultima colonna di testo: bordo destro meno bordo e
+  // padding. Colonna 116 di 120 cade dentro il bottone con qualunque contatore.
+  const frame = lastFrame(capture('@116,3;H'));
+  assert.match(frame, /\^B\s+task/, `il click non ha montato il modo doc: ${frame}`);
 });
 
 // I due punti dove la precedenza fra i rami è già stata corretta una volta.
@@ -948,7 +995,9 @@ test('click su una riga task la seleziona senza aprire il detail', { skip: SKIP 
   assertTaskCaretAtRow(after, 13, 'il caret non è sulla riga cliccata');
   // D2: solo fuoco. La lista è ancora a schermo e `⏎` aprirebbe il detail ora.
   assert.match(after, /t 💻/, `il click ha lasciato la lista: ${after}`);
-  assert.match(after, /⏎ detail/, `il fuoco non è sul pane task: ${after}`);
+  // Il fuoco si legge dal modale delle combo: `⏎ detail` vive solo sul pane task.
+  const combo = lastFrame(capture('@10,13;H'));
+  assert.match(combo, /⏎\s+detail/, `il fuoco non è sul pane task: ${combo}`);
 });
 
 test('click su una riga meta riporta la selezione su di lei', { skip: SKIP }, () => {
@@ -973,7 +1022,9 @@ test('click su una conversazione porta fuoco e selezione sul pane sessioni', { s
   // Il caret precede l'hash sulla stessa riga senza un bordo in mezzo: il
   // caret del pane task, a sinistra, è separato da `│ │`.
   assert.match(line, new RegExp(`▸[^│]*${target}`), `il caret non è sulla conversazione cliccata: ${line}`);
-  assert.match(after, /⏎ resume/, `il fuoco non è passato al pane sessioni: ${after}`);
+  // Il fuoco si legge dal modale delle combo: `⏎ resume` vive solo sul pane sessioni.
+  const combo = lastFrame(capture('@70,10;H'));
+  assert.match(combo, /⏎\s+resume/, `il fuoco non è passato al pane sessioni: ${combo}`);
 });
 
 test('click su una voce dell\'header attiva quella vista', { skip: SKIP }, () => {

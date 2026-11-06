@@ -11,10 +11,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BARE_LABEL,
+  comboRows,
   deckLegend,
   frameGeometry,
   HEADER_BUTTON_SEP,
   headlineWidth,
+  hintLegend,
   launchRow,
   restoreButton,
   restoreButtonForms,
@@ -450,4 +452,66 @@ test('frameGeometry: il bottone sta a sinistra di risoluzione e versione, ancora
 test('deckLegend: `^T restore` solo col bottone a schermo, e in testa', () => {
   assert.equal(legendText(legendBase).includes('^T'), false);
   assert.ok(legendText({ ...legendBase, restore: true }).startsWith('^T restore · '));
+});
+
+// ── T194: il modale delle combo e la riga due ───────────────────────────────
+
+const sessionsBase = {
+  ...legendBase,
+  focus: 'sessions' as const,
+  hasSession: true,
+  hasSessionId: true,
+};
+
+test('deckLegend: una voce per elemento, nessun separatore dentro una voce', () => {
+  for (const state of [legendBase, sessionsBase, { ...legendBase, restore: true, gitlink: true }]) {
+    for (const voce of deckLegend(state)) {
+      assert.ok(!voce.includes(' · '), `due voci fuse in una: ${voce}`);
+    }
+  }
+});
+
+test('comboRows: ogni voce diventa una riga, e tasto più etichetta la ricompongono', () => {
+  // È la proprietà che il modale promette: nessuna voce persa e nessuna tagliata,
+  // sui due pane e nelle due forme con più voci.
+  for (const state of [
+    { ...legendBase, restore: true, gitlink: true },
+    { ...sessionsBase, restore: true, gitlink: true },
+    { ...legendBase, focus: 'doctree' as const, docMode: true, hasDoc: true },
+  ]) {
+    const legend = deckLegend(state);
+    const rows = comboRows(legend);
+    assert.deepEqual(rows.map((r) => `${r.key} ${r.label}`), legend);
+    assert.equal(rows.some((r) => r.label === ''), false, 'una voce senza etichetta');
+  }
+});
+
+test('comboRows: il taglio sta sul primo spazio, l\'etichetta tiene i successivi', () => {
+  assert.deepEqual(comboRows(['CANC elimina tutte', '^K/^P/^R spawn']), [
+    { key: 'CANC', label: 'elimina tutte' },
+    { key: '^K/^P/^R', label: 'spawn' },
+  ]);
+});
+
+test('il modale segue condizioni e modo della legenda: una voce inerte non compare', () => {
+  const keys = (state: Parameters<typeof deckLegend>[0]) =>
+    comboRows(deckLegend(state)).map((r) => r.key);
+  assert.ok(keys(sessionsBase).includes('f'), 'il fork vive sul pane conversazioni');
+  assert.ok(!keys(legendBase).includes('f'), 'il fork non vive sul pane task');
+  // Le voci del mondo task vengono dall'elenco del dispatch: in modo doc nessuna.
+  const doc = comboRows(deckLegend({ ...legendBase, focus: 'doctree', docMode: true, hasDoc: true }));
+  for (const voce of TASK_MODE_LEGEND) {
+    assert.ok(!doc.some((r) => `${r.key} ${r.label}` === voce), `voce gated nel modale: ${voce}`);
+  }
+  for (const voce of TASK_MODE_LEGEND) {
+    assert.ok(
+      comboRows(deckLegend(legendBase)).some((r) => `${r.key} ${r.label}` === voce),
+      `voce del mondo task assente dal modale: ${voce}`,
+    );
+  }
+});
+
+test('hintLegend: resta la voce che apre il modale, `^T` solo col bottone a schermo', () => {
+  assert.equal(hintLegend({ restore: false }), 'H combo');
+  assert.equal(hintLegend({ restore: true }), 'H combo · ^T restore');
 });

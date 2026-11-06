@@ -564,11 +564,16 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // finta di `docCacheRoot()`, e un temporaneo creato al modulo sarebbe
   // condiviso da scenari che non lo usano. Stanno nel proprio ciclo più sotto,
   // come quelli del project status, della lista hard-wrap e del gitlink.
-  // T134 — la riga legenda divide il budget con gli indicatori ancorati a
-  // destra. A 80 colonne è la larghezza in cui la legenda cede quasi tutto e il
-  // bottone resta intero: se il budget fosse sbagliato di una colonna, il bordo
-  // sparirebbe proprio qui.
+  // T134/T194 — la riga due divide il budget con gli indicatori ancorati a
+  // destra, e la legenda è ridotta a `H combo`: lo spazio fra le due metà lo
+  // riempie `space-between`. Se il budget fosse sbagliato di una colonna, il
+  // bordo sparirebbe proprio qui.
   ['legenda con indicatori', 'W', [80, 100, 176]],
+  // T194 — il modale delle combo, sui due pane: il pane conversazioni porta
+  // l'elenco più lungo. Il box lista sta dentro quello esterno, e l'etichetta
+  // prende il resto per sottrazione.
+  ['modale combo · pane task', 'H', [80, 100, 176]],
+  ['modale combo · pane conversazioni', 'RH', [80, 100, 176]],
   // T161 — la pagina delle azioni di spawn. Quattro colonne calcolate per
   // sottrazione, due delle quali elastiche: è la stessa aritmetica che ha fatto
   // uscire dal pane la lista sessioni due volte. A 80 colonne il prompt scende
@@ -917,6 +922,19 @@ for (const rows of [16, 20]) {
     );
   });
 
+  // T194 — il modale delle combo su un terminale più basso dell'elenco: è il caso
+  // in cui una riga di cornice non contata sfonda `rows`.
+  test(`altezza · modale combo @ ${rows} righe`, { skip: SKIP }, () => {
+    const raw = capture(100, rows, 'RH');
+    const frame = lastFrame(raw).filter((l) => l !== '');
+    assert.ok(frame.join('\n').includes('voci attive'), 'il gate non sta misurando il modale');
+    assert.ok(
+      frame.length <= rows,
+      `frame di ${frame.length} righe in un terminale di ${rows}`,
+    );
+    assertFrameFits(raw, 100, `modale combo@${rows}`);
+  });
+
   // T112 — la conferma è un modale IN FLUSSO: spinge giù i pane, quindi le sue
   // 7 righe vanno scalate dal budget delle liste. Non scalate, il frame supera
   // `rows` e Ink cade nel ramo `clearTerminal` — su VTE un frame nello
@@ -931,6 +949,20 @@ for (const rows of [16, 20]) {
     );
   });
 }
+
+// T194 — su un terminale basso l'elenco non entra: ogni voce si raggiunge
+// scorrendo, con le tre vie del viewer. A 16 righe la capienza è 8, quindi mezza
+// pagina vale 4 e una tacca di rotella 3.
+test('il modale combo raggiunge ogni voce scorrendo', { skip: SKIP }, () => {
+  const text = (keys: string) => lastFrame(capture(100, 16, keys)).join('\n');
+  assert.match(text('RH'), /righe 1-8 di \d+/);
+  assert.match(text('RH>'), /righe 5-12 di \d+/);
+  assert.match(text('RH_10,10;'), /righe 4-11 di \d+/);
+  // `G` porta in fondo: la riga finale è il totale, e l'ultima voce è a schermo.
+  const bottom = text('RHG');
+  assert.match(bottom, /righe \d+-(\d+) di \1\b/, `non è in fondo: ${bottom}`);
+  assert.match(bottom, /w\s+salva/, `ultima voce assente: ${bottom}`);
+});
 
 /**
  * T181 — il progetto a id misti con due conversazioni MARCATE vive e nessuna

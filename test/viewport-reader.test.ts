@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assignListCapacity,
+  comboListCapacity,
   detailCapacity,
   DETAIL_FIELD_ROWS,
   DLV_STATUS_ROWS,
@@ -315,4 +316,14 @@ test('detail: l’area di default sono i campi, come prima del modo DLV', () => 
     assert.equal(detailCapacity(rows), detailCapacity(rows, false, DETAIL_FIELD_ROWS));
     assert.equal(detailCapacity(rows, true), detailCapacity(rows, true, DETAIL_FIELD_ROWS));
   }
+});
+
+// T194 — la cornice del modale delle combo: 2 bordi + testata + hint + marginTop
+// del box + 2 bordi del box. Un numero diverso da quello che la schermata disegna
+// sfonda `rows` su un terminale basso.
+test('comboListCapacity: le righe sotto la cornice, zero quando la cornice non entra', () => {
+  assert.equal(comboListCapacity(30), 30 - SLACK - 7);
+  assert.equal(comboListCapacity(0), 24 - SLACK - 7, 'rows mancante degrada a 24');
+  assert.equal(isCompact(comboListCapacity(9)), false, 'una riga di lista basta');
+  assert.equal(isCompact(comboListCapacity(8)), true, 'sotto la cornice: riga compatta');
 });
