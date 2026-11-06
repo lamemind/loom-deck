@@ -204,6 +204,21 @@ export function deckLegend(state: {
   ].map((voce) => sanitize(voce));
 }
 
+/**
+ * T194 — la legenda di RIGA DUE in modalità normale: la voce che apre il modale
+ * delle combo e, col bottone di restore a schermo, `^T restore`.
+ *
+ * `^T` resta qui anche se il modale lo elenca: il bottone in testata non porta la
+ * combo nel testo (P5 di T181), e vale appena il deck si è riaperto, cioè quando
+ * nessuno ha ancora motivo di aprire un modale per scoprirla.
+ *
+ * `H combo` sta in testa perché la riga tronca dalla coda: è la voce da cui si
+ * raggiungono tutte le altre, compresa quella che il taglio toglierebbe.
+ */
+export function hintLegend(state: { restore: boolean }): string {
+  return ['H combo', ...(state.restore ? [RESTORE_VOICE] : [])].join(' · ');
+}
+
 export type ComboRow = {
   /** Il tasto, così come la voce lo annuncia: `^K/^P/^R`, `CANC`, `T`. */
   key: string;

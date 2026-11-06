@@ -30,6 +30,7 @@ import {
   deckLegend,
   frameGeometry,
   headlineWidth,
+  hintLegend,
   indicatorRow,
   launchRow,
 } from './frame.js';
@@ -495,7 +496,7 @@ function Deck({
       <HintBar
         mode={mode}
         purge={purge.draft}
-        keyLegend={legend.join(' · ')}
+        keyLegend={hintLegend({ restore: frame.headerButton !== null })}
         indicators={indicators}
         columns={columns}
       />

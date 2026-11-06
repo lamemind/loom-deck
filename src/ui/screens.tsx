@@ -102,14 +102,14 @@ export function CompactNotice({
 }
 
 /**
- * La riga sotto la testata: in `normal` la legenda dei tasti, in un modale in
- * flusso le sue istruzioni. I modali sostitutivi non arrivano qui — hanno già
- * preso il frame.
+ * La riga sotto la testata: in `normal` la voce che apre il modale delle combo
+ * (`hintLegend`, T194), in un modale in flusso le sue istruzioni. I modali
+ * sostitutivi non arrivano qui — hanno già preso il frame.
  *
- * T134 — in `normal` la riga non è più tutta della legenda: divide lo spazio con
- * gli INDICATORI ancorati a destra, e sono loro ad avere la precedenza sul
- * budget (D5 preflight). `keyLegend` è già troncabile per costruzione e ciò che
- * perde si ricorda; un contatore troncato invece mente.
+ * T134 — in `normal` la riga non è tutta della legenda: divide lo spazio con gli
+ * INDICATORI ancorati a destra, e sono loro ad avere la precedenza sul budget (D5
+ * preflight). `keyLegend` è già troncabile per costruzione e ciò che perde si
+ * ricorda; un contatore troncato invece mente.
  *
  * Dentro un modale in flusso gli indicatori non compaiono, e non è un
  * nascondimento: la riga è dell'istruzione del modale, che sta a schermo per il
