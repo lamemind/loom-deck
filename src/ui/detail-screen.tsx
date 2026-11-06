@@ -208,14 +208,16 @@ export function DetailScreen({
       ) : dlv.active ? (
         <Text dimColor wrap="truncate-end">
           {/* T189 — qui `↑↓`, `spazio` e `⏎` si nominano: non fanno la cosa
-              dell'area a righe (`↑↓` saltano i fatti, `⏎` lancia la selezione).
-              In `off` sono inerti, e la legenda smette di annunciarli. */}
+              dell'area a righe (`↑↓` saltano i fatti, `⏎` lancia la selezione o
+              apre a mani nude). In `off` `↑↓` e `spazio` sono inerti, e la
+              legenda smette di annunciarli. */}
           {dlvLaunchable(dlv.gate) ? (
             <>
               <Text color="yellow">↑↓</Text> DLV aperti · <Text color="yellow">spazio</Text>{' '}
-              seleziona · <Text color="yellow">⏎</Text> run ·{' '}
+              seleziona ·{' '}
             </>
           ) : null}
+          <Text color="yellow">⏎</Text> {dlv.selected.size > 0 ? 'run' : 'open'} ·{' '}
           <Text color="yellow">tab</Text> campi · <Text color="yellow">PgUp/PgDn</Text> testo ·{' '}
           <Text color="yellow">^F</Text> cerca
         </Text>

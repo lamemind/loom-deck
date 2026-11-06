@@ -78,7 +78,8 @@ export function parseDeliverables(text: string | null): Deliverable[] {
  *  - `ready` — `⏎` lancia `run-task`;
  *  - `warn` — `⏎` lancia lo stesso, ma `run-task` potrebbe rifiutare il lavoro:
  *    il motivo è quello che la skill direbbe, e sta a schermo accanto al prompt;
- *  - `off` — non c'è niente da lanciare (task chiusa, nessun DLV aperto).
+ *  - `off` — non c'è niente da selezionare (task chiusa, nessun DLV aperto):
+ *    `⏎` apre la task a mani nude, come fa senza selezione negli altri due stati.
  *
  * `warn` non blocca per scelta dell'utente: il rifiuto è un diritto della
  * skill, e il deck non lo anticipa. Il deck lo DICE, perché l'umano lanci
@@ -89,7 +90,8 @@ export type DlvGate =
   | { kind: 'warn'; reason: string }
   | { kind: 'off'; reason: string };
 
-/** `⏎` nel modo DLV lancia qualcosa: in `ready` e in `warn`, non in `off`. */
+/** I DLV si selezionano e il detail si apre sulla lista: in `ready` e in `warn`,
+ *  non in `off`. */
 export function dlvLaunchable(gate: DlvGate): boolean {
   return gate.kind !== 'off';
 }

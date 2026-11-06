@@ -1,8 +1,8 @@
 // T189 — il modo DLV del detail: cursore sui soli DLV aperti, selezione, e il
-// prompt che `⏎` fa partire (D3/D4).
+// prompt che `⏎` fa partire.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DLV_IDLE_PROMPT, dlvPrompt, stepOpen, toggleIn } from '../src/overlays/dlv-mode.js';
+import { dlvPrompt, stepOpen, toggleIn } from '../src/overlays/dlv-mode.js';
 import { parseDeliverables } from '../src/deliverables.js';
 import { resolveSpawn } from '../src/spawn-config.js';
 import { spawnAction } from '../src/spawn-catalog.js';
@@ -58,8 +58,7 @@ test('D3 — l’override di progetto sul prompt di run vale anche qui', () => {
   assert.equal(dlvPrompt(run.prompt, [5, 1]), '/loom-works:run-task T189 yolo DLV 1,5');
 });
 
-test('D4 — senza selezione: cosa fare ora [R0], qualunque sia il prompt di run', () => {
-  assert.equal(DLV_IDLE_PROMPT, 'cosa fare ora [R0]');
-  assert.equal(dlvPrompt('/loom-works:run-task T189', []), DLV_IDLE_PROMPT);
-  assert.equal(dlvPrompt(null, new Set()), DLV_IDLE_PROMPT);
+test('senza selezione: nessun prompt, qualunque sia il prompt di run', () => {
+  assert.equal(dlvPrompt('/loom-works:run-task T189', []), '');
+  assert.equal(dlvPrompt(null, new Set()), '');
 });

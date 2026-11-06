@@ -517,16 +517,17 @@ test('modo DLV: ↑↓ si fermano solo sui DLV aperti', { skip: SKIP }, () => {
   assert.ok(frame.includes(`'/loom-works:run-task T1 DLV 4' ${RUN_TAIL}`), `cursore su un fatto: ${frame}`);
 });
 
-test('modo DLV: ⏎ senza selezione → cosa fare ora [R0], stessa sessione di run', { skip: SKIP }, () => {
+test('modo DLV: ⏎ senza selezione → apre a vuoto, come l\'azione open dei campi', { skip: SKIP }, () => {
   const frame = captureDetail('DD\r\r');
-  assert.ok(frame.includes(`--prompt 'cosa fare ora [R0]' ${RUN_TAIL}`), `prompt di D4 assente: ${frame}`);
+  assert.match(frame, /--prompt-kind none/, `non si è aperta a vuoto: ${frame}`);
+  assert.ok(!frame.includes(RUN_TAIL), `modello o titolo di run su una open: ${frame}`);
 });
 
 test('modo DLV: la selezione non sopravvive alla chiusura del detail', { skip: SKIP }, () => {
   // Seleziona il 2, chiude con `esc`, riapre (`⏎` sulla lista) e lancia: il
   // perimetro armato prima non deve partire.
   const frame = captureDetail(`DD\r ${ESC}\r\r`);
-  assert.ok(frame.includes("--prompt 'cosa fare ora [R0]'"), `selezione sopravvissuta: ${frame}`);
+  assert.match(frame, /--prompt-kind none/, `selezione sopravvissuta: ${frame}`);
 });
 
 test('modo DLV: Size L senza preflight → avviso a schermo, sulla lista DLV', { skip: SKIP }, () => {
@@ -542,11 +543,12 @@ test('modo DLV: Size L senza preflight → ⏎ lancia lo stesso', { skip: SKIP }
   assert.ok(frame.includes(`'/loom-works:run-task T3 DLV 1' ${RUN_TAIL}`), `lo spawn non è partito: ${frame}`);
 });
 
-test('modo DLV: task chiusa → lista spuntata, ⏎ inerte', { skip: SKIP }, () => {
+test('modo DLV: task chiusa → lista spuntata, ⏎ apre a vuoto', { skip: SKIP }, () => {
+  const list = captureDetail('DDD\rT');
+  assert.match(list, /task chiusa · ⏎ open/, `stato spento assente: ${list}`);
+  assert.doesNotMatch(list, /\[ \] \d/, `un DLV della task chiusa senza spunta: ${list}`);
   const frame = captureDetail('DDD\rT\r');
-  assert.match(frame, /task chiusa · ⏎ inerte/, `stato spento assente: ${frame}`);
-  assert.doesNotMatch(frame, /\[ \] \d/, `un DLV della task chiusa senza spunta: ${frame}`);
-  assert.doesNotMatch(frame, /--model/, `è partito uno spawn: ${frame}`);
+  assert.match(frame, /--prompt-kind none/, `non si è aperta a vuoto: ${frame}`);
 });
 
 test('modo DLV: una task non eseguibile si apre sui campi, come prima', { skip: SKIP }, () => {

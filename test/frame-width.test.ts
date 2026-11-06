@@ -24,7 +24,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ptyGate } from './platform-gates.js';
-import { DETAIL_RUN_MODEL, detailProject } from './detail-fixture.js';
+import { detailProject } from './detail-fixture.js';
 import stringWidth from 'string-width';
 import { termWidth } from '../src/width.js';
 import { VERSION } from '../src/version.js';
@@ -663,7 +663,7 @@ const DETAIL_SCENARIOS: Array<[string, string, number[], string]> = [
   ['detail · titolo lungo', 'DD\rTDDDX', [100, 176], 'priorità'],
   // La lista DLV all'apertura: quattordici voci più larghe della riga, glifi
   // larghi nel testo e la spunta (larga 2) dei fatti nella colonna di stato.
-  ['detail DLV · apertura', 'DD\r', [80, 100, 176], `cosa fare ora [R0] · ${DETAIL_RUN_MODEL}`],
+  ['detail DLV · apertura', 'DD\r', [80, 100, 176], '⏎ open · opus'],
   // Due voci selezionate: la riga di stato porta il prompt col perimetro, il
   // pezzo che il budget serve per primo.
   ['detail DLV · selezione', 'DD\r D ', [80, 176], 'run-task T1 DLV 2,4'],
@@ -671,9 +671,9 @@ const DETAIL_SCENARIOS: Array<[string, string, number[], string]> = [
   // lista e la riga di stato conta le voci rimaste sopra — a 38 righe la lista
   // ne mostra 13 su 14.
   ['detail DLV · cursore in coda', 'DD\rU', [80, 176], '↑1 ↓0'],
-  // Gli stati senza lancio: il motivo prende il posto del prompt, ed è più
-  // lungo di lui — il caso che sfonda se il budget è tarato sul prompt.
-  ['detail DLV · task chiusa', 'DDD\rT', [80, 176], 'task chiusa · ⏎ inerte'],
+  // Gli stati senza selezione possibile: il motivo sta davanti a `open`, ed è
+  // più lungo di lui — il caso che sfonda se il budget è tarato sul prompt.
+  ['detail DLV · task chiusa', 'DDD\rT', [80, 176], 'task chiusa · ⏎ open'],
   // L'avviso: motivo in testa E prompt dietro, la riga di stato più lunga.
   ['detail DLV · Size L senza preflight', 'DDDD\r', [80, 176], 'Size L senza preflight'],
   ['detail DLV · nessun deliverable', 'DDDDD\rT', [80, 176], 'nessun deliverable'],

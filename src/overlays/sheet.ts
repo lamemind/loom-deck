@@ -240,9 +240,15 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     setCursor({ row: DROW.action, caret: 0 });
     setFind(null);
     setOccIdx(0);
-    // T189/D3 — il modo DLV è una variante di `run`: la terna gli arriva già
-    // risolta, override di progetto compreso, come all'azione che replica.
-    dlv.open({ id: next.id, text: next.text, done: next.done === true, run: defaults('run', next.id) });
+    // T189/D3 — il modo DLV replica `run` con una selezione e `open` senza: le
+    // terne gli arrivano già risolte, override di progetto compreso.
+    dlv.open({
+      id: next.id,
+      text: next.text,
+      done: next.done === true,
+      run: defaults('run', next.id),
+      open: defaults('none', next.id),
+    });
     setNote('');
     setMode('detail');
   }
@@ -388,9 +394,8 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       return;
     }
     if (key.return && dlv.active) {
-      // T189 — nel modo DLV `⏎` lancia `run` col perimetro scelto. Gate non
-      // pronto → inerte: il motivo è già scritto sotto la lista, e chiudere il
-      // detail lo porterebbe via.
+      // T189 — nel modo DLV `⏎` lancia `run` col perimetro scelto; senza
+      // selezione apre la task a mani nude, come l'azione `open` dei campi.
       const launch = dlv.launch();
       if (!launch) return;
       const id = sheet?.id;

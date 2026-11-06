@@ -1,10 +1,11 @@
 // T189 — il MODO DLV del detail della task: la lista dei deliverable,
 // selezionabile, al posto dell'area di compilazione.
 //
-// È una variante dell'azione `run` del detail, non un'azione nuova (D3): stesso
-// spawn, stesso modello, stesso titolo, override di progetto compreso. Cambia
-// solo il prompt — il perimetro scelto in coda (`/loom-works:run-task T189 2,4`),
-// oppure `cosa fare ora [R0]` senza selezione (D4).
+// Con una selezione è una variante dell'azione `run` del detail, non un'azione
+// nuova (D3): stesso spawn, stesso modello, stesso titolo, override di progetto
+// compreso, col perimetro scelto in coda al prompt (`/loom-works:run-task T189
+// DLV 2,4`). Senza selezione è l'azione `open` dei campi: la task si apre a mani
+// nude, senza nessun prompt.
 //
 // Vive fuori da `sheet.ts` (D5) e non lo importa: il detail possiede il modo,
 // questo modulo ne possiede lo stato. Le regole del plugin che decide di
@@ -21,11 +22,8 @@ import {
 import type { ModelKind } from '../spawn-catalog.js';
 import type { ResolvedSpawn } from '../spawn-config.js';
 
-/** D4 — il prompt di `⏎` senza nessun DLV selezionato. */
-export const DLV_IDLE_PROMPT = 'cosa fare ora [R0]';
-
 /**
- * D3/D4 — il prompt che parte da `⏎` nel modo DLV.
+ * D3 — il prompt che parte da `⏎` nel modo DLV.
  *
  * Con una selezione: il prompt dell'azione `run` GIÀ RISOLTO (default del deck ←
  * override di progetto, buchi riempiti) con `DLV` e il perimetro in coda, in
@@ -35,11 +33,11 @@ export const DLV_IDLE_PROMPT = 'cosa fare ora [R0]';
  * Lista semplice e non range: la grammatica `1,3-5` di `run-task` la accetta, e
  * compattare non toglie ambiguità.
  *
- * Senza selezione: `cosa fare ora [R0]`, nella stessa sessione bound di `run`.
+ * Senza selezione: nessun prompt, come l'azione `open` dei campi.
  */
 export function dlvPrompt(runPrompt: string | null, selected: Iterable<number>): string {
   const scope = [...selected].sort((a, b) => a - b);
-  if (scope.length === 0) return DLV_IDLE_PROMPT;
+  if (scope.length === 0) return '';
   return `${(runPrompt ?? '').trim()} DLV ${scope.join(',')}`.trim();
 }
 
@@ -65,14 +63,15 @@ export function toggleIn(selected: ReadonlySet<number>, n: number): ReadonlySet<
   return next;
 }
 
-/** Ciò che serve all'apertura: la task fotografata dal detail, più la terna
- *  dell'azione `run` già risolta su questa task. */
+/** Ciò che serve all'apertura: la task fotografata dal detail, più le terne
+ *  delle azioni `run` e `open` già risolte su questa task. */
 export interface DlvOpenInput {
   id: string;
   text: string | null;
   /** La task è ✔️ in `tasks.md`. */
   done: boolean;
   run: ResolvedSpawn;
+  open: ResolvedSpawn;
 }
 
 /** Lo spawn che `⏎` farebbe partire: gli stessi argomenti di `onAction`. */
@@ -93,6 +92,7 @@ export function useDlvMode() {
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState<ReadonlySet<number>>(NONE);
   const [run, setRun] = useState<ResolvedSpawn | null>(null);
+  const [openAction, setOpenAction] = useState<ResolvedSpawn | null>(null);
 
   /**
    * Azzera tutto a ogni apertura del detail, come gli altri campi: una selezione
@@ -109,6 +109,7 @@ export function useDlvMode() {
     setDlvs(list);
     setGate(g);
     setRun(input.run);
+    setOpenAction(input.open);
     setCursor(dlvLaunchable(g) ? stepOpen(list, 0, 1) : 0);
     setSelected(NONE);
     setActive(dlvLaunchable(g));
@@ -119,12 +120,14 @@ export function useDlvMode() {
   }
 
   const prompt = dlvPrompt(run?.prompt ?? null, selected);
+  /** L'azione che `⏎` replica: `run` col perimetro, `open` senza selezione. */
+  const action = selected.size > 0 ? run : openAction;
 
-  /** Lo spawn di `⏎`, o `null` se non c'è niente da lanciare: la ragione è già
-   *  a schermo nella riga di stato della lista, quindi il tasto resta inerte. */
+  /** Lo spawn di `⏎`. Vale su ogni gate: in `off` nessun DLV è selezionabile,
+   *  quindi `⏎` apre la task a mani nude come l'azione `open` dei campi. */
   function launch(): DlvLaunch | null {
-    if (!dlvLaunchable(gate) || !run) return null;
-    return { model: run.model, title: (run.title ?? '').trim(), prompt };
+    if (!action) return null;
+    return { model: action.model, title: (action.title ?? '').trim(), prompt };
   }
 
   /** I tasti della lista. Il chiamante gestisce prima i suoi (`tab`, `⏎`, `esc`,
@@ -146,7 +149,7 @@ export function useDlvMode() {
     cursor,
     selected,
     prompt,
-    model: run?.model ?? null,
+    model: action?.model ?? null,
     open,
     toggle,
     launch,

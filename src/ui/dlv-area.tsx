@@ -22,8 +22,8 @@ interface Segment {
 }
 
 /**
- * La riga di stato: cosa parte su `⏎`, o perché non parte niente, più quante
- * righe della lista stanno fuori dalla finestra.
+ * La riga di stato: cosa parte su `⏎`, più quante righe della lista stanno fuori
+ * dalla finestra. Senza prompt parte l'azione `open`, e la riga la nomina.
  *
  * In `ready` il budget serve per primo il prompt, che è ciò che si legge prima
  * di premere. In `warn` l'avviso sta IN TESTA e il taglio cade dalla coda: su un
@@ -40,7 +40,7 @@ function statusSegments(
   const overflow: Segment = { text: above + below > 0 ? ` · ↑${above} ↓${below}` : '', dim: true };
   const launch: Segment[] = [
     { text: '⏎ ', color: 'yellow' },
-    { text: prompt, color: 'cyan' },
+    { text: prompt || 'open', color: 'cyan' },
     { text: model ? ` · ${model}` : '', dim: true },
   ];
   if (gate.kind === 'ready') return { segments: [...launch, overflow], priority: 1 };
@@ -51,7 +51,7 @@ function statusSegments(
     };
   }
   return {
-    segments: [{ text: gate.reason, dim: true }, { text: ' · ⏎ inerte', dim: true }, overflow],
+    segments: [{ text: `${gate.reason} · `, dim: true }, ...launch, overflow],
     priority: -1,
   };
 }
@@ -60,7 +60,7 @@ function statusSegments(
  * La lista dei DLV numerata come la numera `run-task`, coi fatti in grigio e
  * spuntati, più una riga di stato.
  *
- * Il cursore c'è solo quando `⏎` lancia qualcosa (`ready`, `warn`): in `off`
+ * Il cursore c'è solo quando i DLV si selezionano (`ready`, `warn`): in `off`
  * nessuna voce è selezionabile, e un caret su una riga inerte prometterebbe un
  * gesto che non esiste. Sopra `rows` la lista si finestra sul cursore; senza cursore parte
  * dall'inizio, e la riga di stato dice quante voci restano fuori.
@@ -80,7 +80,7 @@ export function DlvArea({
   cursor: number;
   selected: ReadonlySet<number>;
   gate: DlvGate;
-  /** Il prompt che `⏎` farebbe partire, già composto. */
+  /** Il prompt che `⏎` farebbe partire, già composto; vuoto = azione `open`. */
   prompt: string;
   model: string | null;
   /** Righe concesse alla lista, riga di stato esclusa (`dlvListRows`). */
