@@ -132,6 +132,11 @@ export const MODAL_HEIGHT = {
   // un'altezza fissa per modo da cui il budget dei pane si calcola. Altezza da
   // `finderLayout`.
   finder: 0,
+  // T194 — il modale delle combo: undicesima sostitutiva. Una ventina di voci in
+  // un box sopra i pane toglierebbe alle liste quasi tutte le righe, e il modale
+  // serve proprio a non contendere più lo spazio con loro. Altezza da
+  // `comboListCapacity`.
+  combo: 0,
 } as const;
 
 export type Mode = keyof typeof MODAL_HEIGHT;
@@ -384,6 +389,22 @@ export function finderLayout(rows: number, noteLine: boolean): { list: number; p
   const cost = PREVIEW_CHROME + FINDER_PREVIEW_ROWS;
   if (avail - cost >= MIN_FINDER_ROWS) return { list: avail - cost, preview: FINDER_PREVIEW_ROWS };
   return { list: Math.max(0, avail), preview: 0 };
+}
+
+// T194 — cornice del modale delle combo: gemella di STATUS_CHROME senza la riga
+// meta, perché la posizione nella lista sta già nella riga di testata.
+//   2  bordi del box esterno
+//   1  riga di testata (nome · posizione nella lista)
+//   1  riga hint
+//   1  marginTop del box lista
+//   2  bordi del box lista
+const COMBO_CHROME = 7;
+
+/** Righe di voci che entrano nel terminale. Quelle che restano fuori si
+ *  raggiungono scorrendo: il modale esiste per non troncare, quindi una voce
+ *  oltre la capienza resta sempre a una tacca di distanza. */
+export function comboListCapacity(rows: number): number {
+  return Math.max(0, (rows || 24) - SLACK - COMBO_CHROME);
 }
 
 // T52 — cornice del reader fullscreen.

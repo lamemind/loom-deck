@@ -41,7 +41,9 @@ import { WrapScreen } from './wrap-screen.js';
 import { SpawnScreen } from './spawn-screen.js';
 import { ReaderScreen, SearchScreen } from './search-screen.js';
 import { finderScreen } from './finder-screen.js';
+import { ComboScreen } from './combo-screen.js';
 import type { useAssignOverlay } from '../overlays/assign.js';
+import type { useComboOverlay } from '../overlays/combo.js';
 import type { useFinderOverlay } from '../overlays/finder.js';
 import type { useSheetOverlay } from '../overlays/sheet.js';
 import type { useSearchOverlay } from '../overlays/search.js';
@@ -53,6 +55,7 @@ import type { useWrapOverlay } from '../overlays/wrap.js';
 import type { useSpawnPage } from '../overlays/spawn.js';
 
 type AssignOverlay = ReturnType<typeof useAssignOverlay>;
+type ComboOverlay = ReturnType<typeof useComboOverlay>;
 type FinderOverlay = ReturnType<typeof useFinderOverlay>;
 type SheetOverlay = ReturnType<typeof useSheetOverlay>;
 type SearchOverlay = ReturnType<typeof useSearchOverlay>;
@@ -227,6 +230,7 @@ export type ScreensInput = {
   hiddenTasks: number;
   overlays: {
     assign: AssignOverlay;
+    combo: ComboOverlay;
     finder: FinderOverlay;
     sheet: SheetOverlay;
     search: SearchOverlay;
@@ -249,7 +253,7 @@ export type ScreensInput = {
  */
 export function screenFor(input: ScreensInput) {
   const { mode, rows, columns, note, overlays } = input;
-  const { assign, finder, sheet, search, status, inbox, doc, wrap, spawn } = overlays;
+  const { assign, combo, finder, sheet, search, status, inbox, doc, wrap, spawn } = overlays;
 
   // ── T57 · schermata di assegnazione ─────────────────────────────────────
   // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
@@ -316,6 +320,27 @@ export function screenFor(input: ScreensInput) {
       return <CompactNotice what="trova task" esc="chiude" rows={rows} columns={columns} />;
     }
     return finderScreen({ finder, columns, note, taskRowData: input.taskRowData });
+  }
+
+  // ── T194 · modale delle combo ───────────────────────────────────────────
+  // Undicesima sostitutiva: l'elenco che riga due non poteva più contenere. Il
+  // clamp serve anche qui, perché un resize può allargare la capienza sotto uno
+  // scroll già dato.
+  if (mode === 'combo' && combo.list) {
+    if (isCompact(combo.capacity)) {
+      return <CompactNotice what="combo" esc="chiude" rows={rows} columns={columns} />;
+    }
+    const start = Math.min(combo.top, combo.maxTop);
+    return (
+      <ComboScreen
+        rows={combo.list.slice(start, start + combo.capacity)}
+        keyW={combo.keyW}
+        top={start}
+        total={combo.list.length}
+        capacity={combo.capacity}
+        columns={columns}
+      />
+    );
   }
 
   // ── T66 · detail della task ─────────────────────────────────────────────

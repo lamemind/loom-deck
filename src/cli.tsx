@@ -40,6 +40,7 @@ import { useDeckInput } from './input.js';
 import { useSearchOverlay } from './overlays/search.js';
 import { taskSheet, useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
+import { useComboOverlay } from './overlays/combo.js';
 import { useFinderOverlay } from './overlays/finder.js';
 import { useProjectStatus } from './overlays/status.js';
 import { useFileSheet } from './overlays/file-sheet.js';
@@ -266,8 +267,13 @@ function Deck({
     currentNote: (sid) => model.sessionNotes.get(sid) ?? '',
   });
 
+  // T194 — il modale delle combo. Le voci gli arrivano all'apertura, dal dispatch:
+  // dipendono dalla geometria, che qui sotto si calcola dopo gli overlay.
+  const combo = useComboOverlay({ rows, setMode, setNote });
+
   const overlays = {
     assign,
+    combo,
     finder,
     sheet,
     search,
@@ -385,6 +391,18 @@ function Deck({
     docHasDirs: model.docHasDirs,
     restoreCount: model.restorable.length,
   });
+  const legend = deckLegend({
+    focus: model.focus,
+    hasTask: model.selTask !== null,
+    hasSession: model.selSessionObj !== null,
+    hasSessionId: model.selSessionId !== null,
+    purgeBulk: model.purgeBulk,
+    docMode: model.deckMode === 'doc',
+    hasInbox: model.selInbox !== null,
+    hasDoc: model.selDoc !== null,
+    gitlink: gitlink.enabled,
+    restore: frame.headerButton !== null,
+  });
 
   useDeckInput({
     cwd,
@@ -398,6 +416,7 @@ function Deck({
     frame,
     launchRegions: launch.regions,
     indicatorRegions: indicators.regions,
+    comboLegend: legend,
   });
 
   // Le sei schermate sostitutive prendono il frame intero: se una è attiva
@@ -415,7 +434,7 @@ function Deck({
     projectName: model.projectName,
     taskRowData: model.taskRowData,
     hiddenTasks: model.hiddenTasks,
-    overlays: { assign, finder, sheet, search, status, inbox, doc: docSheet, wrap, spawn },
+    overlays: { assign, combo, finder, sheet, search, status, inbox, doc: docSheet, wrap, spawn },
   });
   if (screen) return screen;
 
@@ -476,18 +495,7 @@ function Deck({
       <HintBar
         mode={mode}
         purge={purge.draft}
-        keyLegend={deckLegend({
-          focus: model.focus,
-          hasTask: model.selTask !== null,
-          hasSession: model.selSessionObj !== null,
-          hasSessionId: model.selSessionId !== null,
-          purgeBulk: model.purgeBulk,
-          docMode: model.deckMode === 'doc',
-          hasInbox: model.selInbox !== null,
-          hasDoc: model.selDoc !== null,
-          gitlink: gitlink.enabled,
-          restore: frame.headerButton !== null,
-        })}
+        keyLegend={legend.join(' · ')}
         indicators={indicators}
         columns={columns}
       />

@@ -62,6 +62,11 @@ const row = (sessionId: string): SessionRow => ({
   session: session(sessionId),
 });
 
+/** La legenda come testo unico: le asserzioni qui sotto cercano SOTTOSTRINGHE
+ *  (`CANC` dentro `CANC elimina`). Sull'array `includes` confronterebbe la voce
+ *  intera, e un `!legend.includes('CANC')` passerebbe sempre. */
+const legendText = (state: Parameters<typeof deckLegend>[0]) => deckLegend(state).join(' · ');
+
 const frameInput = (over: Partial<Parameters<typeof frameGeometry>[0]> = {}) =>
   frameGeometry({
     rows: 40,
@@ -99,7 +104,7 @@ const frameInput = (over: Partial<Parameters<typeof frameGeometry>[0]> = {}) =>
 // ── deckLegend: la voce che nomina il bersaglio ───────────────────────────
 
 test('deckLegend: CANC nomina il bersaglio singolo quando il bulk è spento', () => {
-  const legend = deckLegend({
+  const legend = legendText({
     focus: 'tasks',
     hasTask: true,
     hasSession: false,
@@ -116,7 +121,7 @@ test('deckLegend: CANC nomina il bersaglio singolo quando il bulk è spento', ()
 });
 
 test('deckLegend: CANC nomina il bulk quando il bulk è acceso', () => {
-  const legend = deckLegend({
+  const legend = legendText({
     focus: 'tasks',
     hasTask: false,
     hasSession: false,
@@ -132,7 +137,7 @@ test('deckLegend: sul pane sessioni CANC elimina la conversazione, mai «tutte»
   // Il bersaglio del tasto lo decide il focus: qui è la conversazione sotto il
   // cursore, e il bulk delle task (`purgeBulk`) non deve trapelare — una voce
   // «elimina tutte» su questo pane prometterebbe una strage che non parte.
-  const legend = deckLegend({
+  const legend = legendText({
     focus: 'sessions',
     hasTask: true,
     hasSession: true,
@@ -146,7 +151,7 @@ test('deckLegend: sul pane sessioni CANC elimina la conversazione, mai «tutte»
 });
 
 test('deckLegend: su una pinnata stale CANC non si annuncia — non c\'è un transcript', () => {
-  const legend = deckLegend({
+  const legend = legendText({
     focus: 'sessions',
     hasTask: false,
     hasSession: false,
@@ -160,7 +165,7 @@ test('deckLegend: su una pinnata stale CANC non si annuncia — non c\'è un tra
 });
 
 test('deckLegend: le voci contestuali seguono il pane a fuoco', () => {
-  const suTask = deckLegend({
+  const suTask = legendText({
     focus: 'tasks',
     hasTask: true,
     hasSession: false,
@@ -172,7 +177,7 @@ test('deckLegend: le voci contestuali seguono il pane a fuoco', () => {
   assert.ok(suTask.includes('⏎ detail'), 'sul pane task ⏎ apre il detail');
   assert.ok(!suTask.includes('f fork'), 'il fork non vive sul pane task');
 
-  const suSessioni = deckLegend({
+  const suSessioni = legendText({
     focus: 'sessions',
     hasTask: false,
     hasSession: true,
@@ -191,7 +196,7 @@ test('deckLegend: le voci contestuali seguono il pane a fuoco', () => {
 test('deckLegend: su una pinnata stale restano pin/titolo/assegna, non il fork', () => {
   // Il transcript non c'è più (`hasSession` falso) ma la riga è selezionata:
   // spinnarla, annotarla e riassegnarla restano legittimi, forkarla no.
-  const legend = deckLegend({
+  const legend = legendText({
     focus: 'sessions',
     hasTask: false,
     hasSession: false,
@@ -214,7 +219,7 @@ test('deckLegend: in modo doc nessun tasto del mondo task resta annunciato', () 
   // Un tasto inerte che resta in legenda descrive un deck che non esiste. Le
   // voci si tolgono dall'ELENCO che governa anche il dispatch, quindi qui si
   // misura proprio che i due lettori non divergano.
-  const doc = deckLegend({
+  const doc = legendText({
     focus: 'doctree',
     hasTask: false,
     hasSession: false,
@@ -235,7 +240,7 @@ test('deckLegend: in modo doc nessun tasto del mondo task resta annunciato', () 
 });
 
 test('deckLegend: in modo task le stesse voci ci sono tutte', () => {
-  const task = deckLegend({
+  const task = legendText({
     focus: 'tasks',
     hasTask: true,
     hasSession: false,
@@ -443,6 +448,6 @@ test('frameGeometry: il bottone sta a sinistra di risoluzione e versione, ancora
 });
 
 test('deckLegend: `^T restore` solo col bottone a schermo, e in testa', () => {
-  assert.equal(deckLegend(legendBase).includes('^T'), false);
-  assert.ok(deckLegend({ ...legendBase, restore: true }).startsWith('^T restore · '));
+  assert.equal(legendText(legendBase).includes('^T'), false);
+  assert.ok(legendText({ ...legendBase, restore: true }).startsWith('^T restore · '));
 });

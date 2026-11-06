@@ -26,6 +26,7 @@ const ALL_MODES: Mode[] = [
   'note',
   'assign',
   'finder',
+  'combo',
   'detail',
   'purge',
   'drop',
@@ -80,7 +81,7 @@ test('un modo fuori catalogo non risulta capturing', () => {
 test('i modi scorrevoli sono i viewer di testo', () => {
   assert.deepEqual(
     [...SCROLLING_MODES].sort(),
-    ['detail', 'doc', 'inbox', 'reader', 'status', 'wrap'],
+    ['combo', 'detail', 'doc', 'inbox', 'reader', 'status', 'wrap'],
   );
 });
 

@@ -50,6 +50,7 @@ import type { Frame } from './frame.js';
 import type { DeckActions } from './actions.js';
 import type { DeckModel } from './deck-model.js';
 import type { useAssignOverlay } from './overlays/assign.js';
+import type { useComboOverlay } from './overlays/combo.js';
 import type { useFinderOverlay } from './overlays/finder.js';
 import { taskSheet, type useSheetOverlay } from './overlays/sheet.js';
 import type { useSearchOverlay } from './overlays/search.js';
@@ -94,6 +95,7 @@ export const NO_MODIFIERS: Key = {
 
 export type DeckOverlays = {
   assign: ReturnType<typeof useAssignOverlay>;
+  combo: ReturnType<typeof useComboOverlay>;
   finder: ReturnType<typeof useFinderOverlay>;
   sheet: ReturnType<typeof useSheetOverlay>;
   search: ReturnType<typeof useSearchOverlay>;
@@ -125,6 +127,7 @@ export function useDeckInput({
   frame,
   launchRegions,
   indicatorRegions,
+  comboLegend,
 }: {
   /** Project root: serve a leggere un file inbox, che `doc-metrics` nomina
    *  relativo alla radice del progetto e non alla docs-root. */
@@ -144,6 +147,9 @@ export function useDeckInput({
   /** T134 — le colonne cliccabili degli indicatori sulla riga legenda
    *  (`indicatorRow` in `frame.ts`). Le loro chiavi portano il prefisso `^`. */
   indicatorRegions: Region[];
+  /** T194 — le voci che `H` elenca nel modale, già composte per il fuoco e la
+   *  selezione di questo render (`deckLegend` in `frame.ts`). */
+  comboLegend: readonly string[];
 }) {
   // T116 — uscita a doppio `^C`. Il timer È lo stato dell'armamento: finché il
   // handle esiste la finestra è aperta, e non serve un secondo stato da tenere
@@ -180,6 +186,7 @@ export function useDeckInput({
     search: overlays.search.onSearchKey,
     assign: overlays.assign.onKey,
     finder: overlays.finder.onKey,
+    combo: overlays.combo.onKey,
     create: overlays.text.onCreateKey,
     note: overlays.text.onNoteKey,
     sort: overlays.view.onSortKey,
@@ -200,6 +207,7 @@ export function useDeckInput({
     doc: overlays.doc.scroll,
     wrap: overlays.wrap.scroll,
     reader: overlays.search.scrollReader,
+    combo: overlays.combo.scroll,
   };
 
   /**
@@ -691,6 +699,11 @@ export function useDeckInput({
       // è il restore delle conversazioni (T181). Vivo anche in modo doc (P6):
       // non legge la selezione del pane task, come `^F`.
       overlays.finder.open();
+    } else if (input === 'H') {
+      // T194 — il modale delle combo. MAIUSCOLA perché apre una schermata
+      // (convenzione T39). Vivo anche in modo doc: non agisce su una selezione,
+      // e le voci che elenca seguono già il modo.
+      overlays.combo.open(comboLegend);
     } else if (input === 't') {
       actions.openTerminal();
     } else if (input === 'c') {
