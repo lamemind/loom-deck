@@ -28,8 +28,9 @@
  *    titolo nella tab;
  *  - dentro l'alfabeto di `saneNote`: un carattere ammesso lì può arrivare da
  *    una nota digitata, e il gemello non si distingue più dal testo;
- *  - dentro `[A-Za-z0-9_-]`: il matcher di compass `titleKeyRe` riconosce una
- *    finestra con `^<emoji> <name>(?![\w-])`;
+ *  - dentro `[A-Za-z0-9_-]`: si leggerebbe come parte del nome, e senza lo
+ *    spazio separatore spezzerebbe il match di compass `titleKeyRe`
+ *    (`^<emoji> <name>(?![\w-])`), che con lo spazio non ne è toccato;
  *  - l'apice singolo: il titolo sta dentro `claude --name '…'` nella riga che
  *    `bash -lc` analizza;
  *  - i metacaratteri di shell (`; & $ \` | < >`): inerti fra apici, ma il test
