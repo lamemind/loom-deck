@@ -52,6 +52,8 @@ const CTRL_O = '\x0f';
  *  ciò che i due commenti in contraddizione del repo (`model.ts` contro
  *  `cli.tsx`) non stabilivano, e che questo gate misura. */
 const CTRL_S = '\x13';
+/** T168 — `^L` apre la pagina delle voci launch. */
+const CTRL_L = '\x0c';
 
 function capture(
   keys: string,
@@ -169,6 +171,9 @@ const MODES: Array<{ name: string; keys: string; expect: RegExp; env?: NodeJS.Pr
   // che è l'unica a nominare la pagina: le celle della tabella portano valori
   // che il progetto può aver cambiato.
   { name: 'spawn', keys: CTRL_S, expect: /azioni di spawn/i },
+  // T168 — la pagina delle voci launch: l'attesa è sulla testata, l'unica a
+  // nominarla (le righe portano le voci del progetto, che cambiano).
+  { name: 'launch', keys: CTRL_L, expect: /voci launch/i },
   // T169 — il finder si apre con `T` maiuscola, che nel driver pty è il tab: il
   // backtick la manda letterale. L'attesa è la riga hint, l'unica a nominarlo.
   { name: 'finder', keys: '`T', expect: /trova task/i },
@@ -1161,4 +1166,68 @@ test('pagina azioni: senza un file di progetto `w` rifiuta e lo dice', { skip: S
   if (CAN_RUN) copyFileSync(TASKS, join(naked, 'runtime', 'tasks.md'));
   const frame = capture(`${CTRL_S}\rDR\rw`, naked);
   assert.match(frame, /⚠|ENOENT|no such file/i, frame);
+});
+
+// ── T168 · la pagina delle voci launch ──────────────────────────────────────
+//
+// Sul progetto temporaneo con due voci: una nuda e una con esito. Gli spawn sono
+// inerti (`LOOM_DECK_NO_SPAWN`), quindi `⏎` misura la nota e non il processo;
+// `w` scrive davvero nel file del progetto temporaneo.
+
+function launchProject(): string {
+  const root = configProject();
+  writeFileSync(
+    join(root, '.claude', 'loom-works.json'),
+    JSON.stringify(
+      {
+        id: 'prova',
+        emoji: '🧵',
+        name: 'prova',
+        launch: [
+          { emoji: '📝', label: 'codium', command: 'codium .' },
+          { emoji: '⬇️', label: 'pull all', command: 'git pull --ff-only', capture: true, key: '9' },
+        ],
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  return root;
+}
+
+test('pagina launch: elenca le voci con cifra e attributi, esc chiude', { skip: SKIP }, () => {
+  const proj = launchProject();
+  const open = lastFrame(capture(CTRL_L, proj));
+  assert.match(open, /voci launch/, `la pagina non si è aperta: ${open}`);
+  assert.match(open, /1 📝 codium/, `manca la voce nuda con la sua cifra: ${open}`);
+  assert.match(open, /9 .* pull all/, `la voce pinnata non porta la 9: ${open}`);
+  assert.match(open, /capture ✓/, `l'attributo capture non è disegnato: ${open}`);
+  const closed = lastFrame(capture(`${CTRL_L}${ESC}`, proj));
+  assert.doesNotMatch(closed, /voci launch ·/, `la pagina è rimasta aperta: ${closed}`);
+  assert.match(closed, /PROJECT STATUS/, `il deck non è tornato alla lista: ${closed}`);
+});
+
+test('pagina launch: ⏎ lancia la voce selezionata, l su una voce senza esito lo dice', { skip: SKIP }, () => {
+  const proj = launchProject();
+  assert.match(capture(`${CTRL_L}\r`, proj), /⏎ → codium su prova/);
+  assert.match(capture(`${CTRL_L}l`, proj), /non ha esito: accendi capture/);
+  // La voce con esito, mai partita: nessun log da aprire.
+  assert.match(capture(`${CTRL_L}Dl`, proj), /non è mai partita/);
+});
+
+test('pagina launch: tab + spazio spegne header, w lo scrive nel file', { skip: SKIP }, () => {
+  const proj = launchProject();
+  const frame = capture(`${CTRL_L}\t w`, proj);
+  const doc = JSON.parse(readFileSync(join(proj, '.claude', 'loom-works.json'), 'utf8'));
+  assert.equal(doc.launch[0].header, false, `frame: ${frame}`);
+  // Gli altri attributi al default non entrano nel file, e la seconda voce è intatta.
+  assert.equal('capture' in doc.launch[0], false);
+  assert.deepEqual(doc.launch[1], { emoji: '⬇️', label: 'pull all', command: 'git pull --ff-only', capture: true, key: '9' });
+  assert.equal(doc.id, 'prova');
+});
+
+test('pagina launch: la cifra dalla lista lancia la voce pinnata', { skip: SKIP }, () => {
+  const proj = launchProject();
+  assert.match(capture('9', proj), /9 → pull all avviato/);
+  assert.match(capture('2', proj), /2 → nessuna voce launch \(2 in riga\)/);
 });

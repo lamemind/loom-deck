@@ -27,7 +27,17 @@ import {
 import { epicTail, taskTail } from '../src/glyphs.js';
 import { termWidth } from '../src/width.js';
 import { loadView, saveView, parseView } from '../src/view-store.js';
-import { cellWidth, launchLegend, parseIdentity, parseLaunch } from '../src/config.js';
+import {
+  assignDigits,
+  cellWidth,
+  launchDigitsOf,
+  launchLegend,
+  launchSlug,
+  parseEvery,
+  parseIdentity,
+  parseLaunch,
+  parseLaunchConfig,
+} from '../src/config.js';
 import type { Task } from '../src/tasks.js';
 
 const t = (id: string, pri: string, prog: string): Task => ({
@@ -531,6 +541,7 @@ test('legenda: nessuna voce → riga vuota, nessun contatore', () => {
   assert.deepEqual(launchLegend([], 200), {
     shown: '',
     taken: [],
+    digits: [],
     overflow: 0,
     unreachable: 0,
   });
@@ -571,11 +582,116 @@ test('legenda: le celle riservate alle surface built-in escono dal budget', () =
   assert.ok(con.overflow > 0); // e la degradazione resta contata, non silenziosa
 });
 
-test('legenda: oltre la nona voce → configurate ma non raggiungibili, contate a parte', () => {
+test('legenda: oltre la decima voce → configurate ma senza cifra, contate a parte', () => {
+  // T168/P10 — lo `0` entra nello spazio delle cifre: dieci slot, `1..9` poi `0`.
   const legend = launchLegend(L(12), 400);
-  assert.equal(legend.unreachable, 3);
-  assert.equal(legend.shown.split(' · ').length, 9);
-  assert.ok(!legend.shown.includes('app10'));
+  assert.equal(legend.unreachable, 2);
+  assert.equal(legend.shown.split(' · ').length, 10);
+  assert.ok(legend.shown.includes('0 📝 app10'));
+  assert.ok(!legend.shown.includes('app11'));
+  assert.deepEqual([...legend.digits], ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']);
+});
+
+// ── T168 · attributi, cifre pinnate, voci spente ─────────────────────────────
+
+test('launch: gli attributi hanno i loro default, e un valore fuori dominio cade con avviso', () => {
+  const { entries, warnings } = parseLaunchConfig({
+    launch: [
+      { emoji: '⬇️', label: 'pull all', command: 'git pull', capture: true, startup: true, every: '15m', key: '9' },
+      { emoji: '📝', label: 'codium', command: 'codium .', every: 'ogni tanto', key: 'x', header: 'no' },
+    ],
+  });
+  const [pull, codium] = entries;
+  assert.equal(pull!.capture, true);
+  assert.equal(pull!.startup, true);
+  assert.equal(pull!.every, '15m');
+  assert.equal(pull!.intervalMs, 15 * 60_000);
+  assert.equal(pull!.key, '9');
+  assert.equal(pull!.header, true);
+  assert.equal(pull!.enabled, true);
+  assert.equal(pull!.slug, 'pull-all');
+  assert.equal(pull!.index, 0);
+  // La voce resta un launcher: gli attributi sbagliati cadono uno per uno.
+  assert.equal(codium!.capture, false);
+  assert.equal(codium!.every, null);
+  assert.equal(codium!.intervalMs, null);
+  assert.equal(codium!.key, null);
+  assert.equal(codium!.header, true);
+  assert.equal(codium!.index, 1);
+  assert.equal(warnings.length, 3, warnings.join(' | '));
+  assert.match(warnings[0]!, /every.*ogni tanto/);
+  assert.match(warnings[1]!, /key.*x/);
+  assert.match(warnings[2]!, /header.*no/);
+});
+
+test('launch: lo slug è unico anche fra due voci con la stessa label', () => {
+  const { entries } = parseLaunchConfig({
+    launch: [
+      { emoji: '☕', label: 'idea', command: 'idea a' },
+      { emoji: '☕', label: 'idea', command: 'idea b' },
+    ],
+  });
+  assert.equal(entries[0]!.slug, 'idea');
+  assert.equal(entries[1]!.slug, 'idea-1');
+  assert.equal(launchSlug('Pull All!'), 'pull-all');
+  assert.equal(launchSlug('🧵'), 'voce');
+});
+
+test('parseEvery: durata con unità, niente cron', () => {
+  assert.equal(parseEvery('30m'), 30 * 60_000);
+  assert.equal(parseEvery('6h'), 6 * 3_600_000);
+  assert.equal(parseEvery('1d'), 86_400_000);
+  assert.equal(parseEvery('*/30'), null);
+  assert.equal(parseEvery('0m'), null);
+  assert.equal(parseEvery(15), null);
+});
+
+test('assignDigits: le key pinnate tengono la cifra, le altre prendono le libere in ordine', () => {
+  const entries = parseLaunch({
+    launch: [
+      { label: 'a', command: 'a' },
+      { label: 'b', command: 'b', key: '1' },
+      { label: 'c', command: 'c', key: '7' },
+      { label: 'd', command: 'd' },
+    ],
+  });
+  const { slots, unreachable, warnings } = assignDigits(entries);
+  assert.deepEqual(
+    slots.map((s) => `${s.digit}:${s.entry.label}`),
+    ['1:b', '2:a', '3:d', '7:c'],
+  );
+  assert.equal(unreachable.length, 0);
+  assert.deepEqual(warnings, []);
+  assert.deepEqual(launchDigitsOf(entries), ['1', '2', '3', '7']);
+});
+
+test('assignDigits: una key già presa cade con avviso, e la voce prende una cifra libera', () => {
+  const entries = parseLaunch({
+    launch: [
+      { label: 'a', command: 'a', key: '2' },
+      { label: 'b', command: 'b', key: '2' },
+    ],
+  });
+  const { slots, warnings } = assignDigits(entries);
+  assert.deepEqual(slots.map((s) => `${s.digit}:${s.entry.label}`), ['1:b', '2:a']);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0]!, /key 2 già presa/);
+});
+
+test('assignDigits: header spento = fuori riga ma non spenta; spenta = fuori riga e cifra riservata', () => {
+  const entries = parseLaunch({
+    launch: [
+      { label: 'a', command: 'a', header: false },
+      { label: 'b', command: 'b', enabled: false, key: '1' },
+      { label: 'c', command: 'c' },
+    ],
+  });
+  const { slots } = assignDigits(entries);
+  // `a` non è in riga, `b` è spenta e riserva la `1`: `c` prende la `2`.
+  assert.deepEqual(slots.map((s) => `${s.digit}:${s.entry.label}`), ['2:c']);
+  const legend = launchLegend(entries, 200);
+  assert.equal(legend.shown, '2 ▸ c');
+  assert.equal(legend.unreachable, 0);
 });
 
 test('cellWidth: emoji largo 2, VS16 a larghezza 0, ascii 1', () => {

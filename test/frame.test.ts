@@ -156,14 +156,26 @@ test('launchRow: la riga non sfonda la larghezza del terminale', () => {
   );
 });
 
-test('launchRow: le voci oltre la nona sono dichiarate irraggiungibili', () => {
+test('launchRow: le voci oltre la decima sono dichiarate senza cifra', () => {
+  // T168/P10 — dieci slot (`1..9` poi `0`): l'undicesima resta configurata e
+  // si lancia dalla pagina `^L`.
   const entries: LaunchEntry[] = Array.from({ length: 11 }, (_, i) => ({
     emoji: '📝',
     label: `v${i}`,
     command: 'x',
   }));
-  const { unreachable } = launchRow(entries, 400);
-  assert.equal(unreachable, 2, 'due voci non hanno un tasto-cifra che le raggiunga');
+  const { unreachable, segments } = launchRow(entries, 400);
+  assert.equal(unreachable, 1, 'una voce non ha un tasto-cifra che la raggiunga');
+  assert.equal(segments.at(-1)!.key, '0', 'la decima voce risponde allo zero');
+});
+
+test('launchRow: una key pinnata porta la propria cifra nel segmento', () => {
+  const entries: LaunchEntry[] = [
+    { emoji: '📝', label: 'codium', command: 'codium .' },
+    { emoji: '⬇️', label: 'pull all', command: 'git pull', key: '9' },
+  ];
+  const { segments } = launchRow(entries, 200);
+  assert.deepEqual(segments.map((s) => s.key), ['t', '1', '9']);
 });
 
 // ── frameGeometry: hit-test == disegno ────────────────────────────────────

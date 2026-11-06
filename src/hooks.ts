@@ -16,6 +16,8 @@ import { commitTimes } from './commit-times.js';
 import { scanEpicHierarchy, EMPTY_EPIC_HIERARCHY, type EpicHierarchy } from './epic-hierarchy.js';
 import { scanInbox, INBOX_SCAN_INTERVAL_MS, type InboxFile } from './inbox.js';
 import { scanDocTree, DOC_SCAN_INTERVAL_MS, type DocScanData } from './doc-tree.js';
+import { loadLaunchConfig, type LaunchEntry } from './config.js';
+import { saveLaunchAttrs } from './launch-config.js';
 import {
   mixedCount,
   readWrapCache,
@@ -763,3 +765,40 @@ export function useSpawnConfig({
 }
 
 export type SpawnConfig = ReturnType<typeof useSpawnConfig>;
+
+/**
+ * T168 — le voci `launch[]` del progetto coi loro attributi, e il saver con cui
+ * la pagina `^L` li riscrive. Gemello di `useSpawnConfig`: lette una volta per
+ * vita del deck, avvisi al mount una volta sola, e dopo `w` si ricarica dal
+ * disco quello che si è appena scritto — ciò che la riga launch e la pagina
+ * mostrano è ciò che il file dice davvero.
+ */
+export function useLaunchConfig({
+  cwd,
+  setNote,
+}: {
+  cwd: string;
+  setNote: (s: string) => void;
+}) {
+  const [parsed, setParsed] = useState(() => loadLaunchConfig(cwd));
+  const warned = useRef(false);
+
+  useEffect(() => {
+    if (warned.current || parsed.warnings.length === 0) return;
+    warned.current = true;
+    const [first, ...rest] = parsed.warnings;
+    setNote(`⚠ ${first}${rest.length > 0 ? ` · +${rest.length}` : ''}`);
+  }, [parsed, setNote]);
+
+  const save = useCallback(
+    (entries: readonly LaunchEntry[]) => {
+      saveLaunchAttrs(cwd, entries);
+      setParsed(loadLaunchConfig(cwd));
+    },
+    [cwd],
+  );
+
+  return { entries: parsed.entries, warnings: parsed.warnings, save };
+}
+
+export type LaunchConfig = ReturnType<typeof useLaunchConfig>;

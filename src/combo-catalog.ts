@@ -9,7 +9,7 @@
 //
 // Le tre liste non dipendono dal fuoco né dalla selezione: il modale è la mappa
 // del deck, e una mappa che cambia a seconda di dove si è seduti non si impara.
-import { LAUNCH_MAX } from './config.js';
+import { LAUNCH_DIGITS } from './config.js';
 import { TASK_MODE_LEGEND } from './input-modes.js';
 import { pad, sanitize, termWidth } from './width.js';
 
@@ -50,10 +50,10 @@ export function deckLegend(state: {
   /** T181 — il bottone di restore è a schermo in testata: senza, `^T` non ha
    *  niente da riaprire. */
   restore: boolean;
-  /** Quante voci `launch` dichiara il progetto. */
-  launchCount: number;
+  /** T168 — le cifre in uso sulla riga launch (`launchDigitsOf`), nell'ordine
+   *  di lettura: con le `key` pinnate non sono più `1..N`. */
+  launchDigits: readonly string[];
 }): DeckLegend {
-  const reachable = Math.min(state.launchCount, LAUNCH_MAX);
   const general = [
     // T181/P5 — in TESTA, perché questa voce vale proprio nel momento in cui il
     // deck si è appena riaperto: è il primo gesto che si vuole fare, non uno fra
@@ -82,11 +82,13 @@ export function deckLegend(state: {
     // T161 — l'OGGETTO e non il gesto, al contrario di `^G`/`^O`/`^U`: lì il tasto
     // fa qualcosa, qui apre una pagina e basta.
     '^S azioni',
+    // T168 — l'OGGETTO, come `^S`: la pagina delle voci launch, con esito e
+    // attributi. Sempre annunciata, anche senza voci: la pagina si apre comunque
+    // e dice dove aggiungerle.
+    '^L launch',
     't terminale',
     'c claude',
-    ...(reachable === 0
-      ? []
-      : [reachable === 1 ? '1 voce launch' : `1-${reachable} voci launch`]),
+    ...launchVoice(state.launchDigits),
   ];
 
   // T160 — in modo doc i due pane sono altri e i tasti di task e conversazioni non
@@ -133,6 +135,20 @@ export function deckLegend(state: {
 
 function voiceList(title: string, voices: string[]): ComboList {
   return { title, voices: voices.map((voce) => sanitize(voce)) };
+}
+
+/**
+ * T168 — la voce delle cifre. Un prefisso contiguo di `LAUNCH_DIGITS` si
+ * scrive come intervallo (`1-3`, e `1-9,0` a dieci slot); con le `key` pinnate
+ * le cifre possono essere sparse, e allora si elencano.
+ */
+export function launchVoice(digits: readonly string[]): string[] {
+  if (digits.length === 0) return [];
+  if (digits.length === 1) return [`${digits[0]} voce launch`];
+  const prefix = LAUNCH_DIGITS.slice(0, digits.length);
+  const contiguous = prefix.every((d, i) => d === digits[i]);
+  if (!contiguous) return [`${digits.join(',')} voci launch`];
+  return [digits.length === LAUNCH_DIGITS.length ? '1-9,0 voci launch' : `1-${digits.length} voci launch`];
 }
 
 /**

@@ -18,8 +18,8 @@ import {
 import { TASK_MODE_LEGEND } from '../src/input-modes.js';
 import { termWidth } from '../src/width.js';
 
-const taskBase = { purgeBulk: false, docMode: false, gitlink: false, restore: false, launchCount: 0 };
-const fullBase = { ...taskBase, gitlink: true, restore: true, launchCount: 3 };
+const taskBase = { purgeBulk: false, docMode: false, gitlink: false, restore: false, launchDigits: [] as string[] };
+const fullBase = { ...taskBase, gitlink: true, restore: true, launchDigits: ['1', '2', '3'] };
 const docBase = { ...fullBase, docMode: true };
 
 const allVoices = (legend: DeckLegend) => [
@@ -79,13 +79,17 @@ test('deckLegend: `^U` solo con submodule, `^T` solo col bottone a schermo e in 
   assert.equal(full[0], '^T restore');
 });
 
-test('deckLegend: le cifre coprono le voci launch raggiungibili', () => {
-  const launchVoice = (launchCount: number) =>
-    deckLegend({ ...taskBase, launchCount }).general.voices.find((v) => v.includes('launch'));
-  assert.equal(launchVoice(0), undefined);
-  assert.equal(launchVoice(1), '1 voce launch');
-  assert.equal(launchVoice(3), '1-3 voci launch');
-  assert.equal(launchVoice(12), '1-9 voci launch');
+test('deckLegend: le cifre coprono le voci launch in riga, pinnate comprese', () => {
+  // T168 — la voce delle cifre si ricava da `launchDigitsOf`: un prefisso
+  // contiguo è un intervallo, le cifre sparse (key pinnate) si elencano, e la
+  // pagina `^L` è annunciata sempre.
+  const voices = (launchDigits: string[]) =>
+    deckLegend({ ...taskBase, launchDigits }).general.voices.filter((v) => v.includes('launch'));
+  assert.deepEqual(voices([]), ['^L launch']);
+  assert.deepEqual(voices(['1']), ['^L launch', '1 voce launch']);
+  assert.deepEqual(voices(['1', '2', '3']), ['^L launch', '1-3 voci launch']);
+  assert.deepEqual(voices(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']), ['^L launch', '1-9,0 voci launch']);
+  assert.deepEqual(voices(['2', '7']), ['^L launch', '2,7 voci launch']);
 });
 
 test('deckLegend: in modo doc le colonne seguono i pane, e nessun tasto inerte resta annunciato', () => {

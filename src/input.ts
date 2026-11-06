@@ -61,6 +61,7 @@ import type { InboxFile } from './inbox.js';
 import type { DocRow } from './doc-tree.js';
 import type { useWrapOverlay } from './overlays/wrap.js';
 import type { useSpawnPage } from './overlays/spawn.js';
+import type { useLaunchPage } from './overlays/launch.js';
 import type { useGitlink } from './overlays/gitlink.js';
 import type { usePurgeOverlay } from './overlays/purge.js';
 import type { useDropOverlay } from './overlays/drop.js';
@@ -107,6 +108,9 @@ export type DeckOverlays = {
   doc: ReturnType<typeof useFileSheet<DocRow>>;
   wrap: ReturnType<typeof useWrapOverlay>;
   spawn: ReturnType<typeof useSpawnPage>;
+  /** T168 — la pagina delle voci launch, e il motore che le lancia: le cifre
+   *  della riga launch passano da qui, non dall'attuatore. */
+  launch: ReturnType<typeof useLaunchPage>;
   /** T155 — non è un modo: non compare in `MODE_KEYS` perché non cattura
    *  niente. Sta fra gli overlay per il solo `^U`. */
   gitlink: ReturnType<typeof useGitlink>;
@@ -183,6 +187,7 @@ export function useDeckInput({
     doc: overlays.doc.onKey,
     wrap: overlays.wrap.onKey,
     spawn: overlays.spawn.onKey,
+    launch: overlays.launch.onKey,
     reader: overlays.search.onReaderKey,
     search: overlays.search.onSearchKey,
     assign: overlays.assign.onKey,
@@ -209,6 +214,7 @@ export function useDeckInput({
     wrap: overlays.wrap.scroll,
     reader: overlays.search.scrollReader,
     combo: overlays.combo.scroll,
+    launch: overlays.launch.scroll,
   };
 
   /**
@@ -478,6 +484,13 @@ export function useDeckInput({
         // un pseudo-terminale e pretende che la pagina si apra, quindi se il
         // byte non arrivasse il test fallirebbe invece di lasciare il dubbio.
         overlays.spawn.openPage();
+      } else if (input === 'l') {
+        // T168/P20 — `^L` apre la pagina delle voci launch, tutte, con esito e
+        // attributi. `CTRL` più lettera come le altre schermate sostitutive;
+        // `l` sta per launch (e per il log che la pagina apre con la `l` nuda).
+        // Libera nel dispatch e non bruciata in ASCII (`ink-input.md`: bruciate
+        // `^I ^H ^M ^J ^[`), misurata dal gate pty di `modes-smoke.test.ts`.
+        overlays.launch.openPage();
       } else if (input === 't') {
         // T181/P4 preflight — `^T` riapre le conversazioni dell'ultimo insieme
         // vivo. La `t` nuda apre un terminale: stesso schema «una lettera, due
@@ -714,8 +727,10 @@ export function useDeckInput({
       actions.openClaude();
     } else if (input === 'w') {
       actions.saveCurrentView();
-    } else if (input && /^[1-9]$/.test(input)) {
-      actions.runLaunchAt(input);
+    } else if (input && /^[0-9]$/.test(input)) {
+      // T168/P10 — `0` entra nello spazio delle cifre: dieci slot, e la mappa
+      // cifra → voce la tiene `assignDigits` (le pinnate sulla loro cifra).
+      overlays.launch.runDigit(input);
     }
     // Nessun tasto NUDO di uscita: `q` resta libera per un binding futuro, e
     // `esc` in modalità normale è inerte — dentro un overlay continua a

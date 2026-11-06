@@ -40,7 +40,6 @@ import { saveView, viewFilePath } from './view-store.js';
 import {
   commitTaskEdit,
   onInTabCommand,
-  runLaunch,
   spawnClaudeEmpty,
   spawnCleanTasks,
   spawnBare,
@@ -810,18 +809,10 @@ export function useDeckActions({
     }
   }
 
-  /** `1`-`9` — le voci launch del progetto, per indice base-1. */
-  function runLaunchAt(input: string) {
-    if (refuse('launch', input, setNote)) return;
-    const entry = model.launch[Number(input) - 1];
-    if (!entry) {
-      setNote(`${input} → nessuna voce launch (${model.launch.length} configurate)`);
-      return;
-    }
-    const child = runLaunch(entry, cwd);
-    child.on('error', () => setNote(`⚠ ${entry.label}: '${entry.command}' non lanciabile`));
-    setNote(`${input} → ${entry.label} su ${model.projectName}`);
-  }
+  // T168 — le voci launch (cifre, startup, scadenza, esito) non partono più da
+  // qui: vivono in `overlays/launch.ts`, che è l'unico a conoscere i record di
+  // esito e la guardia. Un lancio da tasto e uno a scadenza passano dalla stessa
+  // funzione, e un secondo attuatore qui divergerebbe al primo attributo.
 
   // Le operazioni sulla task list vivono in `task-ops.ts` e si ricompongono
   // qui, non nel chiamante: chi consuma gli attuatori ne vuole uno solo, e la
@@ -856,7 +847,6 @@ export function useDeckActions({
     openTerminal,
     openClaude,
     saveCurrentView,
-    runLaunchAt,
   };
 }
 

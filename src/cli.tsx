@@ -15,7 +15,7 @@
 import { render, Box, Text } from 'ink';
 import { useMemo, useState } from 'react';
 import { resolveTasksPath, resolveTasksDir } from './tasks.js';
-import { LAUNCH_SEP, docsRootName } from './config.js';
+import { LAUNCH_SEP, docsRootName, launchDigitsOf } from './config.js';
 import { anchorFrame, enableMouse } from './mouse.js';
 import { sanitize } from './width.js';
 import { MODEL_SHORT_LIST, modelAlias } from './glyphs.js';
@@ -31,6 +31,7 @@ import {
   headlineWidth,
   indicatorRow,
   launchRow,
+  unreachableText,
 } from './frame.js';
 import { deckLegend, hintLegend } from './combo-catalog.js';
 import { choiceButtons } from './ui/fields.js';
@@ -48,11 +49,12 @@ import type { InboxFile } from './inbox.js';
 import type { DocRow } from './doc-tree.js';
 import { useWrapOverlay } from './overlays/wrap.js';
 import { useSpawnPage } from './overlays/spawn.js';
+import { useLaunchPage } from './overlays/launch.js';
 import { useGitlink } from './overlays/gitlink.js';
 import { usePurgeOverlay } from './overlays/purge.js';
 import { useDropOverlay } from './overlays/drop.js';
 import { useTextModals, useViewModals } from './overlays/modals.js';
-import { useTerminalSize, useSpawnConfig } from './hooks.js';
+import { useTerminalSize, useSpawnConfig, useLaunchConfig } from './hooks.js';
 import { DropModal, EditModal, FilterModal, PurgeModal, SortModal } from './ui/modals.js';
 import { StatusHeadline } from './ui/status-screen.js';
 import { SessionsPane, TasksPane } from './ui/panes.js';
@@ -91,6 +93,10 @@ function Deck({
   // selettore e bottone sottolineato come «default». Da una sola risoluzione,
   // o il bottone marcato non sarebbe quello con cui `c` apre davvero.
   const bareDefault = resolveSpawnId('bare', spawnConfig.overrides, catalog).model;
+  // T168 — le voci launch coi loro attributi, e il saver della pagina `^L`.
+  // Lette qui e non nel modello, perché la pagina le riscrive e dopo `w` la
+  // riga launch deve vedere il file com'è.
+  const launchConfig = useLaunchConfig({ cwd, setNote });
 
   const model = useDeckModel({
     cwd,
@@ -98,6 +104,7 @@ function Deck({
     tasksPath,
     tasksDir,
     bareModel: bareDefault,
+    launch: launchConfig.entries,
     setNote,
   });
   const actions = useDeckActions({
@@ -235,6 +242,21 @@ function Deck({
     setNote,
   });
 
+  // T168 — la pagina delle voci launch e il motore che le lancia (startup,
+  // scadenza, esito). Come il project status il suo stato si legge in testata a
+  // schermata chiusa: 🔄 mentre una voce gira, 🚨 su un exit non-zero.
+  const launchPage = useLaunchPage({
+    cwd,
+    name: model.projectCore ?? model.projectName,
+    entries: launchConfig.entries,
+    save: launchConfig.save,
+    rows,
+    columns,
+    hasNote: Boolean(note),
+    setMode,
+    setNote,
+  });
+
   const purge = usePurgeOverlay({
     setMode,
     setNote,
@@ -282,6 +304,7 @@ function Deck({
     doc: docSheet,
     wrap,
     spawn,
+    launch: launchPage,
     gitlink,
     purge,
     drop,
@@ -330,6 +353,9 @@ function Deck({
   // hanno la precedenza sul budget (D5 preflight).
   const indicators = indicatorRow(
     {
+      // T168 — `null` quando tutto è verde: il glifo compare solo con una voce
+      // in corso o rossa (P23).
+      launch: launchPage.indicator,
       // T155 — `null` chiude il gate: su un progetto senza `.gitmodules` il
       // segmento non esiste, e la riga legenda si riprende quelle colonne.
       gitlink: gitlink.enabled
@@ -396,7 +422,7 @@ function Deck({
     docMode: model.deckMode === 'doc',
     gitlink: gitlink.enabled,
     restore: frame.headerButton !== null,
-    launchCount: model.launch.length,
+    launchDigits: launchDigitsOf(model.launch),
   });
 
   useDeckInput({
@@ -429,7 +455,19 @@ function Deck({
     projectName: model.projectName,
     taskRowData: model.taskRowData,
     hiddenTasks: model.hiddenTasks,
-    overlays: { assign, combo, finder, sheet, search, status, inbox, doc: docSheet, wrap, spawn },
+    overlays: {
+      assign,
+      combo,
+      finder,
+      sheet,
+      search,
+      status,
+      inbox,
+      doc: docSheet,
+      wrap,
+      spawn,
+      launch: launchPage,
+    },
   });
   if (screen) return screen;
 
@@ -507,7 +545,7 @@ function Deck({
             <Text color="yellow"> · +{launch.overflow} fuori riga</Text>
           ) : null}
           {launch.unreachable > 0 ? (
-            <Text color="yellow"> · {launch.unreachable} oltre la 9ª (non raggiungibili)</Text>
+            <Text color="yellow">{unreachableText(launch.unreachable)}</Text>
           ) : null}
           {launch.filler}
           {BARE_LABEL.text}{' '}

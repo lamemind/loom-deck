@@ -31,6 +31,7 @@ export const CAPTURING_MODES = [
   'doc',
   'wrap',
   'spawn',
+  'launch',
   'reader',
   'search',
   'assign',
@@ -192,7 +193,9 @@ export function inertNote(label: string): string {
  * Il custode è `MODE_WHEEL` in `input.ts`, un `Record<ScrollingMode, …>` che non
  * compila se un modo entra qui senza uno scroll da chiamare.
  */
-export const SCROLLING_MODES = ['detail', 'status', 'inbox', 'doc', 'wrap', 'reader', 'combo'] as const;
+// T168 — `launch` scorre solo col log aperto: sulla tabella la rotella è inerte,
+// perché lì c'è una selezione (D5 di T21).
+export const SCROLLING_MODES = ['detail', 'status', 'inbox', 'doc', 'wrap', 'reader', 'combo', 'launch'] as const;
 
 export type ScrollingMode = (typeof SCROLLING_MODES)[number];
 

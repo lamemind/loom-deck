@@ -306,6 +306,8 @@ const CTRL_G = String.fromCharCode(7);
 const CTRL_O = String.fromCharCode(15);
 /** T161 — apre la pagina delle azioni di spawn. */
 const CTRL_S = String.fromCharCode(19);
+/** T168 — `^L` apre la pagina delle voci launch. */
+const CTRL_L = String.fromCharCode(12);
 
 /** T121 — cache del recap a coordinata nota: senza, `^O` risponderebbe «nessun
  *  recap in cache» e lo scenario misurerebbe la lista invece del viewer. Le
@@ -585,6 +587,12 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // La riga `bare`, dove due celle su tre non si modificano: l'area disegna
   // comunque le loro righe, con la ragione al posto del campo.
   ['pagina azioni · celle fisse', `${CTRL_S}DDDDDDD\r`, [80, 100, 176]],
+  // T168 — la pagina delle voci launch: due righe per voce, colonna comando
+  // elastica per sottrazione — a 80 colonne il comando del pull all del cappello
+  // scende sotto le venti celle, cioè il caso in cui una colonna di troppo
+  // mangia il bordo.
+  ['pagina launch', CTRL_L, [80, 100, 176]],
+  ['pagina launch · campo a fuoco', `${CTRL_L}\t`, [80, 100, 176]],
 ];
 
 // T121 — il viewer del project status e i due stati «rumorosi» della testata.

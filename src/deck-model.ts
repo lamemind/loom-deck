@@ -13,7 +13,7 @@
 // consumatori — gli attuatori e il dispatch ne ricevono l'oggetto intero, ed è
 // la ragione per cui i loro conti di parametri restano leggibili.
 import { useEffect, useMemo, useState } from 'react';
-import { loadArchivableDays, loadIdentity, loadLaunch } from './config.js';
+import { loadArchivableDays, loadIdentity, type LaunchEntry } from './config.js';
 import {
   useArchivable,
   useCommitTimes,
@@ -192,6 +192,7 @@ export function useDeckModel({
   tasksPath,
   tasksDir,
   bareModel: bareModelDefault,
+  launch,
   setNote,
 }: {
   cwd: string;
@@ -206,11 +207,13 @@ export function useDeckModel({
    *  un valore che si riallineasse a metà sessione sposterebbe il bottone sotto
    *  le dita di chi l'ha appena ciclato con `m`. */
   bareModel: ModelKind;
+  /** T168 — le voci launch del progetto arrivano da `useLaunchConfig`
+   *  (`cli.tsx`), non da una lettura qui: la pagina `^L` le riscrive, e la riga
+   *  launch deve vedere subito quello che il file dice. */
+  launch: LaunchEntry[];
   setNote: (s: string) => void;
 }) {
   const { tasks, loadError } = useTasks(tasksPath);
-  // Voci launch del progetto (T32): lette una volta, raggiunte per indice 1..9.
-  const launch = useMemo(() => loadLaunch(cwd), [cwd]);
   // Identità (T37): titolo delle tab terminale spawnate col tasto `t`.
   const identity = useMemo(() => loadIdentity(cwd), [cwd]);
   // T53 — il core che ogni titolo di tab porta, quindi la colonna costante da

@@ -137,6 +137,11 @@ export const MODAL_HEIGHT = {
   // serve proprio a non contendere più lo spazio con loro. Altezza da
   // `comboListCapacity`.
   combo: 0,
+  // T168 — la pagina delle voci launch: dodicesima sostitutiva. Due righe per
+  // voce più il log a tutto schermo: in un box sopra i pane al comando
+  // resterebbero poche colonne. Altezza da `launchListCapacity` e
+  // `launchLogCapacity`.
+  launch: 0,
 } as const;
 
 export type Mode = keyof typeof MODAL_HEIGHT;
@@ -583,6 +588,45 @@ const SPAWN_FIELDS_CHROME = 5;
 export function spawnListCapacity(rows: number, editing = false, noteLine = false): number {
   const extra = (editing ? SPAWN_FIELDS_CHROME : 0) + (noteLine ? 1 : 0);
   return Math.max(0, (rows || 24) - SLACK - SPAWN_CHROME - extra);
+}
+
+// T168 — cornice della pagina delle voci launch.
+//   2  bordi del box esterno
+//   1  riga di testata (nome della pagina · quante voci · stato)
+//   1  riga hint
+//   1  marginTop del box tabella
+//   2  bordi del box tabella
+const LAUNCH_CHROME = 7;
+
+/** Righe della tabella per voce: il comando con header ed esito sopra, gli
+ *  attributi sotto. Fisse e non proporzionali al contenuto: una voce senza
+ *  esito disegna comunque la seconda riga, o la tabella salterebbe a ogni
+ *  movimento del caret. */
+export const LAUNCH_ROWS_PER_VOICE = 2;
+
+/**
+ * VOCI (non righe) che entrano nel terminale: ogni voce costa
+ * `LAUNCH_ROWS_PER_VOICE` righe. La riga di stato si paga qui come nella pagina
+ * di spawn: la pagina è sostitutiva, e la nota la disegna lei.
+ */
+export function launchListCapacity(rows: number, noteLine = false): number {
+  const avail = (rows || 24) - SLACK - LAUNCH_CHROME - (noteLine ? 1 : 0);
+  return Math.max(0, Math.floor(avail / LAUNCH_ROWS_PER_VOICE));
+}
+
+// T168 — cornice del log di una voce, gemella di STATUS_CHROME: scorre testo e
+// basta.
+//   2  bordi del box esterno
+//   1  riga di testata (voce · esito)
+//   1  riga meta (ora · posizione nel testo)
+//   1  riga hint
+//   1  marginTop del box corpo
+//   2  bordi del box corpo
+const LAUNCH_LOG_CHROME = 8;
+
+/** Righe di log che entrano nel terminale. */
+export function launchLogCapacity(rows: number): number {
+  return Math.max(0, (rows || 24) - SLACK - LAUNCH_LOG_CHROME);
 }
 
 /**

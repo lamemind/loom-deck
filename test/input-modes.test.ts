@@ -35,6 +35,7 @@ const ALL_MODES: Mode[] = [
   'doc',
   'wrap',
   'spawn',
+  'launch',
 ];
 
 test('normal è l\'unico modo non capturing', () => {
@@ -79,9 +80,11 @@ test('un modo fuori catalogo non risulta capturing', () => {
 // modi scorrevoli sono quelli con un documento e nessuna lista a fuoco:
 // `search` ha un'anteprima ma il fuoco è sui risultati, che sono una scelta.
 test('i modi scorrevoli sono i viewer di testo', () => {
+  // T168 — `launch` entra per il log della voce, che è testo; sulla tabella
+  // della pagina lo scroll dell'overlay è inerte.
   assert.deepEqual(
     [...SCROLLING_MODES].sort(),
-    ['combo', 'detail', 'doc', 'inbox', 'reader', 'status', 'wrap'],
+    ['combo', 'detail', 'doc', 'inbox', 'launch', 'reader', 'status', 'wrap'],
   );
 });
 

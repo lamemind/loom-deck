@@ -134,18 +134,18 @@ export function launchRow(launch: LaunchEntry[], columns: number): LaunchRow {
   const surfaceLegend = SURFACE_SEGMENTS.map((s) => s.text).join(LAUNCH_SEP);
   const reserved = cellWidth(surfaceLegend) + cellWidth(LAUNCH_SEP) + BARE_BLOCK_WIDTH;
   const legend = launchLegend(launch, columns, reserved);
+  // T168 — la chiave di ogni voce è la SUA cifra (`legend.digits`), non
+  // `i + 1`: con le `key` pinnate la terza voce in riga può rispondere al `7`.
   const segments: Segment[] = [
     ...SURFACE_SEGMENTS,
-    ...legend.taken.map((text, i) => ({ key: String(i + 1), text })),
+    ...legend.taken.map((text, i) => ({ key: legend.digits[i]!, text })),
   ];
   // Larghezza REALE della sinistra, testo di overflow/irraggiungibili incluso:
   // sono loro a decidere quanto riempimento serve, non solo i segmenti.
   const leftWidth =
     termWidth(segments.map((s) => s.text).join(LAUNCH_SEP)) +
     (legend.overflow > 0 ? termWidth(` · +${legend.overflow} fuori riga`) : 0) +
-    (legend.unreachable > 0
-      ? termWidth(` · ${legend.unreachable} oltre la 9ª (non raggiungibili)`)
-      : 0);
+    (legend.unreachable > 0 ? termWidth(unreachableText(legend.unreachable)) : 0);
   // T154/P5 — la formula dell'ancoraggio: colonne del bordo esterno, meno la
   // sinistra già disegnata, meno il blocco che deve starci per intero. Un
   // pavimento di 1 tiene sempre almeno uno spazio fra le due metà, invece di
@@ -164,6 +164,14 @@ export function launchRow(launch: LaunchEntry[], columns: number): LaunchRow {
     unreachable: legend.unreachable,
     filler,
   };
+}
+
+/** T168 — il testo della coda per le voci in riga senza cifra: dieci slot, le
+ *  voci oltre restano configurate e si lanciano dalla pagina `^L`. Una funzione
+ *  perché lo misurano `launchRow` e lo disegna `cli.tsx`: due stringhe scritte a
+ *  mano divergerebbero di una colonna. */
+export function unreachableText(n: number): string {
+  return ` · ${n} senza cifra (^L)`;
 }
 
 /**
@@ -324,8 +332,27 @@ export function gitlinkIndicator(state: {
   return sanitize(`gitlink ${body}${warn}`);
 }
 
+/**
+ * T168/P23 — il glifo delle voci launch in testata: 🔄 se una voce con esito
+ * gira, 🚨 se l'ultimo exit di una è non-zero, NIENTE quando tutto è verde.
+ *
+ * L'assenza è uno stato e non un buco, al contrario del gitlink: qui il
+ * successo è implicito, come nel rollup di compass che mostra solo ciò che
+ * chiede attenzione. Con una voce rossa e una in corso vince 🚨 (ordine di
+ * rollup della famiglia). La label nomina la voce quando è una sola; con più
+ * voci nello stesso stato resta il conteggio, perché la riga legenda non ha
+ * colonne per due nomi.
+ */
+export function launchIndicator(state: { kind: 'running' | 'red'; label: string; count: number }): string {
+  const glyph = state.kind === 'running' ? '🔄' : '🚨';
+  return sanitize(`${glyph} ${state.count > 1 ? String(state.count) : state.label}`);
+}
+
 export function indicatorRow(
   state: {
+    /** T168 — `null` = nessuna voce con esito in corso né rossa: nessun
+     *  segmento, il verde non si scrive (P23). */
+    launch?: Parameters<typeof launchIndicator>[0] | null;
     /** T155 — `null` = il progetto non ha `.gitmodules`: nessun segmento, non
      *  uno che dice «0». La riga legenda riceve indietro quelle colonne. */
     gitlink: Parameters<typeof gitlinkIndicator>[0] | null;
@@ -340,8 +367,11 @@ export function indicatorRow(
   //
   // Il gitlink sta in TESTA al blocco, che è ancorato al bordo destro: è l'unico
   // segmento che può mancare del tutto (il gate su `.gitmodules`), e da lì la
-  // sua assenza non sposta gli altri due.
+  // sua assenza non sposta gli altri due. T168 — il glifo launch gli sta davanti
+  // per la stessa ragione, ed è ancora più intermittente: compare e sparisce
+  // col giro di una voce.
   const segments: Segment[] = [
+    ...(state.launch ? [{ key: '^l', text: launchIndicator(state.launch) }] : []),
     ...(state.gitlink ? [{ key: '^u', text: gitlinkIndicator(state.gitlink) }] : []),
     { key: '^w', text: wrapIndicator(state.wrap) },
     { key: '^b', text: inboxButton(state.inbox) },

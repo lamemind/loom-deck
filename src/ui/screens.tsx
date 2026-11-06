@@ -39,6 +39,7 @@ import { StatusScreen } from './status-screen.js';
 import { FileSheetScreen, docSheetHead, inboxSheetHead } from './file-sheet-screen.js';
 import { WrapScreen } from './wrap-screen.js';
 import { SpawnScreen } from './spawn-screen.js';
+import { LaunchLogScreen, LaunchScreen } from './launch-screen.js';
 import { ReaderScreen, SearchScreen } from './search-screen.js';
 import { finderScreen } from './finder-screen.js';
 import { ComboScreen } from './combo-screen.js';
@@ -53,6 +54,7 @@ import type { InboxFile } from '../inbox.js';
 import type { DocRow } from '../doc-tree.js';
 import type { useWrapOverlay } from '../overlays/wrap.js';
 import type { useSpawnPage } from '../overlays/spawn.js';
+import type { useLaunchPage } from '../overlays/launch.js';
 
 type AssignOverlay = ReturnType<typeof useAssignOverlay>;
 type ComboOverlay = ReturnType<typeof useComboOverlay>;
@@ -64,6 +66,7 @@ type InboxOverlay = ReturnType<typeof useFileSheet<InboxFile>>;
 type DocOverlay = ReturnType<typeof useFileSheet<DocRow>>;
 type WrapOverlay = ReturnType<typeof useWrapOverlay>;
 type SpawnPage = ReturnType<typeof useSpawnPage>;
+type LaunchPage = ReturnType<typeof useLaunchPage>;
 
 /**
  * Il ripiego per un terminale troppo basso: una riga sola al posto della
@@ -239,6 +242,7 @@ export type ScreensInput = {
     doc: DocOverlay;
     wrap: WrapOverlay;
     spawn: SpawnPage;
+    launch: LaunchPage;
   };
 };
 
@@ -253,7 +257,7 @@ export type ScreensInput = {
  */
 export function screenFor(input: ScreensInput) {
   const { mode, rows, columns, note, overlays } = input;
-  const { assign, combo, finder, sheet, search, status, inbox, doc, wrap, spawn } = overlays;
+  const { assign, combo, finder, sheet, search, status, inbox, doc, wrap, spawn, launch } = overlays;
 
   // ── T57 · schermata di assegnazione ─────────────────────────────────────
   // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
@@ -515,6 +519,47 @@ export function screenFor(input: ScreensInput) {
         fieldPrompt={spawn.fieldPrompt}
         cursor={spawn.cursor}
         example={spawn.example}
+        columns={columns}
+        note={note}
+      />
+    );
+  }
+
+  // ── T168 · la pagina delle voci launch ──────────────────────────────────
+  // Dodicesima sostitutiva: due righe per voce, e il log di una voce a tutto
+  // schermo nello stesso modo. Un modo solo per le due superfici, perché il log
+  // si apre solo dalla pagina e `esc` vi torna.
+  if (mode === 'launch' && launch.open) {
+    if (launch.log) {
+      if (isCompact(launch.logCapacity)) {
+        return <CompactNotice what={launch.log.entry.label} esc="torna" rows={rows} columns={columns} />;
+      }
+      const start = Math.min(launch.logTop, launch.logMaxTop);
+      return (
+        <LaunchLogScreen
+          entry={launch.log.entry}
+          record={launch.log.entry.slug ? launch.records.get(launch.log.entry.slug) ?? null : null}
+          lines={launch.logLines.slice(start, start + launch.logCapacity)}
+          top={start}
+          total={launch.logLines.length}
+          capacity={launch.logCapacity}
+        />
+      );
+    }
+    if (isCompact(launch.capacity)) {
+      return <CompactNotice what="voci launch" esc="chiude" rows={rows} columns={columns} />;
+    }
+    return (
+      <LaunchScreen
+        table={launch.table}
+        records={launch.records}
+        slots={launch.slots}
+        sel={launch.sel}
+        top={Math.min(launch.top, launch.maxTop)}
+        capacity={launch.capacity}
+        field={launch.field}
+        dirty={launch.dirty}
+        available={launch.available}
         columns={columns}
         note={note}
       />
