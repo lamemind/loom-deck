@@ -95,8 +95,9 @@ export function parseStartTimes(stdout: string): Map<number, string> | null {
 
 /** PowerShell per path assoluto, non dal `PATH`: un `powershell.exe` messo
  *  prima nel `PATH` (la `.bin` di un progetto, per esempio) non deve poter
- *  rispondere al posto suo. */
-function powershellPath(env: Readonly<Record<string, string | undefined>> = process.env): string {
+ *  rispondere al posto suo. Lo usa anche il toast (`windows-notify.ts`), che
+ *  vuole Windows PowerShell e non `pwsh` per le API WinRT. */
+export function powershellPath(env: Readonly<Record<string, string | undefined>> = process.env): string {
   return join(env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 }
 

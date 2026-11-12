@@ -14,6 +14,7 @@ import { isAvailable } from './platform.js';
 import { claudeLauncher } from './claude-cmd.js';
 import { claudeEnv, gitBash } from './git-bash.js';
 import { windowsTabEnv, WT_CMD, wtNewTabArgs, wtProfile } from './windows-terminal.js';
+import { relayCommand, toastCommand, type NotifyCommand } from './windows-notify.js';
 
 // scripts/deck-run è un sibling della dir del bundle: src/ (dev, tsx) e dist/
 // (build, node) stanno entrambi sotto la package root → risalita di un livello.
@@ -658,11 +659,29 @@ export function spawnProjectStatus(
   ]);
 }
 
-// Comando della notifica desktop. L'override esiste per il collaudo del ramo
+// Binario della notifica desktop. L'override esiste per il collaudo del ramo
 // «binario assente»: su una macchina dove `notify-send` c'è, quel ramo non è
 // altrimenti raggiungibile — e non provarlo significherebbe scoprire su una
 // macchina altrui che un ENOENT non agganciato porta via la TUI.
-export const NOTIFY_CMD = process.env.LOOM_DECK_NOTIFY_CMD ?? 'notify-send';
+const NOTIFY_CMD_OVERRIDE = process.env.LOOM_DECK_NOTIFY_CMD;
+
+// T180 — il comando per piattaforma: `notify-send` su Linux, un toast WinRT da
+// Windows PowerShell su Windows, lanciato da un `node` tramite
+// (`windows-notify.ts`). La scelta legge la piattaforma VERA, come
+// `spawnTerminal`: dice quale strumento c'è sulla macchina, non quale funzione
+// è accesa. L'override sostituisce il binario della notifica su ogni
+// piattaforma; su Windows quello che il tramite lancia, non il tramite.
+export function notifyCommand(
+  title: string,
+  body: string,
+  p: NodeJS.Platform = process.platform,
+): NotifyCommand {
+  if (p === 'win32') {
+    const toast = toastCommand(title, body);
+    return relayCommand(NOTIFY_CMD_OVERRIDE ? { ...toast, cmd: NOTIFY_CMD_OVERRIDE } : toast);
+  }
+  return { cmd: NOTIFY_CMD_OVERRIDE ?? 'notify-send', args: ['--app-name=loom-deck', title, body] };
+}
 
 // T121 — notifica desktop di fine generazione. La generazione dura minuti e chi
 // l'ha chiesta nel frattempo guarda altrove; la notifica di GNOME persiste nel
@@ -679,11 +698,18 @@ export const NOTIFY_CMD = process.env.LOOM_DECK_NOTIFY_CMD ?? 'notify-send';
 // T175 — dove le notifiche non ci sono, nessuno spawn e nessun avviso: non
 // hanno un tasto né un pane, e l'esito del project status è già nella riga di
 // stato. Il `null` dice al chiamante che niente è partito.
+//
+// T180 — `detached` su ogni piattaforma: la notifica deve arrivare anche se il
+// deck si chiude mentre il comando parte. Su Windows il figlio `detached` è il
+// tramite `node`, non PowerShell, che `detached` non eseguirebbe niente
+// (`windows-notify.ts`).
 export function notifyDone(title: string, body: string): ChildProcess | null {
   if (!isAvailable('notify')) return null;
-  const child = spawnOut(NOTIFY_CMD, ['--app-name=loom-deck', title, body], {
+  const { cmd, args, env } = notifyCommand(title, body);
+  const child = spawnOut(cmd, args, {
     detached: true,
     stdio: 'ignore',
+    ...(env ? { env: env as NodeJS.ProcessEnv } : {}),
   });
   child.on('error', () => {});
   child.unref?.();

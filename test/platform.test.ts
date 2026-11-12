@@ -41,11 +41,12 @@ test('su Linux nessuna funzione è spenta', () => {
 
 // T176 — `spawn` è la prima funzione riaccesa: tab di Windows Terminal al
 // posto di Ptyxis. T177 — la seconda è `liveSessions`: liveness senza `/proc`.
-// Le altre quattro restano alle loro figlie di fase 2.
-const WIN_ON: Feature[] = ['spawn', 'liveSessions'];
+// T180 — la terza è `notify`: toast WinRT al posto di `notify-send`.
+// Le altre tre restano alle loro figlie di fase 2.
+const WIN_ON: Feature[] = ['spawn', 'liveSessions', 'notify'];
 const WIN_OFF: Feature[] = ALL.filter((f) => !WIN_ON.includes(f));
 
-test('su Windows sono spente le quattro funzioni ancora senza figlia chiusa, spawn e liveSessions sono accese', () => {
+test('su Windows sono spente le tre funzioni ancora senza figlia chiusa, spawn, liveSessions e notify sono accese', () => {
   for (const f of WIN_OFF) assert.equal(isAvailable(f, 'win32'), false, f);
   for (const f of WIN_ON) assert.equal(isAvailable(f, 'win32'), true, f);
   // La mappa è il punto che una figlia tocca per riaccendere: nessuna voce

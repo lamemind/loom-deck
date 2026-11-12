@@ -29,7 +29,8 @@ export type Feature =
   | 'hardWrap'
   /** Le voci `launch[]` del file di progetto: comandi Linux via `bash -lic`. */
   | 'launch'
-  /** La notifica di fine project status: `notify-send`. */
+  /** La notifica di fine project status: `notify-send` su Linux, un toast
+   *  WinRT da Windows PowerShell su Windows (T180, `windows-notify.ts`). */
   | 'notify';
 
 /**
@@ -43,7 +44,6 @@ export const UNAVAILABLE: Partial<Record<NodeJS.Platform, readonly Feature[]>> =
     'pluginScripts', // T178 — .sh del plugin via Git Bash
     'hardWrap', // T178 — python del wrap-scan
     'launch', // T179 — comando per piattaforma nelle voci launch[]
-    'notify', // T180 — toast al posto di notify-send
   ],
 };
 
