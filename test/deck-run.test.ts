@@ -633,6 +633,21 @@ test('deck-run annuncia su stdout il comando che eseguirà nella tab', () => {
   assert.match(announced, /claude --name/);
 });
 
+test('deck-run annuncia il titolo della tab, prima del comando in-tab e uguale al -T di ptyxis (T196)', () => {
+  // L'endpoint del deck restituisce il titolo a chi ha chiesto lo spawn: deve
+  // essere quello che la tab porta davvero, gemello compreso, e arrivare prima
+  // della riga in-tab, che è quella a cui il deck risponde.
+  const r = deckRun(['T56', '--session-id', SID, '--prompt-kind', 'none', '--title-note', 'nota']);
+  assert.ok(r.ok, `deck-run è fallito: ${r.err}`);
+  const lines = r.out.trimEnd().split('\n');
+  const at = lines.findIndex((l) => l.startsWith('LOOM_DECK_TITLE '));
+  const inTabAt = lines.findIndex((l) => l.startsWith('LOOM_DECK_INTAB '));
+  assert.ok(at >= 0 && at < inTabAt, `ordine degli annunci: ${JSON.stringify(lines)}`);
+  const title = lines[at]!.slice('LOOM_DECK_TITLE '.length);
+  assert.equal(title, lines[lines.indexOf('-T') + 1]);
+  assert.match(title, /T56 nota$/);
+});
+
 test("l'annuncio esce su stdout anche nella forma nuda (--no-task)", () => {
   const r = deckRun(['--no-task', '--resume', SID]);
   assert.ok(r.ok, `deck-run è fallito: ${r.err}`);
@@ -726,15 +741,16 @@ test('le emoji dei titoli del catalogo passano tutte da deck-run', () => {
 // ── T162 · --new-window ─────────────────────────────────────────────────────
 //
 // Lo shim stampa i propri argv uno per riga, quindi il primo argomento passato
-// a `ptyxis` È il verbo di apertura. La riga `LOOM_DECK_INTAB …` che deck-run
-// scrive su stdout prima dell'exec va saltata: non viene dallo shim.
+// a `ptyxis` È il verbo di apertura. Le righe `LOOM_DECK_TITLE …` e
+// `LOOM_DECK_INTAB …` che deck-run scrive su stdout prima dell'exec vanno
+// saltate: non vengono dallo shim.
 function ptyxisArgv(args: string[], env: Record<string, string | undefined> = {}): string[] {
   const r = deckRun(args, env);
   assert.ok(r.ok, `deck-run ${args.join(' ')} è fallito: ${r.err}`);
   return r.out
     .trimEnd()
     .split('\n')
-    .filter((l) => !l.startsWith('LOOM_DECK_INTAB '));
+    .filter((l) => !l.startsWith('LOOM_DECK_INTAB ') && !l.startsWith('LOOM_DECK_TITLE '));
 }
 
 test('senza --new-window: tab nella finestra attiva', () => {

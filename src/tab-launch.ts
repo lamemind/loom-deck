@@ -3,9 +3,10 @@
 //
 // Il contratto verso chi lo lancia è quello dello script bash che ha sostituito:
 //  - uscita 2 e messaggio su stderr per un errore d'uso, nessun annuncio;
-//  - prima di aprire la tab, su stdout, la riga `LOOM_DECK_INTAB <comando>` col
-//    comando che gira nella tab — il deck la legge e la mostra nella riga di
-//    stato (`onInTabCommand`), invece di ricomporla;
+//  - prima di aprire la tab, su stdout, la riga `LOOM_DECK_TITLE <titolo>` col
+//    titolo della tab e la riga `LOOM_DECK_INTAB <comando>` col comando che gira
+//    nella tab — il deck le legge (`onInTabCommand` per la riga di stato,
+//    `awaitAnnounce` per la risposta dell'endpoint, T196), invece di ricomporle;
 //  - poi il terminale, e l'uscita è la sua: `ptyxis --tab` e `wt.exe new-tab`
 //    escono appena hanno consegnato la tab all'istanza già aperta.
 //
@@ -95,6 +96,13 @@ function loadConfig(root: string | null): unknown {
   }
 }
 
+/** T196 — la riga del titolo. Un a-capo nel titolo (un `name` di progetto
+ *  patologico) spezzerebbe il protocollo a righe: diventa uno spazio solo qui,
+ *  nell'annuncio, mentre `-T` e `--name` ricevono il titolo com'è. */
+function announceTitle(title: string): string {
+  return `LOOM_DECK_TITLE ${title.replace(/[\r\n]+/g, ' ')}\n`;
+}
+
 /** Un argv come una shell POSIX lo leggerebbe: per le diagnostiche. */
 function describe(cmd: string, args: readonly string[]): string {
   return [cmd, ...args].map((a) => (/^[\w@%+=:,./\\-]+$/.test(a) ? a : JSON.stringify(a))).join(' ');
@@ -144,6 +152,7 @@ export async function runDeckRun(argv: readonly string[], io: DeckRunIo): Promis
       ...windowsTabEnv(io.env, req.noTask ? null : req.task, resolveGitBash(io.env, existsSync)),
       [TAB_ARGV_ENV]: JSON.stringify(plan.claudeArgs),
     };
+    io.stdout(announceTitle(plan.title));
     io.stdout(`LOOM_DECK_INTAB ${plan.inTab}\n`);
   } else {
     // L'override esiste per i probe empirici (un comando non-CC nella tab): è
@@ -151,6 +160,7 @@ export async function runDeckRun(argv: readonly string[], io: DeckRunIo): Promis
     const inTab = io.env.LOOM_DECK_INTAB_CMD || plan.inTab;
     cmd = 'ptyxis';
     args = ptyxisArgv(req.newWindow, workdir, plan.title, inTab);
+    io.stdout(announceTitle(plan.title));
     io.stdout(`LOOM_DECK_INTAB ${inTab}\n`);
   }
 

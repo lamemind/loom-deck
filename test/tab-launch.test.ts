@@ -149,9 +149,11 @@ test('Windows: la conversazione è una tab di wt col wrapper, e l’argv di clau
     '--name', 'cc T1', '--permission-mode', 'manual', '--model', 'haiku', '--session-id', SID, NASTY,
   ]);
   assert.equal(l.env?.LOOM_TASK, 'T1');
-  // L'annuncio esce prima del lancio, come prima dell'exec.
-  assert.match(r.out[0]!, /^LOOM_DECK_INTAB LOOM_TASK=T1 claude --name 'cc T1' /);
-  assert.equal(r.out[1], '<launch>');
+  // L'annuncio esce prima del lancio, come prima dell'exec: il titolo, poi il
+  // comando in-tab (T196 — l'endpoint del deck li restituisce a chi ha chiesto).
+  assert.equal(r.out[0], 'LOOM_DECK_TITLE cc T1\n');
+  assert.match(r.out[1]!, /^LOOM_DECK_INTAB LOOM_TASK=T1 claude --name 'cc T1' /);
+  assert.equal(r.out[2], '<launch>');
 });
 
 test('Windows: --no-task toglie LOOM_TASK ereditata, --new-window apre una finestra', async () => {

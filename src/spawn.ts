@@ -132,6 +132,13 @@ function launchDeckRun(args: string[], cwd: string): Spawned {
 /** Prefisso della riga con cui `deck-run` annuncia il comando in-tab. */
 export const INTAB_MARKER = 'LOOM_DECK_INTAB ';
 
+/** T196 — prefisso della riga con cui `deck-run` annuncia il titolo della tab,
+ *  subito PRIMA del comando in-tab. Lo legge l'endpoint del deck, che lo
+ *  restituisce a chi ha chiesto lo spawn: il titolo lo compone `deck-run`
+ *  (gemello compreso, T182), e ricavarlo dal `--name` quotato del comando
+ *  sarebbe la stessa regola scritta al contrario. */
+export const TITLE_MARKER = 'LOOM_DECK_TITLE ';
+
 /**
  * Il comando che gira DENTRO la tab: la sessione `claude` vera, con le env che
  * la legano a task e progetto (`LOOM_TASK`, `PTYXIS_PROFILE`), il titolo, il

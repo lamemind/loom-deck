@@ -220,16 +220,19 @@ export function useDeckActions({
   // nomi diversi per la stessa conversazione. Vale anche sugli acceleratori
   // della lista (^K/^P/^R), che passano di qui con `spawnNote` sul proprio
   // default '' (P1 preflight) — nascono quindi titolati anche loro.
+  // T196 — restituisce il `sessionId` e il figlio, o `null` se la piattaforma
+  // rifiuta: l'endpoint del deck risponde a chi ha chiesto lo spawn con l'uno e
+  // l'annuncio dell'altro. I chiamanti da tasto ignorano il valore.
   function spawnForTask(
     id: string,
     modelKind: ModelKind,
     spawnNote = '',
     prompt = '',
     priority = false,
-  ) {
+  ): { sessionId: string; spawned: Spawned } | null {
     // T175 — prima del sidecar: un binding scritto per una tab che non si apre
     // sarebbe una conversazione figlia della task che non esiste.
-    if (refuse('spawn', '⏎', setNote)) return;
+    if (refuse('spawn', '⏎', setNote)) return null;
     const sid = randomUUID();
     const note = spawnNote;
     appendTaskBinding(cwd, sid, id);
@@ -250,6 +253,7 @@ export function useDeckActions({
     // vederlo l'utente crederebbe di aver ereditato la scelta dell'ultimo
     // detail aperto.
     noteSpawn(spawned);
+    return { sessionId: sid, spawned };
   }
 
   // T56 — i quattro tasti (⏎/^K/^P/^R) passano tutti di qui: fra loro cambia

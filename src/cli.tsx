@@ -51,6 +51,7 @@ import { useWrapOverlay } from './overlays/wrap.js';
 import { useSpawnPage } from './overlays/spawn.js';
 import { useLaunchPage } from './overlays/launch.js';
 import { useGitlink } from './overlays/gitlink.js';
+import { useSpawnEndpoint } from './overlays/endpoint.js';
 import { usePurgeOverlay } from './overlays/purge.js';
 import { useDropOverlay } from './overlays/drop.js';
 import { useTextModals, useViewModals } from './overlays/modals.js';
@@ -227,6 +228,9 @@ function Deck({
   // schermata da aprire — l'unica superficie è l'indicatore, e l'unica azione
   // committa.
   const gitlink = useGitlink({ cwd, setNote });
+  // T196 — l'endpoint locale: le conversazioni del progetto chiedono qui gli
+  // spawn (`loom-deck-spawn`), che partono dallo stesso `spawnForTask` del tasto.
+  useSpawnEndpoint({ cwd, tasksPath, tasksDir, actions, setNote });
 
   // T161 — la pagina delle azioni di spawn. Come il detail e la lista hard-wrap
   // non esce dal deck da sé: qui riceve il saver degli override, e lo spawn che

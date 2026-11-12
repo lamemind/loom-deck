@@ -12,6 +12,9 @@
 // no, e ne restavano centinaia. Il figlio riceve `TMPDIR`, `TEMP` e `TMP` su una
 // cartella di questa corsa — `os.tmpdir()` legge la prima su POSIX, le altre due
 // su Windows —, e la cartella sparisce quando la suite finisce, comunque finisca.
+// T196 — anche `XDG_RUNTIME_DIR`, la sede dei socket dell'endpoint del deck: i
+// test avviano deck veri, e senza un'altra sede uno di loro ascolterebbe
+// sull'indirizzo del progetto vero, al posto del deck aperto dall'utente.
 //
 // Gli argomenti dopo `npm test --` passano al test runner prima dei file
 // (`npm test -- --test-name-pattern=docs`).
@@ -42,7 +45,7 @@ try {
   const result = spawnSync(process.execPath, [tsxCli, '--test', ...process.argv.slice(2), ...files], {
     cwd: dirname(testDir),
     stdio: 'inherit',
-    env: { ...process.env, TMPDIR: runTmp, TEMP: runTmp, TMP: runTmp },
+    env: { ...process.env, TMPDIR: runTmp, TEMP: runTmp, TMP: runTmp, XDG_RUNTIME_DIR: runTmp },
   });
   code = result.status ?? 1;
 } finally {
