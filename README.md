@@ -214,6 +214,19 @@ Non tutte le celle esistono per tutte le righe, e quelle che non esistono **dico
 
 Un file assente, illeggibile o con una voce sbagliata non rompe niente: il deck parte sui default e lo dice in riga di stato, una voce alla volta.
 
+### `loom-deck-spawn` — uno spawn chiesto da una conversazione
+
+Il deck acceso ascolta un **endpoint locale**, uno per progetto: una named pipe su Windows (`\\.\pipe\loom-deck-<id>-<hash>`), un socket Unix su Linux (`$XDG_RUNTIME_DIR/loom-deck/loom-deck-<id>-<hash>.sock`). L'hash è quello del path reale della root, quindi il worktree di una lane, che porta lo stesso `id`, ha un indirizzo suo. Una conversazione Claude Code chiede uno spawn col secondo comando del pacchetto, dalla cartella del progetto:
+
+```bash
+loom-deck-spawn T12 preflight
+loom-deck-spawn T14 run 1-3 --model opus --note 'primo giro'
+```
+
+Il deck lo esegue con lo **stesso `spawnForTask` del tasto**: binding nel sidecar prima della tab, `--session-id` pinnato, titolo e modello dell'azione con l'override di progetto, il perimetro in coda al prompt di `run` come nel modo DLV del detail. Prima di aprire la tab rifiuta una task che non è in `tasks.md`, un DLV fuori range o già chiuso, e lo spawn spento sulla piattaforma. La risposta torna sulla stessa connessione quando `deck-run` ha annunciato la tab: `sessionId`, titolo e comando in-tab su stdout. Uscite: `0` tab aperta, `1` rifiuto del deck o nessuna risposta, `2` errore d'uso, `3` nessun deck in ascolto sul progetto.
+
+Lo usa la skill `/loom-works:spawn-task` del plugin. Un secondo deck sullo stesso progetto non ascolta e lo dice in riga di stato; un deck morto per un segnale lascia su Linux il file del socket, che il deck successivo riconosce e cancella all'avvio.
+
 ### `f` — forkare una conversazione
 
 Il fork rama la sessione selezionata: `claude --resume <origine> --fork-session` apre un **sessionId nuovo** con il transcript copiato, lasciando l'origine intatta. Serve quando vuoi ripartire da un certo stato senza perdere il ramo originale — e siccome i due id sono distinti, non esistono mai due processi che scrivono lo stesso file (il vincolo *single-writer* dello store di Claude Code).
@@ -379,7 +392,7 @@ Sessions · tutte (317) · ●2 vive · 📌4 · +213 più vecchie · ↑7 · �
 ## Installazione
 
 ```bash
-npm install -g @lamemind/loom-deck   # comando globale `loom-deck`
+npm install -g @lamemind/loom-deck   # comandi globali `loom-deck` e `loom-deck-spawn`
 # oppure senza install permanente:
 npx @lamemind/loom-deck
 ```
