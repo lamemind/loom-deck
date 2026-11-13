@@ -27,7 +27,12 @@ const IDLE_MS = 10_000;
 const PROBE_MS = 1_000;
 
 export type ListenResult =
-  | { state: 'listening'; close: () => void }
+  /** `close` risolve quando il server ha chiuso anche le connessioni ancora
+   *  aperte: su Windows il nome della pipe resta occupato finché ne esiste
+   *  un'istanza, quindi un `listen` sullo stesso nome subito dopo un `close`
+   *  non atteso riceve `EADDRINUSE`. Il deck ascolta una volta per processo e
+   *  non lo attende; chi riapre nello stesso processo (i test) sì. */
+  | { state: 'listening'; close: () => Promise<void> }
   /** Un altro deck ascolta già sullo stesso indirizzo: lo stesso progetto
    *  aperto due volte. */
   | { state: 'busy' }
@@ -72,10 +77,11 @@ export async function listenEndpoint(ep: Endpoint, handle: RequestHandler): Prom
       process.once('exit', onExit);
       resolve({
         state: 'listening',
-        close: () => {
-          process.off('exit', onExit);
-          server.close();
-        },
+        close: () =>
+          new Promise<void>((done) => {
+            process.off('exit', onExit);
+            server.close(() => done());
+          }),
       });
     });
   });

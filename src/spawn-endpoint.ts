@@ -13,7 +13,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { posix } from 'node:path';
 import { configFilePath } from './config.js';
 import { comparablePath, projectBaseName } from './project-path.js';
 import { isModelKind, type ModelKind, type PromptKind } from './spawn-catalog.js';
@@ -85,12 +85,17 @@ function realRoot(root: string): string {
  * systemd-logind), una cartella per utente nella temporanea: lì la cartella può
  * esistere già, creata da altri, e chi ascolta ne verifica proprietario e
  * permessi prima di usarla (`endpoint-server.ts`).
+ *
+ * I path del socket si compongono con `posix.join`, non col `join` della
+ * piattaforma che esegue: il socket esiste solo fuori da Windows, e
+ * `endpointFor(root, 'linux')` chiamato su Windows deve dare lo stesso path che
+ * darebbe su Linux, non uno coi separatori di Windows.
  */
 export function socketDir(env: Readonly<Record<string, string | undefined>> = process.env): string {
   const runtime = env.XDG_RUNTIME_DIR;
-  if (runtime) return join(runtime, 'loom-deck');
+  if (runtime) return posix.join(runtime, 'loom-deck');
   const uid = typeof process.getuid === 'function' ? process.getuid() : 0;
-  return join(tmpdir(), `loom-deck-${uid}`);
+  return posix.join(tmpdir(), `loom-deck-${uid}`);
 }
 
 export interface Endpoint {
@@ -112,7 +117,7 @@ export function endpointFor(
   const name = endpointName(root, platform);
   if (platform === 'win32') return { name, address: `\\\\.\\pipe\\${name}`, dir: null };
   const dir = socketDir(env);
-  return { name, address: join(dir, `${name}.sock`), dir };
+  return { name, address: posix.join(dir, `${name}.sock`), dir };
 }
 
 // ── Protocollo ─────────────────────────────────────────────────────────────

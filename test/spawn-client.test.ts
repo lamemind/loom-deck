@@ -40,7 +40,7 @@ async function withDeck<T>(p: { root: string; env: Record<string, string> }, han
   try {
     return await fn();
   } finally {
-    if (r.state === 'listening') r.close();
+    if (r.state === 'listening') await r.close();
   }
 }
 
