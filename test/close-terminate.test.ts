@@ -1,11 +1,15 @@
 // T204 — la terminazione per piattaforma: SIGHUP su un processo vero e attesa
-// della fine su Linux, la piattaforma senza terminazione, lo stato zombie.
+// della fine su Linux, marcatori e TerminateProcess su Windows (con le
+// dipendenze iniettate, quindi anche su Linux), lo stato zombie.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { handleCloseRequest } from '../src/endpoint-close.js';
-import { linuxTerminator, platformTerminator } from '../src/close-terminate.js';
+import { createWindowsTerminator, linuxTerminator, platformTerminator } from '../src/close-terminate.js';
+import { closeMarkerPaths } from '../src/close-marker.js';
 import { procStartOf, statRunning, type LiveSession } from '../src/live-sessions.js';
 import { unixOnly } from './platform-gates.js';
 
@@ -49,10 +53,57 @@ test('stato del processo: uno zombie con lo stesso avvio è finito, un avvio div
   assert.equal(statRunning('rotta', '777'), false);
 });
 
-test('piattaforma: SIGHUP su Linux, il resto spento col motivo', () => {
+test('piattaforma: SIGHUP su Linux, TerminateProcess su Windows, il resto spento col motivo', () => {
   assert.equal((platformTerminator('linux') as { how: string }).how, 'SIGHUP');
-  assert.match((platformTerminator('win32') as { off: string }).off, /non ancora disponibile su Windows/);
+  assert.equal((platformTerminator('win32') as { how: string }).how, 'TerminateProcess');
   assert.match((platformTerminator('darwin') as { off: string }).off, /non ancora disponibile su macOS/);
+});
+
+const target = (pid: number): LiveSession => ({
+  sessionId: SID,
+  pid,
+  status: 'idle',
+  state: 'idle',
+  procStart: '1',
+  name: 'n',
+  cwd: 'C:/p',
+  startedAt: 0,
+});
+
+test('Windows: i marcatori prima della terminazione, per pid e sessionId; la fine è il pid che sparisce', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'loom-wt-'));
+  const alive = new Set([42]);
+  const seen: string[] = [];
+  const term = createWindowsTerminator({
+    dir,
+    exists: (pid) => alive.has(pid),
+    kill: (pid) => {
+      // Al momento della terminazione i marcatori ci sono già.
+      for (const p of closeMarkerPaths(pid, SID, dir)) seen.push(existsSync(p) ? 'marcatore' : 'assente');
+      alive.delete(pid);
+    },
+  });
+  assert.equal(term.alive(target(42)), true);
+  assert.equal(term.terminate(target(42)), null);
+  assert.deepEqual(seen, ['marcatore', 'marcatore']);
+  assert.equal(term.alive(target(42)), false);
+});
+
+test('Windows: processo già finito → ESRCH, nessun marcatore; kill fallita → marcatori tolti', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'loom-wt-'));
+  const gone = createWindowsTerminator({ dir, exists: () => false, kill: () => assert.fail('nessuna kill') });
+  assert.equal(gone.terminate(target(7)), 'ESRCH');
+  for (const p of closeMarkerPaths(7, SID, dir)) assert.equal(existsSync(p), false);
+
+  const denied = createWindowsTerminator({
+    dir,
+    exists: () => true,
+    kill: () => {
+      throw Object.assign(new Error('accesso negato'), { code: 'EPERM' });
+    },
+  });
+  assert.equal(denied.terminate(target(8)), 'EPERM');
+  for (const p of closeMarkerPaths(8, SID, dir)) assert.equal(existsSync(p), false, 'nessun marcatore orfano');
 });
 
 test(

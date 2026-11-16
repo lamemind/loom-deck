@@ -18,8 +18,14 @@
 // uscirebbe, e la tab si chiuderebbe sotto una sessione viva. Si esce solo
 // quando esce `claude`, col suo codice — e la tab si chiude o resta aperta
 // secondo il `closeOnExit` del profilo (D3 preflight).
+//
+// T204 — l'eccezione è la chiusura chiesta al deck: il deck termina `claude` di
+// forza, e prima scrive un marcatore (`close-marker.ts`). Trovato il marcatore
+// del proprio figlio, il wrapper esce 0 e la tab si chiude come dopo un `/exit`.
+// Senza marcatore un'uscita di forza resta un errore a schermo.
 import { spawn } from 'node:child_process';
 import { claudeLauncher } from './claude-cmd.js';
+import { consumeCloseMarker } from './close-marker.js';
 import { parseTabArgv, TAB_ARGV_ENV } from './windows-terminal.js';
 
 const raw = process.env[TAB_ARGV_ENV];
@@ -42,6 +48,6 @@ if (!args) {
     process.exitCode = 127;
   });
   child.on('exit', (code) => {
-    process.exit(code ?? 1);
+    process.exit(consumeCloseMarker(child.pid ?? null, args) ? 0 : (code ?? 1));
   });
 }
