@@ -19,6 +19,7 @@ import net from 'node:net';
 import { existsSync, lstatSync, mkdirSync, unlinkSync } from 'node:fs';
 import {
   REQUEST_MAX_BYTES,
+  addressProblem,
   parseEndpointRequest,
   type CloseReply,
   type CloseRequest,
@@ -69,6 +70,10 @@ function handlersOf(h: RequestHandler | RequestHandlers): RequestHandlers {
  *  dai tasti anche senza. */
 export async function listenEndpoint(ep: Endpoint, handle: RequestHandler | RequestHandlers): Promise<ListenResult> {
   const handlers = handlersOf(handle);
+  // T204 — un path troppo lungo verrebbe troncato in silenzio, e il deck
+  // ascolterebbe su un indirizzo che può essere quello di un altro progetto.
+  const tooLong = addressProblem(ep);
+  if (tooLong) return { state: 'failed', reason: tooLong };
   if (ep.dir !== null) {
     const unsafe = prepareSocketDir(ep.dir);
     if (unsafe) return { state: 'failed', reason: unsafe };

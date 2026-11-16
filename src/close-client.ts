@@ -100,7 +100,7 @@ export async function runCloseClient(argv: readonly string[], io: ClientIo): Pro
   const request: CloseRequest = { verb: 'close', session: args.session };
   const from = callerSession(io.env);
   if (from) request.from = from;
-  const outcome = await exchange<CloseReply>(ep.address, request, io.timeoutMs ?? REPLY_TIMEOUT_MS);
+  const outcome = await exchange<CloseReply>(ep, request, io.timeoutMs ?? REPLY_TIMEOUT_MS);
 
   if ('unreachable' in outcome) {
     io.stderr(

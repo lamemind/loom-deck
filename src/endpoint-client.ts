@@ -5,7 +5,7 @@
 // degli stessi errori, e la skill che legge le uscite non saprebbe più cosa vuol
 // dire un 3.
 import net from 'node:net';
-import type { EndpointRequest } from './spawn-endpoint.js';
+import { addressProblem, type Endpoint, type EndpointRequest } from './spawn-endpoint.js';
 
 /** Quanto il client aspetta la risposta. Più largo di ogni attesa del deck —
  *  l'annuncio di `deck-run` (15 s), la fine del processo chiuso (10 s) —, così
@@ -32,12 +32,16 @@ export type Outcome<R> = { reply: R } | { unreachable: string } | { failed: stri
 const UNREACHABLE = new Set(['ENOENT', 'ECONNREFUSED']);
 
 export function exchange<R extends { ok: boolean }>(
-  address: string,
+  ep: Endpoint,
   request: EndpointRequest,
   timeoutMs: number = REPLY_TIMEOUT_MS,
 ): Promise<Outcome<R>> {
+  // Un path troppo lungo si troncherebbe in silenzio, e la richiesta potrebbe
+  // arrivare al deck di un altro progetto (`SOCKET_PATH_MAX`).
+  const tooLong = addressProblem(ep);
+  if (tooLong) return Promise.resolve({ failed: tooLong });
   return new Promise((resolve) => {
-    const socket = net.connect(address);
+    const socket = net.connect(ep.address);
     let buf = '';
     let settled = false;
     const settle = (o: Outcome<R>) => {

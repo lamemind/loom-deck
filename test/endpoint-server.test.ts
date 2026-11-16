@@ -177,6 +177,15 @@ test('deck ucciso a forza: chi chiama riceve un rifiuto, il deck nuovo ascolta a
   }
 });
 
+test('T204 — path del socket troppo lungo: l’endpoint non parte, invece di ascoltare su un path troncato', { skip: unixOnly('socket Unix') }, async () => {
+  const dir = join(mkdtempSync(join(tmpdir(), 'loom-ep-')), 'x'.repeat(120));
+  const ep: Endpoint = { name: 'lungo', address: join(dir, 'lungo.sock'), dir };
+  const r = await listenEndpoint(ep, echo);
+  assert.equal(r.state, 'failed');
+  assert.match((r as { reason: string }).reason, /oltre i 107 byte/);
+  assert.equal(existsSync(dir), false, 'nessuna cartella né socket creati');
+});
+
 test('cartella dei socket leggibile da altri: l’endpoint non parte', { skip: unixOnly('permessi POSIX') }, async () => {
   const ep = freshEndpoint();
   mkdirSync(ep.dir!, { recursive: true });

@@ -153,3 +153,10 @@ test('deck che non risponde: uscita 1 allo scadere dell’attesa', async () => {
   assert.equal(r.code, 1);
   assert.match(r.err, /nessuna risposta dal deck entro/);
 });
+
+test('cartella runtime troppo lunga: uscita 1 col motivo, nessuna connessione a un path troncato', async () => {
+  const p = project();
+  const r = await client([SID], { root: p.root, env: { XDG_RUNTIME_DIR: `/tmp/${'x'.repeat(100)}` } });
+  assert.equal(r.code, 1);
+  assert.match(r.err, /oltre i 107 byte di un socket Unix: cartella runtime troppo lunga/);
+});

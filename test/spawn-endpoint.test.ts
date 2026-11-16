@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  addressProblem,
   endpointFor,
   endpointName,
   normalizeSession,
@@ -82,6 +83,15 @@ test('senza $XDG_RUNTIME_DIR: una cartella per utente nella temporanea', () => {
 test('il path del socket sta sotto il limite di 107 byte anche con un id lungo', () => {
   const lin = endpointFor(project('x'.repeat(200)), 'linux', { XDG_RUNTIME_DIR: '/run/user/1000' });
   assert.ok(Buffer.byteLength(lin.address) < 107, lin.address);
+});
+
+test('T204 — un socket oltre 107 byte è un problema che nomina la causa; una pipe no', () => {
+  const root = project('demo');
+  const short = endpointFor(root, 'linux', { XDG_RUNTIME_DIR: '/run/user/1000' });
+  assert.equal(addressProblem(short), null);
+  const long = endpointFor(root, 'linux', { XDG_RUNTIME_DIR: `/tmp/${'x'.repeat(90)}` });
+  assert.match(addressProblem(long)!, /path del socket di \d+ byte, oltre i 107 .*cartella runtime troppo lunga/);
+  assert.equal(addressProblem(endpointFor(root, 'win32', {})), null);
 });
 
 test('richiesta valida: verbo, task, kind e i campi opzionali', () => {

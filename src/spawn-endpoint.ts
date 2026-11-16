@@ -24,10 +24,25 @@ import { PROMPT_KINDS } from './tab-args.js';
  *  trova nessuno, perché un deck più vecchio è acceso ma non ha l'endpoint. */
 export const ENDPOINT_SINCE = '0.87.0';
 
-/** Lunghezza massima della parte `id` del nome. Su Linux il path di un socket
- *  sta in circa 107 byte: `/run/user/<uid>/loom-deck/` più un id libero li
- *  supererebbe, e `listen` fallirebbe con un errore che non nomina la causa. */
+/** Lunghezza massima della parte `id` del nome: su Linux il path di un socket
+ *  sta in `SOCKET_PATH_MAX` byte, e `/run/user/<uid>/loom-deck/` più un id
+ *  libero li supererebbe. */
 const ID_MAX = 40;
+
+/**
+ * T204 — il path più lungo che un socket Unix accetta su Linux: `sun_path` è di
+ * 108 byte, NUL compreso.
+ *
+ * Oltre, libuv non fallisce: TRONCA il path in silenzio, sia in `listen` sia in
+ * `connect` (misurato, Node 22 con libuv 1.52). Due progetti i cui indirizzi
+ * condividono i primi 107 byte finiscono così sullo stesso file troncato: il
+ * primo deck ci ascolta, il secondo lo trova occupato, e un client del secondo
+ * progetto parla col deck del primo, che apre la tab nella propria cartella. Il
+ * caso nasce da una cartella runtime lunga (`$XDG_RUNTIME_DIR`, o la temporanea
+ * di ripiego), mai da `/run/user/<uid>`: `addressProblem` lo trasforma in un
+ * errore che nomina la causa, da entrambi i lati.
+ */
+export const SOCKET_PATH_MAX = 107;
 
 /** Il nome dell'endpoint senza la parte di piattaforma:
  *  `loom-deck-<id>-<8 caratteri di hash del path reale della root>`.
@@ -106,6 +121,15 @@ export interface Endpoint {
   /** La cartella del file del socket; `null` su Windows, dove una named pipe
    *  non è un file. */
   dir: string | null;
+}
+
+/** Il motivo per cui l'indirizzo non è usabile, o `null`. Una named pipe non ha
+ *  il limite; un socket oltre `SOCKET_PATH_MAX` byte sì. */
+export function addressProblem(ep: Endpoint): string | null {
+  if (ep.dir === null) return null;
+  const bytes = Buffer.byteLength(ep.address);
+  if (bytes <= SOCKET_PATH_MAX) return null;
+  return `path del socket di ${bytes} byte, oltre i ${SOCKET_PATH_MAX} byte di un socket Unix: cartella runtime troppo lunga (${ep.dir})`;
 }
 
 /** L'endpoint del progetto con root `root`: named pipe su Windows, socket Unix

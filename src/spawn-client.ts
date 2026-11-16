@@ -110,7 +110,7 @@ export async function runClient(argv: readonly string[], io: ClientIo): Promise<
   }
   const root = args.root ?? findProjectRoot(io.cwd) ?? io.cwd;
   const ep = endpointFor(root, io.platform, io.env);
-  const outcome = await exchange<SpawnReply>(ep.address, args.request, io.timeoutMs ?? REPLY_TIMEOUT_MS);
+  const outcome = await exchange<SpawnReply>(ep, args.request, io.timeoutMs ?? REPLY_TIMEOUT_MS);
 
   if ('unreachable' in outcome) {
     io.stderr(
