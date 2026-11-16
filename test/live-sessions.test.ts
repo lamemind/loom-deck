@@ -51,6 +51,15 @@ test('parseLiveEntry: il pid viene dal NOME FILE, non dal campo omonimo', () => 
   assert.equal(p?.entry.pid, 999);
 });
 
+test('parseLiveEntry porta lo stato grezzo del registro e procStart (T204)', () => {
+  const shell = parseLiveEntry(ENTRY.replace('"busy"', '"shell"'), 1);
+  assert.equal(shell?.entry.status, 'idle', 'lo stato a due valori appiattisce shell');
+  assert.equal(shell?.entry.state, 'shell', 'quello grezzo no');
+  assert.equal(parseLiveEntry(ENTRY.replace('"busy"', '"waiting"'), 1)?.entry.state, 'waiting');
+  assert.equal(parseLiveEntry(ENTRY.replace('"status":"busy",', ''), 1)?.entry.state, '');
+  assert.equal(parseLiveEntry(ENTRY, 1)?.entry.procStart, '48757');
+});
+
 test('parseLiveEntry normalizza lo status a due valori', () => {
   const idle = parseLiveEntry(ENTRY.replace('"busy"', '"idle"'), 1);
   assert.equal(idle?.entry.status, 'idle');

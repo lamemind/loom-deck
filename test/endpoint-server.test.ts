@@ -72,6 +72,44 @@ test('una richiesta malformata riceve ok:false col motivo, e il deck resta in as
   }
 });
 
+test('T204 — dispatch per verbo: close al gestore close, spawn al gestore spawn', async () => {
+  const ep = freshEndpoint();
+  const seen: string[] = [];
+  const r = await listenEndpoint(ep, {
+    spawn: async (req) => {
+      seen.push(`spawn ${req.task}`);
+      return echo(req);
+    },
+    close: async (req) => {
+      seen.push(`close ${req.session}`);
+      return { ok: true, sessionId: req.session, pid: 7, task: null, how: 'SIGHUP', ms: 1 };
+    },
+  });
+  try {
+    const c = JSON.parse(await call(ep.address, '{"verb":"close","session":"0a1b2c3d"}\n'));
+    assert.deepEqual(c, { ok: true, sessionId: '0a1b2c3d', pid: 7, task: null, how: 'SIGHUP', ms: 1 });
+    const s = JSON.parse(await call(ep.address, '{"verb":"spawn","task":"T4","kind":"run"}\n'));
+    assert.equal(s.sessionId, 'sid-T4');
+    const bad = JSON.parse(await call(ep.address, '{"verb":"close","session":"zz"}\n'));
+    assert.match(bad.reason, /sessione non valida/);
+    assert.deepEqual(seen, ['close 0a1b2c3d', 'spawn T4']);
+  } finally {
+    if (r.state === 'listening') await r.close();
+  }
+});
+
+test('un gestore di solo spawn (forma di T196): close riceve un rifiuto, non un deck caduto', async () => {
+  const ep = freshEndpoint();
+  const r = await listenEndpoint(ep, echo);
+  try {
+    const c = JSON.parse(await call(ep.address, '{"verb":"close","session":"0a1b2c3d"}\n'));
+    assert.equal(c.ok, false);
+    assert.match(c.reason, /close non servito/);
+  } finally {
+    if (r.state === 'listening') await r.close();
+  }
+});
+
 test('un gestore che lancia diventa una risposta, non un deck caduto', async () => {
   const ep = freshEndpoint();
   const r = await listenEndpoint(ep, async () => {

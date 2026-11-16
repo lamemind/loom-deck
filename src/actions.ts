@@ -23,6 +23,7 @@ import { loadTasks, taskSlug, type Task } from './tasks.js';
 import type { CatalogEntry } from './prompt-catalog.js';
 import {
   appendNote,
+  appendOrigin,
   appendPin,
   appendPriority,
   appendSessionRecord,
@@ -223,12 +224,16 @@ export function useDeckActions({
   // T196 — restituisce il `sessionId` e il figlio, o `null` se la piattaforma
   // rifiuta: l'endpoint del deck risponde a chi ha chiesto lo spawn con l'uno e
   // l'annuncio dell'altro. I chiamanti da tasto ignorano il valore.
+  // T204 — `origin` marca nel sidecar da dove è nata la conversazione; lo passa
+  // solo l'endpoint (`endpoint`), e rende la conversazione chiudibile col verbo
+  // `close`.
   function spawnForTask(
     id: string,
     modelKind: ModelKind,
     spawnNote = '',
     prompt = '',
     priority = false,
+    origin?: string,
   ): { sessionId: string; spawned: Spawned } | null {
     // T175 — prima del sidecar: un binding scritto per una tab che non si apre
     // sarebbe una conversazione figlia della task che non esiste.
@@ -236,6 +241,8 @@ export function useDeckActions({
     const sid = randomUUID();
     const note = spawnNote;
     appendTaskBinding(cwd, sid, id);
+    // T204 — subito dopo il binding e prima della tab (P9 preflight).
+    if (origin) appendOrigin(cwd, sid, origin);
     if (note) appendNote(cwd, sid, note);
     // T158 — la marca si appende NELLO STESSO momento del binding, prima che la
     // tab esista: il `sessionId` è già noto (lo pinna `deck-run`), quindi il primo

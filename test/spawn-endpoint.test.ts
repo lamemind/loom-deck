@@ -5,7 +5,15 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { endpointFor, endpointName, parseScope, parseSpawnRequest, socketDir } from '../src/spawn-endpoint.js';
+import {
+  endpointFor,
+  endpointName,
+  normalizeSession,
+  parseEndpointRequest,
+  parseScope,
+  parseSpawnRequest,
+  socketDir,
+} from '../src/spawn-endpoint.js';
 import { unixOnly } from './platform-gates.js';
 
 function project(id: string | null, parent = mkdtempSync(join(tmpdir(), 'loom-ep-'))): string {
@@ -106,6 +114,43 @@ test('richieste rifiutate nella forma, col motivo', () => {
     assert.ok('error' in r, JSON.stringify(raw));
     assert.match(r.error, re);
   }
+});
+
+test('close: sessionId intero o prefisso ≥ 8, minuscolo; mittente opzionale', () => {
+  const sid = '0A1B2C3D-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+  assert.deepEqual(parseEndpointRequest(JSON.stringify({ verb: 'close', session: sid })), {
+    verb: 'close',
+    session: sid.toLowerCase(),
+  });
+  assert.deepEqual(parseEndpointRequest('{"verb":"close","session":"0a1b2c3d","from":"ffffffff-0000"}'), {
+    verb: 'close',
+    session: '0a1b2c3d',
+    from: 'ffffffff-0000',
+  });
+  assert.equal(normalizeSession(' 0a1b2c3d '), '0a1b2c3d');
+});
+
+test('close rifiutate nella forma, col motivo; spawn passa dallo stesso smistatore', () => {
+  const cases: Array<[unknown, RegExp]> = [
+    [{ verb: 'close' }, /sessione non valida/],
+    [{ verb: 'close', session: '0a1b2c3' }, /almeno 8 caratteri/],
+    [{ verb: 'close', session: '0a1b2c3d; rm -rf' }, /sessione non valida/],
+    [{ verb: 'close', session: 'x'.repeat(8) }, /sessione non valida/],
+    [{ verb: 'close', session: '0'.repeat(37) }, /sessione non valida/],
+    [{ verb: 'close', session: '0a1b2c3d', from: 'io' }, /mittente non valido/],
+    [{ verb: 'kill', session: '0a1b2c3d' }, /verbo ignoto: "kill" \(usa spawn\|close\)/],
+  ];
+  for (const [raw, re] of cases) {
+    const r = parseEndpointRequest(JSON.stringify(raw));
+    assert.ok('error' in r, JSON.stringify(raw));
+    assert.match(r.error, re);
+  }
+  assert.equal(
+    (parseEndpointRequest('{"verb":"spawn","task":"T1","kind":"run"}') as { verb: string }).verb,
+    'spawn',
+  );
+  const notSpawn = parseSpawnRequest('{"verb":"close","session":"0a1b2c3d"}');
+  assert.ok('error' in notSpawn && /non di spawn/.test(notSpawn.error));
 });
 
 test('perimetro: la grammatica di run-task, con o senza DLV in testa', () => {

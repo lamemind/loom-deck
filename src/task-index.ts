@@ -73,6 +73,14 @@ import { sanitize } from './width.js';
 // ne ha già la grammatica; non sta in `.claude/loom-works.json` perché un id di
 // conversazione vale solo sulla macchina che ha il transcript, e quel file è
 // committato. Lo scrive la convergenza di `live-marks.ts`, mai un gesto umano.
+//
+// T204 — `origin` dice da dove è nata la conversazione, e oggi ha un valore
+// solo: `endpoint`, la conversazione aperta da una richiesta `spawn` sull'endpoint
+// del deck (D2 preflight). È l'unico insieme che un'altra conversazione può far
+// chiudere col verbo `close`: le conversazioni aperte a mano restano dell'umano.
+// La marca segue il `sessionId`, non il processo: una conversazione ripresa dal
+// deck resta chiudibile, una passata da un `/clear` (stesso processo,
+// `sessionId` nuovo) o un fork no.
 
 export interface SessionRecord {
   sessionId: string;
@@ -103,7 +111,13 @@ export interface SessionRecord {
    *  true = entrata, false = uscita. Un insieme vivo VUOTO non scrive niente:
    *  è ciò che fa sopravvivere l'ultimo insieme alla chiusura del deck. */
   live?: boolean;
+  /** T204 — da dove è nata la conversazione: `endpoint` = da una richiesta
+   *  `spawn` sull'endpoint del deck. Scritto una volta, allo spawn. */
+  origin?: string;
 }
+
+/** T204 — il valore di `origin` di una conversazione aperta dall'endpoint. */
+export const ORIGIN_ENDPOINT = 'endpoint';
 
 export function taskIndexPath(projectRoot: string): string {
   return join(projectRoot, '.claude', 'loom', 'session-tasks.jsonl');
@@ -185,6 +199,16 @@ export function appendLive(projectRoot: string, sessionId: string, live: boolean
   appendSessionRecord(projectRoot, { sessionId, live });
 }
 
+/**
+ * T204 — marca l'origine di una conversazione. Allo spawn dall'endpoint si
+ * appende subito dopo il binding della task e prima della tab (P9 preflight):
+ * una richiesta `close` che arrivasse appena aperta la tab trova la marca già
+ * su disco. Il nome del campo è un contratto di formato come `live`.
+ */
+export function appendOrigin(projectRoot: string, sessionId: string, origin: string): void {
+  appendSessionRecord(projectRoot, { sessionId, origin });
+}
+
 export interface SessionIndex {
   /** sessionId → taskId (solo le scoped). */
   bindings: Map<string, string>;
@@ -218,6 +242,9 @@ export interface SessionIndex {
    *  registro dei processi vivi (`live-sessions.ts`): la marca è un'altra cosa,
    *  l'insieme com'era l'ultima volta che non era vuoto. */
   liveMarks: Map<string, number>;
+  /** T204 — le conversazioni nate da una richiesta `spawn` sull'endpoint del
+   *  deck (`origin: endpoint`, last-wins): le sole che il verbo `close` chiude. */
+  endpointBorn: Set<string>;
 }
 
 // Una sola lettura del JSONL per entrambe le mappe: il deck poll-a l'indice a
@@ -234,11 +261,12 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
   const titles = new Map<string, string>();
   const models = new Map<string, string>();
   const liveMarks = new Map<string, number>();
+  const endpointBorn = new Set<string>();
   let content: string;
   try {
     content = readFileSync(taskIndexPath(projectRoot), 'utf8');
   } catch {
-    return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks };
+    return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks, endpointBorn };
   }
   let order = 0; // posizione crescente dei record pinned → rango di pin (D2)
   let liveOrder = 0; // T181 — idem per i record live:true → rango di entrata
@@ -255,6 +283,7 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
         title?: unknown;
         model?: unknown;
         live?: unknown;
+        origin?: unknown;
       };
       if (typeof d.sessionId !== 'string') continue;
       // T57 — last-wins con la stringa vuota come CANCELLAZIONE: `taskId:''`
@@ -319,9 +348,15 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
         if (d.live) liveMarks.set(d.sessionId, liveOrder++);
         else liveMarks.delete(d.sessionId);
       }
+      // T204 — last-wins come gli altri campi: un `origin` diverso da
+      // `endpoint` scritto dopo toglie la marca.
+      if (typeof d.origin === 'string') {
+        if (d.origin === ORIGIN_ENDPOINT) endpointBorn.add(d.sessionId);
+        else endpointBorn.delete(d.sessionId);
+      }
     } catch {
       // riga corrotta → skip
     }
   }
-  return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks };
+  return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks, endpointBorn };
 }

@@ -46,6 +46,18 @@ export interface LiveSession {
   sessionId: string;
   pid: number;
   status: LiveStatus;
+  /** T204 — lo `status` del registro così com'è scritto (`idle`, `busy`,
+   *  `waiting`, `shell`, …), stringa vuota se assente. `status` lo appiattisce a
+   *  due valori, e una guardia «chiudi solo una conversazione ferma» costruita
+   *  su `status` tratterebbe come ferma una conversazione che esegue un comando
+   *  (`shell`). Chi decide su questo valore lo confronta con una lista di valori
+   *  ammessi, mai di valori esclusi: uno nuovo resta fuori finché qualcuno non
+   *  lo ammette. */
+  state: string;
+  /** L'ora di avvio che il registro scrive (`procStart`): la guardia contro il
+   *  pid riciclato. T204 — la chiusura la rimisura mentre aspetta la fine del
+   *  processo. */
+  procStart: string;
   /** Label della tab (`🧵 loom-works · T62 «…»`). Il deck la mostra solo nel
    *  blocco preview: in lista sarebbe la colonna che `sessionTitle` già ripulisce. */
   name: string;
@@ -165,6 +177,8 @@ export function parseLiveEntry(
       sessionId,
       pid,
       status: d.status === 'busy' ? 'busy' : 'idle',
+      state: typeof d.status === 'string' ? d.status : '',
+      procStart,
       name: typeof d.name === 'string' ? d.name : '',
       cwd,
       startedAt: typeof d.startedAt === 'number' ? d.startedAt : 0,

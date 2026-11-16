@@ -2,9 +2,10 @@
 // riga di richiesta per connessione, la consegna a un gestore e scrive la sua
 // risposta sulla stessa connessione.
 //
-// Non sa cosa sia uno spawn: il gestore arriva da fuori (`endpoint-spawn.ts`,
-// cablato dal deck in `overlays/endpoint.ts`). Qui stanno solo le regole del
-// trasporto, che sono diverse per piattaforma:
+// Non sa cosa sia uno spawn né una chiusura: il gestore di ogni verbo arriva da
+// fuori (`endpoint-spawn.ts`, `endpoint-close.ts`, cablati dal deck in
+// `overlays/endpoint.ts`), e qui la riga si smista per `verb`. Il resto sono le
+// regole del trasporto, che sono diverse per piattaforma:
 //
 //  - Windows — una named pipe muore col processo che la tiene aperta: niente da
 //    pulire dopo un deck ucciso a forza, e un secondo deck sullo stesso nome
@@ -16,7 +17,16 @@
 //    rifiutato → file orfano, si cancella e si ascolta (misurato, stessa sonda).
 import net from 'node:net';
 import { existsSync, lstatSync, mkdirSync, unlinkSync } from 'node:fs';
-import { REQUEST_MAX_BYTES, parseSpawnRequest, type Endpoint, type SpawnReply, type SpawnRequest } from './spawn-endpoint.js';
+import {
+  REQUEST_MAX_BYTES,
+  parseEndpointRequest,
+  type CloseReply,
+  type CloseRequest,
+  type Endpoint,
+  type EndpointReply,
+  type SpawnReply,
+  type SpawnRequest,
+} from './spawn-endpoint.js';
 
 /** Una connessione che non manda la sua riga entro questo tempo si chiude: un
  *  client appeso non deve tenere un descrittore del deck per sempre. */
@@ -38,12 +48,27 @@ export type ListenResult =
   | { state: 'busy' }
   | { state: 'failed'; reason: string };
 
-export type RequestHandler = (req: SpawnRequest) => Promise<SpawnReply>;
+/** Un gestore per verbo. Il server sceglie quello del `verb` della riga, già
+ *  validata nella forma del suo verbo (`parseEndpointRequest`). */
+export interface RequestHandlers {
+  spawn: (req: SpawnRequest) => Promise<SpawnReply>;
+  close: (req: CloseRequest) => Promise<CloseReply>;
+}
+
+/** Il gestore della sola richiesta di spawn: la forma di T196, che un chiamante
+ *  con un verbo solo può ancora passare. Un `close` gli arriva come rifiuto. */
+export type RequestHandler = RequestHandlers['spawn'];
+
+function handlersOf(h: RequestHandler | RequestHandlers): RequestHandlers {
+  if (typeof h !== 'function') return h;
+  return { spawn: h, close: async () => ({ ok: false, reason: 'verbo close non servito da questo deck' }) };
+}
 
 /** Avvia l'endpoint. Non lancia mai: ogni esito torna come valore, perché un
  *  endpoint che non parte non deve far cadere il deck — il deck resta usabile
  *  dai tasti anche senza. */
-export async function listenEndpoint(ep: Endpoint, handle: RequestHandler): Promise<ListenResult> {
+export async function listenEndpoint(ep: Endpoint, handle: RequestHandler | RequestHandlers): Promise<ListenResult> {
+  const handlers = handlersOf(handle);
   if (ep.dir !== null) {
     const unsafe = prepareSocketDir(ep.dir);
     if (unsafe) return { state: 'failed', reason: unsafe };
@@ -56,7 +81,7 @@ export async function listenEndpoint(ep: Endpoint, handle: RequestHandler): Prom
       }
     }
   }
-  const server = net.createServer((socket) => serveConnection(socket, handle));
+  const server = net.createServer((socket) => serveConnection(socket, handlers));
   return new Promise((resolve) => {
     server.once('error', (e: NodeJS.ErrnoException) => {
       resolve(e.code === 'EADDRINUSE' ? { state: 'busy' } : { state: 'failed', reason: e.code ?? String(e) });
@@ -125,7 +150,7 @@ function isAlive(address: string): Promise<boolean> {
   });
 }
 
-function serveConnection(socket: net.Socket, handle: RequestHandler) {
+function serveConnection(socket: net.Socket, handlers: RequestHandlers) {
   socket.setEncoding('utf8');
   socket.setTimeout(IDLE_MS, () => socket.destroy());
   // Un client che chiude a metà, o la prova di `isAlive`: errore sulla
@@ -145,22 +170,25 @@ function serveConnection(socket: net.Socket, handle: RequestHandler) {
       return;
     }
     taken = true;
-    // La risposta arriva quando lo spawn è partito, cioè secondi dopo: il
-    // timeout d'inattività vale per l'attesa della richiesta, non per lo spawn.
+    // La risposta arriva quando lo spawn è partito o il processo chiuso è
+    // finito, cioè secondi dopo: il timeout d'inattività vale per l'attesa
+    // della richiesta, non per il lavoro del deck.
     socket.setTimeout(0);
-    const parsed = parseSpawnRequest(buffer.slice(0, nl));
+    const parsed = parseEndpointRequest(buffer.slice(0, nl));
     if ('error' in parsed) {
       reply(socket, { ok: false, reason: parsed.error });
       return;
     }
-    handle(parsed).then(
+    const pending: Promise<EndpointReply> =
+      parsed.verb === 'close' ? handlers.close(parsed) : handlers.spawn(parsed);
+    pending.then(
       (r) => reply(socket, r),
       (e) => reply(socket, { ok: false, reason: `errore del deck: ${String(e)}` }),
     );
   });
 }
 
-function reply(socket: net.Socket, r: SpawnReply) {
+function reply(socket: net.Socket, r: EndpointReply) {
   if (socket.destroyed) return;
   socket.end(`${JSON.stringify(r)}\n`);
 }

@@ -1,8 +1,9 @@
 // T196 — l'ENDPOINT del deck: l'indirizzo locale su cui un deck acceso ascolta
-// le richieste di spawn, e il protocollo che ci viaggia sopra.
+// le richieste delle conversazioni (spawn, e da T204 close), e il protocollo che
+// ci viaggia sopra.
 //
 // Lo usano i due lati della connessione, il server dentro il deck
-// (`endpoint-server.ts`) e il client `loom-deck-spawn` (`spawn-client.ts`), ed è
+// (`endpoint-server.ts`) e i client `loom-deck-spawn` e `loom-deck-close`, ed è
 // il motivo per cui sta in un modulo a sé: l'indirizzo è una funzione sola,
 // calcolata uguale dai due lati. Due copie della regola darebbero due nomi
 // diversi al primo ritocco, e il client chiamerebbe un indirizzo dove nessuno
@@ -124,8 +125,8 @@ export function endpointFor(
 //
 // Una connessione per richiesta (P2 preflight): una riga JSON di richiesta, una
 // riga JSON di risposta sulla stessa connessione, poi il server chiude. `verb`
-// c'è anche se oggi il verbo è uno solo, perché un verbo futuro non cambi la
-// forma della riga.
+// sceglie il verbo, e un verbo nuovo entra senza cambiare la forma della riga:
+// `spawn` (T196) apre una conversazione, `close` (T204) ne chiude una.
 
 export interface SpawnRequest {
   verb: 'spawn';
@@ -158,6 +159,58 @@ export type SpawnReply =
     }
   | { ok: false; reason: string };
 
+/**
+ * T204 — la chiusura di una conversazione viva del progetto.
+ *
+ * Il bersaglio è un `sessionId` e non una task (P1 preflight): una task può
+ * avere insieme la conversazione abbandonata e quella in ciclo, e chiudere per
+ * task le chiuderebbe entrambe.
+ */
+export interface CloseRequest {
+  verb: 'close';
+  /** Il `sessionId` intero, o un suo prefisso di almeno `SESSION_PREFIX_MIN`
+   *  caratteri: il deck lo risolve fra le vive del progetto, e un prefisso che
+   *  ne indica più d'una è un rifiuto. Minuscolo, come lo scrive Claude Code. */
+  session: string;
+  /** Il `sessionId` della conversazione che chiede (`$CLAUDE_CODE_SESSION_ID`
+   *  nel client), quando c'è: il deck rifiuta di chiudere chi chiede (P2
+   *  preflight). */
+  from?: string;
+}
+
+export type CloseReply =
+  | {
+      ok: true;
+      sessionId: string;
+      pid: number;
+      /** La task a cui il sidecar lega la conversazione, `null` se spot. */
+      task: string | null;
+      /** Come il deck l'ha terminata (`SIGHUP` su Linux). */
+      how: string;
+      /** Millisecondi dalla terminazione alla fine verificata del processo. */
+      ms: number;
+      /** Il processo è finito, ma un passo dopo non è riuscito (la marca
+       *  `live` non ritirata): chi legge deve saperlo. */
+      warning?: string;
+    }
+  /** Rifiuto, o processo non terminato entro l'attesa: in quel caso la risposta
+   *  porta il bersaglio, perché la conversazione è stata toccata. */
+  | { ok: false; reason: string; sessionId?: string; pid?: number };
+
+export type EndpointRequest = SpawnRequest | CloseRequest;
+export type EndpointReply = SpawnReply | CloseReply;
+
+/** La versione minima del deck che conosce `close`: la nomina il client quando
+ *  un deck più vecchio risponde «verbo ignoto». */
+export const CLOSE_SINCE = '0.88.0';
+
+/** Il prefisso più corto che si accetta: gli 8 caratteri con cui il deck, la
+ *  regia e `sessions.py` del plugin mostrano un `sessionId`. */
+export const SESSION_PREFIX_MIN = 8;
+
+const SESSION_RE = /^[0-9a-f-]+$/;
+const SESSION_MAX = 36;
+
 /** Le righe più lunghe di così non sono una richiesta: il server chiude invece
  *  di accumulare. */
 export const REQUEST_MAX_BYTES = 16 * 1024;
@@ -165,9 +218,13 @@ export const REQUEST_MAX_BYTES = 16 * 1024;
 const TASK_RE = /^T\d+$/;
 const NOTE_MAX = 200;
 
-/** Una richiesta letta dalla riga, validata nella FORMA. Che la task esista e
- *  che i DLV siano aperti lo verifica il deck, che ha il disco del progetto. */
-export function parseSpawnRequest(line: string): SpawnRequest | { error: string } {
+/** I verbi che il deck conosce, nell'ordine in cui li nomina un rifiuto. */
+export const VERBS = ['spawn', 'close'] as const;
+
+/** Una richiesta letta dalla riga, validata nella FORMA e smistata per verbo.
+ *  Che la task esista, che la conversazione sia viva e del progetto lo verifica
+ *  il deck, che ha il disco del progetto e il registro delle vive. */
+export function parseEndpointRequest(line: string): EndpointRequest | { error: string } {
   let raw: unknown;
   try {
     raw = JSON.parse(line);
@@ -176,7 +233,44 @@ export function parseSpawnRequest(line: string): SpawnRequest | { error: string 
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { error: 'richiesta non è un oggetto JSON' };
   const r = raw as Record<string, unknown>;
-  if (r.verb !== 'spawn') return { error: `verbo ignoto: ${JSON.stringify(r.verb)} (solo spawn)` };
+  if (r.verb === 'spawn') return spawnFields(r);
+  if (r.verb === 'close') return closeFields(r);
+  return { error: `verbo ignoto: ${JSON.stringify(r.verb)} (usa ${VERBS.join('|')})` };
+}
+
+/** La sola richiesta di spawn: un altro verbo è un errore. */
+export function parseSpawnRequest(line: string): SpawnRequest | { error: string } {
+  const req = parseEndpointRequest(line);
+  if ('error' in req || req.verb === 'spawn') return req;
+  return { error: `verbo non di spawn: ${req.verb}` };
+}
+
+/** Un `sessionId` o un suo prefisso, nella forma che il deck accetta; `null`
+ *  se non lo è. Minuscolo: il confronto col registro è esatto. */
+export function normalizeSession(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const s = v.trim().toLowerCase();
+  if (s.length < SESSION_PREFIX_MIN || s.length > SESSION_MAX || !SESSION_RE.test(s)) return null;
+  return s;
+}
+
+function closeFields(r: Record<string, unknown>): CloseRequest | { error: string } {
+  const session = normalizeSession(r.session);
+  if (session === null) {
+    return {
+      error: `sessione non valida: ${JSON.stringify(r.session)} (sessionId, o prefisso di almeno ${SESSION_PREFIX_MIN} caratteri esadecimali)`,
+    };
+  }
+  const req: CloseRequest = { verb: 'close', session };
+  if (r.from !== undefined) {
+    const from = normalizeSession(r.from);
+    if (from === null) return { error: `mittente non valido: ${JSON.stringify(r.from)}` };
+    req.from = from;
+  }
+  return req;
+}
+
+function spawnFields(r: Record<string, unknown>): SpawnRequest | { error: string } {
   if (typeof r.task !== 'string' || !TASK_RE.test(r.task)) {
     return { error: `task non valida: ${JSON.stringify(r.task)} (forma T<numero>)` };
   }

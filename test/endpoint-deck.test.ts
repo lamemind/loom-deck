@@ -106,7 +106,7 @@ function client(cwd: string, args: string[]) {
   return { code: r.status, out: r.stdout, err: r.stderr };
 }
 
-function bindings(root: string): Array<{ sessionId: string; taskId?: string; note?: string }> {
+function bindings(root: string): Array<{ sessionId: string; taskId?: string; note?: string; origin?: string }> {
   const p = join(root, '.claude', 'loom', 'session-tasks.jsonl');
   if (!existsSync(p)) return [];
   return readFileSync(p, 'utf8')
@@ -146,6 +146,12 @@ test('due deck su due progetti: ogni richiesta arriva al deck del proprio proget
     assert.deepEqual(bb.map((b) => b.sessionId), [sidOf(rb.out)]);
     // La nota del titolo dell'azione, come col tasto.
     assert.ok(bindings(alfa).some((b) => b.note === '🚀 prima'));
+    // T204 — la conversazione nata dall'endpoint porta la marca che la rende
+    // chiudibile, nel proprio sidecar e sul proprio sessionId.
+    assert.deepEqual(
+      bindings(alfa).filter((b) => b.origin).map((b) => [b.sessionId, b.origin]),
+      [[sidOf(ra.out), 'endpoint']],
+    );
   } finally {
     await Promise.all([da.done, db.done]);
   }

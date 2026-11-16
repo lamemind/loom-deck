@@ -6,12 +6,14 @@ import { join } from 'node:path';
 import {
   appendLive,
   appendNote,
+  appendOrigin,
   appendPin,
   appendPriority,
   appendSessionMeta,
   appendSessionRecord,
   appendTaskBinding,
   loadSessionIndex,
+  ORIGIN_ENDPOINT,
   taskIndexPath,
 } from '../src/task-index.js';
 
@@ -461,4 +463,29 @@ test('live: il rango delle marche non si mescola a quello di pin', () => {
 
 test('live: file assente → mappa vuota, nessun throw', () => {
   assert.equal(loadSessionIndex(root()).liveMarks.size, 0);
+});
+
+test('origin: endpoint → la conversazione è fra le nate dall’endpoint, campi indipendenti', () => {
+  const r = root();
+  appendTaskBinding(r, 'sid', 'T204');
+  appendOrigin(r, 'sid', ORIGIN_ENDPOINT);
+  appendLive(r, 'sid', true);
+  appendTaskBinding(r, 'altra', 'T204');
+  const idx = loadSessionIndex(r);
+  assert.deepEqual([...idx.endpointBorn], ['sid']);
+  assert.equal(idx.bindings.get('sid'), 'T204');
+  assert.equal(idx.liveMarks.has('sid'), true);
+});
+
+test('origin last-wins: un valore diverso da endpoint toglie la marca; un record senza il campo no', () => {
+  const r = root();
+  appendOrigin(r, 'sid', ORIGIN_ENDPOINT);
+  appendPin(r, 'sid', true);
+  assert.equal(loadSessionIndex(r).endpointBorn.has('sid'), true);
+  appendOrigin(r, 'sid', 'key');
+  assert.equal(loadSessionIndex(r).endpointBorn.has('sid'), false);
+});
+
+test('origin: file assente → insieme vuoto', () => {
+  assert.equal(loadSessionIndex(root()).endpointBorn.size, 0);
 });
