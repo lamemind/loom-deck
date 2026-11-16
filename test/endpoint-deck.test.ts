@@ -1,6 +1,7 @@
 // T196 — l'endpoint sul deck VERO: due deck accesi su due progetti, il client
 // compilato contro di loro, un secondo deck sullo stesso progetto, il riavvio
-// dopo un'uscita forzata.
+// dopo un'uscita forzata. T204 — la chiusura di una conversazione, su un
+// processo vero registrato in un registro delle vive finto.
 //
 // Il deck gira sotto `pty-frame.py` col freno degli effetti esterni
 // (`LOOM_DECK_NO_SPAWN=1`): lo spawn è inerte, ma tutto quello che lo precede è
@@ -15,17 +16,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { endpointFor } from '../src/spawn-endpoint.js';
+import { procStartOf } from '../src/live-sessions.js';
 import { unixOnly } from './platform-gates.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = join(HERE, '..');
 const CLI = join(PKG, 'dist', 'cli.js');
 const CLIENT = join(PKG, 'dist', 'loom-deck-spawn.js');
+const CLOSE = join(PKG, 'dist', 'loom-deck-close.js');
 
 function hasPython(): boolean {
   return spawnSync('python3', ['-c', 'pass'], { stdio: 'ignore' }).status === 0;
@@ -75,10 +78,10 @@ interface Deck {
 }
 
 /** Un deck vero in un pty per circa `seconds` secondi, poi SIGKILL. */
-function startDeck(root: string, seconds: number): Deck {
+function startDeck(root: string, seconds: number, env: NodeJS.ProcessEnv = ENV): Deck {
   const keys = 'W'.repeat(Math.ceil(seconds / 0.7));
   const proc = spawn('python3', [join(HERE, 'pty-frame.py'), '120', '36', root, process.execPath, CLI, '--keys', keys], {
-    env: ENV,
+    env,
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   let out = '';
@@ -106,7 +109,9 @@ function client(cwd: string, args: string[]) {
   return { code: r.status, out: r.stdout, err: r.stderr };
 }
 
-function bindings(root: string): Array<{ sessionId: string; taskId?: string; note?: string; origin?: string }> {
+function bindings(
+  root: string,
+): Array<{ sessionId: string; taskId?: string; note?: string; origin?: string; live?: boolean }> {
   const p = join(root, '.claude', 'loom', 'session-tasks.jsonl');
   if (!existsSync(p)) return [];
   return readFileSync(p, 'utf8')
@@ -191,5 +196,84 @@ test('riavvio dopo un’uscita forzata: rifiuto pulito nel mezzo, risposta dopo,
     assert.equal(after.code, 0, after.err);
   } finally {
     await again.done;
+  }
+});
+
+/** Un processo vero che fa da conversazione nel registro finto: `sleep`, che
+ *  muore di SIGHUP come `claude`. */
+function fakeConversation(registry: string, root: string, sessionId: string, status: string) {
+  const child = spawn('sleep', ['60'], { stdio: 'ignore' });
+  const pid = child.pid!;
+  const exited = new Promise<string | null>((r) => child.on('exit', (_c, sig) => r(sig)));
+  return {
+    pid,
+    exited,
+    child,
+    register: async () => {
+      let stat = '';
+      await waitFor(() => {
+        try {
+          stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      writeFileSync(
+        join(registry, `${pid}.json`),
+        JSON.stringify({ pid, sessionId, procStart: procStartOf(stat), cwd: root, status, name: 'finta' }),
+      );
+    },
+  };
+}
+
+test('T204 — chiusura sul deck vero: il processo nato dall’endpoint muore, gli altri restano', { skip: SKIP }, async () => {
+  const root = realpathSync(project('epsilon'));
+  const registry = mkdtempSync(join(tmpdir(), 'loom-epd-reg-'));
+  const env = { ...ENV, LOOM_DECK_LIVE_SESSIONS_ROOT: registry };
+  const deck = startDeck(root, 12, env);
+  const closeClient = (args: string[], extra: Record<string, string> = {}) => {
+    const r = spawnSync(process.execPath, [CLOSE, ...args], { cwd: root, env: { ...env, ...extra }, encoding: 'utf8' });
+    return { code: r.status, out: r.stdout, err: r.stderr };
+  };
+  const born: ReturnType<typeof fakeConversation>[] = [];
+  try {
+    await waitListening(root);
+    // Due conversazioni nate dall'endpoint (spawn inerte: binding e marca sì,
+    // tab no), una ferma e una al lavoro, più una aperta a mano.
+    const idle = sidOf(client(root, ['T1', 'preflight']).out)!;
+    const busy = sidOf(client(root, ['T1', 'preflight']).out)!;
+    const hand = '99999999-9999-4999-8999-999999999999';
+    const a = fakeConversation(registry, root, idle, 'idle');
+    const b = fakeConversation(registry, root, busy, 'busy');
+    const h = fakeConversation(registry, root, hand, 'idle');
+    born.push(a, b, h);
+    for (const c of born) await c.register();
+
+    const rb = closeClient([busy]);
+    assert.equal(rb.code, 1);
+    assert.match(rb.err, /sta lavorando \(busy\)/);
+    const rh = closeClient([hand]);
+    assert.equal(rh.code, 1);
+    assert.match(rh.err, /non è nata da una richiesta spawn/);
+    const rs = closeClient([idle], { CLAUDE_CODE_SESSION_ID: idle });
+    assert.equal(rs.code, 1);
+    assert.match(rs.err, /è la conversazione che chiede/);
+
+    const ok = closeClient([idle.slice(0, 8)]);
+    assert.equal(ok.code, 0, ok.err);
+    assert.match(ok.out, /^✔ conversazione chiusa dal deck di /);
+    assert.match(ok.out, new RegExp(`^sessionId: ${idle}$`, 'm'));
+    assert.match(ok.out, /^task: +T1$/m);
+    assert.match(ok.out, /^processo: +pid \d+ · SIGHUP · finito in /m);
+    assert.equal(await a.exited, 'SIGHUP', 'il processo è morto del segnale del deck');
+    // La marca live ritirata nella chiusura stessa: il restore non la riapre.
+    const last = bindings(root).filter((r) => r.sessionId === idle && typeof r.live === 'boolean').pop();
+    assert.equal(last?.live, false);
+    // I rifiutati sono vivi.
+    for (const c of [b, h]) assert.ok(existsSync(`/proc/${c.pid}`));
+  } finally {
+    for (const c of born) c.child.kill('SIGKILL');
+    await deck.done;
   }
 });

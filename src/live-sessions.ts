@@ -111,6 +111,31 @@ function isAlive(pid: number, procStart: string): boolean {
   return procStartOf(stat) === procStart;
 }
 
+/**
+ * T204 — la riga di `/proc/<pid>/stat` dice che il processo è ancora quello
+ * avviato a `procStart` E che non ha finito.
+ *
+ * Fra l'uscita di un processo e il momento in cui il padre lo raccoglie, la
+ * riga esiste ancora con lo stesso `starttime` e lo stato `Z` (zombie): per chi
+ * aspetta la fine di una conversazione chiusa da fuori quel processo è finito,
+ * mentre la guardia del registro (`isAlive`) lo vede ancora vivo. Lo stato è il
+ * campo 3, il primo token dopo l'ultima `)`.
+ */
+export function statRunning(statLine: string, procStart: string): boolean {
+  if (procStartOf(statLine) !== procStart) return false;
+  const state = statLine.slice(statLine.lastIndexOf(')') + 1).trim().split(/\s+/)[0];
+  return state !== 'Z' && state !== 'X';
+}
+
+/** `statRunning` sul processo vero; un processo senza `/proc/<pid>` è finito. */
+export function procRunning(pid: number, procStart: string): boolean {
+  try {
+    return statRunning(readFileSync(`/proc/${pid}/stat`, 'utf8'), procStart);
+  } catch {
+    return false;
+  }
+}
+
 /** La liveness via `/proc`: una lettura per pid, nessuno stato fra un giro e
  *  l'altro. */
 const procLiveness: Liveness = (pairs) => pairs.map((p) => isAlive(p.pid, p.procStart));
