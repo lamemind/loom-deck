@@ -17,8 +17,9 @@
 //   3  nessun deck in ascolto sull'indirizzo del progetto
 //
 // La logica sta qui e l'ingresso in `loom-deck-spawn.ts`, così il test esegue il
-// client intero contro un server vero senza lanciare un processo.
-import net from 'node:net';
+// client intero contro un server vero senza lanciare un processo. Lo scambio sul
+// socket sta in `endpoint-client.ts`, condiviso con `loom-deck-close` (T204).
+import { exchange, REPLY_TIMEOUT_MS, type ClientIo } from './endpoint-client.js';
 import { isModelKind, MODELS } from './spawn-catalog.js';
 import {
   ENDPOINT_SINCE,
@@ -46,9 +47,7 @@ compreso).
 Uscite: 0 tab aperta · 1 rifiuto o nessuna risposta dal deck · 2 errore d'uso ·
 3 nessun deck in ascolto sul progetto`;
 
-/** Quanto il client aspetta la risposta. Più largo dell'attesa del deck
- *  sull'annuncio di `deck-run`, così il motivo di un ritardo lo dice il deck. */
-export const REPLY_TIMEOUT_MS = 30_000;
+export { REPLY_TIMEOUT_MS, type ClientIo };
 
 export type ClientArgs = { request: SpawnRequest; root: string | null } | { usage: string[] } | { help: true };
 
@@ -98,15 +97,6 @@ export function parseClientArgs(argv: readonly string[]): ClientArgs {
   return { request, root };
 }
 
-export interface ClientIo {
-  cwd: string;
-  env: Readonly<Record<string, string | undefined>>;
-  platform: NodeJS.Platform;
-  stdout: (s: string) => void;
-  stderr: (s: string) => void;
-  timeoutMs?: number;
-}
-
 export async function runClient(argv: readonly string[], io: ClientIo): Promise<number> {
   const args = parseClientArgs(argv);
   if ('help' in args) {
@@ -120,7 +110,7 @@ export async function runClient(argv: readonly string[], io: ClientIo): Promise<
   }
   const root = args.root ?? findProjectRoot(io.cwd) ?? io.cwd;
   const ep = endpointFor(root, io.platform, io.env);
-  const outcome = await exchange(ep.address, args.request, io.timeoutMs ?? REPLY_TIMEOUT_MS);
+  const outcome = await exchange<SpawnReply>(ep.address, args.request, io.timeoutMs ?? REPLY_TIMEOUT_MS);
 
   if ('unreachable' in outcome) {
     io.stderr(
@@ -150,51 +140,4 @@ export async function runClient(argv: readonly string[], io: ClientIo): Promise<
   if (r.inTab !== null) lines.push(`in-tab:    ${r.inTab}`);
   io.stdout(`${lines.join('\n')}\n`);
   return 0;
-}
-
-type Outcome = { reply: SpawnReply } | { unreachable: string } | { failed: string };
-
-/** Errori di connessione che vogliono dire «nessuno ascolta qui»: niente file
- *  o pipe (`ENOENT`), socket orfano di un deck morto (`ECONNREFUSED`). */
-const UNREACHABLE = new Set(['ENOENT', 'ECONNREFUSED']);
-
-function exchange(address: string, request: SpawnRequest, timeoutMs: number): Promise<Outcome> {
-  return new Promise((resolve) => {
-    const socket = net.connect(address);
-    let buf = '';
-    let settled = false;
-    const settle = (o: Outcome) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      socket.destroy();
-      resolve(o);
-    };
-    const timer = setTimeout(
-      () => settle({ failed: `nessuna risposta dal deck entro ${Math.round(timeoutMs / 1000)} s` }),
-      timeoutMs,
-    );
-    socket.setEncoding('utf8');
-    socket.on('connect', () => socket.write(`${JSON.stringify(request)}\n`));
-    socket.on('data', (chunk: string) => {
-      buf += chunk;
-      const nl = buf.indexOf('\n');
-      if (nl >= 0) settle(parseReply(buf.slice(0, nl)));
-    });
-    socket.on('end', () => settle(buf ? parseReply(buf) : { failed: 'il deck ha chiuso la connessione senza rispondere' }));
-    socket.on('error', (e: NodeJS.ErrnoException) => {
-      const code = e.code ?? String(e);
-      settle(UNREACHABLE.has(code) ? { unreachable: code } : { failed: `connessione al deck fallita (${code})` });
-    });
-  });
-}
-
-function parseReply(line: string): Outcome {
-  try {
-    const r = JSON.parse(line) as SpawnReply;
-    if (r && typeof r === 'object' && typeof r.ok === 'boolean') return { reply: r };
-  } catch {
-    // sotto
-  }
-  return { failed: `risposta del deck illeggibile: ${line.slice(0, 200)}` };
 }
