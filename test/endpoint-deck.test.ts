@@ -170,6 +170,8 @@ test('secondo deck sullo stesso progetto: avvisa e non ruba l’indirizzo', { sk
     const second = startDeck(root, 3);
     const frame = (await second.done).replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
     assert.match(frame, /endpoint di spawn già in ascolto da un altro deck/);
+    // T216 — col primo vivo il secondo ritenta senza mai prendere l'indirizzo.
+    assert.doesNotMatch(frame, /ora in ascolto su questo deck/);
     // Il secondo è morto di SIGKILL: l'indirizzo resta del primo, che risponde.
     const r = client(root, ['T1', 'preflight']);
     assert.equal(r.code, 0, r.err);
@@ -196,6 +198,26 @@ test('riavvio dopo un’uscita forzata: rifiuto pulito nel mezzo, risposta dopo,
     assert.equal(after.code, 0, after.err);
   } finally {
     await again.done;
+  }
+});
+
+test('T216 — il primo deck muore: il secondo, rimasto aperto, subentra entro due giri e risponde', { skip: SKIP }, async () => {
+  const root = project('zeta');
+  // Il primo vive abbastanza perché il secondo monti e lo trovi in ascolto.
+  const first = startDeck(root, 7);
+  await waitListening(root);
+  const second = startDeck(root, 12);
+  try {
+    await first.done; // SIGKILL al primo: il socket resta su disco, come dopo il SIGHUP di una tab
+    const diedAt = Date.now();
+    await waitFor(() => client(root, ['T1', 'run', '99']).code === 1, 6_000);
+    const took = Date.now() - diedAt;
+    assert.ok(took <= 3_000, `subentro dopo ${took} ms`);
+    const r = client(root, ['T1', 'preflight']);
+    assert.equal(r.code, 0, r.err);
+  } finally {
+    const frame = (await second.done).replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '');
+    assert.match(frame, /endpoint di spawn ora in ascolto su questo deck/);
   }
 });
 

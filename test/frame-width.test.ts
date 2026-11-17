@@ -79,6 +79,11 @@ function capture(
         ...process.env,
         LOOM_DECK_DOCS_ROOT: 'runtime',
         LOOM_DECK_NO_SPAWN: '1',
+        // T216 — un endpoint per deck: i deck degli scenari girano anche in
+        // parallelo sullo stesso progetto, e con una cartella dei socket in
+        // comune quello che resta aperto subentrerebbe a quello che muore, e la
+        // nota del subentro coprirebbe la nota che lo scenario guarda.
+        XDG_RUNTIME_DIR: mkdtempSync(join(tmpdir(), 'rt-')),
         ...extraEnv,
       },
     },
