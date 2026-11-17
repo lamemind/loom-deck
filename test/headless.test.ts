@@ -3,7 +3,7 @@
 // quattro classi, e il lancio staccato vero con un `claude` finto.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -16,6 +16,8 @@ delete process.env.LOOM_DECK_DOCS_ROOT;
 
 import {
   HEADLESS_DROP_ENV,
+  HEADLESS_KEEP_MS,
+  HEADLESS_ORPHAN_GRACE_MS,
   headlessArgs,
   headlessEnv,
   INHERITED_SESSION_ENV,
@@ -23,12 +25,16 @@ import {
   PENDING_MAX_MS,
   replyHeadless,
   resolveSession,
+  staleHeadless,
   turnOutcome,
   type HeadlessIo,
   type LaunchOptions,
 } from '../src/headless.js';
 import {
   classifyTurn,
+  dropHeadlessState,
+  errPath,
+  headlessFiles,
   outPath,
   parseTurnOutput,
   readState,
@@ -633,4 +639,67 @@ test('sessionProcesses: ogni forma di processo vivo della conversazione, parseLi
   assert.equal(parseLiveEntry(raw({ entrypoint: 'sdk-cli' }), 1), null);
   assert.equal(parseLiveEntry(raw({ kind: 'bg' }), 1), null);
   assert.equal(parseRegistryEntry(raw({ entrypoint: 'sdk-cli' }), 1)!.entrypoint, 'sdk-cli');
+});
+
+// ── pulizia dei file di stato (T206) ───────────────────────────────────────
+
+const DAY = 24 * 60 * 60 * 1000;
+const FINISHED = JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'fatto', session_id: 'x' });
+
+/** Un turno su disco: stato, esito (se finito) e stderr, tutti toccati `ageMs`
+ *  prima di `NOW`; il transcript a parte. */
+function turnOnDisk(root: string, sid: string, o: { ageMs: number; finished?: boolean; pid?: number | null; transcript?: boolean }) {
+  const st: HeadlessState = {
+    sessionId: sid,
+    task: 'T9',
+    kind: 'recap',
+    model: 'haiku',
+    title: 't',
+    permissionMode: 'auto',
+    turn: 1,
+    startedAt: new Date(NOW - o.ageMs).toISOString(),
+    pid: o.pid === undefined ? 4242 : o.pid,
+    procStart: '777',
+    prompt: 'p',
+  };
+  writeState(root, st);
+  writeFileSync(outPath(root, sid), o.finished === false ? '' : FINISHED);
+  writeFileSync(errPath(root, sid), '');
+  const at = new Date(NOW - o.ageMs);
+  for (const f of headlessFiles(root, sid)) utimesSync(f, at, at);
+  if (o.transcript) transcript(root, sid);
+}
+
+const id = (n: number) => `0a1b2c3d-0000-4000-8000-00000000000${n}`;
+
+test('pulizia: turno finito da più di 7 giorni o senza transcript fuori, il resto resta (T206)', () => {
+  const root = project();
+  turnOnDisk(root, id(1), { ageMs: HEADLESS_KEEP_MS + DAY, transcript: true });
+  turnOnDisk(root, id(2), { ageMs: DAY, transcript: true });
+  turnOnDisk(root, id(3), { ageMs: HEADLESS_ORPHAN_GRACE_MS + 60_000 });
+  turnOnDisk(root, id(4), { ageMs: 60_000 });
+  turnOnDisk(root, id(5), { ageMs: HEADLESS_KEEP_MS + DAY, finished: false, pid: 5555 });
+  turnOnDisk(root, id(6), { ageMs: 1_000, finished: false, pid: null });
+  const io = { now: () => new Date(NOW), running: (pid: number) => pid === 5555 };
+  const transcripts = new Set([id(1), id(2)]);
+  assert.deepEqual(staleHeadless(root, io, transcripts), [id(1), id(3)]);
+});
+
+test('pulizia: open toglie i file dei turni finiti prima di lanciare il suo (T206)', async () => {
+  const root = project();
+  turnOnDisk(root, id(1), { ageMs: HEADLESS_KEEP_MS + DAY, transcript: true });
+  turnOnDisk(root, id(2), { ageMs: DAY, transcript: true });
+  const r = await openHeadless(req('T9', 'recap'), root, fakeIo());
+  assert.ok(r.ok, JSON.stringify(r));
+  for (const f of headlessFiles(root, id(1))) assert.equal(existsSync(f), false, f);
+  for (const f of headlessFiles(root, id(2))) assert.equal(existsSync(f), true, f);
+  assert.ok(readState(root, SID), 'il turno appena aperto ha il suo stato');
+});
+
+test('pulizia: dropHeadlessState toglie i tre file e dice quanti erano (T206)', () => {
+  const root = project();
+  turnOnDisk(root, id(1), { ageMs: 0 });
+  assert.equal(dropHeadlessState(root, id(1)), 3);
+  assert.equal(dropHeadlessState(root, id(1)), 0, 'una seconda volta non trova niente');
+  assert.equal(existsSync(statePath(root, id(1))), false);
 });

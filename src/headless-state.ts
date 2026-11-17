@@ -9,7 +9,10 @@
 //
 // Sede: `<root>/.claude/loom/headless/`, accanto al sidecar
 // `session-tasks.jsonl` e come lui fuori da git. Tre file per conversazione,
-// riscritti a ogni turno — la storia dei turni sta nel transcript:
+// riscritti a ogni turno — la storia dei turni sta nel transcript. T206 — li
+// toglie l'`open` successivo quando il turno è finito da più di sette giorni o
+// il transcript non c'è più (`pruneHeadless`), e `CANC` nel deck insieme al
+// transcript:
 //   <sessionId>.json      lo stato del turno (`HeadlessState`)
 //   <sessionId>.out.json  lo stdout di claude: l'evento `result`
 //   <sessionId>.err       lo stderr di claude
@@ -18,7 +21,7 @@
 // chiuso sia una domanda o una fine lo giudica chi legge il testo finale, non
 // un pattern su `D{N}` o 🚦 che sbaglierebbe in silenzio alla prima skill che
 // cambia forma.
-import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ModelKind } from './spawn-catalog.js';
 
@@ -36,6 +39,43 @@ export function outPath(root: string, sessionId: string): string {
 
 export function errPath(root: string, sessionId: string): string {
   return join(headlessDir(root), `${sessionId}.err`);
+}
+
+/** T206 — i tre file di una conversazione headless, nell'ordine di nascita. */
+export function headlessFiles(root: string, sessionId: string): string[] {
+  return [statePath(root, sessionId), outPath(root, sessionId), errPath(root, sessionId)];
+}
+
+/**
+ * T206 — l'ultimo momento in cui uno dei tre file è stato scritto, in ms; `0`
+ * se non ce n'è nessuno. Lo stato nasce al lancio, l'esito e lo stderr li
+ * scrive il processo fino all'uscita: su un turno finito è l'ora della fine.
+ */
+export function headlessTouchedMs(root: string, sessionId: string): number {
+  let last = 0;
+  for (const path of headlessFiles(root, sessionId)) {
+    try {
+      last = Math.max(last, statSync(path).mtimeMs);
+    } catch {
+      // file assente: il turno non l'ha (ancora) scritto
+    }
+  }
+  return last;
+}
+
+/** T206 — toglie i tre file di una conversazione headless; quanti c'erano. */
+export function dropHeadlessState(root: string, sessionId: string): number {
+  let removed = 0;
+  for (const path of headlessFiles(root, sessionId)) {
+    try {
+      statSync(path);
+    } catch {
+      continue;
+    }
+    rmSync(path, { force: true });
+    removed++;
+  }
+  return removed;
 }
 
 /** Lo stato dell'ultimo turno di una conversazione headless. */

@@ -181,5 +181,7 @@ test('cablaggio: il predicato di «viva» è il registro, come in selectSessionR
 test('cablaggio: il turno headless del ⏎ e del CANC è la mappa del registro (T206)', () => {
   assert.match(body('actions.ts', 'openSession'), /headlessPid: \(id\) => model\.headless\.get\(id\)\?\.pid \?\? null/);
   // CANC: la guardia sta nella bozza, prima di ogni conferma.
+  // CANC confermato: i file di stato di `loom-deck-headless` vanno col transcript.
+  assert.match(body('actions.ts', 'dropSession'), /dropSessionFiles\(draft\.path\);[\s\S]*dropHeadlessState\(cwd, draft\.sessionId\)/);
   assert.match(body('actions.ts', 'dropDraftFor'), /const turn = model\.headless\.get\(sid\);\s+if \(turn\) \{\s+setNote\([^\n]*\);\s+return null;/);
 });

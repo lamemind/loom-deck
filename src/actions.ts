@@ -34,6 +34,7 @@ import { cut, cutMiddle, sanitize } from './width.js';
 import { idList } from './ui/modals.js';
 import { purgeTargets, splitTargets } from './purge.js';
 import { dropSessionFiles, sessionArtifacts } from './session-drop.js';
+import { dropHeadlessState } from './headless-state.js';
 import type { DropDraft } from './model.js';
 import { initialDetail, writeTaskEdit, PRI_GLYPH, PRI_LABEL } from './task-edit.js';
 import { priName, progName } from './view.js';
@@ -653,6 +654,15 @@ export function useDeckActions({
     } catch (e) {
       setNote(`⚠ ${short}: eliminazione fallita: ${e instanceof Error ? e.message : String(e)}`);
       return;
+    }
+    // T206/P1 — i file di stato di `loom-deck-headless` vanno col transcript:
+    // senza, `status` descriverebbe una conversazione che non c'è più. Dopo il
+    // transcript e fuori dal suo try: il transcript è già andato, e un file di
+    // stato rimasto lo toglie il prossimo `open`.
+    try {
+      dropHeadlessState(cwd, draft.sessionId);
+    } catch {
+      // resta per la pulizia del prossimo `loom-deck-headless open`
     }
     if (model.pinned.has(draft.sessionId)) appendPin(cwd, draft.sessionId, false);
     model.reloadSessions();

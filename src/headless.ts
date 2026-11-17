@@ -27,8 +27,10 @@ import { claudeEnv } from './git-bash.js';
 import { modelAlias } from './glyphs.js';
 import {
   classifyTurn,
+  dropHeadlessState,
   errPath,
   headlessIds,
+  headlessTouchedMs,
   outPath,
   parseTurnOutput,
   readState,
@@ -162,6 +164,61 @@ export type TurnReply = { ok: true; state: HeadlessState; warnings: string[] } |
  *  interrotto: il pid si scrive nei millisecondi dopo lo spawn. */
 export const PENDING_MAX_MS = 60_000;
 
+/** T206/P1 — quanto restano su disco i tre file di un turno finito. */
+export const HEADLESS_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * T206 — il margine prima di togliere i file di un turno finito il cui
+ * transcript non c'è. Un turno che fallisce prima del primo record (un CLI che
+ * rifiuta gli argomenti) non lascia nessun transcript, e il suo esito è proprio
+ * lo stderr da leggere con `status`: senza margine, l'`open` di un altro turno
+ * lanciato subito dopo lo cancellerebbe prima che la regia lo legga.
+ */
+export const HEADLESS_ORPHAN_GRACE_MS = 10 * 60 * 1000;
+
+/**
+ * T206/P1 — le conversazioni headless del progetto i cui file di stato vanno
+ * tolti: turno finito da più di `HEADLESS_KEEP_MS`, oppure finito e senza più
+ * transcript (cancellato dal deck, o a mano).
+ *
+ * Un turno in corso non si tocca mai, nemmeno senza transcript: nei primi
+ * istanti il transcript non esiste ancora. «In corso» è l'esito di `status`
+ * (`turnOutcome`), compreso il turno in avvio senza pid. Uno stato illeggibile
+ * resta: non si sa di che turno sia, e toglierlo non è la decisione di chi pulisce.
+ */
+export function staleHeadless(
+  root: string,
+  io: Pick<HeadlessIo, 'running' | 'now'>,
+  transcripts: ReadonlySet<string>,
+): string[] {
+  const now = io.now().getTime();
+  const stale: string[] = [];
+  for (const id of headlessIds(root)) {
+    const st = readState(root, id);
+    if (!st) continue;
+    if (turnOutcome(root, st, io).cls === 'in corso') continue;
+    const age = now - headlessTouchedMs(root, id);
+    if (age >= HEADLESS_KEEP_MS || (!transcripts.has(id) && age >= HEADLESS_ORPHAN_GRACE_MS)) stale.push(id);
+  }
+  return stale;
+}
+
+/**
+ * T206/P1 — toglie i file di stato dei turni finiti (`staleHeadless`); gli id
+ * puliti. La chiama `openHeadless`: pulisce chi scrive, quindi funziona anche a
+ * deck spento, e la regia che lancia turni la tiene in moto da sola. Un errore
+ * qui non ferma mai l'apertura del turno: i file restano al giro dopo.
+ */
+export function pruneHeadless(root: string, io: Pick<HeadlessIo, 'running' | 'now'>): string[] {
+  try {
+    const stale = staleHeadless(root, io, new Set(transcriptIds(root)));
+    for (const id of stale) dropHeadlessState(root, id);
+    return stale;
+  } catch {
+    return [];
+  }
+}
+
 interface ProjectContext {
   tasksPath: string;
   tasksDir: string;
@@ -255,6 +312,7 @@ export async function openHeadless(req: SpawnRequest, root: string, io: Headless
   if (req.kind === 'none') {
     return { ok: false, reason: 'kind none: un turno headless senza prompt non ha niente da eseguire' };
   }
+  pruneHeadless(root, io);
   const ctx = projectContext(root, io);
   const overrides = loadSpawnOverrides(root).entries;
   const plan = planSpawnRequest(req, {
