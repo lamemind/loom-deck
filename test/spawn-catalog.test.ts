@@ -12,6 +12,8 @@ import assert from 'node:assert/strict';
 import {
   ACTION_HOTKEYS,
   DETAIL_ACTIONS,
+  actionHotkeys,
+  detailActions,
   MODELS,
   SPAWN_ACTIONS,
   SPAWN_FIELDS,
@@ -189,4 +191,34 @@ test('MODELS e MODEL_DEFAULT restano gli alias del CLI, mai id versionati', () =
   // generazione, e fallirebbe come modello inesistente invece che come
   // configurazione da aggiornare.
   for (const m of MODELS) assert.ok(!m.includes('-'), `alias sospetto: ${m}`);
+});
+
+// ── T212 · le azioni del detail per forma della task ────────────────────────
+
+test('detailActions: sul mandato il run non c è, l ordine delle altre resta', () => {
+  assert.deepEqual(
+    detailActions('mandate').map((a) => a.label),
+    ['open', 'preflight', 'status', 'checkpoint'],
+  );
+});
+
+test('detailActions: task ed epica tengono il catalogo intero, run compreso', () => {
+  assert.deepEqual(detailActions('task'), DETAIL_ACTIONS);
+  assert.deepEqual(detailActions('epic'), DETAIL_ACTIONS, 'un epica con DLV propri resta lanciabile (T189 D2)');
+});
+
+test('actionHotkeys: le iniziali indicizzano la lista della task, non il catalogo', () => {
+  const keys = actionHotkeys(detailActions('mandate'));
+  assert.equal(keys['r'], undefined, 'sul mandato r non seleziona niente');
+  assert.equal(keys['s'], 2, 'status è la terza voce della lista accorciata');
+  assert.equal(keys['c'], 3);
+  assert.deepEqual(actionHotkeys(DETAIL_ACTIONS), ACTION_HOTKEYS);
+});
+
+test('specializeRecap: un perimetro, epica o mandato, apre il recap del perimetro', () => {
+  for (const a of detailActions('mandate')) {
+    const id = specializeRecap(a.kind, true);
+    assert.ok(spawnAction(id), `l'azione '${a.label}' del mandato punta a '${id}', che non è in catalogo`);
+  }
+  assert.equal(specializeRecap('recap', true), 'recap-epic');
 });

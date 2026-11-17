@@ -26,16 +26,18 @@ import { parseMarkdown } from '../markdown.js';
 import { cpLen, insertAt, isDone, removeAt } from '../layout.js';
 import { sanitizeTyped } from '../glyphs.js';
 import {
-  ACTION_HOTKEYS,
   DETAIL_ACTIONS,
   MODELS,
   MODEL_DEFAULT,
+  actionHotkeys,
+  detailActions,
   specializeRecap,
+  type DetailAction,
   type ModelKind,
   type PromptKind,
   type SpawnActionId,
 } from '../spawn-catalog.js';
-import { loadTaskFileText, taskIsEpic, type Task } from '../tasks.js';
+import { loadTaskFileText, taskShape, type Task } from '../tasks.js';
 import { fieldsKey, type FieldSpec, type FieldsCursor, type FieldsIO } from '../fields.js';
 import { useDlvMode } from './dlv-mode.js';
 import type { ResolvedSpawn } from '../spawn-config.js';
@@ -115,13 +117,22 @@ export const DROW = { action: 0, prompt: 1, model: 2, title: 3, priority: 4 } as
 /** T158 — le due voci della riga priorità, nell'ordine degli indici. */
 export const PRIORITY_CHOICES = ['no', '🚨 sì'] as const;
 
-export const DETAIL_FIELDS: readonly FieldSpec[] = [
-  { kind: 'choice', count: DETAIL_ACTIONS.length, hotkeys: ACTION_HOTKEYS },
-  { kind: 'text' },
-  { kind: 'choice', count: MODELS.length },
-  { kind: 'text' },
-  { kind: 'choice', count: PRIORITY_CHOICES.length },
-];
+/**
+ * Le righe dell'area di compilazione per una lista di azioni. T212 — funzione
+ * della lista e non costante: la riga azione conta le voci DELLA TASK aperta
+ * (su un mandato manca `run`), e le sue iniziali seguono la stessa lista — una
+ * lettera che punta all'indice di un catalogo diverso selezionerebbe la voce
+ * accanto.
+ */
+export function detailFields(actions: ReadonlyArray<DetailAction>): readonly FieldSpec[] {
+  return [
+    { kind: 'choice', count: actions.length, hotkeys: actionHotkeys(actions) },
+    { kind: 'text' },
+    { kind: 'choice', count: MODELS.length },
+    { kind: 'text' },
+    { kind: 'choice', count: PRIORITY_CHOICES.length },
+  ];
+}
 
 export function useSheetOverlay(deps: SheetOverlayDeps) {
   const { rows, columns, setMode, setNote, defaults, onAction } = deps;
@@ -147,10 +158,13 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
   // farebbe partire prioritaria la conversazione successiva, senza che nulla a
   // schermo lo dica.
   const [priority, setPriority] = useState(false);
-  /** La task aperta è un cappello (`Size: Epic`)? Deciso UNA VOLTA all'apertura,
-   *  dal testo che il detail ha già in mano: rifarlo a ogni cambio di azione
-   *  riparserebbe l'intero task file per un campo dell'header. */
-  const [epic, setEpic] = useState(false);
+  /** La task aperta è un perimetro (`Size: Epic` o `Size: Mandate`)? Deciso UNA
+   *  VOLTA all'apertura, dal testo che il detail ha già in mano: rifarlo a ogni
+   *  cambio di azione riparserebbe l'intero task file per un campo dell'header. */
+  const [perimeter, setPerimeter] = useState(false);
+  /** T212 — le azioni offerte sulla task aperta (`detailActions`), decise
+   *  all'apertura insieme alla forma. `action` indicizza QUESTA lista. */
+  const [actions, setActions] = useState<ReadonlyArray<DetailAction>>(DETAIL_ACTIONS);
   const [cursor, setCursor] = useState<FieldsCursor>({ row: DROW.action, caret: 0 });
   // T189 — il secondo modo del detail: la lista dei DLV al posto dell'area di
   // compilazione, alternata da `tab`.
@@ -221,17 +235,22 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
 
   /** Apre il detail su una task, azzerando scroll, area di compilazione e ricerca. */
   function open(next: Sheet) {
-    // Calcolato qui e usato subito: `setEpic` non ha ancora aggiornato lo stato
-    // quando `setPrompt` gira, quindi il valore locale è l'unico leggibile ora.
-    const isEpic = taskIsEpic(next.id, next.text);
-    const kind = specializeRecap(DETAIL_ACTIONS[0]!.kind, isEpic);
+    // Calcolati qui e usati subito: `setPerimeter` e `setActions` non hanno
+    // ancora aggiornato lo stato quando `setPrompt` gira, quindi i valori
+    // locali sono gli unici leggibili ora.
+    const shape = taskShape(next.id, next.text);
+    const isPerimeter = shape !== 'task';
+    const list = detailActions(shape);
+    const kind = specializeRecap(list[0]!.kind, isPerimeter);
     setSheet(next);
     setTop(0);
     setAction(0);
-    setEpic(isEpic);
+    setPerimeter(isPerimeter);
+    setActions(list);
     // T152/T161 — i tre campi partono dalla terna dell'azione, risolta sul
     // catalogo e sugli override di progetto: su una task Epic la prima azione
     // specializza a `recap-epic`, che può portare valori diversi da `recap`.
+    // T212 — lo stesso su un mandato: il suo recap è `recap-status-epic`.
     const d = defaults(kind, next.id);
     setModel(d.model);
     setSpawnNote(d.title ?? '');
@@ -268,7 +287,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     setAction(index);
     const id = sheet?.id;
     if (!id) return;
-    const kind = specializeRecap(DETAIL_ACTIONS[index]!.kind, epic);
+    const kind = specializeRecap(actions[index]!.kind, perimeter);
     const d = defaults(kind, id);
     setPrompt(d.prompt ?? '');
     setModel(d.model);
@@ -434,7 +453,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     // inerte — dentro un modo capturing è la scelta giusta: gli acceleratori
     // globali non devono riattivarsi, e su una riga a scelta una lettera che
     // non è la sua non deve finire in nessun campo.
-    fieldsKey(input, key, DETAIL_FIELDS, cursor, setCursor, fieldsIO);
+    fieldsKey(input, key, detailFields(actions), cursor, setCursor, fieldsIO);
   }
 
   return {
@@ -442,6 +461,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     doc,
     top,
     action,
+    actions,
     model,
     spawnNote,
     prompt,

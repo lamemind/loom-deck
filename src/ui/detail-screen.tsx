@@ -5,7 +5,7 @@ import { cut, type WrappedLine } from '../width.js';
 import { sliceLine, type Occurrence } from '../text-search.js';
 import { sliceSpans, type Span, type SpanKind } from '../markdown.js';
 import { ChoiceRow, FieldText, LABEL_W } from './fields.js';
-import { DETAIL_ACTIONS, MODELS, type ModelKind } from '../spawn-catalog.js';
+import { MODELS, type DetailAction, type ModelKind } from '../spawn-catalog.js';
 import { DROW, PRIORITY_CHOICES } from '../overlays/sheet.js';
 import type { FieldsCursor } from '../fields.js';
 import { CARET, CARET_OFF, WARN } from '../glyphs.js';
@@ -94,11 +94,14 @@ const NOTE_HINT = ' · nome della conversazione';
 
 const PROMPT_HINT = ' · nessun prompt iniziale';
 
-/** Le lettere di selezione diretta dell'azione, per la riga hint. Derivate dallo
- *  stesso catalogo di `ACTION_HOTKEYS`, così una voce aggiunta compare qui senza
+/** Le lettere di selezione diretta dell'azione, per la riga hint. Derivate dalla
+ *  stessa lista di `actionHotkeys`, così una voce aggiunta compare qui senza
  *  che nessuno ci ripassi — un'etichetta che nomina dei tasti a mano è accoppiata
- *  al binding, e resta indietro appena il binding cambia. */
-const ACTION_KEYS = DETAIL_ACTIONS.map((a) => a.label[0]).join(' ');
+ *  al binding, e resta indietro appena il binding cambia. T212 — la lista è
+ *  quella della task aperta: su un mandato la `r` non c'è. */
+function actionKeys(actions: ReadonlyArray<DetailAction>): string {
+  return actions.map((a) => a.label[0]).join(' ');
+}
 
 /**
  * Detail della task (T66): il task file scrollabile più l'area di compilazione.
@@ -127,6 +130,7 @@ export function DetailScreen({
   total,
   capacity,
   action,
+  actions,
   model,
   spawnNote,
   prompt,
@@ -151,8 +155,10 @@ export function DetailScreen({
   top: number;
   total: number;
   capacity: number;
-  /** Indice dell'azione selezionata in DETAIL_ACTIONS. */
+  /** Indice dell'azione selezionata in `actions`. */
   action: number;
+  /** T212 — le azioni offerte sulla task aperta (`detailActions`). */
+  actions: ReadonlyArray<DetailAction>;
   /** T108 — modello con cui partirà la sessione. */
   model: ModelKind;
   /** T111 — titolo con cui nascerà la conversazione (dato `note` nel sidecar). */
@@ -229,7 +235,7 @@ export function DetailScreen({
               `PgUp`/`PgDn`, che qui è l'UNICO modo di scorrere il testo proprio
               perché `↑↓` sono passate al fuoco fra le righe. */}
           <Text color="yellow">PgUp/PgDn</Text> testo ·{' '}
-          <Text color="yellow">{ACTION_KEYS}</Text> azione ·{' '}
+          <Text color="yellow">{actionKeys(actions)}</Text> azione ·{' '}
           <Text color="yellow">^U</Text> svuota campo · <Text color="yellow">^F</Text> cerca ·{' '}
           <Text color="yellow">tab</Text> DLV
         </Text>
@@ -291,7 +297,7 @@ export function DetailScreen({
         <Box marginTop={1} flexDirection="column">
           <ChoiceRow
             label="azione"
-            values={DETAIL_ACTIONS.map((a) => a.label)}
+            values={actions.map((a) => a.label)}
             index={action}
             focused={cursor.row === DROW.action}
             width={width}

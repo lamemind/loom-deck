@@ -265,3 +265,12 @@ test('parità con task-deliverables.sh su ogni task file del cappello', { skip: 
   // parser che restituisce sempre la lista vuota.
   assert.ok(withText > 0, 'nessun task file con DLV aperti: il confronto non ha misurato niente');
 });
+
+// T212/P3 — su un mandato il modo DLV è spento col motivo, anche se il file
+// porta una checklist: il lavoro sta nei membri.
+test('mandato: modo DLV spento col motivo, checklist o no, aperto o chiuso', () => {
+  assert.deepEqual(gate(taskFile('Mandate', ['- [ ] uno'])), { kind: 'off', reason: DLV_REASON.mandate });
+  assert.deepEqual(gate(taskFile('Mandate', [])), { kind: 'off', reason: DLV_REASON.mandate });
+  assert.deepEqual(gate(taskFile('Mandate', ['- [ ] uno']), true), { kind: 'off', reason: DLV_REASON.mandate });
+  assert.equal(dlvLaunchable(gate(taskFile('mandate (regia)', ['- [ ] uno']))), false);
+});

@@ -304,6 +304,22 @@ export function taskIsPerimeter(id: string, text: string | null): boolean {
   return taskIsEpic(id, text) || taskIsMandate(id, text);
 }
 
+/** T212 — la forma di una task per chi ne compone le azioni: una task da
+ *  eseguire, oppure uno dei due perimetri. */
+export type TaskShape = 'task' | 'epic' | 'mandate';
+
+/**
+ * T212 — la forma della task, letta una volta dal testo che il detail ha già
+ * in mano. Il mandato si guarda per primo: `Size` ha un valore solo, quindi
+ * l'ordine non cambia l'esito, ma tiene la grammatica più larga (prima parola)
+ * davanti a quella più stretta.
+ */
+export function taskShape(id: string, text: string | null): TaskShape {
+  if (taskIsMandate(id, text)) return 'mandate';
+  if (taskIsEpic(id, text)) return 'epic';
+  return 'task';
+}
+
 /** `## Membri`, la sola intestazione che apre la sezione. */
 const MEMBERS_HEADING_RE = /^##\s+Membri\s*$/;
 /** Heading di livello 1 o 2: chiude la sezione. `###` la divide in gruppi. */

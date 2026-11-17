@@ -370,6 +370,7 @@ export function screenFor(input: ScreensInput) {
         total={sheet.lines.length}
         capacity={sheet.capacity}
         action={sheet.action}
+        actions={sheet.actions}
         model={sheet.model}
         spawnNote={sheet.spawnNote}
         prompt={sheet.prompt}

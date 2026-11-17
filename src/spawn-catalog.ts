@@ -19,6 +19,8 @@
 // vivono la lettura del file, la validazione al confine e la risoluzione della
 // terna. Qui ci sono solo i default del deck.
 
+import type { TaskShape } from './tasks.js';
+
 // T56 — quale prompt iniziale riceve una sessione aperta su una task. È un
 // SIMBOLO: il testo vive nel catalogo dati `scripts/prompt-catalog`, che il deck
 // condivide con `deck-run` (T117). Nomi identici ai valori di `--prompt-kind`.
@@ -50,10 +52,14 @@ export type PromptKind =
  *
  * Ogni kind diverso da `recap` passa intatto: la specializzazione è un caso, non
  * una trasformazione da applicare a tutti.
+ *
+ * T212 — il secondo argomento è «la task è un PERIMETRO» (`taskIsPerimeter`),
+ * non più «è un'epica»: `recap-status-epic` fa il recap di un'epica e di un
+ * mandato, e la riga di catalogo che lo apre è una sola.
  */
-export function specializeRecap(kind: PromptKind, epic: boolean): PromptKind {
+export function specializeRecap(kind: PromptKind, perimeter: boolean): PromptKind {
   if (kind !== 'recap') return kind;
-  return epic ? 'recap-epic' : 'recap-task';
+  return perimeter ? 'recap-epic' : 'recap-task';
 }
 
 // T108 — quale modello riceve la sessione appena aperta. Quarto asse di
@@ -103,13 +109,38 @@ export const PROJECT_STATUS_MODEL: ModelKind = 'opus';
 // L'etichetta è distinta dal kind dove il kind è il nome del MECCANISMO e
 // l'etichetta quello dell'INTENZIONE: `none` è "aprire la task a mani nude",
 // `recap` è "vedere a che punto sta".
-export const DETAIL_ACTIONS: ReadonlyArray<{ kind: PromptKind; label: string }> = [
+export interface DetailAction {
+  kind: PromptKind;
+  label: string;
+}
+
+export const DETAIL_ACTIONS: ReadonlyArray<DetailAction> = [
   { kind: 'none', label: 'open' },
   { kind: 'preflight', label: 'preflight' },
   { kind: 'run', label: 'run' },
   { kind: 'recap', label: 'status' },
   { kind: 'checkpoint', label: 'checkpoint' },
 ];
+
+/**
+ * T212 — le azioni del detail PER TASK: il catalogo intero, meno ciò che su
+ * quella task non ha senso offrire.
+ *
+ * Su un mandato `run` non c'è (P3 preflight T212): il lavoro sta nei membri, e
+ * `run-task` lo rifiuterebbe. Voce assente e non voce che rifiuta con una nota,
+ * perché il deck non deve offrire ciò che sa già che non parte. L'epica tiene
+ * il suo `run`: con DLV propri resta lanciabile (T189 D2), e il rifiuto
+ * eventuale è della skill.
+ *
+ * Funzione della forma e non lista fissa: è il punto dove un'azione che vale
+ * solo su un perimetro (la regia di T203) entra senza toccare chi le disegna.
+ * L'ordine resta quello di `DETAIL_ACTIONS`, così una voce tolta non sposta le
+ * altre sotto le dita.
+ */
+export function detailActions(shape: TaskShape): ReadonlyArray<DetailAction> {
+  if (shape === 'mandate') return DETAIL_ACTIONS.filter((a) => a.kind !== 'run');
+  return DETAIL_ACTIONS;
+}
 
 // T117 — selezione DIRETTA di un'azione con la sua iniziale (`o p r s c`),
 // accanto allo scorrimento `←→`. Derivate dalle label e non cablate: una voce
@@ -118,9 +149,14 @@ export const DETAIL_ACTIONS: ReadonlyArray<{ kind: PromptKind; label: string }> 
 // Il vincolo che la derivazione impone al catalogo: le iniziali devono restare
 // DISTINTE fra loro. Due label con la stessa lettera renderebbero la seconda
 // irraggiungibile, e in silenzio — chi aggiunge una voce lo controlla qui.
-export const ACTION_HOTKEYS: Readonly<Record<string, number>> = Object.fromEntries(
-  DETAIL_ACTIONS.map((a, i) => [a.label[0]!, i]),
-);
+// T212 — derivate dalla lista DELLA TASK: su un mandato `r` non ha voce, quindi
+// non fa nulla, e gli indici seguono la lista accorciata.
+export function actionHotkeys(actions: ReadonlyArray<DetailAction>): Readonly<Record<string, number>> {
+  return Object.fromEntries(actions.map((a, i) => [a.label[0]!, i]));
+}
+
+/** Le iniziali del catalogo intero: il presidio sull'unicità delle lettere. */
+export const ACTION_HOTKEYS: Readonly<Record<string, number>> = actionHotkeys(DETAIL_ACTIONS);
 
 /**
  * L'id di un'azione di spawn — la chiave con cui un override di progetto la

@@ -19,7 +19,7 @@ import { INTAB_MARKER, TITLE_MARKER, type Spawned } from './spawn.js';
 import { specializeRecap, type ModelKind, type PromptKind } from './spawn-catalog.js';
 import type { ResolvedSpawn } from './spawn-config.js';
 import type { SpawnReply, SpawnRequest } from './spawn-endpoint.js';
-import { taskIsEpic } from './tasks.js';
+import { taskIsMandate, taskIsPerimeter } from './tasks.js';
 
 /** Quanto il deck aspetta l'annuncio di `deck-run` prima di rispondere con un
  *  errore. `deck-run` compone in millisecondi; il margine copre l'avvio di node
@@ -51,6 +51,14 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
   if (!deps.taskExists(req.task)) return { ok: false, reason: `${req.task} non è nella lista task del progetto` };
   const text = deps.taskText(req.task);
 
+  // T212/P4 — un mandato non ha lavoro proprio: il run si rifiuta qui, senza
+  // aprire una tab che `run-task` chiuderebbe con lo stesso rifiuto un turno di
+  // modello dopo. Prima del perimetro, perché il motivo vero è questo e non i
+  // DLV che il file potrebbe portare.
+  if (req.kind === 'run' && taskIsMandate(req.task, text)) {
+    return { ok: false, reason: `${req.task} è un mandato: il lavoro sta nei membri, niente run` };
+  }
+
   if (req.scope) {
     const bad = scopeProblem(req.task, text, req.scope);
     if (bad) return { ok: false, reason: bad };
@@ -58,7 +66,8 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
 
   // `recap` → la sotto-skill giusta, come fa il detail: il task file è già
   // letto, quindi il dispatcher non serve. Senza task file resta il dispatcher.
-  const kind = text === null ? req.kind : specializeRecap(req.kind, taskIsEpic(req.task, text));
+  // T212 — un mandato va a `recap-epic` come un'epica: è il recap del perimetro.
+  const kind = text === null ? req.kind : specializeRecap(req.kind, taskIsPerimeter(req.task, text));
   const d = deps.defaults(kind, req.task);
   // Il perimetro in coda al prompt dell'azione `run` GIÀ RISOLTO, nella forma
   // del modo DLV del detail: un override di progetto sul prompt di `run` vale

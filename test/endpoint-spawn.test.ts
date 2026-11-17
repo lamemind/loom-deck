@@ -101,6 +101,38 @@ test('recap su un’epica: la sotto-skill dell’epica, come il detail', async (
   assert.equal(calls.defaults[1], 'recap', 'senza task file resta il dispatcher');
 });
 
+// T212/P4 — un mandato: il run si rifiuta prima della tab, col motivo, anche
+// col perimetro; il recap è quello del perimetro; gli altri kind partono.
+const MANDATE_TEXT = `# Task: mandato
+
+- **Size**: Mandate
+
+## Membri
+
+- T1
+- T2
+
+## Deliverables Checklist
+
+- [ ] una checklist che non conta
+`;
+
+test('mandato: run rifiutato prima della tab, recap del perimetro, il resto parte', async () => {
+  const calls: Calls = { spawned: [], defaults: [] };
+  const over = { taskText: () => MANDATE_TEXT };
+  for (const r of [req({ kind: 'run' }), req({ kind: 'run', scope: [1] })]) {
+    const out = await handleSpawnRequest(r, deps(over, calls));
+    assert.equal(out.ok, false);
+    assert.match((out as { reason: string }).reason, /T9 è un mandato: il lavoro sta nei membri, niente run/);
+  }
+  assert.equal(calls.spawned.length, 0, 'nessuna tab per un rifiuto certo');
+  const recap = await handleSpawnRequest(req({ kind: 'recap' }), deps(over, calls));
+  assert.equal(recap.ok, true);
+  assert.deepEqual(calls.defaults, ['recap-epic']);
+  const preflight = await handleSpawnRequest(req({ kind: 'preflight' }), deps(over, calls));
+  assert.equal(preflight.ok, true);
+});
+
 test('rifiuti prima della tab: piattaforma, task assente, perimetro fuori range o chiuso', async () => {
   const calls: Calls = { spawned: [], defaults: [] };
   const cases: Array<[SpawnRequest, Partial<SpawnRequestDeps>, RegExp]> = [

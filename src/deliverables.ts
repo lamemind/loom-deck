@@ -24,7 +24,7 @@
 // comune.
 //
 // Logica pura, zero React/Ink.
-import { parseTaskDetail } from './tasks.js';
+import { parseTaskDetail, taskIsMandate } from './tasks.js';
 
 export interface Deliverable {
   /** Posizione 1-based fra le checkbox a colonna zero: l'indirizzo che
@@ -137,6 +137,7 @@ export function taskSize(id: string, text: string | null): string {
 }
 
 export const DLV_REASON = {
+  mandate: 'mandato: il lavoro sta nei membri',
   closed: 'task chiusa',
   empty: 'nessun deliverable in ## Deliverables Checklist',
   allDone: 'tutti i deliverable sono chiusi',
@@ -159,6 +160,11 @@ export const DLV_REASON = {
  *
  * `Size: Epic` non esclude (D2): un'epica con DLV propri resta lanciabile, e se
  * `run-task` si rifiuta il rifiuto è della skill, non del deck.
+ *
+ * `Size: Mandate` sì (P3 preflight T212), e per primo: un mandato non ha mai
+ * lavoro proprio, anche se il file porta una checklist, e il detail gli toglie
+ * già l'azione `run`. Il motivo dice dove sta il lavoro, che su un mandato
+ * chiuso conta più di «chiusa».
  */
 export function dlvGate(
   id: string,
@@ -166,6 +172,7 @@ export function dlvGate(
   dlvs: readonly Deliverable[],
   done: boolean,
 ): DlvGate {
+  if (taskIsMandate(id, text)) return { kind: 'off', reason: DLV_REASON.mandate };
   if (done) return { kind: 'off', reason: DLV_REASON.closed };
   if (dlvs.length === 0) return { kind: 'off', reason: DLV_REASON.empty };
   if (!dlvs.some((d) => !d.done)) return { kind: 'off', reason: DLV_REASON.allDone };

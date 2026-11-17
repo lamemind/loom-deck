@@ -272,6 +272,14 @@ export function useDeckActions({
     if (refuse('spawn', keyLabel, setNote)) return;
     const task = selectedTaskOr(keyLabel, 'spawnare');
     if (!task) return;
+    // T212/P4 — su un mandato `run-task` rifiuta per costruzione: la nota lo dice
+    // subito, senza una tab e un turno di modello per un rifiuto certo. La lista
+    // conosce i mandati dallo stesso scan che le dà le epiche. Gli altri kind
+    // passano: `^K` resta sul dispatcher, che riconosce già `Size: Mandate`.
+    if (kind === 'run' && model.taskRowData.mandates.has(task.id)) {
+      setNote(`${keyLabel}: ${task.id} è un mandato — niente run`);
+      return;
+    }
     // T161 — stessa risoluzione del detail, sullo stesso id di catalogo: senza,
     // `^R` e l'azione `run` del detail partirebbero su due terne diverse per lo
     // stesso comando. Il kind NON si specializza qui: gli acceleratori leggono
