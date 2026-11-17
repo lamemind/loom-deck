@@ -568,6 +568,31 @@ test('modo DLV: una task non eseguibile si apre sui campi, come prima', { skip: 
   assert.match(frame, /--prompt-kind none/, `non si è aperta sui campi: ${frame}`);
 });
 
+// ── T212 · il mandato ────────────────────────────────────────────────────
+//
+// T5 della fixture è un mandato: `DDDDDD` lo seleziona, `\r` apre il detail.
+
+const CTRL_R = '\x12';
+
+test('mandato: ^R scrive una nota e non apre nessuna tab', { skip: SKIP }, () => {
+  const frame = captureDetail(`DDDDDD${CTRL_R}`);
+  assert.match(frame, /\^R: T5 è un mandato — niente run/, `nota assente: ${frame}`);
+  assert.doesNotMatch(frame, /--prompt-kind run/, `il run è partito: ${frame}`);
+});
+
+test('mandato: nel detail `r` non seleziona niente, ⏎ resta su open', { skip: SKIP }, () => {
+  // Sul mandato il detail si apre sui campi (modo DLV spento) con l'azione
+  // `open`: una `r` che puntasse ancora all'indice di `run` nel catalogo intero
+  // selezionerebbe `status`, e partirebbe un recap.
+  const frame = captureDetail('DDDDDD\rr\r');
+  assert.match(frame, /--prompt-kind none/, `r ha selezionato un'azione: ${frame}`);
+});
+
+test('mandato: `s` nel detail apre il recap del perimetro', { skip: SKIP }, () => {
+  const frame = captureDetail('DDDDDD\rs\r');
+  assert.match(frame, /recap-status-epic T5/, `non è il recap del mandato: ${frame}`);
+});
+
 test('detail: la riga modello risponde a ←→ quando è in fuoco', { skip: SKIP }, () => {
   // Due `D` portano dalla riga azione a quella modello; `R` (→) avanza di una
   // voce nel giro di `MODELS`, cioè da `opus` (il modello dell'azione

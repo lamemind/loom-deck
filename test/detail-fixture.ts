@@ -10,12 +10,14 @@
 // aver misurato niente. Qui la popolazione è del test.
 //
 // Ordine della lista (Pri ↓, poi id ↑): T1 è l'unico 🔥, quindi `DD` lo apre;
-// `DDD`, `DDDD` e `DDDDD` aprono T2, T3 e T4.
+// `DDD`, `DDDD`, `DDDDD` e `DDDDDD` aprono T2, T3, T4 e T5.
 //
 //   T1  M, preflight fatto, 14 DLV (1, 3, 8 fatti) → si apre sulla lista DLV
 //   T2  ✔️ in tasks.md, DLV tutti fatti            → campi; lista spenta
 //   T3  Size L senza `### Preflight`               → lista DLV con l'avviso
 //   T4  nessun `## Deliverables Checklist`          → campi; lista vuota
+//   T5  Size: Mandate, membri T1 T2 T3 T9 (T9 senza riga), con una checklist
+//       → coda `[1/3`, campi senza run, lista DLV spenta col motivo (T212)
 //
 // Il blocco `spawn` sovrascrive modello e titolo di `run`: il modo DLV deve
 // ereditarli (D3), ed è il caso che un default coincidente coprirebbe.
@@ -49,6 +51,7 @@ export function detailProject(): { proj: string; env: NodeJS.ProcessEnv } {
     ['T2', '⚡', '✔️', 'chiusa'],
     ['T3', '⚡', '🔵', 'Size L senza preflight'],
     ['T4', '⚡', '🔵', 'senza deliverable'],
+    ['T5', '⚡', '🔵', 'mandato del collaudo'],
   ];
   writeFileSync(
     join(proj, 'runtime', 'tasks.md'),
@@ -63,7 +66,7 @@ export function detailProject(): { proj: string; env: NodeJS.ProcessEnv } {
     { length: 40 },
     (_, i) => `Riga ${i + 1} della **descrizione**, con \`codice\` e un glifo largo 🧵 nel testo della task.`,
   );
-  const file = (id: string, size: string, dlvs: string[], decisions: string[]) =>
+  const file = (id: string, size: string, dlvs: string[], decisions: string[], extra: string[] = []) =>
     [
       `# Task: ${id} del collaudo`,
       '',
@@ -74,6 +77,7 @@ export function detailProject(): { proj: string; env: NodeJS.ProcessEnv } {
       '',
       ...body,
       '',
+      ...extra,
       ...(dlvs.length > 0 ? ['## Deliverables Checklist', '', ...dlvs, ''] : []),
       '## Decisions',
       '',
@@ -94,5 +98,13 @@ export function detailProject(): { proj: string; env: NodeJS.ProcessEnv } {
   writeFileSync(join(tasks, 'T2-chiusa.md'), file('T2', 'M', ['- [x] primo', '- [x] secondo'], preflight));
   writeFileSync(join(tasks, 'T3-size-l.md'), file('T3', 'L', ['- [ ] primo', '- [ ] secondo'], []));
   writeFileSync(join(tasks, 'T4-senza-dlv.md'), file('T4', 'M', [], preflight));
+  // T212 — il mandato: T2 è l'unico membro chiuso, T9 non ha riga in tasks.md e
+  // resta fuori dal conteggio. La checklist c'è apposta: il modo DLV resta spento
+  // lo stesso.
+  const members = ['## Membri', '', '- T1 (eseguibile)', '- T2 (chiusa)', '- T3 (Size L)', '- T9 (purgata)', ''];
+  writeFileSync(
+    join(tasks, 'T5-mandato.md'),
+    file('T5', 'Mandate', ['- [ ] una voce che il mandato non esegue'], preflight, members),
+  );
   return { proj, env: { HOME: join(root, 'home') } };
 }

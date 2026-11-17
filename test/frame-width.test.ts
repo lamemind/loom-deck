@@ -686,6 +686,14 @@ const DETAIL_SCENARIOS: Array<[string, string, number[], string]> = [
   // La ricerca aperta sopra la lista: due righe fisse in più, pagate dalla
   // lista e dal testo insieme.
   ['detail DLV · ricerca aperta', `DD\r${CTRL_F}glifo`, [100], 'cerca glifo'],
+  // T212 — il mandato T5. In lista: la Prog accesa e la coda dei membri in
+  // quadra, nella colonna riservata — `[1/3` e non `[1/4`, perché T9 non ha riga.
+  ['lista · riga di mandato', 'DDDDDD', [80, 100, 176], '[1/3'],
+  // Nel detail la riga azioni senza `run`: `preflight` e `status` adiacenti
+  // sono la prova, perché su ogni altra task `run` sta fra i due.
+  ['detail · mandato senza run', 'DDDDDD\r', [100, 176], '[ preflight ]  [ status ]'],
+  // Il modo DLV spento col motivo, anche con una checklist nel file.
+  ['detail DLV · mandato', 'DDDDDD\rT', [80, 176], 'mandato: il lavoro sta nei membri'],
 ];
 
 for (const [label, keys, widths, needle] of DETAIL_SCENARIOS) {
