@@ -5,6 +5,7 @@ import { cut, cutParts, wrapLines } from '../width.js';
 import { previewTextWidth, previewTitleParts } from '../layout.js';
 import {
   LIVE_BUSY,
+  LIVE_HEADLESS,
   LIVE_IDLE,
   META_KEYS,
   SID_CHARS,
@@ -51,6 +52,8 @@ export type PreviewProps =
       note: string;
       /** T62 — processo vivo che sta scrivendo questo transcript; null = chiuso. */
       live: LiveSession | null;
+      /** T206 — turno headless in corso su questo transcript; null = nessuno. */
+      headless: LiveSession | null;
       /** T148 — modello selezionato per il prossimo resume/fork di questa riga. */
       resumeModel: ModelKind;
     }
@@ -86,6 +89,7 @@ export function PreviewPane(p: PreviewProps) {
           origin={p.origin}
           note={p.note}
           live={p.live}
+          headless={p.headless}
           resumeModel={p.resumeModel}
         />
       )}
@@ -183,6 +187,7 @@ export function SessionPreview({
   origin,
   note,
   live,
+  headless,
   resumeModel,
 }: {
   s: Session;
@@ -192,6 +197,7 @@ export function SessionPreview({
   origin: string | null;
   note: string;
   live: LiveSession | null;
+  headless: LiveSession | null;
   resumeModel: ModelKind;
 }) {
   // Il prefisso `» `/`« ` è largo 2 e sta SULLA riga: va tolto dal budget di
@@ -263,6 +269,8 @@ export function SessionPreview({
           <Text color={live.status === 'busy' ? 'yellow' : 'green'}>
             {` · ${live.status === 'busy' ? LIVE_BUSY : LIVE_IDLE} viva pid ${live.pid} (${live.status})`}
           </Text>
+        ) : headless ? (
+          <Text color="magenta">{` · ${LIVE_HEADLESS} turno headless pid ${headless.pid} (${headless.state || '?'})`}</Text>
         ) : null}
       </Text>
       {/* T148 — riga FISSA (SESSION_DETAIL_FIXED, ora 3): quale modello

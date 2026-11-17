@@ -105,6 +105,24 @@ export function modelAlias(id: string): ModelKind | null {
 export const LIVE_IDLE = '●';
 export const LIVE_BUSY = '◍';
 export const LIVE_NONE = ' ';
+/** T206 — un turno headless in corso (`claude -p`): un processo scrive sul
+ *  transcript, ma non c'è nessuna tab a cui tornare. Glifo nuovo e non `◍`
+ *  ricolorato: `◍` promette una tab che lavora, e il `⏎` su una headless non
+ *  porta da nessuna parte. Stessa famiglia di cerchi, stessa larghezza 1 e
+ *  concorde (`agrees`), quindi la colonna resta scandibile in verticale. */
+export const LIVE_HEADLESS = '◐';
+
+/** T206 — il glifo e il colore della colonna liveness per UNA conversazione o
+ *  per il rollup di una task: un posto solo per la scelta, che lista sessioni,
+ *  riga task e preview leggono uguale. `null` = chiusa. */
+export function liveCell(
+  live: { status: 'idle' | 'busy' } | null | undefined,
+  headless: boolean,
+): { glyph: string; color: 'yellow' | 'green' | 'magenta' | undefined } {
+  if (live) return live.status === 'busy' ? { glyph: LIVE_BUSY, color: 'yellow' } : { glyph: LIVE_IDLE, color: 'green' };
+  if (headless) return { glyph: LIVE_HEADLESS, color: 'magenta' };
+  return { glyph: LIVE_NONE, color: undefined };
+}
 
 /**
  * T134 — colonna di stato della riga inbox, larga 2 come la cella marker della

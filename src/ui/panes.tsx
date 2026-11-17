@@ -16,13 +16,11 @@ import { paneTextWidth } from '../layout.js';
 import {
   CARET,
   CARET_OFF,
-  LIVE_BUSY,
-  LIVE_IDLE,
-  LIVE_NONE,
   MODEL_W,
   SID_CHARS,
   TASK_EMPTY,
   WARN,
+  liveCell,
   metaCount,
   modelShort,
   relTime,
@@ -311,6 +309,7 @@ export function SessionsPane({
   sessionPriority,
   projectCore,
   live,
+  headless,
 }: {
   parentLabel: string;
   isSpot: boolean;
@@ -355,6 +354,9 @@ export function SessionsPane({
    *  `/clear`: il flag dice «questo transcript è l'attivo di un processo vivo»,
    *  non «la tab esiste ancora»). */
   live: Map<string, LiveSession>;
+  /** T206 — sessionId → turno headless in corso (`claude -p`). Mai una chiave
+   *  di `live`: una conversazione è o una tab viva, o un turno headless. */
+  headless: ReadonlyMap<string, LiveSession>;
 }) {
   return (
     <Box
@@ -453,6 +455,10 @@ export function SessionsPane({
           // appartiene la conversazione (pin/task/spot), questa dice se è aperta
           // adesso. Farle condividere una cella perderebbe una delle due.
           const liveEntry = live.get(s.sessionId);
+          // T206 — un turno headless in corso ha la sua resa nella stessa
+          // colonna: `◐` magenta, id in grassetto come una viva.
+          const cell = liveCell(liveEntry, headless.has(s.sessionId));
+          const running = cell.color !== undefined;
           // T133 D10 — la colonna vive nella sola vista "tutte". Il ramo sulle
           // pinnate esisteva perché una pinnata stava in lista anche sotto un
           // parent che non era il suo; ora ogni riga è figlia del parent
@@ -528,10 +534,8 @@ export function SessionsPane({
               ) : (
                 <Text dimColor>{pad('○', 2)}</Text>
               )}{' '}
-              <Text color={liveEntry ? (liveEntry.status === 'busy' ? 'yellow' : 'green') : undefined}>
-                {liveEntry ? (liveEntry.status === 'busy' ? LIVE_BUSY : LIVE_IDLE) : LIVE_NONE}
-              </Text>
-              <Text color={liveEntry ? (liveEntry.status === 'busy' ? 'yellow' : 'green') : 'cyan'} bold={Boolean(liveEntry)}>
+              <Text color={cell.color}>{cell.glyph}</Text>
+              <Text color={cell.color ?? 'cyan'} bold={running}>
                 {s.sessionId.slice(0, SID_CHARS)}
               </Text>{' '}
               {/* T110 — sempre accesa, in ogni vista: il modello non è scritto

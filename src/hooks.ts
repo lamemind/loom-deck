@@ -7,7 +7,7 @@ import { useStdout } from 'ink';
 import { statSync } from 'node:fs';
 import { loadTasks, loadTaskDetail, type Task, type TaskDetail } from './tasks.js';
 import { discoverProjectSessions, type Session } from './sessions.js';
-import { discoverLiveSessions, liveSig, type LiveSession } from './live-sessions.js';
+import { discoverProjectProcesses, liveSig, type LiveSession } from './live-sessions.js';
 import { loadSessionIndex, type SessionIndex } from './task-index.js';
 import { fillSidecarGaps } from './session-meta.js';
 import { aliveIds, liveMarkPlan, writeLiveMarks, RESTORE_HOLD_MS } from './live-marks.js';
@@ -181,6 +181,9 @@ export function useSessions(projectRoot: string, core: string | null) {
     notes: Map<string, string>;
     priority: Set<string>;
     live: Map<string, LiveSession>;
+    /** T206 — i turni headless in corso, accanto alle tab vive e mai dentro
+     *  `live`: chi legge `live` presuppone una tab. */
+    headless: Map<string, LiveSession>;
     liveMarks: Map<string, number>;
     restoring: boolean;
   }>({
@@ -191,6 +194,7 @@ export function useSessions(projectRoot: string, core: string | null) {
     notes: new Map(),
     priority: new Set(),
     live: new Map(),
+    headless: new Map(),
     liveMarks: new Map(),
     restoring: false,
   });
@@ -238,11 +242,18 @@ export function useSessions(projectRoot: string, core: string | null) {
       // T175 — dove la liveness manca non si interroga nemmeno il registry: la
       // mappa vuota è il dato onesto, e chi ne dipende per una guardia (`CANC`)
       // legge la mappa delle funzioni, non questa.
+      // T206 — tab e turni headless nella stessa lettura del registry: due mappe
+      // da due letture potrebbero vedere lo stesso processo in tutte e due, o in
+      // nessuna, se il turno parte o finisce fra l'una e l'altra.
       let live: Map<string, LiveSession>;
+      let headless: Map<string, LiveSession>;
       try {
-        live = isAvailable('liveSessions') ? discoverLiveSessions(projectRoot) : new Map();
+        ({ live, headless } = isAvailable('liveSessions')
+          ? discoverProjectProcesses(projectRoot)
+          : { live: new Map(), headless: new Map() });
       } catch {
         live = new Map();
+        headless = new Map();
       }
       const { bindings, forkOf, pinned, notes, priority } = index;
       // T162 — i campi derivati delle PINNATE, allineati prima della signature.
@@ -322,13 +333,15 @@ export function useSessions(projectRoot: string, core: string | null) {
         [...priority].sort().join(',') +
         '#' +
         liveSig(live) +
+        '#' +
+        liveSig(headless) +
         // T181 — la marca e il restore in corso decidono il bottone in testata.
         '#' +
         [...liveMarks.entries()].map(([k, v]) => `${k}@${v}`).sort().join(',') +
         (restoring ? '#restoring' : '');
       if (sig === lastSig) return;
       lastSig = sig;
-      setState({ sessions, bindings, forkOf, pinned, notes, priority, live, liveMarks, restoring });
+      setState({ sessions, bindings, forkOf, pinned, notes, priority, live, headless, liveMarks, restoring });
     };
     reloadRef.current = reload;
     reload();

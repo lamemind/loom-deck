@@ -663,6 +663,7 @@ function Deck({
             sessionPriority={model.sessionPriority}
             projectCore={model.projectCore}
             live={model.live}
+            headless={model.headless}
           />
         )}
       </Box>
@@ -690,6 +691,7 @@ function Deck({
           origin={model.forkOf.get(model.selSessionObj.sessionId) ?? null}
           note={model.sessionNotes.get(model.selSessionObj.sessionId) ?? ''}
           live={model.live.get(model.selSessionObj.sessionId) ?? null}
+          headless={model.headless.get(model.selSessionObj.sessionId) ?? null}
           resumeModel={model.resumeModel}
         />
       ) : null}

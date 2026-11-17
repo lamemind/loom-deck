@@ -1,6 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { liveSig, parseLiveEntry, procStartOf } from '../src/live-sessions.js';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  discoverProjectProcesses,
+  liveSig,
+  parseLiveEntry,
+  parseRegistryEntry,
+  processClass,
+  procStartOf,
+} from '../src/live-sessions.js';
 import type { LiveSession } from '../src/live-sessions.js';
 
 // Riga reale di /proc/<pid>/stat, troncata dopo il campo 22 (starttime = 48757):
@@ -87,6 +97,45 @@ test('parseLiveEntry: un job in background non è una conversazione', () => {
   // Il gemello vecchio: uno spawn dell'SDK, che si dichiara sull'entrypoint.
   const sdk = JSON.stringify({ ...JSON.parse(ENTRY), entrypoint: 'sdk' });
   assert.equal(parseLiveEntry(sdk, 10358), null);
+});
+
+test('parseLiveEntry: un turno claude -p non è una tab (T206)', () => {
+  const sdkCli = JSON.stringify({ ...JSON.parse(ENTRY), entrypoint: 'sdk-cli', kind: 'interactive' });
+  assert.equal(parseLiveEntry(sdkCli, 10358), null);
+});
+
+test('processClass: tab e headless si riconoscono in positivo, il resto è fuori (T206)', () => {
+  assert.equal(processClass({ entrypoint: 'cli', kind: 'interactive' }), 'tab');
+  assert.equal(processClass({ entrypoint: 'sdk-cli', kind: 'interactive' }), 'headless');
+  // Il job in background scrive `cli` come una tab: allargare il filtro lo
+  // farebbe entrare.
+  assert.equal(processClass({ entrypoint: 'cli', kind: 'bg' }), null);
+  assert.equal(processClass({ entrypoint: 'sdk-cli', kind: 'bg' }), null);
+  assert.equal(processClass({ entrypoint: 'sdk', kind: 'interactive' }), null);
+  // Campi assenti: il default di `parseRegistryEntry` vale tab.
+  const r = parseRegistryEntry(ENTRY, 1);
+  assert.ok(r);
+  assert.equal(processClass(r), 'tab');
+});
+
+test('discoverProjectProcesses: tab e headless in due mappe, una lettura sola (T206)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'deck-live-'));
+  const base = JSON.parse(ENTRY);
+  const write = (pid: number, extra: Record<string, unknown>) =>
+    writeFileSync(join(root, `${pid}.json`), JSON.stringify({ ...base, pid, ...extra }));
+  write(1, { sessionId: 'tab-1', entrypoint: 'cli', kind: 'interactive' });
+  write(2, { sessionId: 'hl-2', entrypoint: 'sdk-cli', kind: 'interactive' });
+  write(3, { sessionId: 'bg-3', entrypoint: 'cli', kind: 'bg' });
+  write(4, { sessionId: 'hl-4', entrypoint: 'sdk-cli', kind: 'interactive', cwd: '/altro/progetto' });
+  // Stessa conversazione in tab e in headless: resta fra le vive.
+  write(5, { sessionId: 'both', entrypoint: 'cli', kind: 'interactive' });
+  write(6, { sessionId: 'both', entrypoint: 'sdk-cli', kind: 'interactive' });
+  write(7, { sessionId: 'hl-dead', entrypoint: 'sdk-cli', kind: 'interactive' });
+  const alive = (pairs: readonly { pid: number }[]) => pairs.map((p) => p.pid !== 7);
+  const { live, headless } = discoverProjectProcesses('/home/u/proj', root, alive);
+  assert.deepEqual([...live.keys()].sort(), ['both', 'tab-1']);
+  assert.deepEqual([...headless.keys()].sort(), ['hl-2']);
+  assert.equal(headless.get('hl-2')?.pid, 2);
 });
 
 test('parseLiveEntry: kind ed entrypoint assenti valgono interattiva', () => {

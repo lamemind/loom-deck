@@ -40,6 +40,10 @@ export type LiveStatus = 'idle' | 'busy';
 export interface TaskLive {
   count: number;
   status: LiveStatus;
+  /** T206 — quante delle `count` sono tab; le altre sono turni headless in
+   *  corso. A zero tab la riga porta il glifo headless, altrimenti vince la
+   *  tab: una tab è un posto dove tornare, ed è la cosa più utile da dire. */
+  tabs: number;
 }
 
 export interface LiveSession {
@@ -183,7 +187,9 @@ export function parseLiveEntry(
   // Claude Code scrive `entrypoint:"cli"` come una sessione vera e si distingue
   // solo per `kind:"bg"`. Entrambi assenti valgono come sessione interattiva —
   // una versione del CLI che non li scrivesse non deve svuotare la lista.
-  if (r.entrypoint !== 'cli' || r.kind !== 'interactive') return null;
+  // T206 — un turno `claude -p` (`sdk-cli`) resta fuori da qui: ha la sua
+  // classe (`processClass`) e la sua mappa (`discoverProjectProcesses`).
+  if (processClass(r) !== 'tab') return null;
   return { entry: r.entry, procStart: r.procStart };
 }
 
@@ -359,6 +365,70 @@ export function liveRequestedNames(root: string = liveSessionsRoot()): string[] 
     if (name !== null) names.push(name);
   }
   return names;
+}
+
+/**
+ * T206 — che cosa è il processo di un'entry del registry, per il deck.
+ *
+ * `tab` — una conversazione in una tab (`cli` + `interactive`): la viva di
+ * sempre, quella a cui il `⏎` porta davanti la tab.
+ *
+ * `headless` — un turno `claude -p` in corso (`sdk-cli` + `interactive`, T205):
+ * un processo scrive sul transcript, ma non c'è nessuna tab a cui tornare.
+ *
+ * `null` — tutto il resto, job in background (`cli` + `bg`) compresi. Le due
+ * classi si riconoscono IN POSITIVO, campo per campo: allargare il filtro delle
+ * tab farebbe entrare anche i job in background, che scrivono `entrypoint:"cli"`
+ * come una tab vera.
+ */
+export function processClass(r: Pick<RegistryEntry, 'entrypoint' | 'kind'>): 'tab' | 'headless' | null {
+  if (r.kind !== 'interactive') return null;
+  if (r.entrypoint === 'cli') return 'tab';
+  if (r.entrypoint === 'sdk-cli') return 'headless';
+  return null;
+}
+
+/** T206 — i processi vivi del progetto, divisi per classe. Due mappe e non un
+ *  campo in più su `LiveSession`: tutto ciò che legge `live` (focus, restore,
+ *  close dell'endpoint, marca nel sidecar) resta fermo sulle sole tab senza
+ *  doverlo sapere, e una headless non può finire per errore in uno di quei rami. */
+export interface ProjectProcesses {
+  live: Map<string, LiveSession>;
+  headless: Map<string, LiveSession>;
+}
+
+/**
+ * T206 — le tab vive E i turni headless in corso del progetto corrente, in una
+ * lettura sola del registry.
+ *
+ * Una conversazione che comparisse in tutte e due — una tab aperta mentre un
+ * turno headless gira, cosa che `loom-deck-headless` rifiuta ma un `claude -p`
+ * lanciato a mano no — sta solo fra le vive: c'è una tab a cui tornare, e la
+ * tab è ciò che il `⏎` sa fare.
+ */
+export function discoverProjectProcesses(
+  projectRoot: string,
+  root: string = liveSessionsRoot(),
+  liveness: Liveness = platformLiveness(),
+): ProjectProcesses {
+  const live = new Map<string, LiveSession>();
+  const headless = new Map<string, LiveSession>();
+  const kept = liveEntries(
+    root,
+    (e) => isWithin(e.cwd, projectRoot),
+    liveness,
+    (content, pid) => {
+      const r = parseRegistryEntry(content, pid);
+      return r && processClass(r) ? r : null;
+    },
+  );
+  for (const r of kept) {
+    if (processClass(r) === 'tab') live.set(r.entry.sessionId, r.entry);
+  }
+  for (const r of kept) {
+    if (processClass(r) === 'headless' && !live.has(r.entry.sessionId)) headless.set(r.entry.sessionId, r.entry);
+  }
+  return { live, headless };
 }
 
 /** Signature del poll: cambia quando cambia l'insieme delle vive O lo stato di

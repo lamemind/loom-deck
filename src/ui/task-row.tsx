@@ -19,11 +19,9 @@ import { scanText, sliceLine } from '../text-search.js';
 import {
   CARET,
   CARET_OFF,
-  LIVE_BUSY,
-  LIVE_IDLE,
-  LIVE_NONE,
   blockCell,
   displayProg,
+  liveCell,
 } from '../glyphs.js';
 import { padId, rowTail, type BlockMark, type TaskRowData } from '../view.js';
 import type { Task } from '../tasks.js';
@@ -68,12 +66,15 @@ export function TaskRow({
   // Stessa resa dell'hash conversazione del pane sessioni, perché è lo stesso
   // stato: `◍` giallo di là e `◍` nero di qua sarebbero due grafie di una cosa
   // sola.
-  const color = live ? (live.status === 'busy' ? 'yellow' : 'green') : undefined;
+  //
   // Attaccato all'id, non staccato: il glifo qualifica QUELL'id, e uno spazio in
   // mezzo lo farebbe leggere come una colonna a sé. Consuma il primo dei due
   // spazi verso Pri, quindi la riga non si allarga di una cella quando si
-  // accende — `LIVE_NONE` è uno spazio, e tutti e tre sono larghi 1.
-  const glyph = live ? (live.status === 'busy' ? LIVE_BUSY : LIVE_IDLE) : LIVE_NONE;
+  // accende — `LIVE_NONE` è uno spazio, e tutti i glifi sono larghi 1.
+  //
+  // T206/P4 — `◐` solo quando le vive della task sono TUTTE turni headless: con
+  // almeno una tab vince la tab, che è un posto dove tornare.
+  const { glyph, color } = liveCell(live && live.tabs > 0 ? live : null, live !== null && live.tabs === 0);
   // T67/D4 — su un cappello la cella di stato descrive il cappello (non
   // eseguibile) e non le figlie, quindi resta vuota; D2/P9 — la coda diventa il
   // rollup delle figlie invece del contatore conversazioni.

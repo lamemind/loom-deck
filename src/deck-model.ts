@@ -12,7 +12,7 @@
 // componente. Quello che non va fatto è passarlo PEZZO PER PEZZO ai
 // consumatori — gli attuatori e il dispatch ne ricevono l'oggetto intero, ed è
 // la ragione per cui i loro conti di parametri restano leggibili.
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { loadArchivableDays, loadIdentity, type LaunchEntry } from './config.js';
 import {
   useArchivable,
@@ -115,6 +115,7 @@ export function rollupChildren(
   sessions: Session[],
   bindings: Map<string, string>,
   live: Map<string, { status: 'idle' | 'busy' }>,
+  headless: ReadonlyMap<string, unknown> = new Map(),
 ): { childCount: Map<string, number>; taskLive: Map<string, TaskLive>; spotCount: number } {
   const childCount = new Map<string, number>();
   const taskLive = new Map<string, TaskLive>();
@@ -127,13 +128,18 @@ export function rollupChildren(
     }
     childCount.set(bound, (childCount.get(bound) ?? 0) + 1);
     const entry = live.get(s.sessionId);
-    if (!entry) continue;
+    // T206 — un turno headless in corso conta fra le vive del contatore
+    // (`(vive/totali`): la domanda della colonna è «qui sta succedendo qualcosa
+    // adesso?», e un `claude -p` che lavora sulla task è proprio quello. Non
+    // tocca `status`, che è lo stato di una TAB; la riga lo sa da `tabs`.
+    if (!entry && !headless.has(s.sessionId)) continue;
     const prev = taskLive.get(bound);
     // Rollup a stato misto: vince `busy`. Fra N vive, quella che sta lavorando è
     // la ragione per cui si guarda la riga.
     taskLive.set(bound, {
       count: (prev?.count ?? 0) + 1,
-      status: prev?.status === 'busy' || entry.status === 'busy' ? 'busy' : 'idle',
+      status: prev?.status === 'busy' || entry?.status === 'busy' ? 'busy' : 'idle',
+      tabs: (prev?.tabs ?? 0) + (entry ? 1 : 0),
     });
   }
   return { childCount, taskLive, spotCount };
@@ -244,6 +250,7 @@ export function useDeckModel({
     notes: sessionNotes,
     priority: sessionPriority,
     live,
+    headless,
     liveMarks,
     restoring,
     holdLive,
@@ -448,7 +455,7 @@ export function useDeckModel({
   // alla vista che sceglie l'header (D2 create).
   const parentLabel = isAll ? 'tutte' : isSpot ? 'spot' : selectedTaskId ?? '—';
 
-  const { childCount, taskLive, spotCount } = rollupChildren(sessions, bindings, live);
+  const { childCount, taskLive, spotCount } = rollupChildren(sessions, bindings, live, headless);
   const taskRowData: TaskRowData = {
     childCount,
     live: taskLive,
@@ -490,9 +497,12 @@ export function useDeckModel({
   // T100 — «intera» ora vuol dire la lista della vista di DEFAULT (`assembled`),
   // non quella a schermo: il contatore di una voce del catalogo non può
   // dipendere da quale voce è selezionata, o navigare muoverebbe i numeri.
+  // T206/P5 — la vista «vive» risponde a «cosa gira adesso»: un turno headless
+  // in corso ci sta, col suo glifo. Un predicato solo per contatore e righe.
+  const isRunning = useCallback((id: string) => live.has(id) || headless.has(id), [live, headless]);
   const liveCount = useMemo(
-    () => assembled.rows.filter((r) => live.has(r.sessionId)).length,
-    [assembled, live],
+    () => assembled.rows.filter((r) => isRunning(r.sessionId)).length,
+    [assembled, isRunning],
   );
   // T181 — le conversazioni che il bottone di restore riapre, nell'ordine di
   // riapertura. L'insieme vivo è lo stesso incrocio `live ∩ sessions` che la
@@ -511,8 +521,8 @@ export function useDeckModel({
   };
   // T100 — le righe a schermo sono quelle della vista attiva.
   const sessionRows = useMemo(
-    () => selectSessionRows(sessionViewId, { assembled, isLive: (id) => live.has(id) }),
-    [sessionViewId, assembled, live],
+    () => selectSessionRows(sessionViewId, { assembled, isLive: isRunning }),
+    [sessionViewId, assembled, isRunning],
   );
   const selSessionObj = selectedSession(sessionRows, selSessionId);
   const sessionCols = useMemo(
@@ -779,6 +789,7 @@ export function useDeckModel({
     sessionNotes,
     sessionPriority,
     live,
+    headless,
     reloadSessions,
     detail,
     // T181 — restore delle conversazioni dell'ultimo insieme vivo

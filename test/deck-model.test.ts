@@ -89,6 +89,28 @@ test('rollupChildren: fra N vive a stato misto vince busy', () => {
   assert.equal(taskLive.get('T1')?.count, 2);
 });
 
+test('rollupChildren: un turno headless in corso conta fra le vive, non fra le tab (T206)', () => {
+  const sessions = [session('a'), session('b'), session('c')];
+  const bindings = new Map([
+    ['a', 'T1'],
+    ['b', 'T1'],
+    ['c', 'T2'],
+  ]);
+  const live = new Map<string, { status: 'idle' | 'busy' }>([['a', { status: 'idle' }]]);
+  const headless = new Map([
+    ['b', {}],
+    ['c', {}],
+  ]);
+  const { taskLive } = rollupChildren(sessions, bindings, live, headless);
+  assert.deepEqual(taskLive.get('T1'), { count: 2, status: 'idle', tabs: 1 }, 'la tab vince sul glifo, il contatore le conta tutte e due');
+  assert.deepEqual(taskLive.get('T2'), { count: 1, status: 'idle', tabs: 0 }, 'zero tab: la riga porta il glifo headless');
+});
+
+test('rollupChildren: un turno headless senza transcript non conta (T206)', () => {
+  const { taskLive } = rollupChildren([], new Map([['b', 'T1']]), new Map(), new Map([['b', {}]]));
+  assert.equal(taskLive.has('T1'), false, 'vive ≤ totali vale anche per le headless');
+});
+
 test('rollupChildren: una task senza conversazioni vive non compare in taskLive', () => {
   const { taskLive } = rollupChildren([session('a')], new Map([['a', 'T1']]), new Map());
   assert.equal(taskLive.has('T1'), false, 'nessuna viva ≠ zero vive: la riga non porta il glifo');
