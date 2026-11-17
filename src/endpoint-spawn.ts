@@ -13,8 +13,7 @@
 // (`SpawnRequestDeps`), così il test esegue il percorso intero con un
 // `deck-run` vero e un terminale finto.
 import type { ChildProcess } from 'node:child_process';
-import { parseDeliverables } from './deliverables.js';
-import { dlvPrompt } from './overlays/dlv-mode.js';
+import { dlvPrompt, parseDeliverables } from './deliverables.js';
 import { INTAB_MARKER, TITLE_MARKER, type Spawned } from './spawn.js';
 import { specializeRecap, type ModelKind, type PromptKind } from './spawn-catalog.js';
 import type { ResolvedSpawn } from './spawn-config.js';
@@ -26,15 +25,21 @@ import { taskIsMandate, taskIsPerimeter } from './tasks.js';
  *  su una macchina carica, non uno spawn che può legittimamente durare. */
 export const ANNOUNCE_TIMEOUT_MS = 15_000;
 
-export interface SpawnRequestDeps {
-  /** Il motivo per cui lo spawn è spento su questa piattaforma, o `null`. */
-  spawnOff: () => string | null;
+/** Ciò che serve a risolvere una richiesta in un'azione di catalogo: la task, il
+ *  suo file, la terna dell'azione. Lo usano l'endpoint e `loom-deck-headless`
+ *  (T205), che apre lo stesso turno senza una tab. */
+export interface SpawnPlanDeps {
   /** La task ha una riga in `tasks.md`. */
   taskExists: (id: string) => boolean;
   /** Il testo del task file, o `null` se non si trova. */
   taskText: (id: string) => string | null;
   /** La terna dell'azione di catalogo sulla task (default ← override). */
   defaults: (kind: PromptKind, taskId: string) => ResolvedSpawn;
+}
+
+export interface SpawnRequestDeps extends SpawnPlanDeps {
+  /** Il motivo per cui lo spawn è spento su questa piattaforma, o `null`. */
+  spawnOff: () => string | null;
   /** Lo spawn del tasto: sidecar, poi `deck-run`. `null` se rifiutato. */
   spawn: (
     id: string,
@@ -45,9 +50,39 @@ export interface SpawnRequestDeps {
   announceTimeoutMs?: number;
 }
 
+/** Una richiesta risolta: il kind effettivo, la terna e il prompt col
+ *  perimetro, o il rifiuto col suo motivo. */
+export type SpawnPlan =
+  | { ok: true; kind: PromptKind; model: ModelKind; note: string; prompt: string }
+  | { ok: false; reason: string };
+
 export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDeps): Promise<SpawnReply> {
   const off = deps.spawnOff();
   if (off) return { ok: false, reason: off };
+  const plan = planSpawnRequest(req, deps);
+  if (!plan.ok) return plan;
+  const { kind, model, note, prompt } = plan;
+
+  const out = deps.spawn(req.task, model, note, prompt);
+  if (!out) return { ok: false, reason: 'spawn rifiutato dal deck' };
+  const announced = await awaitAnnounce(out.spawned.child, deps.announceTimeoutMs ?? ANNOUNCE_TIMEOUT_MS);
+  if ('error' in announced) return { ok: false, reason: announced.error };
+  const base = { ok: true as const, sessionId: out.sessionId, task: req.task, kind, model, prompt };
+  if ('inert' in announced) return { ...base, title: null, inTab: null, inert: true };
+  return { ...base, title: announced.title, inTab: announced.inTab };
+}
+
+/**
+ * La richiesta contro il progetto: la task esiste, un run non cade su un
+ * mandato, il perimetro è fatto di DLV aperti; poi l'azione di catalogo, la sua
+ * terna e il prompt col perimetro in coda.
+ *
+ * T205 — separata dallo spawn perché la stessa richiesta apre anche un turno
+ * headless (`loom-deck-headless open`): due copie di questi rifiuti
+ * divergerebbero al primo ritocco, e il turno headless partirebbe dove la tab
+ * è rifiutata.
+ */
+export function planSpawnRequest(req: SpawnRequest, deps: SpawnPlanDeps): SpawnPlan {
   if (!deps.taskExists(req.task)) return { ok: false, reason: `${req.task} non è nella lista task del progetto` };
   const text = deps.taskText(req.task);
 
@@ -75,14 +110,7 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
   const prompt = req.scope ? dlvPrompt(d.prompt, req.scope) : (d.prompt ?? '');
   const model = req.model ?? d.model;
   const note = req.note ?? d.title ?? '';
-
-  const out = deps.spawn(req.task, model, note, prompt);
-  if (!out) return { ok: false, reason: 'spawn rifiutato dal deck' };
-  const announced = await awaitAnnounce(out.spawned.child, deps.announceTimeoutMs ?? ANNOUNCE_TIMEOUT_MS);
-  if ('error' in announced) return { ok: false, reason: announced.error };
-  const base = { ok: true as const, sessionId: out.sessionId, task: req.task, kind, model, prompt };
-  if ('inert' in announced) return { ...base, title: null, inTab: null, inert: true };
-  return { ...base, title: announced.title, inTab: announced.inTab };
+  return { ok: true, kind, model, note, prompt };
 }
 
 /** Il perimetro chiesto contro i DLV del task file: un numero fuori lista o un

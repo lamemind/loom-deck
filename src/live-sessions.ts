@@ -170,6 +170,40 @@ export function parseLiveEntry(
   content: string,
   pid: number,
 ): { entry: LiveSession; procStart: string } | null {
+  const r = parseRegistryEntry(content, pid);
+  if (!r) return null;
+  // Il registry tiene un file anche per i processi che NON sono una
+  // conversazione dell'utente: subagent SDK, fork parkeggiati in background,
+  // spare pty host. Hanno lo stesso `cwd` del progetto e un pid davvero vivo —
+  // quindi `isAlive` non li scarta — ma nessuna tab a cui tornare: elencarli
+  // conta più conversazioni di quante ne siano aperte, e `--resume` su una di
+  // esse non riporta l'utente da nessuna parte.
+  //
+  // Servono DUE campi perché uno solo non discrimina: un job in background di
+  // Claude Code scrive `entrypoint:"cli"` come una sessione vera e si distingue
+  // solo per `kind:"bg"`. Entrambi assenti valgono come sessione interattiva —
+  // una versione del CLI che non li scrivesse non deve svuotare la lista.
+  if (r.entrypoint !== 'cli' || r.kind !== 'interactive') return null;
+  return { entry: r.entry, procStart: r.procStart };
+}
+
+/** Una entry del registry con i due campi che dicono CHE COSA è il processo. */
+export interface RegistryEntry {
+  entry: LiveSession;
+  procStart: string;
+  /** `cli` una tab, `sdk-cli` un `claude -p` (T205); `cli` se assente. */
+  entrypoint: string;
+  /** `interactive`, o `bg` un job in background; `interactive` se assente. */
+  kind: string;
+}
+
+/**
+ * T205 — una entry del registry SENZA il filtro di `parseLiveEntry`: tab,
+ * headless, job in background. Serve a chi chiede se una conversazione ha un
+ * processo qualunque — una risposta headless non parte mentre la conversazione
+ * è aperta in una tab, né mentre un altro turno headless è in corso.
+ */
+export function parseRegistryEntry(content: string, pid: number): RegistryEntry | null {
   let d: Record<string, unknown>;
   try {
     d = JSON.parse(content);
@@ -184,20 +218,9 @@ export function parseLiveEntry(
   // non si può stabilire la liveness, e assumerla sarebbe il falso positivo che
   // il guard esiste per escludere), `cwd` è il filtro di progetto.
   if (!sessionId || !procStart || !cwd) return null;
-  // Il registry tiene un file anche per i processi che NON sono una
-  // conversazione dell'utente: subagent SDK, fork parkeggiati in background,
-  // spare pty host. Hanno lo stesso `cwd` del progetto e un pid davvero vivo —
-  // quindi `isAlive` non li scarta — ma nessuna tab a cui tornare: elencarli
-  // conta più conversazioni di quante ne siano aperte, e `--resume` su una di
-  // esse non riporta l'utente da nessuna parte.
-  //
-  // Servono DUE campi perché uno solo non discrimina: un job in background di
-  // Claude Code scrive `entrypoint:"cli"` come una sessione vera e si distingue
-  // solo per `kind:"bg"`. Entrambi assenti valgono come sessione interattiva —
-  // una versione del CLI che non li scrivesse non deve svuotare la lista.
-  if ((typeof d.entrypoint === 'string' ? d.entrypoint : 'cli') !== 'cli') return null;
-  if ((typeof d.kind === 'string' ? d.kind : 'interactive') !== 'interactive') return null;
   return {
+    entrypoint: typeof d.entrypoint === 'string' ? d.entrypoint : 'cli',
+    kind: typeof d.kind === 'string' ? d.kind : 'interactive',
     entry: {
       sessionId,
       pid,
@@ -222,12 +245,13 @@ export function parseLiveEntry(
  * La liveness gira una volta sola, su tutte le entry tenute: su Windows le
  * coppie da verificare finiscono in una query sola (`windows-liveness.ts`).
  */
-function liveEntries(
+function liveEntries<T extends { entry: LiveSession; procStart: string }>(
   root: string,
   keep: (entry: LiveSession) => boolean = () => true,
   liveness: Liveness = platformLiveness(),
-): LiveSession[] {
-  const kept: { entry: LiveSession; procStart: string }[] = [];
+  parse: (content: string, pid: number) => T | null = parseLiveEntry as unknown as (c: string, p: number) => T | null,
+): T[] {
+  const kept: T[] = [];
   let files: string[];
   try {
     files = readdirSync(root).filter((f) => f.endsWith('.json'));
@@ -244,12 +268,12 @@ function liveEntries(
     } catch {
       continue; // il processo può finire fra readdir e read
     }
-    const parsed = parseLiveEntry(content, pid);
+    const parsed = parse(content, pid);
     if (!parsed || !keep(parsed.entry)) continue;
     kept.push(parsed);
   }
   const alive = liveness(kept.map(({ entry, procStart }) => ({ pid: entry.pid, procStart })));
-  return kept.filter((_, i) => alive[i]).map(({ entry }) => entry);
+  return kept.filter((_, i) => alive[i]);
 }
 
 /**
@@ -270,7 +294,7 @@ export function discoverLiveSessions(projectRoot: string): Map<string, LiveSessi
   const out = new Map<string, LiveSession>();
   // T175 — `isWithin` regge le grafie di Windows: il registry scrive `C:\…`,
   // e la root del deck può arrivare con la lettera del drive in un altro case.
-  for (const entry of liveEntries(liveSessionsRoot(), (e) => isWithin(e.cwd, projectRoot))) {
+  for (const { entry } of liveEntries(liveSessionsRoot(), (e) => isWithin(e.cwd, projectRoot))) {
     out.set(entry.sessionId, entry);
   }
   return out;
@@ -329,7 +353,7 @@ function procArgv(pid: number): string[] | null {
  */
 export function liveRequestedNames(root: string = liveSessionsRoot()): string[] {
   const names: string[] = [];
-  for (const entry of liveEntries(root)) {
+  for (const { entry } of liveEntries(root)) {
     const argv = procArgv(entry.pid);
     const name = argv ? requestedNameIn(argv) : null;
     if (name !== null) names.push(name);
@@ -345,4 +369,35 @@ export function liveSig(live: Map<string, LiveSession>): string {
     .map((l) => `${l.sessionId}:${l.pid}:${l.status}`)
     .sort()
     .join(',');
+}
+
+/** T205 — un processo vivo di una conversazione, con la sua forma. */
+export interface SessionProcess {
+  pid: number;
+  entrypoint: string;
+  kind: string;
+  /** Lo `status` del registro com'è scritto (`busy`, `idle`, …). */
+  state: string;
+}
+
+/**
+ * T205 — i processi VIVI di una conversazione, di qualunque forma: una tab
+ * (`cli`), un turno headless (`sdk-cli`), un job in background (`bg`).
+ *
+ * Nessun filtro per progetto né per forma: chi chiede vuole sapere se un
+ * `--resume` su quel `sessionId` scriverebbe accanto a un altro processo, e
+ * due scrittori sullo stesso transcript non devono esistere. Un processo `idle`
+ * conta: un turno headless scrive `idle` negli ultimi istanti prima di uscire.
+ */
+export function sessionProcesses(
+  sessionId: string,
+  root: string = liveSessionsRoot(),
+  liveness: Liveness = platformLiveness(),
+): SessionProcess[] {
+  return liveEntries(root, (e) => e.sessionId === sessionId, liveness, parseRegistryEntry).map((r) => ({
+    pid: r.entry.pid,
+    entrypoint: r.entrypoint,
+    kind: r.kind,
+    state: r.entry.state,
+  }));
 }

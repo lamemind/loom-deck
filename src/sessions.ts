@@ -431,6 +431,46 @@ function transcriptDirs(projectRoot: string): string[] {
   return matchingDirNames(entries, name).map((e) => join(root, e));
 }
 
+/**
+ * T205 — gli id delle conversazioni del progetto che cominciano con `prefix`,
+ * dai nomi dei transcript: la presenza del file è la prova che la conversazione
+ * esiste. Nessuna lettura dei contenuti.
+ */
+export function transcriptIds(projectRoot: string, prefix = ''): string[] {
+  const ids = new Set<string>();
+  for (const dir of transcriptDirs(projectRoot)) {
+    let files: string[];
+    try {
+      files = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const f of files) {
+      if (f.endsWith('.jsonl') && f.startsWith(prefix)) ids.add(f.slice(0, -'.jsonl'.length));
+    }
+  }
+  return [...ids].sort();
+}
+
+/**
+ * T205 — l'id VERSIONATO del modello con cui la conversazione ha risposto per
+ * ultimo, dal suo transcript; `''` se il transcript non c'è o non ne nomina
+ * uno. È il valore da cui il deck ricava il modello di una ripresa (T148, via
+ * `modelAlias`), letto dalla stessa `parseTranscript`.
+ */
+export function transcriptModel(projectRoot: string, sessionId: string): string {
+  for (const dir of transcriptDirs(projectRoot)) {
+    const path = join(dir, `${sessionId}.jsonl`);
+    try {
+      const st = statSync(path);
+      return parseTranscript(readFileSync(path, 'utf8'), path, st.mtimeMs, st.size)?.model ?? '';
+    } catch {
+      continue;
+    }
+  }
+  return '';
+}
+
 // Discovery read-only delle sessioni del SOLO progetto corrente (D2 preflight
 // T27): legge le project dir calcolate dal forward-transform, filtra per cwd
 // (difesa contro le collisioni lossy del naming), ordina con `compareSessions`.

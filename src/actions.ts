@@ -19,7 +19,7 @@ import { useRef } from 'react';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { conversationCwd } from './project-path.js';
-import { loadTasks, taskSlug, type Task } from './tasks.js';
+import { loadTasks, type Task } from './tasks.js';
 import type { CatalogEntry } from './prompt-catalog.js';
 import {
   appendNote,
@@ -56,7 +56,7 @@ import {
 } from './spawn.js';
 import { MODEL_DEFAULT, type ModelKind, type PromptKind, type SpawnActionId } from './spawn-catalog.js';
 import { modelAlias } from './glyphs.js';
-import { resolveSpawnId, type ResolvedSpawn, type SpawnOverrides } from './spawn-config.js';
+import { resolveSpawnId, taskHoles as taskHolesOf, type ResolvedSpawn, type SpawnOverrides } from './spawn-config.js';
 import { useTaskOps } from './task-ops.js';
 import { inboxPrompt, inboxWords, type InboxFile } from './inbox.js';
 import { docTargetKind, docWords, type DocRow } from './doc-tree.js';
@@ -161,14 +161,10 @@ export function useDeckActions({
     return resolveSpawnId(id, overrides, catalog, holes);
   }
 
-  /** I buchi di un'azione su task. Lo slug viene dal NOME del task file, non
-   *  dalla descrizione di `tasks.md`: il nome è già dentro l'alfabeto di
-   *  `saneNote` per costruzione — minuscolo, separato da trattini, senza
-   *  punteggiatura — mentre la descrizione porta apostrofi e `/` che la riduzione
-   *  toglie senza sostituto, saldando le parole. Task file assente → slug vuoto,
-   *  e il titolo si spegne invece di ridursi al solo prefisso. */
+  /** I buchi di un'azione su task (`taskHoles`, `spawn-config.ts`), sulla
+   *  cartella task del deck. */
   function taskHoles(id: string): Record<string, string> {
-    return { TASK: id, slug: taskSlug(tasksDir, id) };
+    return taskHolesOf(tasksDir, id);
   }
 
   /** La terna di un'azione SU UNA TASK, per chi ha in mano l'id e non i buchi:

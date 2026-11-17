@@ -15,31 +15,18 @@ import type { Key } from 'ink';
 import {
   dlvGate,
   dlvLaunchable,
+  dlvPrompt,
   parseDeliverables,
   type Deliverable,
   type DlvGate,
 } from '../deliverables.js';
+
+// T205 — `dlvPrompt` vive in `deliverables.ts`, senza React: lo usano anche
+// l'endpoint del deck e `loom-deck-headless`, che non montano nessuna vista.
+// Riesportato qui per chi lo importava dal modo DLV.
+export { dlvPrompt };
 import type { ModelKind } from '../spawn-catalog.js';
 import type { ResolvedSpawn } from '../spawn-config.js';
-
-/**
- * D3 — il prompt che parte da `⏎` nel modo DLV.
- *
- * Con una selezione: il prompt dell'azione `run` GIÀ RISOLTO (default del deck ←
- * override di progetto, buchi riempiti) con `DLV` e il perimetro in coda, in
- * ordine crescente — `run-task T99 DLV 2,5,7`. La parola `DLV` dice alla skill
- * che i numeri sono deliverable e non un'altra cosa; l'ordine crescente serve a
- * chi legge la riga di stato prima di premere, `run-task` normalizza da sé.
- * Lista semplice e non range: la grammatica `1,3-5` di `run-task` la accetta, e
- * compattare non toglie ambiguità.
- *
- * Senza selezione: nessun prompt, come l'azione `open` dei campi.
- */
-export function dlvPrompt(runPrompt: string | null, selected: Iterable<number>): string {
-  const scope = [...selected].sort((a, b) => a - b);
-  if (scope.length === 0) return '';
-  return `${(runPrompt ?? '').trim()} DLV ${scope.join(',')}`.trim();
-}
 
 /**
  * Il DLV aperto dopo (o prima di) `from`, in giro come le righe dell'area di

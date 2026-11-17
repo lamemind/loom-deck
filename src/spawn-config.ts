@@ -54,6 +54,7 @@ import {
   type SpawnActionId,
   type SpawnField,
 } from './spawn-catalog.js';
+import { taskSlug } from './tasks.js';
 
 /** La chiave del blocco nel file di progetto. Costante e non letterale sparso:
  *  la nominano il parser, il saver e il messaggio d'avviso. */
@@ -222,6 +223,24 @@ export function resolveSpawn(
   const title = filled === null ? null : saneNote(filled) || null;
 
   return { title, model: raw.model, prompt, overridden: raw.overridden };
+}
+
+/**
+ * I buchi di un'azione SU UNA TASK: `{TASK}` e `{slug}`.
+ *
+ * Lo slug viene dal NOME del task file, non dalla descrizione di `tasks.md`: il
+ * nome è già dentro l'alfabeto di `saneNote` per costruzione — minuscolo,
+ * separato da trattini, senza punteggiatura — mentre la descrizione porta
+ * apostrofi e `/` che la riduzione toglie senza sostituto, saldando le parole.
+ * Task file assente → slug vuoto, e il titolo si spegne invece di ridursi al
+ * solo prefisso.
+ *
+ * T205 — qui e non dentro l'attuatore del deck: anche `loom-deck-headless`
+ * risolve la terna di un'azione su task, fuori dalla TUI, e una seconda copia
+ * della regola divergerebbe il giorno che un template guadagna un buco.
+ */
+export function taskHoles(tasksDir: string, id: string): Record<string, string> {
+  return { TASK: id, slug: taskSlug(tasksDir, id) };
 }
 
 /** La terna di un'azione per ID di catalogo. Due chiamanti — l'attuatore, che la

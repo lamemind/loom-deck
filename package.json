@@ -6,7 +6,8 @@
   "bin": {
     "loom-deck": "dist/cli.js",
     "loom-deck-spawn": "dist/loom-deck-spawn.js",
-    "loom-deck-close": "dist/loom-deck-close.js"
+    "loom-deck-close": "dist/loom-deck-close.js",
+    "loom-deck-headless": "dist/loom-deck-headless.js"
   },
   "files": [
     "dist",

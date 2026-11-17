@@ -110,8 +110,12 @@ export function tabTitle(req: TabRequest, label: string): string {
  * di dipendere da un default che cambia fra versioni. Un valore fuori elenco
  * non arriva al CLI — produrrebbe una tab con un comando rotto — e degrada a
  * `manual` con un avviso.
+ *
+ * T205 — esportata per `loom-deck-headless`, che rifiuta `run` e `checkpoint`
+ * su un progetto `manual` (D2 preflight): il valore su cui decide è lo stesso
+ * che la composizione passa al CLI.
  */
-function permissionMode(ctx: ComposeContext, warnings: string[]): string {
+export function permissionMode(ctx: Pick<ComposeContext, 'env' | 'config'>, warnings: string[]): string {
   const raw = ctx.env.LOOM_DECK_PERMISSION_MODE || configField(ctx.config, 'permissionMode');
   if (!raw) return 'manual';
   if (PERMISSION_MODES.includes(raw)) return raw;
