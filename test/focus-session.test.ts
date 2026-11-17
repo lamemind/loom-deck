@@ -80,10 +80,11 @@ test('focusNote: il canale che fallisce non nomina un esito', () => {
 
 // La scelta del `⏎`, col canale finto: senza `gdbus`, senza compass, senza
 // processi vivi.
-function fakeDeps(live: Set<string>, reply: FocusResult) {
+function fakeDeps(live: Set<string>, reply: FocusResult, headless: Map<string, number> = new Map()) {
   const calls = { focused: [] as string[], resumed: [] as string[], notes: [] as string[] };
   const deps: EnterDeps = {
     isLive: (id) => live.has(id),
+    headlessPid: (id) => headless.get(id) ?? null,
     nameOf: (id) => `nome-${id}`,
     focus: (id, onResult) => {
       calls.focused.push(id);
@@ -118,6 +119,20 @@ test('enterSession: viva senza tab (assente) → nota, MAI un resume', () => {
   enterSession('viva', deps);
   assert.deepEqual(calls.resumed, [], 'riprenderla aprirebbe un secondo scrittore sul transcript');
   assert.deepEqual(calls.notes, ['⚠ focus assente — nome-viva']);
+});
+
+test('enterSession: turno headless in corso → nota col pid, né focus né resume (T206)', () => {
+  const { deps, calls } = fakeDeps(new Set(), { reached: true, outcome: 'tab' }, new Map([['hl', 4242]]));
+  assert.equal(enterSession('hl', deps), 'headless');
+  assert.deepEqual(calls.resumed, [], 'un resume sarebbe il secondo scrittore sul transcript');
+  assert.deepEqual(calls.focused, [], 'nessuna tab da portare davanti');
+  assert.deepEqual(calls.notes, ['⏎ → nome-hl: turno headless in corso (pid 4242)']);
+});
+
+test('enterSession: turno headless finito → torna una chiusa, il ⏎ la riprende (T206)', () => {
+  const { deps, calls } = fakeDeps(new Set(), { reached: true, outcome: 'tab' }, new Map());
+  assert.equal(enterSession('hl', deps), 'resume');
+  assert.deepEqual(calls.resumed, ['hl']);
 });
 
 test('enterSession: viva e compass assente → nota, MAI un resume', () => {
@@ -161,4 +176,10 @@ test('cablaggio: il restore riapre con resumeSession, che non porta nessun ramo 
 
 test('cablaggio: il predicato di «viva» è il registro, come in selectSessionRows', () => {
   assert.match(body('actions.ts', 'openSession'), /isLive: \(id\) => model\.live\.has\(id\)/);
+});
+
+test('cablaggio: il turno headless del ⏎ e del CANC è la mappa del registro (T206)', () => {
+  assert.match(body('actions.ts', 'openSession'), /headlessPid: \(id\) => model\.headless\.get\(id\)\?\.pid \?\? null/);
+  // CANC: la guardia sta nella bozza, prima di ogni conferma.
+  assert.match(body('actions.ts', 'dropDraftFor'), /const turn = model\.headless\.get\(sid\);\s+if \(turn\) \{\s+setNote\([^\n]*\);\s+return null;/);
 });

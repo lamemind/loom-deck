@@ -1,5 +1,5 @@
 // T184 — `⏎` su una conversazione: davanti la sua tab se è VIVA, ripresa in una
-// tab nuova se non lo è.
+// tab nuova se non lo è. T206 — nessuna delle due su un turno headless in corso.
 //
 // Perché la viva non si riprende: un secondo `deck-run --resume` su una
 // conversazione che ha già il suo processo `claude` ne apre un secondo sullo
@@ -166,6 +166,9 @@ export interface EnterDeps {
    *  stesso della lista. NON le marche live del sidecar, che dicono «era
    *  nell'ultimo insieme vivo» e servono al restore. */
   isLive: (sessionId: string) => boolean;
+  /** T206 — il pid del turno headless in corso sulla conversazione
+   *  (`model.headless`), `null` se non ce n'è uno. */
+  headlessPid: (sessionId: string) => number | null;
   /** Il nome con cui la nota nomina la conversazione. */
   nameOf: (sessionId: string) => string;
   focus: (sessionId: string, onResult: (r: FocusResult) => void) => void;
@@ -178,13 +181,29 @@ export interface EnterDeps {
  * né su `assente` (viva, ma senza una tab col suo nome — lanciata fuori da
  * Ptyxis) né con compass irraggiungibile. In entrambi i casi il processo
  * `claude` c'è, e un resume sarebbe il secondo scrittore.
+ *
+ * T206 — una conversazione col turno headless in corso nemmeno: il processo
+ * `claude -p` scrive già sul transcript, e non c'è una tab da portare davanti.
+ * Il tasto lo dice in una nota e non fa altro; a turno finito la conversazione
+ * torna una chiusa, e il `⏎` successivo la riprende.
  */
-export function enterSession(sessionId: string, deps: EnterDeps): 'focus' | 'resume' {
-  if (!deps.isLive(sessionId)) {
-    deps.resume(sessionId);
-    return 'resume';
+export function enterSession(sessionId: string, deps: EnterDeps): 'focus' | 'resume' | 'headless' {
+  if (deps.isLive(sessionId)) {
+    const name = deps.nameOf(sessionId);
+    deps.focus(sessionId, (r) => deps.note(focusNote(r, name)));
+    return 'focus';
   }
-  const name = deps.nameOf(sessionId);
-  deps.focus(sessionId, (r) => deps.note(focusNote(r, name)));
-  return 'focus';
+  const pid = deps.headlessPid(sessionId);
+  if (pid !== null) {
+    deps.note(headlessNote(deps.nameOf(sessionId), pid));
+    return 'headless';
+  }
+  deps.resume(sessionId);
+  return 'resume';
+}
+
+/** T206/P6 — la nota di un `⏎` su una conversazione col turno headless in
+ *  corso. */
+export function headlessNote(name: string, pid: number): string {
+  return `⏎ → ${name}: turno headless in corso (pid ${pid})`;
 }

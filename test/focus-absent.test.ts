@@ -26,6 +26,7 @@ test('binario assente su una viva: nota «compass non raggiungibile», nessun re
   const note = await new Promise<string>((resolve) => {
     const branch = enterSession('sid-viva', {
       isLive: () => true,
+      headlessPid: () => null,
       nameOf: () => '🧵 loom-works · T184',
       focus: focusSession,
       resume: (id) => resumed.push(id),

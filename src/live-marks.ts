@@ -185,6 +185,10 @@ export function restoreSet(input: {
   sessions: readonly Session[];
   alive: readonly string[];
   restoring: boolean;
+  /** T206 — le conversazioni col turno headless in corso. Restano fuori:
+   *  riaprirle in una tab vorrebbe dire un secondo processo sullo stesso
+   *  transcript. La marca non si tocca, e a turno finito tornano nell'insieme. */
+  headless?: ReadonlySet<string> | ReadonlyMap<string, unknown>;
 }): Session[] {
   if (input.alive.length > 0 || input.restoring || input.marked.size === 0) return [];
   const byId = new Map(input.sessions.map((s) => [s.sessionId, s]));
@@ -192,6 +196,6 @@ export function restoreSet(input: {
     .sort((a, b) => a[1] - b[1])
     .flatMap(([id]) => {
       const s = byId.get(id);
-      return s ? [s] : [];
+      return s && !input.headless?.has(id) ? [s] : [];
     });
 }

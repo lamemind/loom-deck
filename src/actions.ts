@@ -350,7 +350,8 @@ export function useDeckActions({
     if (refuse('liveSessions', '⏎', setNote, 'resume')) return;
     enterSession(sessionId, {
       isLive: (id) => model.live.has(id),
-      nameOf: (id) => model.live.get(id)?.name || id.slice(0, 8),
+      headlessPid: (id) => model.headless.get(id)?.pid ?? null,
+      nameOf: (id) => model.live.get(id)?.name || model.headless.get(id)?.name || id.slice(0, 8),
       focus: focusSession,
       resume: (id) => resumeSession(id, modelKind),
       note: setNote,
@@ -591,11 +592,12 @@ export function useDeckActions({
 
   /**
    * La bozza di conferma per `CANC` sul pane sessioni, o `null` se non c'è
-   * niente da confermare (la nota dice perché). Tre rifiuti, in ordine:
+   * niente da confermare (la nota dice perché). Quattro rifiuti, in ordine:
    * nessuna riga selezionata; riga stale (il transcript non c'è già più — da
    * lì si esce spinnando, non eliminando); conversazione VIVA — un processo
    * `claude` ci sta scrivendo, e togliergli il file da sotto lascia un
-   * processo che continua a scrivere su un inode sganciato, invisibile a tutti.
+   * processo che continua a scrivere su un inode sganciato, invisibile a tutti;
+   * turno headless in corso (T206), per la stessa ragione.
    */
   function dropDraftFor(): DropDraft | null {
     if (model.focus !== 'sessions') {
@@ -620,6 +622,14 @@ export function useDeckActions({
     const alive = model.live.get(sid);
     if (alive) {
       setNote(`CANC → ${sid.slice(0, 8)} è viva (pid ${alive.pid}): chiudila prima`);
+      return null;
+    }
+    // T206/P6 — la stessa guardia per un turno headless in corso: il processo
+    // `claude -p` sta scrivendo il transcript, e toglierglielo da sotto è lo
+    // stesso inode sganciato della viva.
+    const turn = model.headless.get(sid);
+    if (turn) {
+      setNote(`CANC → ${sid.slice(0, 8)}: turno headless in corso (pid ${turn.pid}), aspetta che finisca`);
       return null;
     }
     return { sessionId: sid, title: s.title, path: s.path, hasFolder: sessionArtifacts(s.path).length > 1 };

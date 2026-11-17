@@ -510,8 +510,8 @@ export function useDeckModel({
   // diverse farebbero comparire il bottone accanto a una conversazione che per
   // la marca è viva, o il contrario.
   const restorable = useMemo(
-    () => restoreSet({ marked: liveMarks, sessions, alive: aliveIds(live, sessions), restoring }),
-    [liveMarks, sessions, live, restoring],
+    () => restoreSet({ marked: liveMarks, sessions, alive: aliveIds(live, sessions), restoring, headless }),
+    [liveMarks, sessions, live, restoring, headless],
   );
   const sessionCounts: SessionViewCounts = {
     total: assembled.contextTotal,

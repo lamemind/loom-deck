@@ -248,6 +248,21 @@ test('restore: con una viva il bottone non c’è', () => {
   assert.deepEqual(r, []);
 });
 
+test('restore: una marcata col turno headless in corso resta fuori, la marca no (T206)', () => {
+  const r = restoreSet({
+    marked: marks('a', 'hl'),
+    sessions: [sess('a'), sess('hl')],
+    alive: [],
+    restoring: false,
+    headless: new Map([['hl', {}]]),
+  });
+  assert.deepEqual(
+    r.map((s) => s.sessionId),
+    ['a'],
+    'riaprirla in una tab sarebbe un secondo processo sullo stesso transcript',
+  );
+});
+
 test('restore: durante un restore in corso il bottone non c’è (niente doppio ^T)', () => {
   const r = restoreSet({ marked: marks('a'), sessions: [sess('a')], alive: [], restoring: true });
   assert.deepEqual(r, []);

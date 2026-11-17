@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { resolveTarget } from '../src/endpoint-close.js';
 import {
+  discoverLiveSessions,
   discoverProjectProcesses,
   liveSig,
   parseLiveEntry,
@@ -136,6 +138,29 @@ test('discoverProjectProcesses: tab e headless in due mappe, una lettura sola (T
   assert.deepEqual([...live.keys()].sort(), ['both', 'tab-1']);
   assert.deepEqual([...headless.keys()].sort(), ['hl-2']);
   assert.equal(headless.get('hl-2')?.pid, 2);
+});
+
+test('close dell’endpoint: un turno headless in corso non è un bersaglio (T206)', { skip: process.platform !== 'linux' }, () => {
+  // Il processo vero di questo test fa da turno headless: la liveness è quella
+  // della piattaforma, la stessa che la chiusura legge (`overlays/endpoint.ts`).
+  const root = mkdtempSync(join(tmpdir(), 'deck-live-close-'));
+  const procStart = procStartOf(readFileSync(`/proc/${process.pid}/stat`, 'utf8'))!;
+  const sid = 'eeeeeeee-0000-4000-8000-000000000206';
+  writeFileSync(
+    join(root, `${process.pid}.json`),
+    JSON.stringify({ pid: process.pid, sessionId: sid, cwd: '/home/u/proj', procStart, status: 'idle', entrypoint: 'sdk-cli', kind: 'interactive' }),
+  );
+  const before = process.env.LOOM_DECK_LIVE_SESSIONS_ROOT;
+  process.env.LOOM_DECK_LIVE_SESSIONS_ROOT = root;
+  try {
+    assert.equal(discoverProjectProcesses('/home/u/proj').headless.has(sid), true, 'il turno è vivo e riconosciuto');
+    const live = discoverLiveSessions('/home/u/proj');
+    assert.equal(live.has(sid), false);
+    assert.deepEqual(resolveTarget(sid, live), { none: true }, 'la chiusura non lo trova fra le vive');
+  } finally {
+    if (before === undefined) delete process.env.LOOM_DECK_LIVE_SESSIONS_ROOT;
+    else process.env.LOOM_DECK_LIVE_SESSIONS_ROOT = before;
+  }
 });
 
 test('parseLiveEntry: kind ed entrypoint assenti valgono interattiva', () => {
