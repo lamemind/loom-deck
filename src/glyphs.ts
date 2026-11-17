@@ -216,6 +216,20 @@ export function epicTail(rollup: { closed: number; total: number } | undefined):
 }
 
 /**
+ * T212/P1 — coda della riga MANDATO: membri chiusi sui membri elencati in
+ * `## Membri`, cieca a filtri e viste come quella del cappello.
+ *
+ * Quadra e non graffa: tonda = conversazioni, graffa = figlie, quadra = membri.
+ * I membri non sono figlie, e due grafie per due parentele diverse evitano di
+ * leggere un mandato come un'epica. Stesse regole di `epicTail`: nessuna
+ * chiusa, coda vuota a zero membri.
+ */
+export function mandateTail(rollup: { closed: number; total: number } | undefined): string {
+  if (!rollup || rollup.total === 0) return '';
+  return `[${rollup.closed}/${rollup.total}`;
+}
+
+/**
  * T67/D3 — spina di blocco: connette visivamente cappello e figlie nel Tasks
  * pane. Tratti di box (`┌ │ └`), non nell'alfabeto concorde dichiarato in testa
  * al file ma verificati concordi a sé (`agrees()` vale per tutti e tre) —

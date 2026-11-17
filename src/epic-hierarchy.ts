@@ -10,7 +10,7 @@
 // `useArchivable`) lascerebbe quell'edit stale fino al prossimo giro largo.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { taskEpicOf, taskIsEpic } from './tasks.js';
+import { parseMandateMembers, taskEpicOf, taskIsEpic, taskIsMandate } from './tasks.js';
 
 // Stesso pattern di `TASK_FILE_RE` in commit-times.ts: il basename del task
 // file, non `TASK_ID_RE` di tasks.ts (ancorata all'id nudo, non matcha
@@ -24,9 +24,22 @@ export interface EpicHierarchy {
   epicOf: ReadonlyMap<string, string>;
   /** id il cui proprio task file porta `Size: Epic`. */
   epics: ReadonlySet<string>;
+  /** T212 — id il cui proprio task file porta `Size: Mandate`. Stesso scan delle
+   *  epiche: il file è già in mano, e la lista deve conoscere i mandati per la
+   *  coda della riga e per rifiutare `^R` senza aprire niente. */
+  mandates: ReadonlySet<string>;
+  /** T212 — mandato → membri di `## Membri`, nell'ordine del file. Non entra
+   *  nel grouping: un membro non è una figlia, e resta nel blocco della sua
+   *  epica. */
+  membersOf: ReadonlyMap<string, readonly string[]>;
 }
 
-export const EMPTY_EPIC_HIERARCHY: EpicHierarchy = { epicOf: new Map(), epics: new Set() };
+export const EMPTY_EPIC_HIERARCHY: EpicHierarchy = {
+  epicOf: new Map(),
+  epics: new Set(),
+  mandates: new Set(),
+  membersOf: new Map(),
+};
 
 /**
  * T153 — gate module-level: il read+parse dei task file gira solo se la mtime
@@ -77,6 +90,8 @@ export function scanEpicHierarchy(tasksDir: string): EpicHierarchy {
 
   const epicOf = new Map<string, string>();
   const epics = new Set<string>();
+  const mandates = new Set<string>();
+  const membersOf = new Map<string, readonly string[]>();
   for (const file of files) {
     const id = TASK_FILE_RE.exec(file)![1]!;
     let content: string;
@@ -86,10 +101,14 @@ export function scanEpicHierarchy(tasksDir: string): EpicHierarchy {
       continue;
     }
     if (taskIsEpic(id, content)) epics.add(id);
+    if (taskIsMandate(id, content)) {
+      mandates.add(id);
+      membersOf.set(id, parseMandateMembers(id, content));
+    }
     const parent = taskEpicOf(id, content);
     if (parent) epicOf.set(id, parent);
   }
-  const hierarchy = { epicOf, epics };
+  const hierarchy = { epicOf, epics, mandates, membersOf };
   cache = { key: tasksDir, maxMtime, hierarchy };
   return hierarchy;
 }

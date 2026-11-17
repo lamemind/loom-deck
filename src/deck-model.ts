@@ -84,6 +84,7 @@ import {
   applyView,
   epicRollup,
   isVisible,
+  mandateRollup,
   taskColumns,
   type TaskRowData,
   type ViewState,
@@ -316,6 +317,12 @@ export function useDeckModel({
     () => epicRollup(tasks, epicHierarchy.epicOf),
     [tasks, epicHierarchy],
   );
+  // T212/P1 — gemello del precedente per i mandati: membri di `## Membri` con
+  // una riga in `tasks.md`, sulla lista GREZZA per la stessa ragione.
+  const mandateRollupMap = useMemo(
+    () => mandateRollup(tasks, epicHierarchy.membersOf),
+    [tasks, epicHierarchy],
+  );
 
   // La vista è una trasformazione DERIVATA, applicata a valle del load: il
   // polling di tasks.md continua a funzionare senza saperne nulla.
@@ -448,6 +455,8 @@ export function useDeckModel({
     dirty: dirtyFolders,
     epics: epicHierarchy.epics,
     epicRollup: epicRollupMap,
+    mandates: epicHierarchy.mandates,
+    mandateRollup: mandateRollupMap,
   };
 
   // T118 — colonne fisse della lista task, misurate su `paneTasks` (la vista

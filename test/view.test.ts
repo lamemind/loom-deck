@@ -12,10 +12,12 @@ import {
   groupHierarchy,
   idColumnWidth,
   idNum,
+  mandateRollup,
   padId,
   priRank,
   progName,
   progRank,
+  rowTail,
   taskColumns,
   toggleHidden,
   DEFAULT_VIEW,
@@ -24,7 +26,7 @@ import {
   type TaskRowData,
   type ViewState,
 } from '../src/view.js';
-import { epicTail, taskTail } from '../src/glyphs.js';
+import { epicTail, mandateTail, taskTail } from '../src/glyphs.js';
 import { termWidth } from '../src/width.js';
 import { loadView, saveView, parseView } from '../src/view-store.js';
 import {
@@ -52,7 +54,12 @@ const NO_COMMITS: SortCtx = { commitAt: new Map(), epicOf: new Map(), epics: new
 
 // `TaskRowData` senza nessuna epica: il caso comune dei test pre-T67, così le
 // firme restano leggibili come prima con uno spread invece che tre righe in più.
-const NO_EPIC_DATA = { epics: new Set<string>(), epicRollup: new Map() };
+const NO_EPIC_DATA = {
+  epics: new Set<string>(),
+  epicRollup: new Map(),
+  mandates: new Set<string>(),
+  mandateRollup: new Map(),
+};
 
 const sortOf = (tasks: Task[], sort: SortEntry[], ctx: SortCtx = NO_COMMITS) =>
   [...tasks].sort((a, b) => compareTasks(a, b, sort, ctx)).map((x) => x.id);
@@ -429,6 +436,64 @@ test('epicTail: coda vuota senza figlie, graffa senza chiusa altrimenti', () => 
   assert.equal(epicTail(undefined), '');
   assert.equal(epicTail({ closed: 0, total: 0 }), '', 'P9 — mai {0/0}');
   assert.equal(epicTail({ closed: 3, total: 11 }), '{3/11');
+});
+
+// ── T212 · il mandato nella lista ────────────────────────────────────────────
+
+test('mandateRollup: conta i membri con una riga in tasks.md, chiusi compresi', () => {
+  const tasks = [t('T1', '⚡', '✔️'), t('T2', '⚡', '🟡'), t('T3', '⚡', '✔️'), t('T5', '⚡', '🔵')];
+  // T9 non ha riga: è il `TASK_MEMBER_MISSING` del lettore, fuori dal conteggio.
+  const rollup = mandateRollup(tasks, new Map([['T5', ['T1', 'T2', 'T3', 'T9']]]));
+  assert.deepEqual(rollup.get('T5'), { closed: 2, total: 3 });
+});
+
+test('mandateRollup: un mandato fra i membri conta una riga, senza espandersi', () => {
+  const tasks = [t('T5', '⚡', '🔵'), t('T6', '⚡', '🔵'), t('T7', '⚡', '✔️')];
+  const rollup = mandateRollup(tasks, new Map([['T5', ['T6']], ['T6', ['T5', 'T7']]]));
+  assert.deepEqual(rollup.get('T5'), { closed: 0, total: 1 });
+  assert.deepEqual(rollup.get('T6'), { closed: 1, total: 2 });
+});
+
+test('mandateTail: quadra senza chiusa, coda vuota senza membri', () => {
+  assert.equal(mandateTail(undefined), '');
+  assert.equal(mandateTail({ closed: 0, total: 0 }), '');
+  assert.equal(mandateTail({ closed: 2, total: 5 }), '[2/5');
+});
+
+test('rowTail: il mandato scrive i membri al posto delle conversazioni, la task resta com era', () => {
+  const data: TaskRowData = {
+    childCount: new Map([['T5', 4], ['T6', 4]]),
+    live: new Map([['T5', { count: 1, status: 'idle' as const }]]),
+    dirty: new Set(['T5']),
+    ...NO_EPIC_DATA,
+    mandates: new Set(['T5']),
+    mandateRollup: new Map([['T5', { closed: 1, total: 3 }]]),
+  };
+  assert.equal(rowTail(t('T5', '⚡', '🔵'), data), '[1/3');
+  assert.equal(rowTail(t('T6', '⚡', '🔵'), data), taskTail(0, 4, false));
+});
+
+test('taskColumns: la colonna misura la coda del mandato', () => {
+  const data: TaskRowData = {
+    childCount: new Map(),
+    live: new Map(),
+    dirty: new Set<string>(),
+    ...NO_EPIC_DATA,
+    mandates: new Set(['T5']),
+    mandateRollup: new Map([['T5', { closed: 10, total: 12 }]]),
+  };
+  assert.equal(taskColumns([t('T5', '⚡', '🔵')], data).tail, termWidth('[10/12') + 1);
+});
+
+test('groupHierarchy: un membro di mandato resta nel blocco della sua epica', () => {
+  // T5 è un mandato che elenca T2 e T3: la parentela la dà solo `epicOf`, e il
+  // mandato non entra nel contesto del grouping.
+  const tasks = [t('T1', '⚡', '🔵'), t('T2', '⚡', '🔵'), t('T3', '⚡', '🔵'), t('T5', '🔥', '🔵')];
+  const { tasks: order, blockMark } = groupHierarchy(tasks, DEFAULT_VIEW.sort, epicCtx({ T2: 'T1' }, ['T1']));
+  assert.deepEqual(order.map((x) => x.id), ['T5', 'T1', 'T2', 'T3']);
+  assert.equal(blockMark.has('T5'), false, 'un mandato non apre un blocco');
+  assert.equal(blockMark.get('T2'), '└');
+  assert.equal(blockMark.has('T3'), false);
 });
 
 test('filtri: visibili + nascoste = totale', () => {

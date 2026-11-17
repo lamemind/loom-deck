@@ -24,10 +24,8 @@ import {
   LIVE_NONE,
   blockCell,
   displayProg,
-  epicTail,
-  taskTail,
 } from '../glyphs.js';
-import { padId, type BlockMark, type TaskRowData } from '../view.js';
+import { padId, rowTail, type BlockMark, type TaskRowData } from '../view.js';
 import type { Task } from '../tasks.js';
 
 export function TaskRow({
@@ -79,10 +77,10 @@ export function TaskRow({
   // T67/D4 — su un cappello la cella di stato descrive il cappello (non
   // eseguibile) e non le figlie, quindi resta vuota; D2/P9 — la coda diventa il
   // rollup delle figlie invece del contatore conversazioni.
+  // T212/P1 — un mandato tiene la Prog accesa, perché lì è il suo dato di
+  // chiusura, e la coda diventa il rollup dei membri (`rowTail`).
   const isEpic = data.epics.has(task.id);
-  const tail = isEpic
-    ? epicTail(data.epicRollup.get(task.id))
-    : taskTail(live?.count ?? 0, data.childCount.get(task.id) ?? 0, data.dirty.has(task.id));
+  const tail = rowTail(task, data);
   const id = padId(task.id, idW);
   // Invariante ③: la descrizione è l'unico pezzo a lunghezza libera, e si taglia
   // QUI sul budget che resta dopo le colonne fisse. Lasciarlo fare a

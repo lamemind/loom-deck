@@ -269,6 +269,94 @@ export function taskIsEpic(id: string, text: string | null): boolean {
   return (parseTaskDetail(id, text).fields['Size'] ?? '').trim().toLowerCase() === 'epic';
 }
 
+/**
+ * T212 — la task è un MANDATO (`Size: Mandate`)?
+ *
+ * Un mandato è il perimetro di una regia: elenca nel proprio file, in
+ * `## Membri`, task di epiche diverse o senza padre. Come l'epica non ha lavoro
+ * eseguibile proprio; a differenza dell'epica i suoi membri non sono figlie, e
+ * la sua Prog in `tasks.md` è il suo dato di chiusura.
+ *
+ * Grammatica del valore: la PRIMA PAROLA del campo, come la legge
+ * `lw_task_members` nel plugin (`Size: Mandate (perimetro)` è un mandato). Il
+ * plugin definisce il formato, e un mandato che `run-task` riconosce e il deck
+ * no riaprirebbe nel deck il run che la skill rifiuta. `taskIsEpic` resta sulla
+ * sua uguaglianza intera: allinearla cambierebbe il comportamento di una task
+ * che oggi il deck non legge come cappello.
+ *
+ * Testo assente → `false`, per la stessa ragione di `taskIsEpic`.
+ */
+export function taskIsMandate(id: string, text: string | null): boolean {
+  if (!text) return false;
+  const size = parseTaskDetail(id, text).fields['Size'] ?? '';
+  return /^\s*([A-Za-z]+)/.exec(size)?.[1]?.toLowerCase() === 'mandate';
+}
+
+/**
+ * T212 — la task è un PERIMETRO, epica o mandato: niente lavoro eseguibile
+ * proprio, il lavoro sta nei membri.
+ *
+ * Predicato unico per chi tratta le due forme allo stesso modo — il recap
+ * specializzato, l'azione di regia di T203. Chi le distingue (la coda della
+ * riga, il run del detail) chiama `taskIsEpic` o `taskIsMandate`.
+ */
+export function taskIsPerimeter(id: string, text: string | null): boolean {
+  return taskIsEpic(id, text) || taskIsMandate(id, text);
+}
+
+/** `## Membri`, la sola intestazione che apre la sezione. */
+const MEMBERS_HEADING_RE = /^##\s+Membri\s*$/;
+/** Heading di livello 1 o 2: chiude la sezione. `###` la divide in gruppi. */
+const SECTION_END_RE = /^#{1,2}\s/;
+/** Primo `T<numero>` della riga che non sia la coda di una parola: `**T52**`
+ *  e `` `T52` `` valgono, `XT52` no. */
+const MEMBER_TOKEN_RE = /(?:^|[^A-Za-z0-9_])(T\d+)(?!\d)/;
+
+/**
+ * T212 — i membri dichiarati in `## Membri` di un mandato, nell'ordine del file.
+ *
+ * Copia della grammatica di `lw_task_members` (`scripts/utils/lib.sh` del
+ * plugin, contratto in `docs/mandate-format.md`), riga per riga: una riga per
+ * membro a colonna zero che comincia con `- `, vale il primo `T<numero>`;
+ * righe indentate, righe dentro un blocco ```` ``` ```` e prosa non contano;
+ * la sezione chiude al prossimo `#` o `##`; un id ripetuto conta alla prima
+ * riga; il mandato che elenca sé stesso non conta.
+ *
+ * Parser TypeScript e non lo script del plugin (P2 preflight T212): lo scan dei
+ * task file ha già il testo in mano, uno spawn per mandato a ogni rilettura
+ * costerebbe un processo, e il deck gira fuori da Claude Code, senza
+ * `CLAUDE_PLUGIN_ROOT`. La parità la tengono i test sui casi del contratto.
+ *
+ * Non distingue un mandato da un'epica: chi chiama sa già cosa ha in mano. Un
+ * membro senza task file resta nella lista — il lettore del plugin lo marca
+ * `TASK_MEMBER_MISSING`, il deck lo scarta dove conta le righe di `tasks.md`.
+ */
+export function parseMandateMembers(id: string, text: string | null): string[] {
+  if (!text) return [];
+  const members: string[] = [];
+  let inSection = false;
+  let inFence = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    if (MEMBERS_HEADING_RE.test(line)) {
+      inSection = true;
+      inFence = false;
+      continue;
+    }
+    if (!inSection) continue;
+    if (!inFence && SECTION_END_RE.test(line)) break;
+    if (line.startsWith('```')) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence || !/^-\s/.test(line)) continue;
+    const member = MEMBER_TOKEN_RE.exec(line)?.[1];
+    if (!member || member === id || members.includes(member)) continue;
+    members.push(member);
+  }
+  return members;
+}
+
 /** Primo token `T\d+` dentro `**Parent Task**` — stessa tolleranza di
  *  `lw_task_children` nel plugin, che ammette una maniglia dopo l'id
  *  (`T142 (epica sistema documentale)`) e la ignora. */

@@ -1,7 +1,7 @@
 // T39 — Core della vista: ordinali, sort chain multi-chiave, filtri.
 // Modulo PURO: nessun import da ink/react, nessun I/O → testabile senza terminale.
 
-import { epicTail, taskTail } from './glyphs.js';
+import { epicTail, mandateTail, taskTail } from './glyphs.js';
 import { termWidth } from './width.js';
 import type { TaskLive } from './live-sessions.js';
 import type { Task } from './tasks.js';
@@ -168,6 +168,27 @@ export interface TaskRowData {
   /** T67/P9 — rollup {chiuse/totali} delle figlie dichiarate di un cappello,
    *  cieco a filtri e viste: chiave = id del cappello. */
   epicRollup: ReadonlyMap<string, { closed: number; total: number }>;
+  /** T212 — id il cui task file porta `Size: Mandate`: Prog accesa (è il suo
+   *  dato di chiusura) e coda sostituita dal rollup dei membri. */
+  mandates: ReadonlySet<string>;
+  /** T212/P1 — rollup [chiusi/totali dei membri di `## Membri` con una riga in
+   *  `tasks.md`, cieco a filtri e viste: chiave = id del mandato. */
+  mandateRollup: ReadonlyMap<string, { closed: number; total: number }>;
+}
+
+/**
+ * La coda di una riga task — il contatore conversazioni, il rollup delle figlie
+ * di un cappello o quello dei membri di un mandato.
+ *
+ * Una funzione sola per i due consumatori: `taskColumns` la misura sulla vista
+ * intera, `TaskRow` la disegna. Due copie della scelta divergerebbero al primo
+ * ramo aggiunto, e la colonna risulterebbe larga quanto una stringa che nessuna
+ * riga scrive.
+ */
+export function rowTail(task: Task, data: TaskRowData): string {
+  if (data.mandates.has(task.id)) return mandateTail(data.mandateRollup.get(task.id));
+  if (data.epics.has(task.id)) return epicTail(data.epicRollup.get(task.id));
+  return taskTail(data.live.get(task.id)?.count ?? 0, data.childCount.get(task.id) ?? 0, data.dirty.has(task.id));
 }
 
 /**
@@ -188,14 +209,10 @@ export function taskColumns(
 ): { id: number; tail: number } {
   let tail = 0;
   for (const t of tasks) {
-    // T67 — un cappello scrive il rollup ({chiuse/totali}) al posto del
-    // contatore conversazioni: due formattazioni diverse, quindi la colonna
-    // deve misurare quella che la riga disegna DAVVERO per quel task, non
-    // sempre `taskTail`.
-    const cell = data.epics.has(t.id)
-      ? epicTail(data.epicRollup.get(t.id))
-      : taskTail(data.live.get(t.id)?.count ?? 0, data.childCount.get(t.id) ?? 0, data.dirty.has(t.id));
-    tail = Math.max(tail, termWidth(cell));
+    // T67/T212 — un cappello o un mandato scrive il proprio rollup al posto del
+    // contatore conversazioni: la colonna misura quello che la riga disegna
+    // DAVVERO per quel task, dalla stessa funzione che lo disegna.
+    tail = Math.max(tail, termWidth(rowTail(t, data)));
   }
   return { id: idColumnWidth(tasks), tail: tail > 0 ? tail + 1 : 0 };
 }
@@ -378,6 +395,35 @@ export function epicRollup(
     entry.total++;
     if (progName(t.prog) === 'done') entry.closed++;
     rollup.set(p, entry);
+  }
+  return rollup;
+}
+
+/**
+ * T212/P1 — rollup [chiusi/totali dei membri di ogni mandato, cieco a filtri e
+ * viste come `epicRollup`.
+ *
+ * Conta solo i membri con una riga in `tasks` (P2 preflight): un membro senza
+ * riga non ha una Prog da leggere — è il caso di `TASK_MEMBER_MISSING` nel
+ * lettore del plugin, una task purgata da `clean-tasks`. Un'epica o un mandato
+ * fra i membri conta una riga sola, come nel lettore: nessuna espansione, quindi
+ * nessun ciclo fra mandati.
+ */
+export function mandateRollup(
+  tasks: Task[],
+  membersOf: ReadonlyMap<string, readonly string[]>,
+): ReadonlyMap<string, { closed: number; total: number }> {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const rollup = new Map<string, { closed: number; total: number }>();
+  for (const [mandate, members] of membersOf) {
+    const entry = { closed: 0, total: 0 };
+    for (const id of members) {
+      const t = byId.get(id);
+      if (!t) continue;
+      entry.total++;
+      if (progName(t.prog) === 'done') entry.closed++;
+    }
+    rollup.set(mandate, entry);
   }
   return rollup;
 }

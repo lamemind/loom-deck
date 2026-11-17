@@ -1,7 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTasks, parseTaskDetail, headerColumns, taskEpicOf, taskIsEpic } from '../src/tasks.js';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  parseTasks,
+  parseTaskDetail,
+  headerColumns,
+  parseMandateMembers,
+  taskEpicOf,
+  taskIsEpic,
+  taskIsMandate,
+  taskIsPerimeter,
+} from '../src/tasks.js';
 import { sanitize } from '../src/width.js';
+import { unixOnly } from './platform-gates.js';
 
 const TASKS_MD = `# Tasks
 
@@ -243,4 +258,130 @@ test('parseTaskDetail legge i bullet header', () => {
   assert.equal(detail.fields['Progress'], sanitize('🔵 Todo'));
   assert.equal(detail.fields['Parent Task'], 'T34');
   assert.equal(detail.description, 'corpo');
+});
+
+// ── T212 · il mandato ────────────────────────────────────────────────────────
+
+const MANDATE_MD = `# Task: Mandato: convention e regia insieme
+
+- **ID**: T230
+- **Size**: Mandate
+- **Parent Task**:
+- **Progress**: 🔵 Todo
+
+## Description
+
+Un perimetro che nomina \`Size: Epic\` in prosa senza esserlo.
+
+## Membri
+
+- T52 (lettore unico delle convention)
+- **T61** — gate del deck sulle convention
+- \`T64\` regia headless
+  - T70 riga indentata: prosa della voce sopra
+- nessun id su questa riga
+Testo fuori dalla lista con T71 dentro.
+
+### Secondo gruppo
+
+- T52 ripetuto: conta alla prima riga
+- T230 il mandato che elenca sé stesso
+- XT72 coda di una parola, poi T73 vero
+
+\`\`\`
+- T74 dentro un blocco di codice
+## nemmeno questo chiude, è dentro il blocco
+\`\`\`
+
+- T75 dopo il blocco
+
+## Preferenze d'ordine
+
+- T76 fuori dalla sezione
+`;
+
+test('taskIsMandate: la prima parola di `Size` decide, in qualunque maiuscola', () => {
+  assert.equal(taskIsMandate('T230', MANDATE_MD), true);
+  assert.equal(taskIsMandate('T230', MANDATE_MD.replace('Mandate', 'mandate')), true);
+  // La grammatica di `lw_task_members`: una coda dopo la parola non conta.
+  assert.equal(taskIsMandate('T230', MANDATE_MD.replace('Mandate', 'Mandate (perimetro)')), true);
+  assert.equal(taskIsMandate('T230', MANDATE_MD.replace('Mandate', 'Epic')), false);
+  assert.equal(taskIsMandate('T230', MANDATE_MD.replace('Mandate', 'Mandatory')), false);
+  assert.equal(taskIsMandate('T230', null), false);
+  assert.equal(taskIsMandate('T99', '# Task: Senza size\n\n- **ID**: T99\n'), false);
+});
+
+test('taskIsMandate: un mandato non è un cappello, e un cappello non è un mandato', () => {
+  assert.equal(taskIsEpic('T230', MANDATE_MD), false);
+  assert.equal(taskIsMandate('T74', EPIC_MD), false);
+});
+
+test('taskIsPerimeter: vero su epica e mandato, falso su una task qualunque', () => {
+  assert.equal(taskIsPerimeter('T230', MANDATE_MD), true);
+  assert.equal(taskIsPerimeter('T74', EPIC_MD), true);
+  assert.equal(taskIsPerimeter('T74', EPIC_MD.replace('Epic', 'M')), false);
+  assert.equal(taskIsPerimeter('T74', null), false);
+});
+
+test('parseMandateMembers: i casi del contratto di mandate-format.md', () => {
+  assert.deepEqual(parseMandateMembers('T230', MANDATE_MD), ['T52', 'T61', 'T64', 'T73', 'T75']);
+});
+
+test('parseMandateMembers: senza sezione o senza testo nessun membro', () => {
+  assert.deepEqual(parseMandateMembers('T74', EPIC_MD), []);
+  assert.deepEqual(parseMandateMembers('T230', null), []);
+  assert.deepEqual(parseMandateMembers('T230', '# Task: x\n\n## Membri\n\n## Altro\n- T1\n'), []);
+});
+
+test('parseMandateMembers: un file con fine riga CRLF legge gli stessi membri', () => {
+  assert.deepEqual(
+    parseMandateMembers('T230', MANDATE_MD.replace(/\n/g, '\r\n')),
+    ['T52', 'T61', 'T64', 'T73', 'T75'],
+  );
+});
+
+test('parseMandateMembers: le cifre sono greedy — T64 non si legge T6', () => {
+  assert.deepEqual(parseMandateMembers('T1', '## Membri\n\n- T64x\n- T6\n'), ['T64', 'T6']);
+});
+
+// Il deck replica la grammatica di `## Membri` invece di lanciare lo script (P2
+// preflight T212): la parità la tiene questo test, contro il SORGENTE del
+// plugin nel submodule — la versione che verrà pubblicata.
+const PLUGIN_LIB = join(
+  dirname(dirname(dirname(fileURLToPath(import.meta.url)))),
+  'loom-works-plugin',
+  'scripts',
+  'utils',
+  'lib.sh',
+);
+const MEMBERS_PARITY_SKIP =
+  unixOnly('lw_task_members è una funzione bash') ||
+  (existsSync(PLUGIN_LIB) ? false : `sorgente del plugin assente (${PLUGIN_LIB})`);
+
+test('parità con lw_task_members del plugin sui casi del contratto', { skip: MEMBERS_PARITY_SKIP }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'deck-members-'));
+  try {
+    const dir = join(root, 'docs', 'tasks');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'T230-mandato.md'), MANDATE_MD);
+    // Due membri senza task file: il lettore li marca MISSING, nello stesso
+    // ordine degli altri — il deck li tiene nella lista allo stesso posto.
+    for (const id of ['T52', 'T61', 'T73']) writeFileSync(join(dir, `${id}-membro.md`), `# Task: ${id}\n`);
+    const env = { ...process.env, PROJECT_ROOT: root };
+    delete env.LOOM_TASK;
+    const out = execFileSync('bash', ['-c', 'source "$1" && lw_task_members T230', 'parity', PLUGIN_LIB], {
+      cwd: root,
+      env,
+      encoding: 'utf8',
+    });
+    const fromScript = out
+      .split('\n')
+      .map((l) => /^TASK_MEMBER(?:_MISSING)?=(T\d+)/.exec(l)?.[1])
+      .filter((id): id is string => Boolean(id));
+    assert.match(out, /^TASK_MEMBERS_SRC=list$/m);
+    assert.deepEqual(parseMandateMembers('T230', MANDATE_MD), fromScript);
+    assert.deepEqual(parseMandateMembers('T230', sanitize(MANDATE_MD)), fromScript);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
