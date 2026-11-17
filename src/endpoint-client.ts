@@ -8,9 +8,9 @@ import net from 'node:net';
 import { addressProblem, type Endpoint, type EndpointRequest } from './spawn-endpoint.js';
 
 /** Quanto il client aspetta la risposta. Più largo di ogni attesa del deck —
- *  l'annuncio di `deck-run` (15 s), la fine del processo chiuso (10 s) —, così
- *  il motivo di un ritardo lo dice il deck. */
-export const REPLY_TIMEOUT_MS = 30_000;
+ *  l'annuncio di `deck-run` (`ANNOUNCE_TIMEOUT_MS`), la fine del processo
+ *  chiuso (`CLOSE_WAIT_MS`) —, così il motivo di un ritardo lo dice il deck. */
+export const REPLY_TIMEOUT_MS = 45_000;
 
 /** Ciò che un client riceve dal mondo: cartella, env, piattaforma e i due
  *  flussi. Un valore e non `process`, così il test esegue il client intero. */

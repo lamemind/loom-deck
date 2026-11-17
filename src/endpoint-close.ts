@@ -25,10 +25,12 @@
 import type { LiveSession } from './live-sessions.js';
 import type { CloseReply, CloseRequest } from './spawn-endpoint.js';
 
-/** Quanto il deck aspetta la fine del processo dopo averlo terminato (P4
- *  preflight). Il client ne aspetta 30: il motivo di un'attesa scaduta lo dice
- *  il deck, non il timeout del client. */
-export const CLOSE_WAIT_MS = 10_000;
+/** Quanto il deck aspetta la fine del processo dopo averlo terminato. Su Linux
+ *  `claude` ha impiegato fino a 6,6 s a uscire dopo il SIGHUP con la macchina
+ *  carica: un'attesa stretta risponderebbe «non terminato» su un processo che
+ *  sta uscendo. Il client aspetta di più (`REPLY_TIMEOUT_MS`): il motivo di
+ *  un'attesa scaduta lo dice il deck, non il timeout del client. */
+export const CLOSE_WAIT_MS = 30_000;
 
 /** Ogni quanto si rimisura la liveness durante l'attesa. */
 export const CLOSE_POLL_MS = 200;

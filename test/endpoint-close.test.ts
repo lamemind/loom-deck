@@ -187,3 +187,12 @@ test('marca live non ritirabile: chiusa lo stesso, con l’avviso', async () => 
   assert.equal(r.ok, true);
   assert.match((r as { warning?: string }).warning!, /marca live non ritirata \(EACCES\)/);
 });
+
+test('attese: il client aspetta più del deck, sullo spawn e sulla chiusura', async () => {
+  const { CLOSE_WAIT_MS } = await import('../src/endpoint-close.js');
+  const { REPLY_TIMEOUT_MS } = await import('../src/endpoint-client.js');
+  const { ANNOUNCE_TIMEOUT_MS } = await import('../src/endpoint-spawn.js');
+  assert.equal(CLOSE_WAIT_MS, 30_000);
+  assert.ok(REPLY_TIMEOUT_MS > CLOSE_WAIT_MS);
+  assert.ok(REPLY_TIMEOUT_MS > ANNOUNCE_TIMEOUT_MS);
+});
