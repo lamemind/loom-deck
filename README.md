@@ -244,6 +244,25 @@ L'argomento è il `sessionId` che `loom-deck-spawn` ha restituito, intero o coi 
 
 Il deck risponde quando il processo è finito, entro 30 secondi; oltre risponde che non è terminato e non lo uccide. Il transcript resta su disco e la conversazione si riprende dal deck; la sua marca `live` si ritira nella chiusura stessa, così il restore delle vive non la riapre. Uscite: `0` chiusa, `1` rifiuto, processo non terminato o nessuna risposta, `2` errore d'uso, `3` nessun deck in ascolto sul progetto. Lo usa la skill `/loom-works:close-session` del plugin.
 
+### `loom-deck-headless` — un turno di conversazione senza tab
+
+Il quarto comando del pacchetto apre e porta avanti una conversazione su una task **senza nessuna tab**: ogni turno è un processo `claude -p` staccato, che finisce da solo a turno chiuso, e il turno dopo è un processo nuovo con `--resume` sullo stesso transcript. Nessuna tab vuol dire nessun focus spostato: lo usa una regia che apre conversazioni in momenti che l'utente non sceglie. Non passa dall'endpoint: serve il deck installato, non acceso.
+
+```bash
+loom-deck-headless open T12 preflight          # stampa il sessionId e torna subito
+loom-deck-headless status 0a1b2c3d --wait 540  # aspetta la fine del turno, fino a 540 s
+loom-deck-headless reply 0a1b2c3d 'D1: A, D2: B'
+loom-deck-headless reply 0a1b2c3d -            # il messaggio da stdin
+```
+
+- **`open`** prende gli argomenti di `loom-deck-spawn` e apre la stessa conversazione che aprirebbe il tasto: stessa terna di catalogo con l'override di progetto, stesso titolo come `--name`, stesso permission mode, `LOOM_TASK` della task, binding e nota nel sidecar **prima** del processo — la conversazione compare nel deck sotto la sua task, e `⏎` la riprende in una tab. Rifiuta ciò che rifiuta l'endpoint (task assente, run su un mandato, DLV fuori range o già chiusi) e in più `run` e `checkpoint` su un progetto con `permissionMode` `manual`, dove nessuno approverebbe i comandi.
+- **`reply`** manda un messaggio a una conversazione **ferma** del progetto, nata headless o in una tab, con task, nota e modello che il deck userebbe per riprenderla. Rifiuta se la conversazione ha un processo vivo di qualunque forma — una tab aperta o un turno headless in corso: due processi sullo stesso transcript non devono esistere.
+- **`status`** dà l'esito dell'ultimo turno in quattro classi, col testo finale: `in corso` (uscita `3`), `turno chiuso` (`0`), `permesso negato` (`4`, con gli strumenti negati: si riprende la conversazione in una tab per approvarli), `errore` (`1`: errore dell'API, o processo finito senza esito, con la coda dello stderr). Se un turno chiuso sia una domanda o una fine lo dice il testo, non il comando.
+
+Il turno gira con `--permission-prompts none`: un permesso che chiederebbe approvazione è negato, il turno prosegue e lo riporta nell'esito invece di restare appeso. L'ambiente del turno è quello di chi lancia **meno** `PTYXIS_PROFILE` (gli hook di stato di una headless cambierebbero lo stato del progetto in compass, e il suo `end` cancellerebbe l'`ask` di una tab vera), `LOOM_TASK` e `PROJECT_ROOT` di chi lancia, e le dodici variabili con cui una conversazione Claude Code marca i processi lanciati dalla propria Bash (effort, canale dei messaggi, Remote Control, `CLAUDE_CODE_CHILD_SESSION`): una headless è una conversazione dell'utente come una tab, non una figlia della regia.
+
+Lo stato sta in `.claude/loom/headless/`, accanto al sidecar: per conversazione lo stato dell'ultimo turno (`<sessionId>.json`, col pid), l'evento `result` scritto da `claude` (`<sessionId>.out.json`) e il suo stderr (`<sessionId>.err`), riscritti a ogni turno. Un turno in corso si ferma con `kill <pid>`; `status` lo riporta come errore. Uscite di `open` e `reply`: `0` turno avviato, `1` rifiuto, `2` errore d'uso.
+
 ### `f` — forkare una conversazione
 
 Il fork rama la sessione selezionata: `claude --resume <origine> --fork-session` apre un **sessionId nuovo** con il transcript copiato, lasciando l'origine intatta. Serve quando vuoi ripartire da un certo stato senza perdere il ramo originale — e siccome i due id sono distinti, non esistono mai due processi che scrivono lo stesso file (il vincolo *single-writer* dello store di Claude Code).
@@ -409,7 +428,7 @@ Sessions · tutte (317) · ●2 vive · 📌4 · +213 più vecchie · ↑7 · �
 ## Installazione
 
 ```bash
-npm install -g @lamemind/loom-deck   # comandi globali `loom-deck`, `loom-deck-spawn`, `loom-deck-close`
+npm install -g @lamemind/loom-deck   # comandi globali `loom-deck`, `loom-deck-spawn`, `loom-deck-close`, `loom-deck-headless`
 # oppure senza install permanente:
 npx @lamemind/loom-deck
 ```
