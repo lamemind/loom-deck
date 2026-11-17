@@ -256,17 +256,36 @@ export function parseTaskDetail(id: string, content: string): TaskDetail {
  * in `tasks.md` quella colonna non c'è, quindi la lista non può rispondere e la
  * domanda ha senso solo dove il file è già stato aperto (il detail).
  *
- * Riusa `parseTaskDetail` invece di una regex propria: la grammatica dei bullet
- * header (`- **Campo**: valore`) è già scritta lì, e una seconda copia
- * divergerebbe al primo campo che cambia forma. Confronto case-insensitive — il
- * valore lo scrive un umano nel file, non uno script.
+ * Il valore si legge con `taskSizeWord`, la prima parola del campo: `Size: Epic
+ * (cappello)` è un cappello, come per `taskIsMandate`, `taskSize` e il plugin.
  *
  * Testo assente (`null`, task file non ancora letto) → `false`: la mancanza di
  * prova non è prova di cappello, e degradare sul caso comune è l'esito benigno.
  */
 export function taskIsEpic(id: string, text: string | null): boolean {
-  if (!text) return false;
-  return (parseTaskDetail(id, text).fields['Size'] ?? '').trim().toLowerCase() === 'epic';
+  return taskSizeWord(id, text) === 'epic';
+}
+
+/**
+ * La PRIMA PAROLA del campo `Size`, minuscola — `''` se il campo manca, è vuoto
+ * o il testo non c'è.
+ *
+ * Grammatica unica del deck per il `Size`, la stessa di `lw_task_members` nel
+ * plugin, che definisce il formato: `Size: Mandate (perimetro)` è un mandato,
+ * `Size: Epic (cappello)` un'epica, `Size: l (grande)` una L. Una coda dopo la
+ * parola è prosa dell'umano. Quattro lettori con due grammatiche (l'uguaglianza
+ * intera per l'epica, la prima parola per gli altri) davano un cappello per il
+ * plugin che il deck non riconosceva.
+ *
+ * Riusa `parseTaskDetail` invece di una regex propria: la grammatica dei bullet
+ * header (`- **Campo**: valore`) è già scritta lì, e una seconda copia
+ * divergerebbe al primo campo che cambia forma. Confronto case-insensitive — il
+ * valore lo scrive un umano nel file, non uno script.
+ */
+export function taskSizeWord(id: string, text: string | null): string {
+  if (!text) return '';
+  const size = parseTaskDetail(id, text).fields['Size'] ?? '';
+  return /^\s*([A-Za-z]+)/.exec(size)?.[1]?.toLowerCase() ?? '';
 }
 
 /**
@@ -277,19 +296,15 @@ export function taskIsEpic(id: string, text: string | null): boolean {
  * eseguibile proprio; a differenza dell'epica i suoi membri non sono figlie, e
  * la sua Prog in `tasks.md` è il suo dato di chiusura.
  *
- * Grammatica del valore: la PRIMA PAROLA del campo, come la legge
- * `lw_task_members` nel plugin (`Size: Mandate (perimetro)` è un mandato). Il
- * plugin definisce il formato, e un mandato che `run-task` riconosce e il deck
- * no riaprirebbe nel deck il run che la skill rifiuta. `taskIsEpic` resta sulla
- * sua uguaglianza intera: allinearla cambierebbe il comportamento di una task
- * che oggi il deck non legge come cappello.
+ * Grammatica del valore: la prima parola del campo (`taskSizeWord`), come la
+ * legge `lw_task_members` nel plugin. Il plugin definisce il formato, e un
+ * mandato che `run-task` riconosce e il deck no riaprirebbe nel deck il run che
+ * la skill rifiuta.
  *
  * Testo assente → `false`, per la stessa ragione di `taskIsEpic`.
  */
 export function taskIsMandate(id: string, text: string | null): boolean {
-  if (!text) return false;
-  const size = parseTaskDetail(id, text).fields['Size'] ?? '';
-  return /^\s*([A-Za-z]+)/.exec(size)?.[1]?.toLowerCase() === 'mandate';
+  return taskSizeWord(id, text) === 'mandate';
 }
 
 /**
@@ -310,13 +325,12 @@ export type TaskShape = 'task' | 'epic' | 'mandate';
 
 /**
  * T212 — la forma della task, letta una volta dal testo che il detail ha già
- * in mano. Il mandato si guarda per primo: `Size` ha un valore solo, quindi
- * l'ordine non cambia l'esito, ma tiene la grammatica più larga (prima parola)
- * davanti a quella più stretta.
+ * in mano: un parse solo del campo `Size` per entrambe le domande.
  */
 export function taskShape(id: string, text: string | null): TaskShape {
-  if (taskIsMandate(id, text)) return 'mandate';
-  if (taskIsEpic(id, text)) return 'epic';
+  const size = taskSizeWord(id, text);
+  if (size === 'mandate') return 'mandate';
+  if (size === 'epic') return 'epic';
   return 'task';
 }
 

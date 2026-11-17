@@ -14,6 +14,8 @@ import {
   taskIsEpic,
   taskIsMandate,
   taskIsPerimeter,
+  taskShape,
+  taskSizeWord,
 } from '../src/tasks.js';
 import { sanitize } from '../src/width.js';
 import { unixOnly } from './platform-gates.js';
@@ -200,6 +202,24 @@ test('taskIsEpic: `Size: Epic` marca il cappello', () => {
   // alla cassa, o `epic` in minuscolo aprirebbe la sotto-skill sbagliata.
   assert.equal(taskIsEpic('T74', EPIC_MD.replace('Epic', 'epic')), true);
   assert.equal(taskIsEpic('T74', EPIC_MD.replace('Epic', 'EPIC')), true);
+});
+
+// T212/S1 — una grammatica sola per il `Size`, la prima parola, come
+// `taskIsMandate`, `taskSize` e `lw_task_members` del plugin: prima l'epica
+// voleva l'uguaglianza intera, e `Size: Epic (cappello)` era un cappello per il
+// plugin e una task qualunque per il deck.
+test('taskIsEpic: la prima parola di `Size` decide, una coda dopo non conta', () => {
+  assert.equal(taskIsEpic('T74', EPIC_MD.replace('Epic', 'Epic (cappello)')), true);
+  assert.equal(taskIsEpic('T74', EPIC_MD.replace('Epic', 'epic — fasi F1-F5')), true);
+  assert.equal(taskIsEpic('T74', EPIC_MD.replace('Epic', 'Epical')), false, 'una parola diversa non è epic');
+  assert.equal(taskShape('T74', EPIC_MD.replace('Epic', 'Epic (cappello)')), 'epic');
+});
+
+test('taskSizeWord: prima parola minuscola, vuota senza campo o senza testo', () => {
+  assert.equal(taskSizeWord('T74', EPIC_MD), 'epic');
+  assert.equal(taskSizeWord('T74', EPIC_MD.replace('Epic', 'l (grande)')), 'l');
+  assert.equal(taskSizeWord('T99', '# Task: Senza size\n\n- **ID**: T99\n'), '');
+  assert.equal(taskSizeWord('T74', null), '');
 });
 
 test('taskIsEpic: senza testo o senza campo Size degrada a non-cappello', () => {

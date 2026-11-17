@@ -24,7 +24,7 @@
 // comune.
 //
 // Logica pura, zero React/Ink.
-import { parseTaskDetail, taskIsMandate } from './tasks.js';
+import { taskIsMandate, taskSizeWord } from './tasks.js';
 
 export interface Deliverable {
   /** Posizione 1-based fra le checkbox a colonna zero: l'indirizzo che
@@ -131,9 +131,7 @@ export function preflightState(text: string | null): PreflightState {
  * non deve far scattare il ramo più severo.
  */
 export function taskSize(id: string, text: string | null): string {
-  if (!text) return 'M';
-  const raw = parseTaskDetail(id, text).fields['Size'] ?? '';
-  return /^\s*([A-Za-z]+)/.exec(raw)?.[1]?.toUpperCase() ?? 'M';
+  return taskSizeWord(id, text).toUpperCase() || 'M';
 }
 
 export const DLV_REASON = {
