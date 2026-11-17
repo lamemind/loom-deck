@@ -227,6 +227,23 @@ Il deck lo esegue con lo **stesso `spawnForTask` del tasto**: binding nel sideca
 
 Lo usa la skill `/loom-works:spawn-task` del plugin. Un secondo deck sullo stesso progetto non ascolta e lo dice in riga di stato; un deck morto per un segnale lascia su Linux il file del socket, che il deck successivo riconosce e cancella all'avvio.
 
+Il path del socket sta in 107 byte, il limite di un socket Unix: con un `$XDG_RUNTIME_DIR` più profondo il deck non ascolta e i client non chiamano, e il messaggio nomina la cartella runtime troppo lunga.
+
+### `loom-deck-close` — una chiusura chiesta da una conversazione
+
+Sullo stesso endpoint il deck accetta anche la chiusura di una conversazione viva, col terzo comando del pacchetto:
+
+```bash
+loom-deck-close 0a1b2c3d
+```
+
+L'argomento è il `sessionId` che `loom-deck-spawn` ha restituito, intero o coi primi 8 caratteri o più, purché indichi una sola conversazione viva del progetto. Il deck chiude solo una conversazione **aperta da una richiesta `loom-deck-spawn`** (il sidecar la marca `origin: endpoint` allo spawn) e **ferma** — stato `idle`, o `waiting` su una domanda o un permesso —, e rifiuta col motivo una conversazione al lavoro, aperta a mano, di un altro progetto, o la conversazione stessa che chiede (il client manda `$CLAUDE_CODE_SESSION_ID`). Chiude terminando il processo `claude`, e la tab si chiude da sé:
+
+- **Linux** — SIGHUP, il segnale della chiusura della tab; Ptyxis chiude la tab con l'`exit-action` `close` del profilo;
+- **Windows** — il deck scrive un marcatore `loom-deck-close-<pid>` nella temporanea e termina `claude`; il wrapper della tab lo trova ed esce 0, e Windows Terminal chiude la tab con `closeOnExit` `graceful`. Un crash, senza marcatore, lascia la tab aperta con l'errore.
+
+Il deck risponde quando il processo è finito, entro 30 secondi; oltre risponde che non è terminato e non lo uccide. Il transcript resta su disco e la conversazione si riprende dal deck; la sua marca `live` si ritira nella chiusura stessa, così il restore delle vive non la riapre. Uscite: `0` chiusa, `1` rifiuto, processo non terminato o nessuna risposta, `2` errore d'uso, `3` nessun deck in ascolto sul progetto. Lo usa la skill `/loom-works:close-session` del plugin.
+
 ### `f` — forkare una conversazione
 
 Il fork rama la sessione selezionata: `claude --resume <origine> --fork-session` apre un **sessionId nuovo** con il transcript copiato, lasciando l'origine intatta. Serve quando vuoi ripartire da un certo stato senza perdere il ramo originale — e siccome i due id sono distinti, non esistono mai due processi che scrivono lo stesso file (il vincolo *single-writer* dello store di Claude Code).
@@ -392,7 +409,7 @@ Sessions · tutte (317) · ●2 vive · 📌4 · +213 più vecchie · ↑7 · �
 ## Installazione
 
 ```bash
-npm install -g @lamemind/loom-deck   # comandi globali `loom-deck` e `loom-deck-spawn`
+npm install -g @lamemind/loom-deck   # comandi globali `loom-deck`, `loom-deck-spawn`, `loom-deck-close`
 # oppure senza install permanente:
 npx @lamemind/loom-deck
 ```
