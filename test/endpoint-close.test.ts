@@ -124,6 +124,26 @@ test('rifiuti prima di toccare un processo, col motivo', async () => {
   }
 });
 
+test('turno headless in corso: rifiuto col motivo vero e il pid, nessun processo toccato (T206)', async () => {
+  const turn = 'ffffffff-6666-4666-8666-666666666206';
+  const { term, calls } = fakeTerm(0);
+  const { d, retired } = deps({
+    term,
+    headless: () => new Map([[turn, live(turn, 4242, 'busy')]]),
+    sidecar: () => ({ endpointBorn: new Set([turn]), bindings: new Map() }),
+  });
+  for (const ref of [turn, turn.slice(0, 8)]) {
+    const r = await handleCloseRequest(req(ref), d);
+    assert.equal(r.ok, false);
+    assert.equal(
+      (r as { reason: string }).reason,
+      'ffffffff: turno headless in corso (pid 4242): finisce da solo, si ferma con kill 4242',
+    );
+  }
+  assert.deepEqual(calls.terminated, []);
+  assert.deepEqual(retired, []);
+});
+
 test('conversazione nata dall’endpoint e non più viva: «già chiusa»', async () => {
   const gone = 'eeeeeeee-5555-4555-8555-555555555555';
   const { d } = deps({ sidecar: () => ({ endpointBorn: new Set([gone]), bindings: new Map() }) });

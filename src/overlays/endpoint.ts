@@ -17,7 +17,7 @@ import { keepEndpoint, type KeeperEvent, type RequestHandlers } from '../endpoin
 import { handleCloseRequest } from '../endpoint-close.js';
 import { handleSpawnRequest } from '../endpoint-spawn.js';
 import { platformTerminator } from '../close-terminate.js';
-import { discoverLiveSessions } from '../live-sessions.js';
+import { discoverLiveSessions, discoverProjectProcesses } from '../live-sessions.js';
 import { endpointFor, type CloseReply } from '../spawn-endpoint.js';
 import { isAvailable, offText } from '../platform.js';
 import { appendLive, loadSessionIndex, ORIGIN_ENDPOINT } from '../task-index.js';
@@ -71,6 +71,7 @@ export function useSpawnEndpoint(deps: EndpointDeps) {
             isAvailable('liveSessions') ? null : offText('liveSessions', 'chiusura delle conversazioni'),
           terminator: () => platformTerminator(),
           live: () => discoverLiveSessions(cwd),
+          headless: () => discoverProjectProcesses(cwd).headless,
           sidecar: () => loadSessionIndex(cwd),
           retire: (sid) => appendLive(cwd, sid, false),
           inFlight: closing.current,

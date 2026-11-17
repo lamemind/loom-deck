@@ -13,7 +13,9 @@
 //  1. la piattaforma ha la liveness — senza, la mappa delle vive è vuota per
 //     costruzione, e «nessuna viva» sarebbe una risposta falsa;
 //  2. il bersaglio è UNA viva del progetto — `sessionId` intero o prefisso
-//     (P1 preflight);
+//     (P1 preflight). T206 — una conversazione col turno headless in corso non
+//     è una viva: non c'è una tab da chiudere, e la risposta dice il motivo
+//     vero invece di «nessuna viva»;
 //  3. non è la conversazione che chiede (P2);
 //  4. è nata da una richiesta `spawn` sull'endpoint (D2): le conversazioni
 //     aperte a mano le chiude solo l'umano;
@@ -64,6 +66,9 @@ export interface CloseRequestDeps {
   /** Le vive del progetto ADESSO, lette dal registro al momento della
    *  richiesta: la mappa del poll può avere un giro di ritardo. */
   live: () => ReadonlyMap<string, LiveSession>;
+  /** T206 — i turni headless in corso del progetto, letti allo stesso modo.
+   *  Servono solo al rifiuto: un turno headless non si chiude da qui. */
+  headless?: () => ReadonlyMap<string, LiveSession>;
   /** Dal sidecar: le conversazioni nate dall'endpoint e i binding alle task. */
   sidecar: () => { endpointBorn: ReadonlySet<string>; bindings: ReadonlyMap<string, string> };
   /** Ritira la marca `live` della conversazione chiusa (P3 preflight). */
@@ -87,6 +92,17 @@ export async function handleCloseRequest(req: CloseRequest, deps: CloseRequestDe
   const side = deps.sidecar();
   const found = resolveTarget(req.session, deps.live());
   if ('none' in found) {
+    // T206 — prima di «nessuna viva»: un turno headless in corso. Il processo
+    // c'è, ma non ha una tab, e lo chiude la fine del turno; chi lo vuole
+    // fermare prima ha il pid.
+    const turn = deps.headless ? resolveTarget(req.session, deps.headless()) : null;
+    if (turn && 'target' in turn) {
+      const pid = turn.target.pid;
+      return {
+        ok: false,
+        reason: `${short(turn.target.sessionId)}: turno headless in corso (pid ${pid}): finisce da solo, si ferma con kill ${pid}`,
+      };
+    }
     // Il sidecar distingue «chiusa» da «di nessuno qui»: una conversazione nata
     // dall'endpoint di questo progetto e non più viva è già stata chiusa.
     const born = [...side.endpointBorn].some((id) => id.startsWith(req.session));
