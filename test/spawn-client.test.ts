@@ -160,6 +160,48 @@ test('rifiuto del deck: uscita 1 col motivo; spawn inerte: uscita 0 e avviso', a
   assert.doesNotMatch(inert.out, /in-tab/);
 });
 
+// T198 — il rifiuto per la finestra arriva com'è, istruzione compresa; la tab
+// aperta senza verifica porta l'avviso subito sotto la prima riga.
+test('finestra del progetto: rifiuto con l’istruzione, o tab aperta con l’avviso', async () => {
+  const p = project();
+  const refused = await withDeck(
+    p,
+    async () => ({
+      ok: false,
+      reason:
+        'finestra del progetto non in focus (demo): la tab nascerebbe nella finestra di un altro progetto. Porta davanti una finestra del progetto e richiedi lo spawn',
+    }),
+    () => client(['T5', 'preflight'], p),
+  );
+  assert.equal(refused.code, 1);
+  assert.match(refused.err, /il deck ha rifiutato: finestra del progetto non in focus \(demo\)/);
+  assert.match(refused.err, /Porta davanti una finestra del progetto e richiedi lo spawn/);
+  assert.equal(refused.out, '');
+
+  const warned = await withDeck(
+    p,
+    async (req) => ({
+      ok: true,
+      sessionId: 's',
+      task: req.task,
+      kind: req.kind,
+      model: 'opus',
+      prompt: '',
+      title: 't',
+      inTab: 'c',
+      warning: 'finestra non verificata (compass non raggiungibile: ENOENT): la tab nasce nella finestra di terminale attiva',
+    }),
+    () => client(['T5', 'none'], p),
+  );
+  assert.equal(warned.code, 0);
+  const lines = warned.out.split('\n');
+  assert.match(lines[0]!, /^✔ tab aperta/);
+  assert.equal(
+    lines[1],
+    '⚠ finestra non verificata (compass non raggiungibile: ENOENT): la tab nasce nella finestra di terminale attiva',
+  );
+});
+
 test('deck che non risponde: uscita 1 allo scadere dell’attesa', async () => {
   const p = project();
   const r = await withDeck(

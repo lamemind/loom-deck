@@ -12,7 +12,9 @@
 //
 // Uscite:
 //   0  tab aperta (o spawn inerte, se il deck gira col freno dei test)
-//   1  il deck ha risposto con un rifiuto, o non ha risposto in tempo
+//   1  il deck ha risposto con un rifiuto, o non ha risposto in tempo. T198 —
+//      su Linux anche la finestra in focus che non è del progetto: il motivo
+//      porta l'istruzione per l'utente, e il client lo stampa com'è
 //   2  errore d'uso, nessuna richiesta partita
 //   3  nessun deck in ascolto sull'indirizzo del progetto
 //
@@ -132,6 +134,9 @@ export async function runClient(argv: readonly string[], io: ClientIo): Promise<
     r.inert
       ? `⚠ spawn inerte: il deck gira con LOOM_DECK_NO_SPAWN, nessuna tab aperta (${root})`
       : `✔ tab aperta dal deck di ${root}`,
+    // T198 — la tab è aperta senza sapere se la finestra attiva era del
+    // progetto: la conversazione lo deve poter dire all'utente.
+    ...(r.warning ? [`⚠ ${r.warning}`] : []),
     `sessionId: ${r.sessionId}`,
     `task:      ${r.task} · ${r.kind} · ${r.model}`,
     `prompt:    ${r.prompt || '(nessuno)'}`,
