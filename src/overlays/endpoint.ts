@@ -20,6 +20,8 @@ import { platformTerminator } from '../close-terminate.js';
 import { discoverLiveSessions, discoverProjectProcesses } from '../live-sessions.js';
 import { endpointFor, type CloseReply } from '../spawn-endpoint.js';
 import { isAvailable, offText } from '../platform.js';
+import { loadProjectId } from '../config.js';
+import { checkProjectWindow } from '../window-check.js';
 import { appendLive, loadSessionIndex, ORIGIN_ENDPOINT } from '../task-index.js';
 import { loadTaskFileText, loadTasks } from '../tasks.js';
 import type { DeckActions } from '../actions.js';
@@ -61,6 +63,9 @@ export function useSpawnEndpoint(deps: EndpointDeps) {
           // T204 — la conversazione nasce marcata `origin: endpoint`: è ciò che
           // la rende chiudibile da un'altra conversazione (D2 preflight).
           spawn: (id, model, note, prompt) => d.actions.spawnForTask(id, model, note, prompt, false, ORIGIN_ENDPOINT),
+          // T198 — l'`id` si rilegge a ogni richiesta, come la lista task: il
+          // file di progetto può cambiare a deck acceso.
+          windowCheck: isAvailable('windowCheck') ? () => checkProjectWindow(loadProjectId(cwd)) : undefined,
         });
       },
       close: async (req) => {

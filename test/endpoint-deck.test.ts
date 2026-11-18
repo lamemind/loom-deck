@@ -141,6 +141,9 @@ test('due deck su due progetti: ogni richiesta arriva al deck del proprio proget
     assert.equal(ra.code, 0, ra.err);
     assert.equal(rb.code, 0, rb.err);
     assert.match(ra.out, /^prompt: +\/loom-works:run-task T1 DLV 2,3$/m);
+    // T198 — il deck vero passa dal controllo della finestra; col freno dei
+    // test non chiede a compass e lo dice.
+    assert.match(ra.out, /^⚠ finestra non verificata \(deck col freno LOOM_DECK_NO_SPAWN, compass non chiesto\)/m);
     assert.match(rb.out, /^task: +T1 · preflight · haiku$/m);
 
     // Il binding nel sidecar del PROPRIO progetto, col sessionId restituito;

@@ -12,10 +12,10 @@
 // Modulo senza I/O di rete. Legge il disco solo per l'`id` del progetto e per il
 // path reale della root.
 import { createHash } from 'node:crypto';
-import { readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { posix } from 'node:path';
-import { configFilePath } from './config.js';
+import { loadProjectId } from './config.js';
 import { comparablePath, projectBaseName } from './project-path.js';
 import { isModelKind, type ModelKind, type PromptKind } from './spawn-catalog.js';
 import { PROMPT_KINDS } from './tab-args.js';
@@ -63,19 +63,9 @@ export function endpointName(root: string, platform: NodeJS.Platform = process.p
   // Senza `id` nel file, il nome della cartella preso dalla stessa forma di
   // confronto dell'hash: su Windows minuscolo, o due grafie della stessa
   // cartella darebbero due nomi.
-  const id = sanitizeId(projectId(root) ?? projectBaseName(path, platform));
+  const id = sanitizeId(loadProjectId(root) ?? projectBaseName(path, platform));
   const hash = createHash('sha256').update(path).digest('hex').slice(0, 8);
   return `loom-deck-${id}-${hash}`;
-}
-
-/** L'`id` dichiarato dal file di progetto, o `null` senza file o senza campo. */
-function projectId(root: string): string | null {
-  try {
-    const raw = JSON.parse(readFileSync(configFilePath(root), 'utf8')) as { id?: unknown };
-    return typeof raw.id === 'string' && raw.id.trim() ? raw.id : null;
-  } catch {
-    return null;
-  }
 }
 
 /** Solo caratteri che un nome di pipe e un nome di file accettano su ogni
@@ -180,6 +170,10 @@ export type SpawnReply =
       inTab: string | null;
       /** Lo spawn non è avvenuto davvero: freno dei test acceso sul deck. */
       inert?: true;
+      /** T198 — la tab è aperta senza aver verificato che la finestra in focus
+       *  fosse del progetto, e il perché: compass assente, più vecchio, o che
+       *  non conosce il progetto. */
+      warning?: string;
     }
   | { ok: false; reason: string };
 

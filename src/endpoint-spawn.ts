@@ -19,6 +19,7 @@ import { specializeRecap, type ModelKind, type PromptKind } from './spawn-catalo
 import type { ResolvedSpawn } from './spawn-config.js';
 import type { SpawnReply, SpawnRequest } from './spawn-endpoint.js';
 import { taskIsMandate, taskIsPerimeter } from './tasks.js';
+import type { WindowCheck } from './window-check.js';
 
 /** Quanto il deck aspetta l'annuncio di `deck-run` prima di rispondere con un
  *  errore. `deck-run` compone in millisecondi; il margine copre l'avvio di node
@@ -47,6 +48,11 @@ export interface SpawnRequestDeps extends SpawnPlanDeps {
     note: string,
     prompt: string,
   ) => { sessionId: string; spawned: Spawned } | null;
+  /** T198 — la finestra in focus è del progetto? Assente = nessun controllo,
+   *  dove la piattaforma non ce l'ha (`windowCheck` in `platform.ts`). Gira
+   *  dopo le verifiche della richiesta e prima dello spawn: un rifiuto non
+   *  apre la tab e non scrive il binding nel sidecar, che scrive `spawn`. */
+  windowCheck?: () => Promise<WindowCheck>;
   announceTimeoutMs?: number;
 }
 
@@ -63,11 +69,18 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
   if (!plan.ok) return plan;
   const { kind, model, note, prompt } = plan;
 
+  // Dopo il piano: una richiesta sbagliata si rifiuta col suo motivo, che vale
+  // in qualunque finestra, e il processo verso compass parte solo per uno
+  // spawn che avverrebbe davvero.
+  const check = deps.windowCheck ? await deps.windowCheck() : { ok: true as const };
+  if ('refuse' in check) return { ok: false, reason: check.refuse };
+  const warning = 'warning' in check ? { warning: check.warning } : {};
+
   const out = deps.spawn(req.task, model, note, prompt);
   if (!out) return { ok: false, reason: 'spawn rifiutato dal deck' };
   const announced = await awaitAnnounce(out.spawned.child, deps.announceTimeoutMs ?? ANNOUNCE_TIMEOUT_MS);
   if ('error' in announced) return { ok: false, reason: announced.error };
-  const base = { ok: true as const, sessionId: out.sessionId, task: req.task, kind, model, prompt };
+  const base = { ok: true as const, sessionId: out.sessionId, task: req.task, kind, model, prompt, ...warning };
   if ('inert' in announced) return { ...base, title: null, inTab: null, inert: true };
   return { ...base, title: announced.title, inTab: announced.inTab };
 }

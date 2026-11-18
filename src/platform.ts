@@ -31,7 +31,12 @@ export type Feature =
   | 'launch'
   /** La notifica di fine project status: `notify-send` su Linux, un toast
    *  WinRT da Windows PowerShell su Windows (T180, `windows-notify.ts`). */
-  | 'notify';
+  | 'notify'
+  /** T198 — il controllo della finestra prima di una tab chiesta da una
+   *  conversazione: compass dice se la finestra in focus è del progetto
+   *  (`window-check.ts`). Serve dove `--tab` nasce nella finestra attiva del
+   *  terminale, cioè con Ptyxis. */
+  | 'windowCheck';
 
 /**
  * LA MAPPA: per piattaforma, le funzioni spente. Una piattaforma assente le ha
@@ -44,6 +49,10 @@ export const UNAVAILABLE: Partial<Record<NodeJS.Platform, readonly Feature[]>> =
     'pluginScripts', // T178 — .sh del plugin via Git Bash
     'hardWrap', // T178 — python del wrap-scan
     'launch', // T179 — comando per piattaforma nelle voci launch[]
+    // T199 — Windows Terminal apre una tab in una finestra per nome, e compass
+    // lì non c'è: il controllo ha un'altra forma. Spento e non lasciato al ramo
+    // «compass non raggiungibile», che metterebbe un avviso su ogni spawn.
+    'windowCheck',
   ],
 };
 
@@ -56,6 +65,7 @@ const FEATURE_LABEL: Record<Feature, string> = {
   hardWrap: 'scan hard-wrap',
   launch: 'voci launch',
   notify: 'notifiche',
+  windowCheck: 'verifica della finestra del progetto',
 };
 
 const PLATFORM_NAME: Partial<Record<NodeJS.Platform, string>> = {

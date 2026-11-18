@@ -449,6 +449,18 @@ export function parseIdentity(raw: unknown): Identity | null {
   return { name };
 }
 
+/** L'`id` dichiarato dal file di progetto, o `null` senza file o senza campo.
+ *  È la chiave del progetto nel registry di compass e nel nome dell'endpoint
+ *  (`spawn-endpoint.ts`). Mai un throw. */
+export function loadProjectId(projectRoot: string): string | null {
+  try {
+    const raw = JSON.parse(readFileSync(configFilePath(projectRoot), 'utf8')) as { id?: unknown };
+    return typeof raw.id === 'string' && raw.id.trim() ? raw.id : null;
+  } catch {
+    return null;
+  }
+}
+
 /** File assente o malformato → nessuna identità. Mai un throw. */
 export function loadIdentity(projectRoot: string): Identity | null {
   try {

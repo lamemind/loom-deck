@@ -151,6 +151,54 @@ test('rifiuti prima della tab: piattaforma, task assente, perimetro fuori range 
   assert.equal(calls.spawned.length, 0, 'nessun rifiuto passa dallo spawn');
 });
 
+// T198 — il controllo della finestra: rifiuto sul `no` senza spawn, apertura
+// con l'avviso su ogni «non lo so», nessun controllo su una richiesta sbagliata.
+test('finestra del progetto non in focus: rifiuto col motivo, nessuno spawn e quindi nessun binding', async () => {
+  const calls: Calls = { spawned: [], defaults: [] };
+  const r = await handleSpawnRequest(
+    req({}),
+    deps({ windowCheck: async () => ({ refuse: 'finestra del progetto non in focus (demo): …' }) }, calls),
+  );
+  assert.deepEqual(r, { ok: false, reason: 'finestra del progetto non in focus (demo): …' });
+  assert.equal(calls.spawned.length, 0, 'il binding lo scrive spawn, e spawn non parte');
+});
+
+test('finestra non verificata: la tab si apre e la risposta porta l’avviso', async () => {
+  const calls: Calls = { spawned: [], defaults: [] };
+  const r = await handleSpawnRequest(
+    req({}),
+    deps({ windowCheck: async () => ({ warning: 'finestra non verificata (compass non raggiungibile: ENOENT): …' }) }, calls),
+  );
+  assert.equal(r.ok, true);
+  assert.equal((r as { warning?: string }).warning, 'finestra non verificata (compass non raggiungibile: ENOENT): …');
+  assert.equal(calls.spawned.length, 1);
+});
+
+test('finestra del progetto in focus, o nessun controllo: la tab si apre senza avviso', async () => {
+  for (const windowCheck of [async () => ({ ok: true as const }), undefined]) {
+    const calls: Calls = { spawned: [], defaults: [] };
+    const r = await handleSpawnRequest(req({}), deps({ windowCheck }, calls));
+    assert.equal(r.ok, true);
+    assert.equal('warning' in r, false, 'nessun campo warning');
+    assert.equal(calls.spawned.length, 1);
+  }
+});
+
+test('una richiesta sbagliata si rifiuta col suo motivo, senza chiedere la finestra', async () => {
+  let asked = 0;
+  const r = await handleSpawnRequest(
+    req({ task: 'T404' }),
+    deps({
+      windowCheck: async () => {
+        asked++;
+        return { refuse: 'finestra' };
+      },
+    }),
+  );
+  assert.match((r as { reason: string }).reason, /T404 non è nella lista task/);
+  assert.equal(asked, 0);
+});
+
 test('deck-run che esce prima di annunciare: ok:false col codice', async () => {
   const r = await handleSpawnRequest(
     req({}),

@@ -21,7 +21,7 @@ import {
 import { gitlinkIndicator, inboxButton, wrapIndicator } from '../src/frame.js';
 import { sessionView } from '../src/pane-views.js';
 
-const ALL: Feature[] = ['spawn', 'liveSessions', 'pluginScripts', 'hardWrap', 'launch', 'notify'];
+const ALL: Feature[] = ['spawn', 'liveSessions', 'pluginScripts', 'hardWrap', 'launch', 'notify', 'windowCheck'];
 
 /** Esegue `fn` con la piattaforma delle funzioni forzata, poi la rimette. */
 function onPlatform<T>(p: NodeJS.Platform, fn: () => T): T {
@@ -46,7 +46,7 @@ test('su Linux nessuna funzione è spenta', () => {
 const WIN_ON: Feature[] = ['spawn', 'liveSessions', 'notify'];
 const WIN_OFF: Feature[] = ALL.filter((f) => !WIN_ON.includes(f));
 
-test('su Windows sono spente le tre funzioni ancora senza figlia chiusa, spawn, liveSessions e notify sono accese', () => {
+test('su Windows sono spente le tre funzioni ancora senza figlia chiusa e il controllo della finestra (T199), spawn, liveSessions e notify sono accese', () => {
   for (const f of WIN_OFF) assert.equal(isAvailable(f, 'win32'), false, f);
   for (const f of WIN_ON) assert.equal(isAvailable(f, 'win32'), true, f);
   // La mappa è il punto che una figlia tocca per riaccendere: nessuna voce
