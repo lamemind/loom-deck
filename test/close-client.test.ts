@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { listenEndpoint, type RequestHandlers } from '../src/endpoint-server.js';
 import { callerSession, parseCloseArgs, runCloseClient } from '../src/close-client.js';
 import { endpointFor, type CloseReply, type CloseRequest } from '../src/spawn-endpoint.js';
+import { unixOnly } from './platform-gates.js';
 
 const SID = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
 const ME = 'ffffffff-0000-4000-8000-000000000000';
@@ -154,7 +155,9 @@ test('deck che non risponde: uscita 1 allo scadere dell’attesa', async () => {
   assert.match(r.err, /nessuna risposta dal deck entro/);
 });
 
-test('cartella runtime troppo lunga: uscita 1 col motivo, nessuna connessione a un path troncato', async () => {
+// Su Windows l'endpoint è una named pipe: né XDG_RUNTIME_DIR né il limite di
+// byte del path di un socket Unix esistono lì.
+test('cartella runtime troppo lunga: uscita 1 col motivo, nessuna connessione a un path troncato', { skip: unixOnly('limite di 107 byte del path di un socket Unix') }, async () => {
   const p = project();
   const r = await client([SID], { root: p.root, env: { XDG_RUNTIME_DIR: `/tmp/${'x'.repeat(100)}` } });
   assert.equal(r.code, 1);
