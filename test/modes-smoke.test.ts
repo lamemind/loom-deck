@@ -871,8 +871,17 @@ test('un click su un bottone modello del blocco nuda è inerte: nessun tasto lo 
 }, () => {
   // P9 — solo l'etichetta `c 🤖` è cliccabile: `m` cicla, non seleziona, quindi
   // un bottone non ha un tasto da sintetizzare.
-  const bare = projectLaunchRow().regions.find((r) => r.key === 'c')!;
-  const frame = lastFrame(capture(clickLaunch(bare.end + 2)));
+  //
+  // Sul progetto SINTETICO, con `HOME` dirottato: l'asserzione legge il frame
+  // intero, e sul cappello vero `deck-run` compare anche nel titolo di una
+  // task o nell'anteprima di una conversazione (la riga T217 «Deck: deck-run
+  // rifiuta…» lo faceva scattare senza nessun click attivo). Qui task e
+  // conversazioni sono del test. La colonna si calcola dalle voci `launch`
+  // dello stesso progetto su cui gira il deck.
+  const { proj, env } = detailProject();
+  const bare = launchRow(loadLaunch(proj), 120).regions.find((r) => r.key === 'c')!;
+  const frame = lastFrame(capture(clickLaunch(bare.end + 2), proj, env));
+  assert.match(frame, /c 🤖/, `il deck non ha disegnato la riga launch: ${frame}`);
   assert.doesNotMatch(frame, /deck-run|terminale su/i, `un bottone ha risposto al click: ${frame}`);
 });
 
