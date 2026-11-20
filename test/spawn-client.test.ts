@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { listenEndpoint, type RequestHandler } from '../src/endpoint-server.js';
-import { parseClientArgs, regiaSessionOf, runClient } from '../src/spawn-client.js';
+import { parseClientArgs, queuedLines, regiaSessionOf, runClient } from '../src/spawn-client.js';
 import { endpointFor, type SpawnRequest } from '../src/spawn-endpoint.js';
 
 /** Un progetto con file di progetto e una cartella runtime propria per i
@@ -300,7 +300,8 @@ test('richiesta in coda: uscita 4, sessionId, task, prompt, regia e scadenza su 
   assert.equal(code, 4);
   assert.equal(err, '');
   const lines = out.trimEnd().split('\n');
-  assert.match(lines[0]!, /^⏳ in coda sul deck di .*: la finestra in focus non è del progetto, la tab nasce quando una finestra del progetto torna in focus$/);
+  // T234 — la prima riga porta il motivo del deck, senza il suo `in coda: `.
+  assert.match(lines[0]!, /^⏳ in coda sul deck di .*: finestra del progetto non in focus \(demo\), la tab nasce quando …$/);
   assert.deepEqual(lines.slice(1, 5), [
     'sessionId: 0a1b2c3d-1111-2222-3333-444455556666',
     'task:      T5 · preflight · opus',
@@ -333,4 +334,35 @@ test('due progetti, due deck: ogni richiesta arriva al deck del proprio progetto
       assert.match((await client(['T2', 'preflight'], b)).err, /rifiutato: beta:T2/);
     }),
   );
+});
+
+// T234 — a schermo bloccato la stessa forma, col motivo del deck nella prima
+// riga: chi ha chiesto dice all'utente che la tab aspetta lo sblocco.
+test('richiesta in coda a schermo bloccato: la prima riga dice lo sblocco, il resto non cambia', () => {
+  const expires = new Date(Date.UTC(2026, 10, 20, 17, 30, 0));
+  const lines = queuedLines(
+    {
+      sessionId: '0a1b2c3d-1111-2222-3333-444455556666',
+      task: 'T5',
+      kind: 'run',
+      model: 'opus',
+      prompt: '/loom-works:run-task T5',
+      regia: null,
+      expiresAt: expires.toISOString(),
+    },
+    '/progetti/demo',
+    expires.getTime() - 12 * 60_000,
+    'in coda: schermo bloccato (demo), allo sblocco la tab nasce quando una finestra del progetto è in focus (scade alle 18:30)',
+  );
+  assert.equal(
+    lines[0],
+    '⏳ in coda sul deck di /progetti/demo: schermo bloccato (demo), allo sblocco la tab nasce quando una finestra del progetto è in focus (scade alle 18:30)',
+  );
+  assert.deepEqual(lines.slice(1, 4), [
+    'sessionId: 0a1b2c3d-1111-2222-3333-444455556666',
+    'task:      T5 · run · opus',
+    'prompt:    /loom-works:run-task T5',
+  ]);
+  assert.match(lines[4]!, /^scade: {5}.* \(fra 12 min\)$/);
+  assert.equal(lines.length, 5);
 });

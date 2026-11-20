@@ -27,11 +27,24 @@
 // tab. Una richiesta che muore in coda non lascia una conversazione della task
 // senza transcript.
 //
+// T234 — lo schermo bloccato. Con lo schermo bloccato lo shell spegne compass,
+// e nessuno risponde ad `AwaitProjectFocus`. Una richiesta nata a schermo
+// bloccato (`enqueue` con `locked`), o in coda quando lo schermo si blocca
+// (`interrotta` di compass, oppure il blocco fra il ritorno del focus e
+// l'apertura), aspetta lo sblocco in un terzo stato, `locked`: un `gdbus
+// wait` sul nome di compass (`awaitCompassBack`, P3 preflight). Al ritorno di
+// compass la richiesta torna ad aspettare il focus come ogni altra (D1):
+// finestra del progetto in focus, la tab nasce subito; altra finestra, compass
+// mostra «Vai». La scadenza resta quella della richiesta (D2): il blocco non
+// ferma l'orologio. Un `interrotta` a schermo sbloccato — `compass reload` —
+// resta la morte della richiesta di T229 (D3).
+//
 // Le dipendenze arrivano come funzioni (`SpawnQueueDeps`): il test esegue la
-// coda intera con compass, orologio e spawn finti.
+// coda intera con compass, shell, orologio e spawn finti.
 import { randomUUID } from 'node:crypto';
 import type { OkPlan, SpawnPlan } from './endpoint-spawn.js';
 import type { CompassReply } from './focus-session.js';
+import type { CompassBack } from './screen-lock.js';
 import type { SpawnReply, SpawnRequest } from './spawn-endpoint.js';
 import { refuseReason, WINDOW_CHECK_TIMEOUT_S, type WindowCheck } from './window-check.js';
 
@@ -56,6 +69,16 @@ export const AWAIT_PROBE_MS = WINDOW_CHECK_TIMEOUT_S * 1000;
 /** Il titolo delle notifiche del deck sulla coda. */
 export const QUEUE_NOTIFY_TITLE = 'loom-deck · spawn in coda';
 
+/** T234 — perché una richiesta entra in coda: la finestra in focus non è del
+ *  progetto (T229), oppure lo schermo è bloccato con compass spento. */
+export type QueueCause = 'focus' | 'locked';
+
+/** T234 — l'anticipo con cui la fine di `gdbus wait` vale come scadenza.
+ *  `gdbus` conta in secondi interi e può uscire poco prima dell'istante
+ *  esatto: un'attesa dello sblocco finita a ridosso della scadenza è la
+ *  scadenza, non un canale caduto. */
+export const LOCKED_EXPIRY_SLACK_MS = 2000;
+
 export interface SpawnQueueDeps {
   /** L'`id` del progetto in `.claude/loom-works.json`, riletto a ogni uso. */
   projectId: () => string | null;
@@ -71,6 +94,14 @@ export interface SpawnQueueDeps {
   ) => () => void;
   /** `ProjectFocused` di nuovo, prima di ogni apertura (P4 preflight). */
   recheck: () => Promise<WindowCheck>;
+  /** T234 — lo schermo è bloccato con compass abilitato? Chiesto allo shell
+   *  quando compass è appena sparito, ripetuto oltre la finestra in cui lo
+   *  shell non dichiara ancora il blocco (`screenLockedSettled`). */
+  screenLocked: () => Promise<boolean>;
+  /** T234 — aspetta il ritorno di compass sul bus, cioè lo sblocco, per
+   *  `deadlineS` secondi al massimo: consegna l'esito una volta sola, e
+   *  ritorna la funzione che interrompe l'attesa (`awaitCompassBack`). */
+  awaitCompass: (deadlineS: number, onResult: (r: CompassBack) => void) => () => void;
   /** La richiesta contro il progetto di adesso: in trenta minuti la task può
    *  essere cambiata — un DLV del perimetro chiuso da un'altra sessione. */
   replan: (req: SpawnRequest) => SpawnPlan;
@@ -94,8 +125,10 @@ interface Item {
   expiresAtMs: number;
   label: string;
   /** `waiting`: un'attesa ad `AwaitProjectFocus` è aperta; `ready`: il focus
-   *  è arrivato, la richiesta aspetta il suo turno di apertura. */
-  state: 'waiting' | 'ready';
+   *  è arrivato, la richiesta aspetta il suo turno di apertura; `locked`
+   *  (T234): lo schermo è bloccato, un'attesa del ritorno di compass è
+   *  aperta. */
+  state: 'waiting' | 'ready' | 'locked';
   /** La generazione dell'attesa in corso. Ogni attesa lanciata o interrotta
    *  la incrementa: la risposta di un'attesa superata non tocca la richiesta. */
   gen: number;
@@ -152,6 +185,9 @@ export class SpawnQueue {
   private seq = 0;
   private draining = false;
   private stopped = false;
+  /** T234 — la domanda allo shell in corso: N richieste interrotte dallo
+   *  stesso blocco ne fanno una sola. */
+  private lockProbe: Promise<boolean> | null = null;
   private readonly now: () => number;
   private readonly newSessionId: () => string;
   private readonly ttlMs: number;
@@ -171,10 +207,11 @@ export class SpawnQueue {
 
   /**
    * Mette in coda una richiesta già pianificata, a cui `ProjectFocused` ha
-   * appena risposto `no`. → la risposta al client: «in coda» col `sessionId`
-   * e la scadenza, oppure il rifiuto se l'attesa non può partire.
+   * appena risposto `no` (`cause` = `focus`), o arrivata a schermo bloccato
+   * (`locked`, T234). → la risposta al client: «in coda» col `sessionId` e la
+   * scadenza, oppure il rifiuto se l'attesa non può partire.
    */
-  async enqueue(req: SpawnRequest, plan: OkPlan): Promise<SpawnReply> {
+  async enqueue(req: SpawnRequest, plan: OkPlan, cause: QueueCause = 'focus'): Promise<SpawnReply> {
     const projectId = this.deps.projectId();
     if (this.stopped || projectId === null) {
       return { ok: false, reason: refuseReason(projectId ?? 'progetto senza id') };
@@ -190,6 +227,7 @@ export class SpawnQueue {
       gen: 0,
       stopAwait: () => {},
     };
+    if (cause === 'locked') return this.enqueueLocked(item, projectId);
     const early = await this.probe(item, projectId);
     if (early !== null) {
       if (!('word' in early) || early.word !== 'si') return { ok: false, reason: queueRefusal(early, projectId) };
@@ -201,21 +239,30 @@ export class SpawnQueue {
     const at = clockOf(item.expiresAtMs);
     this.deps.note(`⏳ ${item.label} in coda: la tab nasce quando una finestra del progetto torna in focus (scade alle ${at})`);
     if (item.state === 'ready') this.focusArrived();
-    return {
-      ok: false,
-      reason:
-        `in coda: finestra del progetto non in focus (${projectId}), ` +
+    return queuedReply(
+      item,
+      `in coda: finestra del progetto non in focus (${projectId}), ` +
         `la tab nasce quando una finestra del progetto torna in focus (scade alle ${at})`,
-      queued: {
-        sessionId: item.sessionId,
-        task: req.task,
-        kind: plan.kind,
-        model: plan.model,
-        prompt: plan.prompt,
-        regia: plan.regia?.regia ?? null,
-        expiresAt: new Date(item.expiresAtMs).toISOString(),
-      },
-    };
+    );
+  }
+
+  /** T234 — la richiesta nata a schermo bloccato: nessuna sonda di
+   *  `AwaitProjectFocus`, che con compass spento risponderebbe
+   *  `ServiceUnknown`, ma l'attesa del ritorno di compass. Nessuna notifica:
+   *  compass, che la mostrerebbe, è spento (D1). */
+  private enqueueLocked(item: Item, projectId: string): SpawnReply {
+    item.state = 'locked';
+    this.items.push(item);
+    this.launchLocked(item);
+    const at = clockOf(item.expiresAtMs);
+    this.deps.note(
+      `⏳ ${item.label} in coda: schermo bloccato, allo sblocco la tab nasce quando una finestra del progetto è in focus (scade alle ${at})`,
+    );
+    return queuedReply(
+      item,
+      `in coda: schermo bloccato (${projectId}), ` +
+        `allo sblocco la tab nasce quando una finestra del progetto è in focus (scade alle ${at})`,
+    );
   }
 
   /** Il deck si chiude: ogni attesa si interrompe, e compass ritira le sue
@@ -257,6 +304,79 @@ export class SpawnQueue {
     });
   }
 
+  /** T234 — apre l'attesa del ritorno di compass, con la scadenza che resta
+   *  alla richiesta. */
+  private launchLocked(item: Item): void {
+    const gen = ++item.gen;
+    const deadlineS = Math.max(1, Math.ceil((item.expiresAtMs - this.now()) / 1000));
+    item.stopAwait = this.deps.awaitCompass(deadlineS, (r) => {
+      if (gen !== item.gen) return;
+      this.onCompass(item, r);
+    });
+  }
+
+  /** T234 — la fine dell'attesa dello sblocco. compass è tornato: la richiesta
+   *  aspetta il focus come ogni altra, e `AwaitProjectFocus` risponde subito
+   *  `si` se la finestra in focus è già del progetto. */
+  private onCompass(item: Item, r: CompassBack): void {
+    if (this.stopped || !this.items.includes(item)) return;
+    if ('back' in r) {
+      const projectId = this.deps.projectId();
+      if (projectId === null) {
+        this.drop(item, 'progetto senza id in .claude/loom-works.json');
+        return;
+      }
+      item.state = 'waiting';
+      this.launch(item, projectId);
+      return;
+    }
+    if (this.now() >= item.expiresAtMs - LOCKED_EXPIRY_SLACK_MS) {
+      this.expire(item);
+      return;
+    }
+    this.drop(item, `attesa dello sblocco caduta: ${r.unreachable}`);
+  }
+
+  /** T234 — lo schermo è bloccato con compass abilitato? Una domanda sola per
+   *  quante richieste la chiedono insieme. */
+  private lockedNow(): Promise<boolean> {
+    if (this.lockProbe === null) {
+      this.lockProbe = this.deps
+        .screenLocked()
+        .catch(() => false)
+        .finally(() => {
+          this.lockProbe = null;
+        });
+    }
+    return this.lockProbe;
+  }
+
+  /** T234 — `interrotta` su una richiesta che aspettava il focus: compass si è
+   *  spento. Se lo schermo è bloccato la richiesta aspetta lo sblocco (D3),
+   *  altrimenti muore come in T229 — un `compass reload`. */
+  private async compassGone(item: Item, r: CompassReply): Promise<void> {
+    const gen = item.gen;
+    const locked = await this.lockedNow();
+    // Nel frattempo la richiesta può essere uscita dalla coda, o un `si` di
+    // un'altra attesa può averla resa pronta: decide quello che è successo.
+    if (this.stopped || !this.items.includes(item) || gen !== item.gen) return;
+    if (!locked) {
+      this.drop(item, awaitFailure(r));
+      return;
+    }
+    this.lock(item);
+  }
+
+  /** T234 — la richiesta passa ad aspettare lo sblocco, con una nota. */
+  private lock(item: Item): void {
+    this.interrupt(item);
+    item.state = 'locked';
+    this.launchLocked(item);
+    this.deps.note(
+      `🔒 ${item.label}: schermo bloccato, resta in coda fino allo sblocco (scade alle ${clockOf(item.expiresAtMs)})`,
+    );
+  }
+
   /** Interrompe l'attesa in corso: la sua risposta, se arriva, si ignora. */
   private interrupt(item: Item): void {
     item.gen++;
@@ -268,6 +388,12 @@ export class SpawnQueue {
     if (this.stopped || !this.items.includes(item)) return;
     if ('word' in r && r.word === 'si') {
       this.focusArrived();
+      return;
+    }
+    // T234 — compass si è spento durante l'attesa: il blocco dello schermo, o
+    // un ricaricamento. Lo dice lo shell.
+    if ('word' in r && r.word === 'interrotta' && this.now() < item.expiresAtMs) {
+      void this.compassGone(item, r);
       return;
     }
     // Ogni fine senza focus, a scadenza passata, è la scadenza: anche il
@@ -313,11 +439,20 @@ export class SpawnQueue {
           break;
         }
         if ('warning' in check || 'locked' in check) {
+          // T234 — lo schermo si è bloccato fra il ritorno del focus e
+          // l'apertura (D3): le pronte aspettano lo sblocco. Un avviso si
+          // riguarda con lo shell oltre la finestra in cui il blocco non è
+          // ancora dichiarato: compass c'era un attimo fa.
+          const locked = 'locked' in check || (await this.lockedNow());
+          if (this.stopped) break;
+          if (locked) {
+            for (const item of this.items.filter((i) => i.state === 'ready')) this.lock(item);
+            break;
+          }
           // Dopo un `no` non si apre alla cieca: senza compass la finestra
           // non si sa, e la richiesta muore.
-          const why = 'warning' in check ? check.warning : check.locked;
           for (const item of this.items.filter((i) => i.state === 'ready')) {
-            this.drop(item, `finestra non verificabile all'apertura: ${why}`);
+            this.drop(item, `finestra non verificabile all'apertura: ${check.warning}`);
           }
           continue;
         }
@@ -377,4 +512,23 @@ export class SpawnQueue {
   private ttlMinutes(): number {
     return Math.round(this.ttlMs / 60_000);
   }
+}
+
+/** La risposta «in coda» al client: il ramo `ok: false` col campo `queued`
+ *  (T229), il motivo secondo la causa. */
+function queuedReply(item: Item, reason: string): SpawnReply {
+  const { req, plan } = item;
+  return {
+    ok: false,
+    reason,
+    queued: {
+      sessionId: item.sessionId,
+      task: req.task,
+      kind: plan.kind,
+      model: plan.model,
+      prompt: plan.prompt,
+      regia: plan.regia?.regia ?? null,
+      expiresAt: new Date(item.expiresAtMs).toISOString(),
+    },
+  };
 }

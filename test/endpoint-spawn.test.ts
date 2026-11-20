@@ -302,6 +302,30 @@ test('schermo bloccato senza la coda: rifiuto col motivo, nessuno spawn', async 
   assert.equal(calls.spawned.length, 0);
 });
 
+test('schermo bloccato con la coda: la richiesta va in coda con la causa locked, nessuno spawn', async () => {
+  const calls: Calls = { spawned: [], defaults: [] };
+  const causes: Array<string | undefined> = [];
+  const reply = { ok: false as const, reason: 'in coda: schermo bloccato (demo), …' };
+  const r = await handleSpawnRequest(
+    req({}),
+    deps(
+      {
+        windowCheck: async () => ({ locked: 'schermo bloccato (demo): …' }),
+        queue: {
+          enqueue: async (_q, _plan, cause) => {
+            causes.push(cause);
+            return reply;
+          },
+        },
+      },
+      calls,
+    ),
+  );
+  assert.equal(r, reply);
+  assert.deepEqual(causes, ['locked']);
+  assert.equal(calls.spawned.length, 0);
+});
+
 // T229 — con la coda il `no` non rifiuta: la richiesta pianificata passa alla
 // coda, che risponde «in coda»; lo spawn non parte, quindi nessun binding.
 test('finestra del progetto non in focus con la coda: la richiesta pianificata va in coda, nessuno spawn', async () => {

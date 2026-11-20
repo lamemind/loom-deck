@@ -176,7 +176,7 @@ export async function runClient(argv: readonly string[], io: ClientIo): Promise<
   const r = outcome.reply;
   if (!r.ok) {
     if (r.queued) {
-      io.stdout(`${queuedLines(r.queued, root, io.now?.() ?? Date.now()).join('\n')}\n`);
+      io.stdout(`${queuedLines(r.queued, root, io.now?.() ?? Date.now(), r.reason).join('\n')}\n`);
       return 4;
     }
     io.stderr(`loom-deck-spawn: il deck ha rifiutato: ${r.reason}\n`);
@@ -211,16 +211,22 @@ function nonNull(line: string | null): string[] {
  * in testa sono quelle di una tab aperta, così chi legge le cerca allo stesso
  * modo; manca `titolo:`, e c'è `scade:`.
  *
+ * T234 — la prima riga porta il motivo che manda il deck, senza il suo
+ * `in coda: ` in testa: la finestra in focus di un altro progetto e lo schermo
+ * bloccato sono due attese diverse, e chi ha chiesto le deve poter dire
+ * all'utente. La testa `⏳ in coda sul deck di <root>: ` resta fissa, ed è
+ * quella che si cerca.
+ *
  * L'ora di scadenza in ISO 8601 con lo scarto del fuso locale, più i minuti
  * che mancano: chi ha chiesto — una regia — la confronta con l'ora di adesso,
  * e passata quell'ora senza l'evento `🆕 nuova sessione` dà la richiesta per
  * morta. Nessun evento arriva alla scadenza, perché il client è già uscito.
  */
-export function queuedLines(q: QueuedSpawn, root: string, nowMs: number): string[] {
+export function queuedLines(q: QueuedSpawn, root: string, nowMs: number, reason: string): string[] {
   const at = new Date(q.expiresAt);
   const minutes = Math.max(0, Math.round((at.getTime() - nowMs) / 60_000));
   const lines = [
-    `⏳ in coda sul deck di ${root}: la finestra in focus non è del progetto, la tab nasce quando una finestra del progetto torna in focus`,
+    `⏳ in coda sul deck di ${root}: ${reason.replace(/^in coda: /, '')}`,
     `sessionId: ${q.sessionId}`,
     `task:      ${q.task} · ${q.kind} · ${q.model}`,
     `prompt:    ${q.prompt || '(nessuno)'}`,

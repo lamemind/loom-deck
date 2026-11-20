@@ -21,15 +21,39 @@
 // `disable-user-extensions`), non la modalità di sessione: il blocco non lo
 // cambia. Ogni altro esito — shell senza quei servizi, risposta inattesa,
 // compass non installato o disabilitato — resta «compass assente».
+//
+// Allo sblocco l'attesa finisce quando il nome di compass torna sul bus:
+// `gdbus wait` (P3 preflight), lo stesso tipo di canale del deck verso la
+// sessione, un processo e un esito. Controlla all'arrivo, quindi uno sblocco
+// fra la domanda e l'attesa non si perde, e aspetta proprio ciò che serve al
+// passo dopo: `AwaitProjectFocus` di compass. compass esporta l'oggetto prima
+// di prendere il nome (`impl.js`, `enable()`), quindi a nome presente il
+// metodo risponde.
+//
+// Due tempi dello shell, misurati sui sorgenti di GNOME Shell 50
+// (`screenShield.js`): al blocco manuale lo shell spegne le estensioni
+// all'inizio dell'animazione e dichiara il salvaschermo attivo solo a
+// schermata mostrata, circa 0,3 secondi dopo; allo sblocco le riaccende prima
+// di dichiarare il salvaschermo spento. Chi sente compass sparire e chiede
+// subito `GetActive` legge quindi «schermo sbloccato»: `screenLockedSettled`
+// ripete la domanda oltre quella finestra.
 import { gdbusRun } from './focus-session.js';
 import { NO_SPAWN } from './spawn.js';
 
 /** L'uuid dell'estensione compass, la chiave della sua scheda nello shell. */
 export const COMPASS_UUID = 'compass@lamemind';
 
+/** Il nome di compass sul bus di sessione. */
+export const COMPASS_BUS_NAME = 'org.lamemind.Compass';
+
 /** Il timeout di `gdbus` sulle domande allo shell, in secondi. Lo shell
  *  risponde dalla memoria e subito: la soglia scatta solo su uno shell appeso. */
 export const SHELL_QUERY_TIMEOUT_S = 2;
+
+/** Quanto aspettare prima di ripetere `GetActive`, in millisecondi: oltre la
+ *  finestra di circa 0,3 secondi fra lo spegnimento delle estensioni e il
+ *  salvaschermo dichiarato attivo, con margine per una macchina carica. */
+export const LOCK_SETTLE_MS = 1500;
 
 /** L'argv di `gdbus` per `org.gnome.ScreenSaver.GetActive`. */
 export function screenSaverActiveArgs(timeoutS = SHELL_QUERY_TIMEOUT_S): string[] {
@@ -64,6 +88,12 @@ export function extensionInfoArgs(uuid: string, timeoutS = SHELL_QUERY_TIMEOUT_S
     String(timeoutS),
     uuid,
   ];
+}
+
+/** L'argv di `gdbus` che aspetta il nome di compass sul bus, per `deadlineS`
+ *  secondi al massimo. */
+export function compassWaitArgs(deadlineS: number): string[] {
+  return ['wait', '--session', '--timeout', String(deadlineS), COMPASS_BUS_NAME];
 }
 
 /** La risposta di `GetActive` — `(true,)` o `(false,)` —, o `null` se la
@@ -107,4 +137,50 @@ export async function screenLockedWithCompass(): Promise<boolean> {
   if (active === null || parseScreenSaverActive(active) !== true) return false;
   const info = await askShell(extensionInfoArgs(COMPASS_UUID));
   return info !== null && parseExtensionEnabled(info) === true;
+}
+
+/**
+ * Come `screenLockedWithCompass`, per chi ha appena visto compass sparire:
+ * se la prima risposta è no, la ripete dopo `settleMs`, oltre la finestra in
+ * cui lo shell ha già spento le estensioni ma non dichiara ancora il
+ * salvaschermo attivo. Il costo, un'attesa e una domanda in più, lo paga solo
+ * un compass che si spegne a schermo sbloccato — un `compass reload`.
+ */
+export async function screenLockedSettled(
+  probe: () => Promise<boolean> = screenLockedWithCompass,
+  settleMs = LOCK_SETTLE_MS,
+): Promise<boolean> {
+  if (await probe()) return true;
+  await new Promise((r) => setTimeout(r, settleMs));
+  return probe();
+}
+
+/** La fine dell'attesa di compass: tornato sul bus, oppure no col motivo. */
+export type CompassBack = { back: true } | { unreachable: string };
+
+/**
+ * Aspetta che compass torni sul bus — lo sblocco dello schermo — per
+ * `deadlineS` secondi al massimo, e consegna l'esito a `onResult` una volta
+ * sola. `gdbus wait` esce 0 appena il nome c'è, subito se c'è già; alla
+ * scadenza esce 1.
+ *
+ * → la funzione che interrompe l'attesa: uccide il `gdbus wait`. Dopo
+ * l'interruzione può arrivare ancora un `onResult` (la fine del processo
+ * ucciso): chi chiama lo deve ignorare, come per `awaitProjectFocus`.
+ *
+ * Col freno dei test risponde subito «non raggiungibile» senza lanciare
+ * niente.
+ */
+export function awaitCompassBack(deadlineS: number, onResult: (r: CompassBack) => void): () => void {
+  if (NO_SPAWN) {
+    setImmediate(() => onResult({ unreachable: 'deck col freno LOOM_DECK_NO_SPAWN, compass non atteso' }));
+    return () => {};
+  }
+  const seconds = Math.max(1, Math.ceil(deadlineS));
+  const child = gdbusRun(compassWaitArgs(seconds), seconds, (r) =>
+    onResult('unreachable' in r ? r : { back: true }),
+  );
+  return () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+  };
 }

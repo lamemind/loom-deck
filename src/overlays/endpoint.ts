@@ -36,6 +36,7 @@ import { projectBaseName } from '../project-path.js';
 import { notifyDone } from '../spawn.js';
 import { SpawnQueue } from '../spawn-queue.js';
 import { awaitProjectFocus, checkProjectWindow } from '../window-check.js';
+import { awaitCompassBack, screenLockedSettled } from '../screen-lock.js';
 import { appendLive, loadSessionIndex, ORIGIN_ENDPOINT } from '../task-index.js';
 import { loadTaskFileText, loadTasks } from '../tasks.js';
 import type { DeckActions } from '../actions.js';
@@ -91,6 +92,10 @@ export function useSpawnEndpoint(deps: EndpointDeps) {
           name: () => loadProjectId(cwd) ?? projectBaseName(cwd),
           awaitFocus: awaitProjectFocus,
           recheck: windowCheck,
+          // T234 — lo schermo bloccato: la domanda allo shell e l'attesa del
+          // ritorno di compass.
+          screenLocked: () => screenLockedSettled(),
+          awaitCompass: awaitCompassBack,
           replan: (req) => planSpawnRequest(req, planDeps(), 'endpoint'),
           open: (req, plan, sessionId) => spawnPlanned(req, plan, { spawn }, null, sessionId),
           note: (s) => latest.current.setNote(s),

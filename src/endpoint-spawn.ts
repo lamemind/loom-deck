@@ -27,6 +27,7 @@ import {
 } from './spawn-endpoint.js';
 import { memberRegia } from './tab-args.js';
 import { taskIsMandate, taskIsPerimeter } from './tasks.js';
+import type { QueueCause } from './spawn-queue.js';
 import type { WindowCheck } from './window-check.js';
 
 /** Quanto il deck aspetta l'annuncio di `deck-run` prima di rispondere con un
@@ -68,8 +69,8 @@ export interface SpawnRequestDeps extends SpawnPlanDeps {
   windowCheck?: () => Promise<WindowCheck>;
   /** T229 — la coda degli spawn (`spawn-queue.ts`): sul `no` del controllo la
    *  richiesta va in coda invece di essere rifiutata. Assente = rifiuto, come
-   *  in T198. */
-  queue?: { enqueue: (req: SpawnRequest, plan: OkPlan) => Promise<SpawnReply> };
+   *  in T198. T234 — anche a schermo bloccato, con la causa `locked`. */
+  queue?: { enqueue: (req: SpawnRequest, plan: OkPlan, cause?: QueueCause) => Promise<SpawnReply> };
   announceTimeoutMs?: number;
 }
 
@@ -107,8 +108,12 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
     return { ok: false, reason: check.refuse };
   }
   // T234 — schermo bloccato con compass abilitato: nessuna tab, che nascerebbe
-  // nella finestra attiva mentre l'utente non c'è.
-  if ('locked' in check) return { ok: false, reason: check.locked };
+  // nella finestra attiva mentre l'utente non c'è. Con la coda la richiesta
+  // aspetta lo sblocco; senza, si rifiuta.
+  if ('locked' in check) {
+    if (deps.queue) return deps.queue.enqueue(req, plan, 'locked');
+    return { ok: false, reason: check.locked };
+  }
   return spawnPlanned(req, plan, deps, 'warning' in check ? check.warning : null);
 }
 
