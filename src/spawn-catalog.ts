@@ -31,7 +31,8 @@ export type PromptKind =
   | 'recap-epic'
   | 'preflight'
   | 'run'
-  | 'checkpoint';
+  | 'checkpoint'
+  | 'regia';
 
 /**
  * `recap` → la sotto-skill giusta, quando chi spawna SA se la task è un cappello.
@@ -47,7 +48,7 @@ export type PromptKind =
  * Quello che si evita è il RITARDO, non il giudizio.
  *
  * T161 — la stessa funzione è anche il ponte dal detail al catalogo: gli id
- * delle sette azioni su task SONO i sette kind, quindi specializzare un kind
+ * delle azioni su task SONO i kind, quindi specializzare un kind
  * significa già scegliere la riga di catalogo (e l'override che la indirizza).
  *
  * Ogni kind diverso da `recap` passa intatto: la specializzazione è un caso, non
@@ -163,7 +164,7 @@ export const ACTION_HOTKEYS: Readonly<Record<string, number>> = actionHotkeys(DE
  * indirizza, quindi un dato che viaggia su disco e non si rinomina a cuor
  * leggero.
  *
- * I sette kind SONO i sette id delle azioni su task: una seconda tabella
+ * I kind SONO gli id delle azioni su task: una seconda tabella
  * kind → id sarebbe una mappa da tenere allineata a mano, e `specializeRecap`
  * non potrebbe più fare da ponte fra il detail e il catalogo.
  */
@@ -244,7 +245,7 @@ const UNWRAP_PROMPT =
   'puoi committare direttamente';
 
 /**
- * Le DODICI azioni configurabili, nell'ordine in cui la pagina le elenca.
+ * Le TREDICI azioni configurabili, nell'ordine in cui la pagina le elenca.
  *
  * Il perimetro è quello di D1: entra una riga se ha almeno una cella editabile.
  * Ne restano fuori resume e fork — lì il modello non è una preferenza ma
@@ -257,7 +258,8 @@ const UNWRAP_PROMPT =
  * T156 — le emoji dei titoli sono ASTRALI (code point ≥ U+10000) per necessità,
  * non per gusto: `sanitize` (`src/width.ts`) sostituisce con `·` ogni glifo su
  * cui le due contabilità di larghezza divergono, e le emoji del BMP a
- * presentazione testo divergono sempre. Le stesse SETTE (T160 aggiunge `🧭`)
+ * presentazione testo divergono sempre. Le stesse OTTO (T160 aggiunge `🧭`,
+ * T203 `🎬`)
  * stanno nella whitelist di `saneNote` (`src/sane-note.ts`), la riduzione del
  * titolo: un'emoji cambiata qui e non là sparisce fra la tabella e la tab,
  * senza errore.
@@ -342,6 +344,27 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     surface: 'detail c',
     kind: 'checkpoint',
     title: '🏁 {slug}',
+    model: null,
+    prompt: null,
+    holes: ['TASK', 'slug'],
+    fixed: {},
+  },
+  {
+    // T203 — la regia di un perimetro, epica o mandato: la conversazione lancia
+    // `orchestrate-mandate`, che segue i membri per ore su un monitor. Il
+    // modello (opus) e il prompt vengono dalla riga `regia` di
+    // `scripts/prompt-catalog`, come per gli altri kind.
+    //
+    // 🎬 è il glifo che lo stato della regia su disco (T219) usa già: la tab e
+    // il quadro della regia si riconoscono a colpo d'occhio.
+    //
+    // Vale dal detail e da `deck-run` a mano, non dall'endpoint né da un turno
+    // headless: `planSpawnRequest` lo rifiuta lì (P3 preflight T203).
+    id: 'regia',
+    label: 'regia di un perimetro',
+    surface: 'detail d · perimetro',
+    kind: 'regia',
+    title: '🎬 {slug}',
     model: null,
     prompt: null,
     holes: ['TASK', 'slug'],

@@ -30,8 +30,8 @@ test('gli id sono unici: un duplicato renderebbe irraggiungibile la seconda riga
   assert.deepEqual([...new Set(ids)], ids);
 });
 
-test('dodici righe: il perimetro di D1, cioè le azioni con almeno una cella editabile', () => {
-  assert.equal(SPAWN_ACTIONS.length, 12);
+test('tredici righe: il perimetro di D1, cioè le azioni con almeno una cella editabile', () => {
+  assert.equal(SPAWN_ACTIONS.length, 13);
   for (const a of SPAWN_ACTIONS) {
     assert.ok(
       editableFields(a).length > 0,
@@ -49,8 +49,8 @@ test('resume, fork e le due skill headless restano fuori', () => {
   }
 });
 
-test('i sette kind sono anche sette id: nessuna mappa kind → id da tenere allineata', () => {
-  for (const kind of ['none', 'recap', 'recap-task', 'recap-epic', 'preflight', 'run', 'checkpoint']) {
+test('i kind sono anche id: nessuna mappa kind → id da tenere allineata', () => {
+  for (const kind of ['none', 'recap', 'recap-task', 'recap-epic', 'preflight', 'run', 'checkpoint', 'regia']) {
     assert.ok(isSpawnActionId(kind), `il kind ${kind} non ha una riga di catalogo`);
   }
   // Il ponte fra detail e catalogo: specializzare un kind sceglie già la riga.

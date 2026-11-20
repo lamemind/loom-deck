@@ -86,8 +86,8 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
 }
 
 /**
- * La richiesta contro il progetto: la task esiste, un run non cade su un
- * mandato, il perimetro è fatto di DLV aperti; poi l'azione di catalogo, la sua
+ * La richiesta contro il progetto: il kind non è la regia, la task esiste, un
+ * run non cade su un mandato, il perimetro è fatto di DLV aperti; poi l'azione di catalogo, la sua
  * terna e il prompt col perimetro in coda.
  *
  * T205 — separata dallo spawn perché la stessa richiesta apre anche un turno
@@ -96,6 +96,16 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
  * è rifiutata.
  */
 export function planSpawnRequest(req: SpawnRequest, deps: SpawnPlanDeps): SpawnPlan {
+  // T203/P3 — la regia vale dal detail e da `deck-run` a mano. `PROMPT_KINDS`
+  // la accetta perché è la lista di `deck-run`, e l'endpoint e il turno
+  // headless validano sulla stessa lista: senza questo rifiuto la regia si
+  // aprirebbe da ogni conversazione prima della marca e delle guardie che la
+  // rendono chiudibile (T221), e in un turno `claude -p` morirebbe al primo
+  // turno, perché vive ore su un monitor. Prima della task: il motivo non
+  // dipende dalla task chiesta.
+  if (req.kind === 'regia') {
+    return { ok: false, reason: 'regia: si apre dal detail del deck o con deck-run, non da una richiesta' };
+  }
   if (!deps.taskExists(req.task)) return { ok: false, reason: `${req.task} non è nella lista task del progetto` };
   const text = deps.taskText(req.task);
 

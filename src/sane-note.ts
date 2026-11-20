@@ -17,13 +17,13 @@
 
 /**
  * L'alfabeto ammesso, negato: lettere, cifre, spazio, `_`, `-`, le accentate
- * italiane e sette emoji.
+ * italiane e otto emoji.
  *
  * Whitelist e non blacklist: il titolo finisce in una riga di shell su Linux
  * (`bash -lc "claude --name '…'"`) e nella riga di `wt.exe` su Windows, ed
  * enumerare i caratteri pericolosi significa sbagliarne uno.
  *
- * Le sette emoji sono nominate una per una e NON come intervallo di code point,
+ * Le otto emoji sono nominate una per una e NON come intervallo di code point,
  * per due ragioni: un'emoji arriva nella tab solo
  * se il deck la mostra identica in lista, cioè se `sanitize` (`src/width.ts`) la
  * lascia passare invece di renderla `·`, e quel verdetto si verifica un glifo
@@ -34,7 +34,7 @@
  * nella classe come coppie di surrogati sciolti, e la riduzione lascerebbe
  * passare mezzo carattere di qualunque altra emoji che ne condivida il primo.
  */
-const OUT_OF_ALPHABET = /[^A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ📐🚀📊🏁🧹📏🧭-]/gu;
+const OUT_OF_ALPHABET = /[^A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ📐🚀📊🏁🧹📏🧭🎬-]/gu;
 
 /** Cap in CARATTERI (code point), non in byte: a byte un taglio a metà di una
  *  `à` lascerebbe UTF-8 rotto nel titolo. Largo di proposito — una tab che sfora

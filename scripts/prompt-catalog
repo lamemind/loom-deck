@@ -12,7 +12,7 @@
 # codice, il secondo lato dovrebbe riscriverlo, e le due copie divergono alla
 # prima voce aggiunta da una parte sola.
 #
-# T161 — questo file resta la FONTE UNICA dei sette kind: lo leggono il deck e
+# T161 — questo file resta la FONTE UNICA dei kind: lo leggono il deck e
 # deck-run con lo stesso parser (`loadPromptCatalog`, `src/prompt-catalog.ts`).
 # Le sue righe sono il primo gradino del default di un'azione su task; il
 # secondo è la riga di catalogo in `src/spawn-catalog.ts`, e sopra entrambi sta
@@ -44,3 +44,7 @@ recap-epic	/loom-works:recap-status-epic {TASK}	opus
 preflight	/loom-works:preflight-task {TASK}	fable
 run	/loom-works:run-task {TASK}	opus
 checkpoint	/loom-works:checkpoint-task {TASK}	opus
+# T203 — `regia` apre la regia di un perimetro, epica o mandato. Il deck la
+# offre solo sul detail di un perimetro; l'endpoint e il turno headless la
+# rifiutano (planSpawnRequest, src/endpoint-spawn.ts).
+regia	/loom-works:orchestrate-mandate {TASK}	opus

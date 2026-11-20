@@ -133,6 +133,19 @@ test('mandato: run rifiutato prima della tab, recap del perimetro, il resto part
   assert.equal(preflight.ok, true);
 });
 
+// T203/P3 — la regia si apre dal detail o da `deck-run`, mai da una richiesta:
+// nessuna tab e nessun binding, su qualunque task, perimetro compreso.
+test('regia: rifiutata dall endpoint prima della tab, su un epica come su un mandato', async () => {
+  const calls: Calls = { spawned: [], defaults: [] };
+  for (const text of ['- **Size**: Epic\n', MANDATE_TEXT, TASK_TEXT]) {
+    const out = await handleSpawnRequest(req({ kind: 'regia' }), deps({ taskText: () => text }, calls));
+    assert.equal(out.ok, false);
+    assert.match((out as { reason: string }).reason, /regia: si apre dal detail del deck o con deck-run/);
+  }
+  assert.equal(calls.spawned.length, 0);
+  assert.deepEqual(calls.defaults, [], 'nessuna terna risolta per un rifiuto certo');
+});
+
 test('rifiuti prima della tab: piattaforma, task assente, perimetro fuori range o chiuso', async () => {
   const calls: Calls = { spawned: [], defaults: [] };
   const cases: Array<[SpawnRequest, Partial<SpawnRequestDeps>, RegExp]> = [

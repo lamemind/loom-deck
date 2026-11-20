@@ -243,6 +243,7 @@ test('open: rifiuti senza lanciare niente e senza scrivere il sidecar', async ()
     [{}, req('T9', 'none'), /senza prompt/],
     [{}, req('T99', 'preflight'), /non è nella lista task/],
     [{}, req('T10', 'run'), /mandato/],
+    [{}, req('T10', 'regia'), /regia: si apre dal detail/],
     [{}, req('T9', 'run', { scope: [1] }), /già chiusi/],
     [{ permissionMode: 'manual' }, req('T9', 'run'), /manual: run rifiutato/],
     [{ permissionMode: 'manual' }, req('T9', 'checkpoint'), /manual: checkpoint rifiutato/],

@@ -62,7 +62,7 @@ test('gli errori d’uso, nell’ordine e con le parole dello script', () => {
   ]);
   assert.equal(
     usage(['T1', '--prompt-kind', 'bogus'])[0],
-    "--prompt-kind ignoto: 'bogus' (usa none|recap|recap-task|recap-epic|preflight|run|checkpoint)",
+    "--prompt-kind ignoto: 'bogus' (usa none|recap|recap-task|recap-epic|preflight|run|checkpoint|regia)",
   );
   assert.match(usage(['--no-task', '--prompt-kind', 'run'])[0]!, /^--prompt-kind richiede una task/);
   assert.match(usage(['T1', '--prompt', 'x', '--prompt-kind', 'run'])[0]!, /mutuamente esclusivi/);

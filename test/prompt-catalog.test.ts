@@ -97,7 +97,7 @@ test('modelFor: kind fuori catalogo → niente', () => {
   assert.equal(modelFor(c, 'run'), undefined);
 });
 
-// I sei valori: opus ovunque, tranne il preflight che resta su fable. Un
+// I valori: opus ovunque, tranne il preflight che resta su fable. Un
 // cambio qui è un cambio di comportamento per ogni sessione che spawna quel
 // kind, non solo per questo test — se questa asserzione deve muoversi, muove
 // con essa la riga del catalogo.
@@ -109,6 +109,10 @@ test('catalogo reale: opus su ogni kind, fable sul solo preflight', () => {
   assert.equal(modelFor(catalog, 'preflight'), 'fable');
   assert.equal(modelFor(catalog, 'run'), 'opus');
   assert.equal(modelFor(catalog, 'checkpoint'), 'opus');
+  // T203 — la regia segue un perimetro per ore e ne decide i passi: opus (D3.C
+  // di T197).
+  assert.equal(modelFor(catalog, 'regia'), 'opus');
+  assert.equal(promptFor(catalog, 'regia', 'T42'), '/loom-works:orchestrate-mandate T42');
 });
 
 // T161 — il catalogo dati e quello delle azioni sono due gradini dello stesso

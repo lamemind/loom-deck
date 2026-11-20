@@ -30,6 +30,7 @@ export const PROMPT_KINDS: readonly PromptKind[] = [
   'preflight',
   'run',
   'checkpoint',
+  'regia',
 ];
 
 /** La richiesta di spawn, già validata. Le stringhe vuote valgono «flag non
@@ -85,6 +86,7 @@ export const USAGE = `uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <k
        preflight   /loom-works:preflight-task <TaskID>
        run         /loom-works:run-task <TaskID>
        checkpoint  /loom-works:checkpoint-task <TaskID>
+       regia       /loom-works:orchestrate-mandate <TaskID> (Size: Epic o Mandate)
 
   --prompt       prompt LETTERALE, per chi lo ha già composto (o fatto
                  modificare). Esclusivo con --prompt-kind; vuoto = nessun
