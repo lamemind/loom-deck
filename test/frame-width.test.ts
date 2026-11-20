@@ -27,6 +27,7 @@ import { ptyGate } from './platform-gates.js';
 import { detailProject } from './detail-fixture.js';
 import stringWidth from 'string-width';
 import { termWidth } from '../src/width.js';
+import { SPAWN_ACTIONS } from '../src/spawn-catalog.js';
 import { VERSION } from '../src/version.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -311,6 +312,16 @@ const CTRL_G = String.fromCharCode(7);
 const CTRL_O = String.fromCharCode(15);
 /** T161 — apre la pagina delle azioni di spawn. */
 const CTRL_S = String.fromCharCode(19);
+
+/** T203 — i `D` che dalla prima riga della pagina azioni portano sulla riga
+ *  `id`. Derivati dal catalogo e non contati a mano: una riga aggiunta in mezzo
+ *  (la `regia` di T203, prima di `bare`) spostava di uno gli scenari sotto, che
+ *  restavano verdi misurando la riga accanto a quella del loro nome. */
+function toSpawnRow(id: string): string {
+  const at = SPAWN_ACTIONS.findIndex((a) => a.id === id);
+  if (at < 0) throw new Error(`riga ${id} assente dal catalogo di spawn`);
+  return 'D'.repeat(at);
+}
 /** T168 — `^L` apre la pagina delle voci launch. */
 const CTRL_L = String.fromCharCode(12);
 
@@ -587,11 +598,11 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   ['pagina azioni di spawn', CTRL_S, [80, 100, 176]],
   // L'area di compilazione aperta: tre righe in più, di cui una col campo di
   // testo più lungo del deck (il prompt cablato dello srotolamento sfiora le 180
-  // colonne). `DDDDDDDDDD` scende sulla riga `unwrap`, che è la decima.
-  ['pagina azioni · area aperta', `${CTRL_S}DDDDDDDDD\r`, [80, 100, 176]],
+  // colonne): la riga `unwrap`.
+  ['pagina azioni · area aperta', `${CTRL_S}${toSpawnRow('unwrap')}\r`, [80, 100, 176]],
   // La riga `bare`, dove due celle su tre non si modificano: l'area disegna
   // comunque le loro righe, con la ragione al posto del campo.
-  ['pagina azioni · celle fisse', `${CTRL_S}DDDDDDD\r`, [80, 100, 176]],
+  ['pagina azioni · celle fisse', `${CTRL_S}${toSpawnRow('bare')}\r`, [80, 100, 176]],
   // T168 — la pagina delle voci launch: due righe per voce, colonna comando
   // elastica per sottrazione — a 80 colonne il comando del pull all del cappello
   // scende sotto le venti celle, cioè il caso in cui una colonna di troppo
@@ -706,6 +717,10 @@ const DETAIL_SCENARIOS: Array<[string, string, number[], string]> = [
   ['detail · epica con la regia', 'DDDDDDD\r', [80, 100, 176], '[ checkpoint ]  [ direct ]'],
   ['detail · epica, regia selezionata', 'DDDDDDD\rd', [80, 100, 176], '🎬 epica'],
   ['detail · mandato con la regia', 'DDDDDD\r', [100, 176], '[ checkpoint ]  [ direct ]'],
+  // La riga `regia` nella pagina delle azioni di spawn, con la sua area aperta:
+  // la funzione nella tabella, il titolo e il prompt nei campi.
+  ['pagina azioni · riga regia', `${CTRL_S}${toSpawnRow('regia')}`, [100, 176], 'regia di un perimetro'],
+  ['pagina azioni · regia aperta', `${CTRL_S}${toSpawnRow('regia')}\r`, [80, 100, 176], '🎬 {slug}'],
 ];
 
 for (const [label, keys, widths, needle] of DETAIL_SCENARIOS) {
