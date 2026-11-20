@@ -302,3 +302,72 @@ test('T204 — chiusura sul deck vero: il processo nato dall’endpoint muore, g
     await deck.done;
   }
 });
+
+// T229 — la coda sul deck VERO, senza il freno degli effetti esterni: `gdbus` e
+// `ptyxis` finti in testa al PATH. Il `gdbus` finto risponde `no` a
+// `ProjectFocused` finché l'attesa non è tornata, e `AwaitProjectFocus`
+// risponde `si` dopo tre secondi, oltre la sonda della messa in coda: la
+// richiesta va in coda, e la tab nasce al «ritorno del focus». Il `ptyxis`
+// finto scrive i suoi argomenti ed esce 0: `deck-run` annuncia la tab, e
+// nessuna conversazione parte.
+test('T229 — finestra di un altro progetto: in coda col sessionId, la tab nasce al ritorno del focus con quel sessionId', { skip: SKIP }, async () => {
+  const root = project('eta');
+  const bin = mkdtempSync(join(tmpdir(), 'loom-epd-bin-'));
+  const ptyxisLog = join(bin, 'ptyxis.log');
+  const gdbusLog = join(bin, 'gdbus.log');
+  const focused = join(bin, 'focus-tornato');
+  writeFileSync(join(bin, 'ptyxis'), `#!/bin/sh\nprintf '%s\\n' "$@" >> '${ptyxisLog}'\nexit 0\n`, { mode: 0o755 });
+  writeFileSync(
+    join(bin, 'gdbus'),
+    `#!/bin/sh
+printf '%s|%s|%s|%s\\n' "$8" "\${11}" "\${12}" "\${13}" >> '${gdbusLog}'
+case "$8" in
+  *ProjectFocused) if [ -e '${focused}' ]; then echo "('si',)"; else echo "('no',)"; fi ;;
+  *AwaitProjectFocus) sleep 3; : > '${focused}'; echo "('si',)" ;;
+  *) exit 1 ;;
+esac
+`,
+    { mode: 0o755 },
+  );
+  const notify = join(bin, 'notify');
+  writeFileSync(notify, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const env = {
+    ...ENV,
+    LOOM_DECK_NO_SPAWN: '',
+    PATH: `${bin}:${process.env.PATH ?? ''}`,
+    LOOM_DECK_FOCUS_CMD: join(bin, 'gdbus'),
+    LOOM_DECK_NOTIFY_CMD: notify,
+  };
+  const deck = startDeck(root, 16, env);
+  try {
+    await waitListening(root);
+    const r = spawnSync(process.execPath, [CLIENT, 'T1', 'preflight'], { cwd: root, env, encoding: 'utf8' });
+    assert.equal(r.status, 4, r.stderr);
+    assert.match(r.stdout, /^⏳ in coda sul deck di /m);
+    assert.match(r.stdout, /^scade: +\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d \(fra 30 min\)$/m);
+    assert.doesNotMatch(r.stdout, /^titolo:/m);
+    const sid = sidOf(r.stdout)!;
+    assert.match(sid, /^[0-9a-f-]{36}$/);
+    // In coda niente binding: lo scrive lo spawn vero, insieme alla tab.
+    assert.deepEqual(bindings(root).filter((b) => b.sessionId === sid), []);
+    assert.ok(!existsSync(ptyxisLog), 'nessuna tab prima del ritorno del focus');
+
+    await waitFor(() => existsSync(ptyxisLog) && readFileSync(ptyxisLog, 'utf8').includes(sid), 15_000);
+    const calls = readFileSync(gdbusLog, 'utf8').trim().split('\n');
+    assert.ok(
+      calls.some((c) => c === 'org.lamemind.Compass.AwaitProjectFocus|eta|spawn in attesa: T1 preflight|1800'),
+      calls.join('\n'),
+    );
+    // Il recheck prima dell'apertura: ProjectFocused anche dopo l'attesa.
+    assert.ok(calls.filter((c) => c.startsWith('org.lamemind.Compass.ProjectFocused|eta')).length >= 2, calls.join('\n'));
+    const bound = bindings(root).filter((b) => b.sessionId === sid);
+    assert.deepEqual(
+      bound.filter((b) => b.taskId).map((b) => b.taskId),
+      ['T1'],
+      'il binding col sessionId annunciato nasce con la tab',
+    );
+    assert.ok(bound.some((b) => b.origin === 'endpoint'));
+  } finally {
+    await deck.done;
+  }
+});

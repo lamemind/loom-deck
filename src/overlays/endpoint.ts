@@ -12,16 +12,30 @@
 // Il gestore legge le azioni da un ref aggiornato a ogni render: `spawnForTask`
 // chiude su override, catalogo e larghezza del terminale, e una richiesta deve
 // partire coi valori di adesso, non con quelli del primo render.
+//
+// T229 — la coda degli spawn (`spawn-queue.ts`) vive qui, una per deck, col
+// ciclo di vita dell'endpoint: nasce al mount e si ferma allo smontaggio, che
+// interrompe le attese in corso. Solo dove c'è il controllo della finestra: è
+// il `no` di quel controllo che manda una richiesta in coda.
 import { useEffect, useRef } from 'react';
 import { keepEndpoint, type KeeperEvent, type RequestHandlers } from '../endpoint-server.js';
 import { handleCloseRequest } from '../endpoint-close.js';
-import { handleSpawnRequest } from '../endpoint-spawn.js';
+import {
+  handleSpawnRequest,
+  planSpawnRequest,
+  spawnPlanned,
+  type SpawnPlanDeps,
+  type SpawnRequestDeps,
+} from '../endpoint-spawn.js';
 import { platformTerminator } from '../close-terminate.js';
 import { discoverLiveSessions, discoverProjectProcesses } from '../live-sessions.js';
 import { endpointFor, type CloseReply } from '../spawn-endpoint.js';
 import { isAvailable, offText } from '../platform.js';
 import { loadProjectId } from '../config.js';
-import { checkProjectWindow } from '../window-check.js';
+import { projectBaseName } from '../project-path.js';
+import { notifyDone } from '../spawn.js';
+import { SpawnQueue } from '../spawn-queue.js';
+import { awaitProjectFocus, checkProjectWindow } from '../window-check.js';
 import { appendLive, loadSessionIndex, ORIGIN_ENDPOINT } from '../task-index.js';
 import { loadTaskFileText, loadTasks } from '../tasks.js';
 import type { DeckActions } from '../actions.js';
@@ -46,30 +60,54 @@ export function useSpawnEndpoint(deps: EndpointDeps) {
 
   useEffect(() => {
     const ep = endpointFor(cwd);
-    const handlers: RequestHandlers = {
-      spawn: (req) => {
-        const d = latest.current;
-        return handleSpawnRequest(req, {
-          spawnOff: () => (isAvailable('spawn') ? null : offText('spawn')),
-          taskExists: (id) => {
-            try {
-              return loadTasks(d.tasksPath).some((t) => t.id === id);
-            } catch {
-              return false;
-            }
+    // Le dipendenze di una richiesta, coi valori di adesso: le usano la
+    // richiesta che arriva e la richiesta che esce dalla coda minuti dopo.
+    const planDeps = (): SpawnPlanDeps => {
+      const d = latest.current;
+      return {
+        taskExists: (id) => {
+          try {
+            return loadTasks(d.tasksPath).some((t) => t.id === id);
+          } catch {
+            return false;
+          }
+        },
+        taskText: (id) => loadTaskFileText(d.tasksDir, id),
+        defaults: (kind, taskId) => d.actions.spawnTaskDefaults(kind, taskId),
+      };
+    };
+    // T204 — la conversazione nasce marcata `origin: endpoint`: è ciò che la
+    // rende chiudibile da un'altra conversazione (D2 preflight).
+    // T220 — e con la regia che la chiede, quando la richiesta la dichiara.
+    // T229 — e col `sessionId` già annunciato, quando esce dalla coda.
+    const spawn: SpawnRequestDeps['spawn'] = (id, model, note, prompt, regia, sessionId) =>
+      latest.current.actions.spawnForTask(id, model, note, prompt, false, ORIGIN_ENDPOINT, regia, sessionId);
+    // T198 — l'`id` si rilegge a ogni richiesta, come la lista task: il file di
+    // progetto può cambiare a deck acceso.
+    const windowCheck = isAvailable('windowCheck') ? () => checkProjectWindow(loadProjectId(cwd)) : undefined;
+    const queue = windowCheck
+      ? new SpawnQueue({
+          projectId: () => loadProjectId(cwd),
+          name: () => loadProjectId(cwd) ?? projectBaseName(cwd),
+          awaitFocus: awaitProjectFocus,
+          recheck: windowCheck,
+          replan: (req) => planSpawnRequest(req, planDeps(), 'endpoint'),
+          open: (req, plan, sessionId) => spawnPlanned(req, plan, { spawn }, null, sessionId),
+          note: (s) => latest.current.setNote(s),
+          notify: (title, body) => {
+            notifyDone(title, body);
           },
-          taskText: (id) => loadTaskFileText(d.tasksDir, id),
-          defaults: (kind, taskId) => d.actions.spawnTaskDefaults(kind, taskId),
-          // T204 — la conversazione nasce marcata `origin: endpoint`: è ciò che
-          // la rende chiudibile da un'altra conversazione (D2 preflight).
-          // T220 — e con la regia che la chiede, quando la richiesta la dichiara.
-          spawn: (id, model, note, prompt, regia) =>
-            d.actions.spawnForTask(id, model, note, prompt, false, ORIGIN_ENDPOINT, regia),
-          // T198 — l'`id` si rilegge a ogni richiesta, come la lista task: il
-          // file di progetto può cambiare a deck acceso.
-          windowCheck: isAvailable('windowCheck') ? () => checkProjectWindow(loadProjectId(cwd)) : undefined,
-        });
-      },
+        })
+      : null;
+    const handlers: RequestHandlers = {
+      spawn: (req) =>
+        handleSpawnRequest(req, {
+          spawnOff: () => (isAvailable('spawn') ? null : offText('spawn')),
+          ...planDeps(),
+          spawn,
+          windowCheck,
+          ...(queue ? { queue } : {}),
+        }),
       close: async (req) => {
         const r = await handleCloseRequest(req, {
           // La guardia di CANC (`actions.ts`): dove la liveness manca la mappa
@@ -95,6 +133,7 @@ export function useSpawnEndpoint(deps: EndpointDeps) {
       if (note !== null) latest.current.setNote(note);
     });
     return () => {
+      queue?.stop();
       void keeper.stop();
     };
   }, [cwd]);

@@ -50,19 +50,26 @@ export interface SpawnRequestDeps extends SpawnPlanDeps {
   /** Il motivo per cui lo spawn è spento su questa piattaforma, o `null`. */
   spawnOff: () => string | null;
   /** Lo spawn del tasto: sidecar, poi `deck-run`. `null` se rifiutato.
-   *  T220 — `regia` è la regia che chiede, già verificata, o `null`. */
+   *  T220 — `regia` è la regia che chiede, già verificata, o `null`.
+   *  T229 — `sessionId` è quello già annunciato da una richiesta in coda;
+   *  assente = lo sceglie lo spawn. */
   spawn: (
     id: string,
     model: ModelKind,
     note: string,
     prompt: string,
     regia: RegiaOrigin | null,
+    sessionId?: string,
   ) => { sessionId: string; spawned: Spawned } | null;
   /** T198 — la finestra in focus è del progetto? Assente = nessun controllo,
    *  dove la piattaforma non ce l'ha (`windowCheck` in `platform.ts`). Gira
-   *  dopo le verifiche della richiesta e prima dello spawn: un rifiuto non
-   *  apre la tab e non scrive il binding nel sidecar, che scrive `spawn`. */
+   *  dopo le verifiche della richiesta e prima dello spawn: un `no` non apre
+   *  la tab e non scrive il binding nel sidecar, che scrive `spawn`. */
   windowCheck?: () => Promise<WindowCheck>;
+  /** T229 — la coda degli spawn (`spawn-queue.ts`): sul `no` del controllo la
+   *  richiesta va in coda invece di essere rifiutata. Assente = rifiuto, come
+   *  in T198. */
+  queue?: { enqueue: (req: SpawnRequest, plan: OkPlan) => Promise<SpawnReply> };
   announceTimeoutMs?: number;
 }
 
@@ -80,21 +87,45 @@ export type SpawnPlan =
   | { ok: true; kind: PromptKind; model: ModelKind; note: string; prompt: string; regia: RegiaOrigin | null }
   | { ok: false; reason: string };
 
+/** Un piano riuscito: ciò che la coda tiene fino allo spawn vero. */
+export type OkPlan = Extract<SpawnPlan, { ok: true }>;
+
 export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDeps): Promise<SpawnReply> {
   const off = deps.spawnOff();
   if (off) return { ok: false, reason: off };
   const plan = planSpawnRequest(req, deps, 'endpoint');
   if (!plan.ok) return plan;
-  const { kind, model, note, prompt, regia } = plan;
 
   // Dopo il piano: una richiesta sbagliata si rifiuta col suo motivo, che vale
   // in qualunque finestra, e il processo verso compass parte solo per uno
   // spawn che avverrebbe davvero.
   const check = deps.windowCheck ? await deps.windowCheck() : { ok: true as const };
-  if ('refuse' in check) return { ok: false, reason: check.refuse };
-  const warning = 'warning' in check ? { warning: check.warning } : {};
+  if ('refuse' in check) {
+    // T229 — il `no` mette in coda: la tab nasce al ritorno del focus, e la
+    // risposta porta subito il `sessionId` che avrà la conversazione.
+    if (deps.queue) return deps.queue.enqueue(req, plan);
+    return { ok: false, reason: check.refuse };
+  }
+  return spawnPlanned(req, plan, deps, 'warning' in check ? check.warning : null);
+}
 
-  const out = deps.spawn(req.task, model, note, prompt, regia);
+/**
+ * Lo spawn di una richiesta già pianificata: binding e tab via `deps.spawn`,
+ * poi la risposta all'annuncio di `deck-run`.
+ *
+ * T229 — un percorso solo per lo spawn immediato e per quello che esce dalla
+ * coda al ritorno del focus: con `sessionId` la conversazione nasce col
+ * `sessionId` che la risposta «in coda» ha già annunciato.
+ */
+export async function spawnPlanned(
+  req: SpawnRequest,
+  plan: OkPlan,
+  deps: Pick<SpawnRequestDeps, 'spawn' | 'announceTimeoutMs'>,
+  warning: string | null = null,
+  sessionId?: string,
+): Promise<SpawnReply> {
+  const { kind, model, note, prompt, regia } = plan;
+  const out = deps.spawn(req.task, model, note, prompt, regia, sessionId);
   if (!out) return { ok: false, reason: 'spawn rifiutato dal deck' };
   const announced = await awaitAnnounce(out.spawned.child, deps.announceTimeoutMs ?? ANNOUNCE_TIMEOUT_MS);
   if ('error' in announced) return { ok: false, reason: announced.error };
@@ -108,7 +139,7 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
     model,
     prompt,
     regia: regia?.regia ?? null,
-    ...warning,
+    ...(warning ? { warning } : {}),
   };
   if ('inert' in announced) return { ...base, title: null, inTab: null, inert: true };
   return { ...base, title: announced.title, inTab: announced.inTab };

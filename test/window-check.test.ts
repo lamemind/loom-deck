@@ -22,6 +22,19 @@ writeFileSync(
   `#!/bin/sh
 printf '%s\\n' "$@" > '${argvLog}'
 for last; do :; done
+# T229 — AwaitProjectFocus: l'id del progetto è l'undicesimo argomento.
+case "$8" in
+  *AwaitProjectFocus)
+    case "\${11}" in
+      torna) sleep 0.2; echo "('si',)" ;;
+      scade) echo "('scaduta',)" ;;
+      vecchio)
+        echo "Errore: GDBus.Error:org.freedesktop.DBus.Error.UnknownMethod: Method AwaitProjectFocus is not implemented" >&2
+        exit 1 ;;
+      appeso) exec sleep 30 ;;
+    esac
+    exit 0 ;;
+esac
 case "$last" in
   davanti) echo "('si',)" ;;
   dietro) echo "('no',)" ;;
@@ -38,9 +51,8 @@ esac
 );
 chmodSync(fake, 0o755);
 process.env.LOOM_DECK_FOCUS_CMD = fake;
-const { checkProjectWindow, refuseReason, windowCheckOf, WINDOW_CHECK_TIMEOUT_S } = await import(
-  '../src/window-check.js'
-);
+const { AWAIT_MARGIN_S, awaitProjectFocus, checkProjectWindow, refuseReason, windowCheckOf, WINDOW_CHECK_TIMEOUT_S } =
+  await import('../src/window-check.js');
 
 // T175 — il `gdbus` finto è uno script sh con exec bit, che Windows non lancia.
 const channel = (name: string, fn: () => Promise<void>) =>
@@ -105,4 +117,41 @@ nodeTest('progetto senza id: nessuna chiamata, apre con l’avviso', async () =>
   const w = await checkProjectWindow(null);
   assert.ok('warning' in w);
   assert.match(w.warning, /progetto senza id/);
+});
+
+// T229 — l'attesa del focus: il metodo AwaitProjectFocus con progetto, avviso e
+// scadenza, il timeout di gdbus oltre la scadenza, e l'interruzione.
+type Reply = Parameters<Parameters<typeof awaitProjectFocus>[3]>[0];
+const awaitOnce = (id: string, deadlineS = 1800) =>
+  new Promise<Reply>((resolve) => {
+    awaitProjectFocus(id, 'spawn in attesa: T9 preflight', deadlineS, resolve);
+  });
+
+channel('attesa: il metodo AwaitProjectFocus con avviso e scadenza, e il timeout di gdbus oltre la scadenza', async () => {
+  assert.deepEqual(await awaitOnce('torna', 1799.2), { word: 'si' });
+  const argv = readFileSync(argvLog, 'utf8').trim().split('\n');
+  assert.deepEqual(argv.slice(6), [
+    '--method',
+    'org.lamemind.Compass.AwaitProjectFocus',
+    '--timeout',
+    String(1800 + AWAIT_MARGIN_S),
+    'torna',
+    'spawn in attesa: T9 preflight',
+    '1800',
+  ]);
+  assert.deepEqual(await awaitOnce('scade'), { word: 'scaduta' });
+  const old = await awaitOnce('vecchio');
+  assert.ok('unreachable' in old && /UnknownMethod/.test(old.unreachable), JSON.stringify(old));
+});
+
+channel('attesa interrotta: il gdbus si uccide, e la sua fine arriva come canale caduto', async () => {
+  let got: Reply | null = null;
+  const stop = awaitProjectFocus('appeso', 'spawn in attesa: T9 preflight', 1800, (r) => {
+    got = r;
+  });
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(got, null, 'l’attesa resta aperta');
+  stop();
+  await new Promise((r) => setTimeout(r, 300));
+  assert.ok(got !== null && 'unreachable' in got, JSON.stringify(got));
 });

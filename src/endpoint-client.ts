@@ -21,6 +21,9 @@ export interface ClientIo {
   stdout: (s: string) => void;
   stderr: (s: string) => void;
   timeoutMs?: number;
+  /** L'orologio, per i minuti che mancano a una scadenza (T229). Assente =
+   *  `Date.now`. */
+  now?: () => number;
 }
 
 /** L'esito di uno scambio: la risposta del deck, nessuno in ascolto, o un

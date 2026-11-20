@@ -237,11 +237,15 @@ export function useDeckActions({
     priority = false,
     origin?: string,
     regia?: RegiaOrigin | null,
+    sessionId?: string,
   ): { sessionId: string; spawned: Spawned } | null {
     // T175 — prima del sidecar: un binding scritto per una tab che non si apre
     // sarebbe una conversazione figlia della task che non esiste.
     if (refuse('spawn', '⏎', setNote)) return null;
-    const sid = randomUUID();
+    // T229 — una richiesta uscita dalla coda arriva col `sessionId` che la
+    // risposta «in coda» ha già annunciato: binding e tab lo usano tale e
+    // quale, e chi ha chiesto riconosce la conversazione quando nasce.
+    const sid = sessionId ?? randomUUID();
     const note = spawnNote;
     appendTaskBinding(cwd, sid, id);
     // T204 — subito dopo il binding e prima della tab (P9 preflight).

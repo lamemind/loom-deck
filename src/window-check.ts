@@ -9,9 +9,14 @@
 // in un'altra conversazione dentro la tab nuova —, quindi chiede e, se la
 // finestra non è del progetto, rifiuta col motivo.
 //
+// T229 — il `no` non è più un rifiuto: la richiesta va in coda
+// (`spawn-queue.ts`), e la tab nasce quando una finestra del progetto torna in
+// focus. Il controllo qui resta quello di T198, e ne è il primo passo; il
+// secondo è l'attesa, `awaitProjectFocus` in fondo al file.
+//
 // Lo sa compass, che gira dentro Mutter: il metodo D-Bus di sola lettura
 // `ProjectFocused` risponde `si`, `no` o `ignoto` (`loom-compass`,
-// `projectFocusOutcome`). Il deck rifiuta SOLO sul `no` (P1 preflight): ogni
+// `projectFocusOutcome`). Il deck si ferma SOLO sul `no` (P1 preflight): ogni
 // «non lo so» — compass assente, compass senza il metodo, progetto che compass
 // non conosce, progetto senza `id` — apre come prima di T198 e lo dice nella
 // risposta, perché rifiutare nel dubbio bloccherebbe ogni spawn su una macchina
@@ -98,4 +103,48 @@ export function checkProjectWindow(projectId: string | null): Promise<WindowChec
   return new Promise((resolve) =>
     compassCall('ProjectFocused', projectId, WINDOW_CHECK_TIMEOUT_S, (r) => resolve(windowCheckOf(r, projectId))),
   );
+}
+
+/** T229 — quanto oltre la scadenza della richiesta `gdbus` aspetta la risposta
+ *  di `AwaitProjectFocus`, in secondi. La scadenza la tiene compass, che
+ *  risponde `scaduta`; questo margine copre un compass che non risponde più
+ *  senza essere uscito dal bus, e non deve scattare prima di lui. */
+export const AWAIT_MARGIN_S = 60;
+
+/**
+ * T229 — aspetta che la finestra in focus diventi del progetto: il metodo
+ * D-Bus `AwaitProjectFocus` di compass, con `notice` per la notifica dello
+ * spawn in attesa e `deadlineS` per la vita della richiesta. La risposta arriva
+ * a `onResult` una volta sola: `si` al ritorno del focus, `scaduta`,
+ * `interrotta` se compass si spegne a metà, oppure il canale che cade.
+ *
+ * → la funzione che interrompe l'attesa: uccide il `gdbus call`, e compass,
+ * che segue il chiamante sul bus, chiude l'attesa e ritira la notifica. Dopo
+ * l'interruzione può arrivare ancora un `onResult` (la fine del processo
+ * ucciso): chi chiama lo deve ignorare.
+ *
+ * Col freno dei test risponde subito «non raggiungibile» senza lanciare
+ * niente, come `checkProjectWindow`: un figlio inerte non risponde mai, e la
+ * richiesta resterebbe appesa.
+ */
+export function awaitProjectFocus(
+  projectId: string,
+  notice: string,
+  deadlineS: number,
+  onResult: (r: CompassReply) => void,
+): () => void {
+  if (NO_SPAWN) {
+    setImmediate(() => onResult({ unreachable: 'deck col freno LOOM_DECK_NO_SPAWN, compass non chiesto' }));
+    return () => {};
+  }
+  const seconds = Math.max(1, Math.ceil(deadlineS));
+  const child = compassCall(
+    'AwaitProjectFocus',
+    [projectId, notice, String(seconds)],
+    seconds + AWAIT_MARGIN_S,
+    onResult,
+  );
+  return () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+  };
 }

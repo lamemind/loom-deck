@@ -12,11 +12,16 @@
 //
 // Uscite:
 //   0  tab aperta (o spawn inerte, se il deck gira col freno dei test)
-//   1  il deck ha risposto con un rifiuto, o non ha risposto in tempo. T198 —
-//      su Linux anche la finestra in focus che non è del progetto: il motivo
-//      porta l'istruzione per l'utente, e il client lo stampa com'è
+//   1  il deck ha risposto con un rifiuto, o non ha risposto in tempo
 //   2  errore d'uso, nessuna richiesta partita
 //   3  nessun deck in ascolto sull'indirizzo del progetto
+//   4  T229 — in coda: su Linux la finestra in focus non è del progetto, e la
+//      tab nasce quando una finestra del progetto torna in focus. Lo stdout
+//      porta già il `sessionId` della conversazione e l'ora di scadenza, non
+//      il titolo, che `deck-run` compone allo spawn. Non `0` (P8 preflight):
+//      `spawn-task` e la regia leggono `0` come «tab aperta, riga `titolo:`
+//      presente». `4` è il primo codice libero: `0`–`3` li condivide
+//      `loom-deck-close`
 //
 // La logica sta qui e l'ingresso in `loom-deck-spawn.ts`, così il test esegue il
 // client intero contro un server vero senza lanciare un processo. Lo scambio sul
@@ -29,6 +34,7 @@ import {
   normalizeSession,
   parseScope,
   requestKinds,
+  type QueuedSpawn,
   type SpawnReply,
   type SpawnRequest,
 } from './spawn-endpoint.js';
@@ -52,7 +58,8 @@ compreso).
                fino a .claude/loom-works.json)
 
 Uscite: 0 tab aperta · 1 rifiuto o nessuna risposta dal deck · 2 errore d'uso ·
-3 nessun deck in ascolto sul progetto`;
+3 nessun deck in ascolto sul progetto · 4 in coda: la tab nasce quando una
+finestra del progetto torna in focus (sessionId e scadenza in stdout)`;
 
 export { REPLY_TIMEOUT_MS, type ClientIo };
 
@@ -168,6 +175,10 @@ export async function runClient(argv: readonly string[], io: ClientIo): Promise<
   }
   const r = outcome.reply;
   if (!r.ok) {
+    if (r.queued) {
+      io.stdout(`${queuedLines(r.queued, root, io.now?.() ?? Date.now()).join('\n')}\n`);
+      return 4;
+    }
     io.stderr(`loom-deck-spawn: il deck ha rifiutato: ${r.reason}\n`);
     return 1;
   }
@@ -193,4 +204,41 @@ export async function runClient(argv: readonly string[], io: ClientIo): Promise<
 
 function nonNull(line: string | null): string[] {
   return line === null ? [] : [line];
+}
+
+/**
+ * T229 — lo stdout di una richiesta in coda (uscita `4`). Le righe col nome
+ * in testa sono quelle di una tab aperta, così chi legge le cerca allo stesso
+ * modo; manca `titolo:`, e c'è `scade:`.
+ *
+ * L'ora di scadenza in ISO 8601 con lo scarto del fuso locale, più i minuti
+ * che mancano: chi ha chiesto — una regia — la confronta con l'ora di adesso,
+ * e passata quell'ora senza l'evento `🆕 nuova sessione` dà la richiesta per
+ * morta. Nessun evento arriva alla scadenza, perché il client è già uscito.
+ */
+export function queuedLines(q: QueuedSpawn, root: string, nowMs: number): string[] {
+  const at = new Date(q.expiresAt);
+  const minutes = Math.max(0, Math.round((at.getTime() - nowMs) / 60_000));
+  const lines = [
+    `⏳ in coda sul deck di ${root}: la finestra in focus non è del progetto, la tab nasce quando una finestra del progetto torna in focus`,
+    `sessionId: ${q.sessionId}`,
+    `task:      ${q.task} · ${q.kind} · ${q.model}`,
+    `prompt:    ${q.prompt || '(nessuno)'}`,
+  ];
+  if (q.regia) lines.push(`regia:     ${q.regia} (LOOM_REGIA)`);
+  lines.push(`scade:     ${localIso(at)} (fra ${minutes} min)`);
+  return lines;
+}
+
+/** Un istante in ISO 8601 all'ora locale, con lo scarto del fuso e senza i
+ *  millisecondi: `2026-11-20T18:22:05+01:00`. */
+export function localIso(d: Date): string {
+  const two = (n: number) => String(Math.abs(n)).padStart(2, '0');
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  return (
+    `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}` +
+    `T${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}` +
+    `${sign}${two(Math.trunc(off / 60))}:${two(off % 60)}`
+  );
 }

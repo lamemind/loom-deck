@@ -8,7 +8,7 @@ import type { ChildProcess } from 'node:child_process';
 import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { awaitAnnounce, handleSpawnRequest, planSpawnRequest, type SpawnRequestDeps } from '../src/endpoint-spawn.js';
+import { awaitAnnounce, handleSpawnRequest, planSpawnRequest, spawnPlanned, type SpawnRequestDeps } from '../src/endpoint-spawn.js';
 import { HEADLESS_USAGE } from '../src/headless-client.js';
 import { CLIENT_USAGE } from '../src/spawn-client.js';
 import { PROMPT_KINDS } from '../src/tab-args.js';
@@ -289,6 +289,82 @@ test('finestra del progetto non in focus: rifiuto col motivo, nessuno spawn e qu
   );
   assert.deepEqual(r, { ok: false, reason: 'finestra del progetto non in focus (demo): …' });
   assert.equal(calls.spawned.length, 0, 'il binding lo scrive spawn, e spawn non parte');
+});
+
+// T229 — con la coda il `no` non rifiuta: la richiesta pianificata passa alla
+// coda, che risponde «in coda»; lo spawn non parte, quindi nessun binding.
+test('finestra del progetto non in focus con la coda: la richiesta pianificata va in coda, nessuno spawn', async () => {
+  const calls: Calls = { spawned: [], defaults: [] };
+  const queued: Array<{ task: string; kind: string; prompt: string }> = [];
+  const reply = {
+    ok: false as const,
+    reason: 'in coda: …',
+    queued: {
+      sessionId: 'sid-q',
+      task: 'T9',
+      kind: 'preflight' as const,
+      model: 'sonnet' as const,
+      prompt: '/loom-works:preflight T9',
+      regia: null,
+      expiresAt: '2026-11-20T17:30:00.000Z',
+    },
+  };
+  const r = await handleSpawnRequest(
+    req({}),
+    deps(
+      {
+        windowCheck: async () => ({ refuse: 'finestra del progetto non in focus (demo): …' }),
+        queue: {
+          enqueue: async (q, plan) => {
+            queued.push({ task: q.task, kind: plan.kind, prompt: plan.prompt });
+            return reply;
+          },
+        },
+      },
+      calls,
+    ),
+  );
+  assert.deepEqual(r, reply);
+  assert.deepEqual(queued, [{ task: 'T9', kind: 'preflight', prompt: '/loom-works:preflight T9' }]);
+  assert.equal(calls.spawned.length, 0);
+});
+
+test('la coda non vede le richieste con la finestra giusta né quelle sbagliate', async () => {
+  let enqueued = 0;
+  const queue = {
+    enqueue: async () => {
+      enqueued++;
+      return { ok: false as const, reason: 'in coda' };
+    },
+  };
+  const ok = await handleSpawnRequest(req({}), deps({ windowCheck: async () => ({ ok: true as const }), queue }));
+  assert.equal(ok.ok, true);
+  const bad = await handleSpawnRequest(req({ task: 'T404' }), deps({ windowCheck: async () => ({ refuse: 'x' }), queue }));
+  assert.match((bad as { reason: string }).reason, /T404 non è nella lista task/);
+  assert.equal(enqueued, 0);
+});
+
+test('spawnPlanned: il sessionId della coda arriva allo spawn, e la risposta è quella di una tab', async () => {
+  const seen: Array<string | undefined> = [];
+  const r = await spawnPlanned(
+    req({}),
+    { ok: true, kind: 'preflight', model: 'opus', note: 'n', prompt: 'p', regia: null },
+    {
+      spawn: (_id, _m, _n, _p, _r, sessionId) => {
+        seen.push(sessionId);
+        return {
+          sessionId: sessionId ?? 'nuovo',
+          spawned: { child: fakeChild(['LOOM_DECK_TITLE 🧵 demo · T9', 'LOOM_DECK_INTAB claude …']), cmd: 'deck-run' },
+        };
+      },
+    },
+    null,
+    'sid-annunciato',
+  );
+  assert.deepEqual(seen, ['sid-annunciato']);
+  assert.equal(r.ok, true);
+  assert.equal((r as { sessionId: string }).sessionId, 'sid-annunciato');
+  assert.equal((r as { title: string }).title, '🧵 demo · T9');
 });
 
 test('finestra non verificata: la tab si apre e la risposta porta l’avviso', async () => {

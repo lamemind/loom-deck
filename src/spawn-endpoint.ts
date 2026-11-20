@@ -231,7 +231,31 @@ export type SpawnReply =
        *  è persa senza errore (P4 preflight). */
       regia?: string | null;
     }
-  | { ok: false; reason: string };
+  /** Rifiuto, o T229 richiesta in coda (`queued`). La coda viaggia sul ramo
+   *  `ok: false` di proposito: un client più vecchio di T229 la legge come un
+   *  rifiuto col suo motivo ed esce `1`, invece di stampare «tab aperta» per
+   *  una tab che non c'è ancora. */
+  | { ok: false; reason: string; queued?: QueuedSpawn };
+
+/**
+ * T229 — una richiesta di spawn messa in coda dal deck: la finestra in focus
+ * non era del progetto, e la tab nasce quando una finestra del progetto torna
+ * in focus. Porta già il `sessionId` della conversazione, che il deck sceglie
+ * alla messa in coda e passa a `claude` con `--session-id` allo spawn vero.
+ * Niente titolo: lo compone `deck-run` allo spawn, col segno della gemella se
+ * un'altra conversazione viva ha lo stesso titolo in quel momento.
+ */
+export interface QueuedSpawn {
+  sessionId: string;
+  task: string;
+  kind: PromptKind;
+  model: ModelKind;
+  prompt: string;
+  /** La regia impostata come `LOOM_REGIA`, `null` se nessuna. */
+  regia: string | null;
+  /** Quando la richiesta scade senza tab, ISO 8601 in UTC. */
+  expiresAt: string;
+}
 
 /**
  * T204 — la chiusura di una conversazione viva del progetto.

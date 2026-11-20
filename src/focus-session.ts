@@ -53,12 +53,13 @@ export type FocusResult =
   | { reached: boolean; outcome: string }
   | { unreachable: string };
 
-/** L'argv di `gdbus` per chiamare un metodo di compass con un argomento `s`.
- *  L'argomento va nudo: `gdbus` legge il tipo `s` dall'introspezione del metodo
+/** L'argv di `gdbus` per chiamare un metodo di compass.
+ *  Gli argomenti vanno nudi: `gdbus` legge i tipi dall'introspezione del metodo
  *  e un testo che non è GVariant valido (un UUID, un id di progetto) lo prende
- *  come stringa — anche `123`, `true`, apici e spazi, misurato su
- *  `ProjectFocused` (T198). */
-export function compassArgs(method: string, arg: string, timeoutS: number): string[] {
+ *  come stringa dove il tipo è `s` — anche `123`, `true`, apici e spazi,
+ *  misurato su `ProjectFocused` (T198). T229 — più argomenti in ordine, per
+ *  `AwaitProjectFocus` (`s`, `s`, `u`): un numero nudo dove il tipo è `u`. */
+export function compassArgs(method: string, arg: string | readonly string[], timeoutS: number): string[] {
   return [
     'call',
     '--session',
@@ -70,7 +71,7 @@ export function compassArgs(method: string, arg: string, timeoutS: number): stri
     `org.lamemind.Compass.${method}`,
     '--timeout',
     String(timeoutS),
-    arg,
+    ...(typeof arg === 'string' ? [arg] : arg),
   ];
 }
 
@@ -97,10 +98,10 @@ export function parseFocusReply(stdout: string): string | null {
 export type CompassReply = { word: string } | { unreachable: string };
 
 /**
- * Chiama il metodo `method` di compass con l'argomento `arg` e consegna la
- * parola della risposta a `onResult`, una volta sola. Il canale di
- * `FocusSession` (T184) e di `ProjectFocused` (T198): un metodo con firma
- * `(s) → (s)`.
+ * Chiama il metodo `method` di compass con l'argomento `arg` (o gli argomenti,
+ * in ordine) e consegna la parola della risposta a `onResult`, una volta sola.
+ * Il canale di `FocusSession` (T184), di `ProjectFocused` (T198) e di
+ * `AwaitProjectFocus` (T229): metodi che rispondono una parola, `(s)`.
  *
  * Il listener su `error` è OBBLIGATORIO e non difensivo: senza `gdbus` (su
  * Windows, o su un Linux senza glib) lo spawn fallisce con un `error`
@@ -117,7 +118,7 @@ export type CompassReply = { word: string } | { unreachable: string };
  */
 export function compassCall(
   method: string,
-  arg: string,
+  arg: string | readonly string[],
   timeoutS: number,
   onResult: (r: CompassReply) => void,
 ): ChildProcess {

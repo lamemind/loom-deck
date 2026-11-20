@@ -267,6 +267,51 @@ test('finestra del progetto: rifiuto con l’istruzione, o tab aperta con l’av
   );
 });
 
+// T229 — la richiesta in coda: uscita 4, sessionId e scadenza su stdout, niente
+// titolo; il motivo «in coda» resta per i client più vecchi, che escono 1.
+test('richiesta in coda: uscita 4, sessionId, task, prompt, regia e scadenza su stdout', async () => {
+  const p = project();
+  const expires = new Date(Date.UTC(2026, 10, 20, 17, 30, 0));
+  const queuedReply = (req: SpawnRequest) => ({
+    ok: false,
+    reason: 'in coda: finestra del progetto non in focus (demo), la tab nasce quando …',
+    queued: {
+      sessionId: '0a1b2c3d-1111-2222-3333-444455556666',
+      task: req.task,
+      kind: req.kind,
+      model: 'opus',
+      prompt: '/loom-works:preflight-task T5',
+      regia: 'T197',
+      expiresAt: expires.toISOString(),
+    },
+  });
+  let out = '';
+  let err = '';
+  const code = await withDeck(p, async (req) => queuedReply(req as SpawnRequest), () =>
+    runClient(['T5', 'preflight', '--regia', 'T197'], {
+      cwd: p.root,
+      env: p.env,
+      platform: process.platform,
+      stdout: (s) => (out += s),
+      stderr: (s) => (err += s),
+      now: () => expires.getTime() - 30 * 60_000,
+    }),
+  );
+  assert.equal(code, 4);
+  assert.equal(err, '');
+  const lines = out.trimEnd().split('\n');
+  assert.match(lines[0]!, /^⏳ in coda sul deck di .*: la finestra in focus non è del progetto, la tab nasce quando una finestra del progetto torna in focus$/);
+  assert.deepEqual(lines.slice(1, 5), [
+    'sessionId: 0a1b2c3d-1111-2222-3333-444455556666',
+    'task:      T5 · preflight · opus',
+    'prompt:    /loom-works:preflight-task T5',
+    'regia:     T197 (LOOM_REGIA)',
+  ]);
+  assert.match(lines[5]!, /^scade: {5}\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d \(fra 30 min\)$/);
+  assert.equal(new Date(lines[5]!.slice(11, 36)).getTime(), expires.getTime(), 'l’ora locale è la stessa scadenza');
+  assert.ok(!out.includes('titolo:'), 'in coda il titolo non esiste ancora');
+});
+
 test('deck che non risponde: uscita 1 allo scadere dell’attesa', async () => {
   const p = project();
   const r = await withDeck(
