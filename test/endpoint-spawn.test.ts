@@ -12,7 +12,13 @@ import { awaitAnnounce, handleSpawnRequest, planSpawnRequest, type SpawnRequestD
 import { HEADLESS_USAGE } from '../src/headless-client.js';
 import { CLIENT_USAGE } from '../src/spawn-client.js';
 import { PROMPT_KINDS } from '../src/tab-args.js';
-import { kindRefusal, requestKinds, type RequestChannel, type SpawnRequest } from '../src/spawn-endpoint.js';
+import {
+  CHANNEL_REFUSALS,
+  kindRefusal,
+  requestKinds,
+  type RequestChannel,
+  type SpawnRequest,
+} from '../src/spawn-endpoint.js';
 import { spawnDeck } from '../src/spawn.js';
 import type { PromptKind } from '../src/spawn-catalog.js';
 import { unixOnly } from './platform-gates.js';
@@ -87,6 +93,7 @@ test('preflight: la terna del catalogo, e la risposta porta titolo e comando in-
 // T220 — la regia che chiede: verificata contro il progetto, passata allo spawn
 // con la sua sessione, riportata nella risposta.
 const EPIC_TEXT = '# Task: cappello\n\n- **Size**: Epic\n';
+const REGIA_SID = '0a1b2c3d-1111-2222-3333-444455556666';
 
 function regiaDeps(spawnedRegia: unknown[], over: Partial<SpawnRequestDeps> = {}): SpawnRequestDeps {
   const base = deps();
@@ -132,6 +139,25 @@ test('regia: una task che non è un perimetro, o che non c’è, è un rifiuto s
     'endpoint',
   );
   assert.equal(mandate.ok && mandate.regia?.regia, 'T197');
+});
+
+// T220/P3 — la regia dichiarata si scarta quando la conversazione aperta è a sua
+// volta una regia. Oggi il kind `regia` lo rifiuta `kindRefusal` prima: il test
+// arriva alla regola con la tabella dei rifiuti senza la riga `endpoint`, cioè
+// nello stato che T221 (passaggio di consegne della regia) renderà vero.
+test('regia: con il kind regia aperto sull’endpoint, la regia dichiarata si scarta senza rifiuto', () => {
+  const open = { ...CHANNEL_REFUSALS, endpoint: {} };
+  const d = regiaDeps([]);
+  // Senza la riga, il kind passa; la tabella vera lo rifiuta ancora.
+  assert.equal(kindRefusal('regia', 'endpoint', open), null);
+  assert.notEqual(kindRefusal('regia', 'endpoint'), null);
+  const asRegia = planSpawnRequest(req({ task: 'T197', kind: 'regia', regia: 'T197', regiaSession: REGIA_SID }), d, 'endpoint', open);
+  assert.equal(asRegia.ok, true, JSON.stringify(asRegia));
+  assert.equal(asRegia.ok && asRegia.kind, 'regia');
+  assert.equal(asRegia.ok && asRegia.regia, null, 'una regia non è un membro: nessuna LOOM_REGIA');
+  // Stessa tabella, kind di un membro: la regia resta, sessione compresa.
+  const asMember = planSpawnRequest(req({ kind: 'run', regia: 'T197', regiaSession: REGIA_SID }), d, 'endpoint', open);
+  assert.deepEqual(asMember.ok && asMember.regia, { regia: 'T197', session: REGIA_SID });
 });
 
 test('run col perimetro: DLV in coda al prompt di run già risolto, come il modo DLV', async () => {

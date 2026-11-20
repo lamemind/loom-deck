@@ -184,14 +184,20 @@ export type RequestChannel = 'endpoint' | 'headless';
  * che la rendono chiudibile: togliere la riga `endpoint` qui la fa comparire
  * anche nell'help di `loom-deck-spawn`, senza un secondo ritocco.
  */
-const CHANNEL_REFUSALS: Readonly<Record<RequestChannel, Partial<Record<PromptKind, string>>>> = {
+export type ChannelRefusals = Readonly<Record<RequestChannel, Partial<Record<PromptKind, string>>>>;
+
+export const CHANNEL_REFUSALS: ChannelRefusals = {
   endpoint: { regia: 'regia: si apre dal detail del deck o con deck-run, non da una richiesta' },
   headless: { regia: 'regia: si apre dal detail del deck o con deck-run, non in un turno headless' },
 };
 
 /** Il motivo per cui il canale rifiuta il kind, o `null` se lo accetta. */
-export function kindRefusal(kind: PromptKind, channel: RequestChannel): string | null {
-  return CHANNEL_REFUSALS[channel][kind] ?? null;
+export function kindRefusal(
+  kind: PromptKind,
+  channel: RequestChannel,
+  refusals: ChannelRefusals = CHANNEL_REFUSALS,
+): string | null {
+  return refusals[channel][kind] ?? null;
 }
 
 /** I kind che il canale accetta, nell'ordine di `PROMPT_KINDS`: l'elenco

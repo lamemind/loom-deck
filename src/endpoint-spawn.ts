@@ -17,7 +17,14 @@ import { dlvPrompt, parseDeliverables } from './deliverables.js';
 import { INTAB_MARKER, TITLE_MARKER, type Spawned } from './spawn.js';
 import { specializeRecap, type ModelKind, type PromptKind } from './spawn-catalog.js';
 import type { ResolvedSpawn } from './spawn-config.js';
-import { kindRefusal, type RequestChannel, type SpawnReply, type SpawnRequest } from './spawn-endpoint.js';
+import {
+  CHANNEL_REFUSALS,
+  kindRefusal,
+  type ChannelRefusals,
+  type RequestChannel,
+  type SpawnReply,
+  type SpawnRequest,
+} from './spawn-endpoint.js';
 import { memberRegia } from './tab-args.js';
 import { taskIsMandate, taskIsPerimeter } from './tasks.js';
 import type { WindowCheck } from './window-check.js';
@@ -116,13 +123,24 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
  * headless (`loom-deck-headless open`): due copie di questi rifiuti
  * divergerebbero al primo ritocco, e il turno headless partirebbe dove la tab
  * è rifiutata.
+ *
+ * `refusals` è la tabella dei kind rifiutati per canale, `CHANNEL_REFUSALS` per
+ * ogni chiamante del deck. Un parametro e non solo la costante perché un test
+ * deve poter arrivare alle regole che oggi stanno dietro un rifiuto — la regia
+ * scartata sul kind `regia` (T220/P3), che T221 renderà raggiungibile togliendo
+ * la riga `endpoint` — senza aspettare che il rifiuto cada.
  */
-export function planSpawnRequest(req: SpawnRequest, deps: SpawnPlanDeps, channel: RequestChannel): SpawnPlan {
+export function planSpawnRequest(
+  req: SpawnRequest,
+  deps: SpawnPlanDeps,
+  channel: RequestChannel,
+  refusals: ChannelRefusals = CHANNEL_REFUSALS,
+): SpawnPlan {
   // T203/P3 — un kind che il canale non accetta (la regia, oggi su entrambi):
   // `PROMPT_KINDS` è la lista di `deck-run`, e la richiesta valida sulla stessa
   // lista. La regola sta in `kindRefusal`, che fa anche l'elenco dell'help dei
   // client. Prima della task: il motivo non dipende dalla task chiesta.
-  const refused = kindRefusal(req.kind, channel);
+  const refused = kindRefusal(req.kind, channel, refusals);
   if (refused) return { ok: false, reason: refused };
   if (!deps.taskExists(req.task)) return { ok: false, reason: `${req.task} non è nella lista task del progetto` };
   const text = deps.taskText(req.task);
