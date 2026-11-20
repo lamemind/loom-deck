@@ -81,6 +81,14 @@ import { sanitize } from './width.js';
 // La marca segue il `sessionId`, non il processo: una conversazione ripresa dal
 // deck resta chiudibile, una passata da un `/clear` (stesso processo,
 // `sessionId` nuovo) o un fork no.
+//
+// T220 — `regia` e `regiaSession` dicono quale regia ha aperto la
+// conversazione: il perimetro (`T197`) e il `sessionId` della conversazione che
+// faceva da regia. Scritti in un record solo, allo spawn chiesto da una regia
+// (`--regia`), e mai riscritti. Sono PROVENIENZA, non sorgente (P2 preflight):
+// nessuno li rilegge per decidere l'ambiente di un processo — `LOOM_REGIA` segue
+// la richiesta, quindi una conversazione ripresa dall'utente nasce senza, anche
+// se il sidecar dice che l'ha aperta una regia.
 
 export interface SessionRecord {
   sessionId: string;
@@ -114,6 +122,12 @@ export interface SessionRecord {
   /** T204 — da dove è nata la conversazione: `endpoint` = da una richiesta
    *  `spawn` sull'endpoint del deck. Scritto una volta, allo spawn. */
   origin?: string;
+  /** T220 — il perimetro della regia che ha aperto la conversazione. Scritto
+   *  una volta, allo spawn, insieme a `regiaSession`. */
+  regia?: string;
+  /** T220 — il `sessionId` della regia che ha chiesto lo spawn; assente se il
+   *  client non lo conosceva. */
+  regiaSession?: string;
 }
 
 /** T204 — il valore di `origin` di una conversazione aperta dall'endpoint. */
@@ -207,6 +221,17 @@ export function appendLive(projectRoot: string, sessionId: string, live: boolean
  */
 export function appendOrigin(projectRoot: string, sessionId: string, origin: string): void {
   appendSessionRecord(projectRoot, { sessionId, origin });
+}
+
+/**
+ * T220 — la regia che ha aperto la conversazione: perimetro e, se noto, il
+ * `sessionId` della regia, in UN record (`appendSessionMeta` spiega perché due
+ * campi scritti insieme non vanno in due righe). Allo spawn si appende accanto
+ * al binding della task, prima della tab. I nomi dei campi sono un contratto di
+ * formato come `origin`.
+ */
+export function appendRegia(projectRoot: string, sessionId: string, regia: string, regiaSession?: string): void {
+  appendSessionRecord(projectRoot, { sessionId, regia, ...(regiaSession ? { regiaSession } : {}) });
 }
 
 export interface SessionIndex {

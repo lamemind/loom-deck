@@ -153,6 +153,14 @@ export interface SpawnRequest {
   model?: ModelKind;
   /** La nota del titolo. Assente = il template di titolo dell'azione. */
   note?: string;
+  /** T220 — il perimetro della regia che chiede lo spawn (`T197`): diventa
+   *  `LOOM_REGIA` nella conversazione e il campo `regia` del sidecar. Il deck
+   *  lo rifiuta se non è un'epica né un mandato. */
+  regia?: string;
+  /** T220 — il `sessionId` della regia che chiede, letto dal client nel
+   *  proprio ambiente (`CLAUDE_CODE_SESSION_ID`): solo provenienza, nel campo
+   *  `regiaSession` del sidecar. Assente se il client non lo trova. */
+  regiaSession?: string;
 }
 
 /**
@@ -211,6 +219,11 @@ export type SpawnReply =
        *  fosse del progetto, e il perché: compass assente, più vecchio, o che
        *  non conosce il progetto. */
       warning?: string;
+      /** T220 — la regia impostata come `LOOM_REGIA`, `null` se nessuna. Un
+       *  deck che conosce la regia porta SEMPRE il campo: la sua assenza dice
+       *  al client che il deck acceso è più vecchio, e la regia dichiarata si
+       *  è persa senza errore (P4 preflight). */
+      regia?: string | null;
     }
   | { ok: false; reason: string };
 
@@ -353,6 +366,23 @@ function spawnFields(r: Record<string, unknown>): SpawnRequest | { error: string
       return { error: `nota non valida: una riga di al più ${NOTE_MAX} caratteri` };
     }
     req.note = r.note;
+  }
+  // T220 — la regia nella forma di un id di task; che sia un perimetro del
+  // progetto lo verifica il deck (`regiaRefusal`). La sessione della regia
+  // senza la regia non vuol dire niente, e si rifiuta.
+  if (r.regia !== undefined) {
+    if (typeof r.regia !== 'string' || !TASK_RE.test(r.regia)) {
+      return { error: `regia non valida: ${JSON.stringify(r.regia)} (forma T<numero>)` };
+    }
+    req.regia = r.regia;
+  }
+  if (r.regiaSession !== undefined) {
+    if (req.regia === undefined) return { error: 'regiaSession senza regia' };
+    const sid = normalizeSession(r.regiaSession);
+    if (sid === null || sid.length !== SESSION_MAX) {
+      return { error: `sessione della regia non valida: ${JSON.stringify(r.regiaSession)} (sessionId intero)` };
+    }
+    req.regiaSession = sid;
   }
   return req;
 }

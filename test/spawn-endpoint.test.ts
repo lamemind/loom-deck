@@ -106,6 +106,22 @@ test('richiesta valida: verbo, task, kind e i campi opzionali', () => {
   );
 });
 
+const REGIA_SID = '0a1b2c3d-1111-2222-3333-444455556666';
+
+// T220 — la regia che chiede lo spawn, e la sua sessione in minuscolo.
+test('richiesta con la regia: perimetro e sessione della regia', () => {
+  assert.deepEqual(
+    parseSpawnRequest(JSON.stringify({ verb: 'spawn', task: 'T7', kind: 'run', regia: 'T197', regiaSession: REGIA_SID.toUpperCase() })),
+    { verb: 'spawn', task: 'T7', kind: 'run', regia: 'T197', regiaSession: REGIA_SID },
+  );
+  assert.deepEqual(parseSpawnRequest(JSON.stringify({ verb: 'spawn', task: 'T7', kind: 'run', regia: 'T197' })), {
+    verb: 'spawn',
+    task: 'T7',
+    kind: 'run',
+    regia: 'T197',
+  });
+});
+
 test('richieste rifiutate nella forma, col motivo', () => {
   const cases: Array<[unknown, RegExp]> = [
     ['non json', /non è JSON/],
@@ -118,6 +134,11 @@ test('richieste rifiutate nella forma, col motivo', () => {
     [{ verb: 'spawn', task: 'T1', kind: 'run', scope: [0] }, /perimetro non valido/],
     [{ verb: 'spawn', task: 'T1', kind: 'run', model: 'gpt' }, /modello ignoto/],
     [{ verb: 'spawn', task: 'T1', kind: 'run', note: 'a\nb' }, /nota non valida/],
+    // T220 — la regia è un id di task, la sua sessione un sessionId intero.
+    [{ verb: 'spawn', task: 'T1', kind: 'run', regia: 'epica' }, /regia non valida/],
+    [{ verb: 'spawn', task: 'T1', kind: 'run', regia: 197 }, /regia non valida/],
+    [{ verb: 'spawn', task: 'T1', kind: 'run', regiaSession: REGIA_SID }, /regiaSession senza regia/],
+    [{ verb: 'spawn', task: 'T1', kind: 'run', regia: 'T197', regiaSession: '0a1b2c3d' }, /sessione della regia non valida/],
   ];
   for (const [raw, re] of cases) {
     const r = parseSpawnRequest(typeof raw === 'string' ? raw : JSON.stringify(raw));

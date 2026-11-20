@@ -27,8 +27,8 @@ import { parseClientArgs } from './spawn-client.js';
 import { normalizeSession, requestKinds } from './spawn-endpoint.js';
 import { findProjectRoot } from './tab-launch.js';
 
-export const HEADLESS_USAGE = `uso: loom-deck-headless open <TaskID> <kind> [perimetro] [--model <alias>] [--note <testo>] [--root <dir>]
-     loom-deck-headless reply <sessionId> <messaggio… | -> [--model <alias>] [--root <dir>]
+export const HEADLESS_USAGE = `uso: loom-deck-headless open <TaskID> <kind> [perimetro] [--model <alias>] [--note <testo>] [--regia <perimetro>] [--root <dir>]
+     loom-deck-headless reply <sessionId> <messaggio… | -> [--model <alias>] [--regia <perimetro>] [--root <dir>]
      loom-deck-headless status <sessionId> [--wait <secondi>] [--json] [--root <dir>]
 
 Un turno di conversazione su una task SENZA tab: un processo claude -p staccato,
@@ -51,6 +51,9 @@ status. Nessuna tab, nessun cambio di finestra o di focus.
   sessionId   intero, o prefisso di almeno 8 caratteri
   --model     ${MODELS.join(' | ')} (open: assente = il modello dell'azione;
               reply: assente = quello con cui la conversazione ha risposto)
+  --regia     la regia che apre o risponde, col suo perimetro (T<numero>, epica
+              o mandato): il turno nasce con LOOM_REGIA. Vale per QUEL turno:
+              una regia la dichiara a ogni reply
   --root      root del progetto (assente = risalita fino a .claude/loom-works.json)
 
 Un turno in corso si ferma con kill <pid>: il pid lo stampa status.
@@ -81,7 +84,7 @@ export interface HeadlessClientIo {
   pollMs?: number;
 }
 
-type Common = { root: string | null; model?: ModelKind };
+type Common = { root: string | null; model?: ModelKind; regia?: string };
 type Parsed =
   | { help: true }
   | { usage: string[] }
@@ -99,6 +102,7 @@ export function parseHeadlessArgs(argv: readonly string[]): Parsed {
   const positional: string[] = [];
   let root: string | null = null;
   let model: ModelKind | undefined;
+  let regia: string | undefined;
   let wait = 0;
   let json = false;
   for (let i = 0; i < rest.length; i++) {
@@ -109,12 +113,16 @@ export function parseHeadlessArgs(argv: readonly string[]): Parsed {
       positional.push(...rest.slice(i + 1));
       break;
     }
-    if (a === '--root' || a === '--model' || (cmd === 'status' && a === '--wait')) {
+    if (a === '--root' || a === '--model' || a === '--regia' || (cmd === 'status' && a === '--wait')) {
       const v = rest[i + 1];
       if (v === undefined) return { usage: [`${a} senza valore`] };
       i++;
       if (a === '--root') root = v;
-      else if (a === '--model') {
+      else if (a === '--regia') {
+        if (cmd !== 'reply') return { usage: ['--regia vale con open e reply'] };
+        if (!/^T\d+$/.test(v)) return { usage: [`--regia: perimetro non valido: '${v}' (forma T<numero>)`] };
+        regia = v;
+      } else if (a === '--model') {
         if (cmd !== 'reply') return { usage: ['--model vale con open e reply'] };
         if (!isModelKind(v)) return { usage: [`modello ignoto: '${v}' (usa ${MODELS.join('|')})`] };
         model = v;
@@ -141,7 +149,7 @@ export function parseHeadlessArgs(argv: readonly string[]): Parsed {
     return { cmd, session, wait, json, root };
   }
   if (!words.length) return { usage: ['reply: serve il messaggio (- per leggerlo da stdin)'] };
-  return { cmd, session, words, root, model };
+  return { cmd, session, words, root, model, ...(regia ? { regia } : {}) };
 }
 
 export async function runHeadlessClient(argv: readonly string[], io: HeadlessClientIo): Promise<number> {
@@ -153,7 +161,7 @@ export async function runHeadlessClient(argv: readonly string[], io: HeadlessCli
   if ('usage' in p) return usage(io, p.usage);
 
   if (p.cmd === 'open') {
-    const a = parseClientArgs(p.args);
+    const a = parseClientArgs(p.args, io.headless.env);
     if ('help' in a) {
       io.stdout(`${HEADLESS_USAGE}\n`);
       return 0;
@@ -165,7 +173,7 @@ export async function runHeadlessClient(argv: readonly string[], io: HeadlessCli
   const root = rootOf(p.root, io);
   if (p.cmd === 'reply') {
     const message = p.words.length === 1 && p.words[0] === '-' ? await io.readStdin() : p.words.join(' ');
-    return reportStart(io, await replyHeadless(p.session, message, root, io.headless, p.model), 'reply');
+    return reportStart(io, await replyHeadless(p.session, message, root, io.headless, p.model, p.regia), 'reply');
   }
 
   const prefix = normalizeSession(p.session)!;
@@ -213,6 +221,7 @@ function reportStart(io: HeadlessClientIo, r: TurnReply, verb: 'open' | 'reply')
       `sessionId: ${st.sessionId}`,
       `task:      ${st.task ?? '(nessuna)'} · ${st.kind} · ${st.model} · ${st.permissionMode}`,
       `titolo:    ${st.title}`,
+      ...(st.regia ? [`regia:     ${st.regia} (LOOM_REGIA)`] : []),
       `pid:       ${st.pid}`,
       `esito:     loom-deck-headless status ${st.sessionId.slice(0, 8)} [--wait <secondi>]`,
     ].join('\n') + '\n',

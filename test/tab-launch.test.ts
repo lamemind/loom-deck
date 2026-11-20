@@ -75,7 +75,7 @@ const PARENT: Record<string, string> = {
 };
 
 test('env: via le variabili di sessione (anche in minuscolo), resta la configurazione dell’utente', () => {
-  const env = windowsTabEnv(PARENT, 'T1', null);
+  const env = windowsTabEnv(PARENT, { task: 'T1' }, null);
   for (const m of INHERITED_SESSION_ENV) assert.equal(env[m], undefined, m);
   // T217 — le due che la lista delle tab non toglieva, e l'inspector di Bun.
   for (const m of ['CLAUDE_AFK_TIMEOUT_MS', 'CLAUDE_CODE_BRIDGE_SESSION_ID', 'BUN_INSPECT']) {
@@ -88,14 +88,23 @@ test('env: via le variabili di sessione (anche in minuscolo), resta la configura
 });
 
 test('env: LOOM_TASK è la task della conversazione, e sparisce senza task', () => {
-  assert.equal(windowsTabEnv(PARENT, 'T1', null).LOOM_TASK, 'T1');
-  assert.equal(windowsTabEnv(PARENT, null, null).LOOM_TASK, undefined);
+  assert.equal(windowsTabEnv(PARENT, { task: 'T1' }, null).LOOM_TASK, 'T1');
+  assert.equal(windowsTabEnv(PARENT, { task: null }, null).LOOM_TASK, undefined);
+});
+
+// T220 — `LOOM_REGIA` sta nella lista tolta: la tab la riceve solo dal binding,
+// cioè da una richiesta che dichiara la regia, mai dal deck che la apre.
+test('env: LOOM_REGIA solo dal binding, mai ereditata dal deck', () => {
+  const parent = { ...PARENT, LOOM_REGIA: 'T1' };
+  assert.equal(windowsTabEnv(parent, { task: 'T9' }, null).LOOM_REGIA, undefined);
+  assert.equal(windowsTabEnv(parent, { task: 'T9', regia: null }, null).LOOM_REGIA, undefined);
+  assert.equal(windowsTabEnv(parent, { task: 'T9', regia: 'T197' }, null).LOOM_REGIA, 'T197');
 });
 
 test('env: il bash di Git entra solo se manca', () => {
-  assert.equal(windowsTabEnv({}, null, 'C:\\Git\\bin\\bash.exe').CLAUDE_CODE_GIT_BASH_PATH, 'C:\\Git\\bin\\bash.exe');
+  assert.equal(windowsTabEnv({}, { task: null }, 'C:\\Git\\bin\\bash.exe').CLAUDE_CODE_GIT_BASH_PATH, 'C:\\Git\\bin\\bash.exe');
   assert.equal(
-    windowsTabEnv({ CLAUDE_CODE_GIT_BASH_PATH: 'D:\\mio\\bash.exe' }, null, 'C:\\Git\\bin\\bash.exe').CLAUDE_CODE_GIT_BASH_PATH,
+    windowsTabEnv({ CLAUDE_CODE_GIT_BASH_PATH: 'D:\\mio\\bash.exe' }, { task: null }, 'C:\\Git\\bin\\bash.exe').CLAUDE_CODE_GIT_BASH_PATH,
     'D:\\mio\\bash.exe',
   );
 });
@@ -159,6 +168,30 @@ test('Windows: la conversazione è una tab di wt col wrapper, e l’argv di clau
   assert.equal(r.out[0], 'LOOM_DECK_TITLE cc T1\n');
   assert.match(r.out[1]!, /^LOOM_DECK_INTAB LOOM_TASK=T1 claude --name 'cc T1' /);
   assert.equal(r.out[2], '<launch>');
+});
+
+// T220 — la regia arriva nell'env della tab di wt per lo stesso canale di
+// LOOM_TASK, e una LOOM_REGIA del deck non passa mai.
+test('Windows: --regia mette LOOM_REGIA nell’env della tab, una ereditata sparisce', async () => {
+  const env = { LOOM_REGIA: 'T1', LOOM_DECK_PROMPT_CATALOG: '/non/esiste' };
+  const withRegia = await fakeRun(['T5', '--prompt-kind', 'none', '--regia', 'T197'], { env });
+  assert.equal(withRegia.launches[0]!.env?.LOOM_REGIA, 'T197');
+  assert.equal(withRegia.launches[0]!.env?.LOOM_TASK, 'T5');
+  assert.match(withRegia.out[1]!, /^LOOM_DECK_INTAB LOOM_TASK=T5 LOOM_REGIA=T197 claude /);
+  const without = await fakeRun(['T5', '--prompt-kind', 'none'], { env });
+  assert.equal(without.launches[0]!.env?.LOOM_REGIA, undefined);
+  const regiaKind = await fakeRun(['T197', '--prompt-kind', 'regia', '--regia', 'T197'], { env });
+  assert.equal(regiaKind.launches[0]!.env?.LOOM_REGIA, undefined, 'una regia non è un membro (P3)');
+});
+
+test('Linux: --regia entra nella riga in-tab, prima di claude', async () => {
+  const r = await fakeRun(['T5', '--prompt-kind', 'none', '--regia', 'T197'], {
+    platform: 'linux',
+    env: { LOOM_DECK_PROMPT_CATALOG: '/non/esiste', LOOM_DECK_STATE_PROFILE: '' },
+  });
+  const l = r.launches[0]!;
+  assert.equal(l.cmd, 'ptyxis');
+  assert.match(l.args.at(-1)!, /^LOOM_TASK=T5 LOOM_REGIA=T197 claude /);
 });
 
 test('Windows: --no-task toglie LOOM_TASK ereditata, --new-window apre una finestra', async () => {

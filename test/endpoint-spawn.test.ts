@@ -77,10 +77,61 @@ test('preflight: la terna del catalogo, e la risposta porta titolo e comando in-
     kind: 'preflight',
     model: 'sonnet',
     prompt: '/loom-works:preflight T9',
+    regia: null,
     title: '🧵 demo · T9',
     inTab: 'claude …',
   });
   assert.deepEqual(calls.spawned, [{ id: 'T9', model: 'sonnet', note: 'preflight-titolo', prompt: '/loom-works:preflight T9' }]);
+});
+
+// T220 — la regia che chiede: verificata contro il progetto, passata allo spawn
+// con la sua sessione, riportata nella risposta.
+const EPIC_TEXT = '# Task: cappello\n\n- **Size**: Epic\n';
+
+function regiaDeps(spawnedRegia: unknown[], over: Partial<SpawnRequestDeps> = {}): SpawnRequestDeps {
+  const base = deps();
+  return {
+    ...base,
+    taskExists: (id) => id === 'T9' || id === 'T197' || id === 'T8',
+    taskText: (id) => (id === 'T197' ? EPIC_TEXT : TASK_TEXT),
+    spawn: (id, model, note, prompt, regia) => {
+      spawnedRegia.push(regia);
+      return base.spawn(id, model, note, prompt, regia);
+    },
+    ...over,
+  };
+}
+
+test('regia: un’epica del progetto passa allo spawn con la sessione, e torna nella risposta', async () => {
+  const seen: unknown[] = [];
+  const sid = '0a1b2c3d-1111-2222-3333-444455556666';
+  const r = await handleSpawnRequest(req({ regia: 'T197', regiaSession: sid }), regiaDeps(seen));
+  assert.equal(r.ok, true);
+  assert.equal(r.ok && r.regia, 'T197');
+  assert.deepEqual(seen, [{ regia: 'T197', session: sid }]);
+  // Senza la sessione: la regia passa da sola.
+  await handleSpawnRequest(req({ regia: 'T197' }), regiaDeps(seen));
+  assert.deepEqual(seen[1], { regia: 'T197' });
+  // Senza regia: `null` allo spawn e nella risposta.
+  const plain = await handleSpawnRequest(req({}), regiaDeps(seen));
+  assert.deepEqual(seen[2], null);
+  assert.equal(plain.ok && plain.regia, null);
+});
+
+test('regia: una task che non è un perimetro, o che non c’è, è un rifiuto senza tab', async () => {
+  const seen: unknown[] = [];
+  const notPerimeter = await handleSpawnRequest(req({ regia: 'T8' }), regiaDeps(seen));
+  assert.deepEqual(notPerimeter, { ok: false, reason: "regia T8: non è un'epica né un mandato" });
+  const missing = await handleSpawnRequest(req({ regia: 'T404' }), regiaDeps(seen));
+  assert.deepEqual(missing, { ok: false, reason: 'regia T404: non è nella lista task del progetto' });
+  assert.deepEqual(seen, [], 'nessuno spawn');
+  // Un mandato è un perimetro come un'epica.
+  const mandate = planSpawnRequest(
+    req({ regia: 'T197' }),
+    { ...regiaDeps(seen), taskText: (id) => (id === 'T197' ? '- **Size**: Mandate\n' : TASK_TEXT) },
+    'endpoint',
+  );
+  assert.equal(mandate.ok && mandate.regia?.regia, 'T197');
 });
 
 test('run col perimetro: DLV in coda al prompt di run già risolto, come il modo DLV', async () => {
@@ -269,6 +320,7 @@ test('spawn inerte (figlio senza stdout): ok e inert, senza aspettare', async ()
     kind: 'preflight',
     model: 'sonnet',
     prompt: '/loom-works:preflight T9',
+    regia: null,
     title: null,
     inTab: null,
     inert: true,

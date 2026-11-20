@@ -15,6 +15,29 @@
 // Modulo PURO: l'env arriva come valore e torna come copia.
 
 /**
+ * T220 — le variabili che LEGANO una conversazione aperta dal deck: la task
+ * (`LOOM_TASK`) e la regia che l'ha chiesta (`LOOM_REGIA`). Le scrivono dopo il
+ * filtro i due punti che compongono l'env di un `claude` invece di passarlo in
+ * una riga di comando: le tab di Windows Terminal (`windowsTabEnv`) e i turni
+ * headless (`headlessEnv`). `null` = nessuna, e la variabile manca.
+ */
+export interface SessionBinding {
+  task: string | null;
+  regia?: string | null;
+}
+
+/** `out` con le variabili del binding scritte sopra: dopo il filtro, così una
+ *  variabile ereditata non sopravvive a un binding che la toglie. */
+export function bindSession(
+  out: Record<string, string | undefined>,
+  binding: SessionBinding,
+): Record<string, string | undefined> {
+  if (binding.task) out.LOOM_TASK = binding.task;
+  if (binding.regia) out.LOOM_REGIA = binding.regia;
+  return out;
+}
+
+/**
  * Le variabili con cui un processo lanciato da una conversazione Claude Code
  * descrive QUELLA conversazione: id, pid, effort, entrypoint, canale dei
  * messaggi, Remote Control, inspector.
@@ -57,6 +80,11 @@ export const INHERITED_SESSION_ENV: readonly string[] = [
   'CLAUDE_CODE_CHILD_NOTES_DIR',
   'CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP',
   'BUN_INSPECT',
+  // T220 — la regia che ha aperto la conversazione che lancia. Un figlio che la
+  // ereditasse si vedrebbe negare `AskUserQuestion` e leggerebbe una riga
+  // dell'organigramma che non lo riguarda: `LOOM_REGIA` la mette solo il deck,
+  // a uno spawn chiesto da una regia (`--regia`), e mai per eredità.
+  'LOOM_REGIA',
 ];
 
 /**

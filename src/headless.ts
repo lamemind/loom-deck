@@ -22,7 +22,7 @@
 // su cartelle temporanee.
 import { readFileSync } from 'node:fs';
 import { configFilePath, docsRootName } from './config.js';
-import { planSpawnRequest } from './endpoint-spawn.js';
+import { planSpawnRequest, regiaRefusal } from './endpoint-spawn.js';
 import { claudeEnv } from './git-bash.js';
 import { modelAlias } from './glyphs.js';
 import {
@@ -47,10 +47,10 @@ import { isModelKind, MODEL_DEFAULT, type ModelKind } from './spawn-catalog.js';
 import { loadSpawnOverrides, resolveSpawnId, taskHoles } from './spawn-config.js';
 import { normalizeSession, type SpawnRequest } from './spawn-endpoint.js';
 import { deckArgs, resumeArgs } from './spawn.js';
-import { dropEnv, INHERITED_SESSION_ENV } from './session-env.js';
+import { bindSession, dropEnv, INHERITED_SESSION_ENV, type SessionBinding } from './session-env.js';
 import { isHelpRequest, isUsageError, parseTabArgs } from './tab-args.js';
 import { composeTab, permissionMode, type TabPlan } from './tab-compose.js';
-import { appendNote, appendSessionMeta, appendTaskBinding, loadSessionIndex } from './task-index.js';
+import { appendNote, appendRegia, appendSessionMeta, appendTaskBinding, loadSessionIndex } from './task-index.js';
 import { loadTaskFileText, loadTasks, resolveTasksDir, resolveTasksPath } from './tasks.js';
 
 /**
@@ -77,16 +77,16 @@ export const HEADLESS_DROP_ENV: readonly string[] = [
 ];
 
 /** L'ambiente del turno: quello di chi lancia, meno `HEADLESS_DROP_ENV`, più
- *  `LOOM_TASK` sul ramo bound. Su Windows anche il bash di Git (`claudeEnv`),
- *  come ogni `claude` che il deck lancia. */
+ *  `LOOM_TASK` sul ramo bound e `LOOM_REGIA` quando il comando dichiara la
+ *  regia (T220). Su Windows anche il bash di Git (`claudeEnv`), come ogni
+ *  `claude` che il deck lancia. */
 export function headlessEnv(
   env: Readonly<Record<string, string | undefined>>,
-  task: string | null,
+  binding: SessionBinding,
   platform: NodeJS.Platform,
   bash?: () => string | null,
 ): NodeJS.ProcessEnv {
-  const out = dropEnv(env, HEADLESS_DROP_ENV) as NodeJS.ProcessEnv;
-  if (task) out.LOOM_TASK = task;
+  const out = bindSession(dropEnv(env, HEADLESS_DROP_ENV), binding) as NodeJS.ProcessEnv;
   return claudeEnv(platform, out, bash) ?? out;
 }
 
@@ -293,14 +293,7 @@ export async function openHeadless(req: SpawnRequest, root: string, io: Headless
   const ctx = projectContext(root, io);
   const overrides = loadSpawnOverrides(root).entries;
   const plan = planSpawnRequest(req, {
-    taskExists: (id) => {
-      try {
-        return loadTasks(ctx.tasksPath).some((t) => t.id === id);
-      } catch {
-        return false;
-      }
-    },
-    taskText: (id) => loadTaskFileText(ctx.tasksDir, id),
+    ...taskLookup(ctx),
     defaults: (kind, id) => resolveSpawnId(kind, overrides, ctx.catalog, taskHoles(ctx.tasksDir, id)),
   }, 'headless');
   if (!plan.ok) return plan;
@@ -316,13 +309,15 @@ export async function openHeadless(req: SpawnRequest, root: string, io: Headless
   }
 
   const sessionId = io.newId();
-  const tab = compose(deckArgs(req.task, sessionId, plan.model, plan.note, ''), ctx, io);
+  const tab = compose(deckArgs(req.task, sessionId, plan.model, plan.note, '', plan.regia?.regia), ctx, io);
   warnings.push(...tab.warnings);
 
   // P7 — il binding prima del processo, con gli stessi campi del tasto del deck
   // (`spawnForTask`), più l'alias del modello: una risposta lo ritrova anche
-  // prima che il transcript ne nomini uno.
+  // prima che il transcript ne nomini uno. T220 — e la regia che apre il turno,
+  // come uno spawn dall'endpoint.
   appendTaskBinding(root, sessionId, req.task);
+  if (plan.regia) appendRegia(root, sessionId, plan.regia.regia, plan.regia.session);
   if (plan.note) appendNote(root, sessionId, plan.note);
   appendSessionMeta(root, sessionId, { model: plan.model });
 
@@ -338,12 +333,34 @@ export async function openHeadless(req: SpawnRequest, root: string, io: Headless
       permissionMode: mode,
       turn: 1,
       prompt: clip(plan.prompt),
+      ...regiaField(tab),
     },
     headlessArgs(tab.claudeArgs, plan.prompt),
-    headlessEnv(io.env, req.task, io.platform),
+    headlessEnv(io.env, { task: req.task, regia: tab.sessionEnv.LOOM_REGIA ?? null }, io.platform),
   );
   if (state.launchError) return { ok: false, reason: state.launchError };
   return { ok: true, state, warnings };
+}
+
+/** Le due letture della lista task che servono a un piano e a una regia
+ *  dichiarata: la riga in `tasks.md` e il task file. */
+function taskLookup(ctx: ProjectContext) {
+  return {
+    taskExists: (id: string) => {
+      try {
+        return loadTasks(ctx.tasksPath).some((t) => t.id === id);
+      } catch {
+        return false;
+      }
+    },
+    taskText: (id: string) => loadTaskFileText(ctx.tasksDir, id),
+  };
+}
+
+/** T220 — la regia del turno nello stato su disco, come `LOOM_REGIA` l'ha
+ *  ricevuta dalla composizione: assente se il turno non ne ha. */
+function regiaField(tab: TabPlan): { regia?: string } {
+  return tab.sessionEnv.LOOM_REGIA ? { regia: tab.sessionEnv.LOOM_REGIA } : {};
 }
 
 /** Un `sessionId` intero o un suo prefisso fra i candidati; il motivo del
@@ -374,6 +391,12 @@ function describeProcess(p: SessionProcess): string {
  * Task, nota e modello vengono da dove li prende il deck quando la riprende in
  * una tab: il binding e la nota dal sidecar, il modello dal transcript (T148),
  * poi dal sidecar, poi il default.
+ *
+ * T220 — `regia` è la regia che risponde, dichiarata a ogni turno
+ * (`reply --regia`): ogni turno è un processo nuovo, `SessionStart` scatta a
+ * ogni `--resume`, e senza la regia il turno nascerebbe senza `LOOM_REGIA` —
+ * senza la riga dell'organigramma (P2 preflight). Non si rilegge dal sidecar,
+ * e non si scrive nel sidecar: la provenienza è dello spawn.
  */
 export async function replyHeadless(
   ref: string,
@@ -381,6 +404,7 @@ export async function replyHeadless(
   root: string,
   io: HeadlessIo,
   modelOverride?: ModelKind,
+  regia?: string,
 ): Promise<TurnReply> {
   if (!message.trim()) return { ok: false, reason: 'messaggio vuoto' };
   const prefix = normalizeSession(ref) ?? '';
@@ -403,8 +427,16 @@ export async function replyHeadless(
   }
 
   const ctx = projectContext(root, io);
+  if (regia) {
+    const bad = regiaRefusal(regia, taskLookup(ctx));
+    if (bad) return { ok: false, reason: bad };
+  }
   const index = loadSessionIndex(root);
   const task = index.bindings.get(sessionId) || null;
+  // `--regia` vuole una task (`parseTabArgs`): una conversazione spot non è un
+  // membro di nessun perimetro, e il rifiuto qui dice perché invece del guasto
+  // della composizione.
+  if (regia && !task) return { ok: false, reason: `${short} non è legata a una task: --regia vale solo su un membro` };
   const note = index.notes.get(sessionId);
   const sidecarModel = index.models.get(sessionId);
   const model: ModelKind =
@@ -414,7 +446,7 @@ export async function replyHeadless(
     prev?.model ??
     MODEL_DEFAULT;
 
-  const tab = compose(resumeArgs(task, sessionId, model, note), ctx, io);
+  const tab = compose(resumeArgs(task, sessionId, model, note, regia), ctx, io);
   const state = await launchTurn(
     root,
     io,
@@ -427,9 +459,10 @@ export async function replyHeadless(
       permissionMode: permissionMode({ env: io.env, config: ctx.config }, []),
       turn: (prev?.turn ?? 0) + 1,
       prompt: clip(message),
+      ...regiaField(tab),
     },
     headlessArgs(tab.claudeArgs, message),
-    headlessEnv(io.env, task, io.platform),
+    headlessEnv(io.env, { task, regia: tab.sessionEnv.LOOM_REGIA ?? null }, io.platform),
   );
   if (state.launchError) return { ok: false, reason: state.launchError };
   return { ok: true, state, warnings: tab.warnings };

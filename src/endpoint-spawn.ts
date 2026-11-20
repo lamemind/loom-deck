@@ -18,6 +18,7 @@ import { INTAB_MARKER, TITLE_MARKER, type Spawned } from './spawn.js';
 import { specializeRecap, type ModelKind, type PromptKind } from './spawn-catalog.js';
 import type { ResolvedSpawn } from './spawn-config.js';
 import { kindRefusal, type RequestChannel, type SpawnReply, type SpawnRequest } from './spawn-endpoint.js';
+import { memberRegia } from './tab-args.js';
 import { taskIsMandate, taskIsPerimeter } from './tasks.js';
 import type { WindowCheck } from './window-check.js';
 
@@ -41,12 +42,14 @@ export interface SpawnPlanDeps {
 export interface SpawnRequestDeps extends SpawnPlanDeps {
   /** Il motivo per cui lo spawn è spento su questa piattaforma, o `null`. */
   spawnOff: () => string | null;
-  /** Lo spawn del tasto: sidecar, poi `deck-run`. `null` se rifiutato. */
+  /** Lo spawn del tasto: sidecar, poi `deck-run`. `null` se rifiutato.
+   *  T220 — `regia` è la regia che chiede, già verificata, o `null`. */
   spawn: (
     id: string,
     model: ModelKind,
     note: string,
     prompt: string,
+    regia: RegiaOrigin | null,
   ) => { sessionId: string; spawned: Spawned } | null;
   /** T198 — la finestra in focus è del progetto? Assente = nessun controllo,
    *  dove la piattaforma non ce l'ha (`windowCheck` in `platform.ts`). Gira
@@ -56,10 +59,18 @@ export interface SpawnRequestDeps extends SpawnPlanDeps {
   announceTimeoutMs?: number;
 }
 
+/** T220 — la regia che chiede uno spawn: il perimetro, che diventa
+ *  `LOOM_REGIA`, e il `sessionId` della regia quando il client lo conosce. I
+ *  due finiscono nel sidecar (`appendRegia`) come provenienza. */
+export interface RegiaOrigin {
+  regia: string;
+  session?: string;
+}
+
 /** Una richiesta risolta: il kind effettivo, la terna e il prompt col
- *  perimetro, o il rifiuto col suo motivo. */
+ *  perimetro, la regia da impostare, o il rifiuto col suo motivo. */
 export type SpawnPlan =
-  | { ok: true; kind: PromptKind; model: ModelKind; note: string; prompt: string }
+  | { ok: true; kind: PromptKind; model: ModelKind; note: string; prompt: string; regia: RegiaOrigin | null }
   | { ok: false; reason: string };
 
 export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDeps): Promise<SpawnReply> {
@@ -67,7 +78,7 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
   if (off) return { ok: false, reason: off };
   const plan = planSpawnRequest(req, deps, 'endpoint');
   if (!plan.ok) return plan;
-  const { kind, model, note, prompt } = plan;
+  const { kind, model, note, prompt, regia } = plan;
 
   // Dopo il piano: una richiesta sbagliata si rifiuta col suo motivo, che vale
   // in qualunque finestra, e il processo verso compass parte solo per uno
@@ -76,11 +87,22 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
   if ('refuse' in check) return { ok: false, reason: check.refuse };
   const warning = 'warning' in check ? { warning: check.warning } : {};
 
-  const out = deps.spawn(req.task, model, note, prompt);
+  const out = deps.spawn(req.task, model, note, prompt, regia);
   if (!out) return { ok: false, reason: 'spawn rifiutato dal deck' };
   const announced = await awaitAnnounce(out.spawned.child, deps.announceTimeoutMs ?? ANNOUNCE_TIMEOUT_MS);
   if ('error' in announced) return { ok: false, reason: announced.error };
-  const base = { ok: true as const, sessionId: out.sessionId, task: req.task, kind, model, prompt, ...warning };
+  // T220/P4 — `regia` sempre nella risposta, anche `null`: è ciò che separa un
+  // deck che la conosce da uno più vecchio, che la ignorerebbe in silenzio.
+  const base = {
+    ok: true as const,
+    sessionId: out.sessionId,
+    task: req.task,
+    kind,
+    model,
+    prompt,
+    regia: regia?.regia ?? null,
+    ...warning,
+  };
   if ('inert' in announced) return { ...base, title: null, inTab: null, inert: true };
   return { ...base, title: announced.title, inTab: announced.inTab };
 }
@@ -104,6 +126,12 @@ export function planSpawnRequest(req: SpawnRequest, deps: SpawnPlanDeps, channel
   if (refused) return { ok: false, reason: refused };
   if (!deps.taskExists(req.task)) return { ok: false, reason: `${req.task} non è nella lista task del progetto` };
   const text = deps.taskText(req.task);
+  // T220/P1 — prima del resto della task chiesta: una regia che non è un
+  // perimetro è un errore di chi chiama, qualunque sia il membro.
+  if (req.regia) {
+    const bad = regiaRefusal(req.regia, deps);
+    if (bad) return { ok: false, reason: bad };
+  }
 
   // T212/P4 — un mandato non ha lavoro proprio: il run si rifiuta qui, senza
   // aprire una tab che `run-task` chiuderebbe con lo stesso rifiuto un turno di
@@ -129,7 +157,33 @@ export function planSpawnRequest(req: SpawnRequest, deps: SpawnPlanDeps, channel
   const prompt = req.scope ? dlvPrompt(d.prompt, req.scope) : (d.prompt ?? '');
   const model = req.model ?? d.model;
   const note = req.note ?? d.title ?? '';
-  return { ok: true, kind, model, note, prompt };
+  // T220/P3 — una conversazione che è a sua volta una regia non riceve la
+  // regia che la chiede. Qui e non solo in `composeTab`: dal deck il prompt
+  // arriva a `deck-run` come testo letterale, e la composizione non vede il
+  // kind. Oggi il kind `regia` lo rifiuta `kindRefusal` più su; la regola
+  // serve al canale che lo aprirà (T221).
+  const regiaId = req.regia ? memberRegia(kind, req.regia) : '';
+  const regia: RegiaOrigin | null = regiaId
+    ? { regia: regiaId, ...(req.regiaSession ? { session: req.regiaSession } : {}) }
+    : null;
+  return { ok: true, kind, model, note, prompt, regia };
+}
+
+/**
+ * T220/P1 — il motivo per cui `regia` non può dichiararsi regia di una
+ * conversazione del progetto, o `null`. Una regia è un perimetro: un'epica o un
+ * mandato con la sua riga in `tasks.md`. Una dichiarazione sbagliata darebbe
+ * alla conversazione una riga dell'organigramma che nomina una regia che non
+ * c'è, e le negherebbe `AskUserQuestion` per niente.
+ *
+ * La usano l'apertura di una conversazione (`planSpawnRequest`, tab e
+ * headless) e la risposta a una headless (`replyHeadless`), che dichiara la
+ * regia a ogni turno.
+ */
+export function regiaRefusal(regia: string, deps: Pick<SpawnPlanDeps, 'taskExists' | 'taskText'>): string | null {
+  if (!deps.taskExists(regia)) return `regia ${regia}: non è nella lista task del progetto`;
+  if (!taskIsPerimeter(regia, deps.taskText(regia))) return `regia ${regia}: non è un'epica né un mandato`;
+  return null;
 }
 
 /** Il perimetro chiesto contro i DLV del task file: un numero fuori lista o un

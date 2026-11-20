@@ -154,7 +154,11 @@ export async function runDeckRun(argv: readonly string[], io: DeckRunIo): Promis
       return 2;
     }
     env = {
-      ...windowsTabEnv(io.env, req.noTask ? null : req.task, resolveGitBash(io.env, existsSync)),
+      ...windowsTabEnv(
+        io.env,
+        { task: req.noTask ? null : req.task, regia: plan.sessionEnv.LOOM_REGIA ?? null },
+        resolveGitBash(io.env, existsSync),
+      ),
       [TAB_ARGV_ENV]: JSON.stringify(plan.claudeArgs),
     };
     io.stdout(announceTitle(plan.title));

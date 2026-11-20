@@ -77,6 +77,15 @@ test('deckArgs porta la nota nel titolo solo quando c\'è', () => {
   assert.ok(!deckArgs('T111', 'sid-1').includes('--title-note'));
 });
 
+// T220 — la regia in coda, solo quando c'è: ogni spawn da tasto non la passa.
+// Su una ripresa la passa solo `loom-deck-headless reply --regia`.
+test('deckArgs e resumeArgs portano --regia solo quando la regia c\'è', () => {
+  assert.deepEqual(deckArgs('T5', 'sid-1', 'opus', '', 'p', 'T197').slice(-2), ['--regia', 'T197']);
+  assert.ok(!deckArgs('T5', 'sid-1', 'opus', '', 'p').includes('--regia'));
+  assert.deepEqual(resumeArgs('T5', 'sid-1', 'opus', undefined, 'T197').slice(-2), ['--regia', 'T197']);
+  assert.ok(!resumeArgs('T5', 'sid-1', 'opus').includes('--regia'));
+});
+
 // T117/T161 — il prompt è un TESTO e non un simbolo, su OGNI percorso: dal
 // detail perché il campo è editabile, dagli acceleratori perché la risoluzione
 // (catalogo dati + override di progetto) sta nel deck. `--prompt` e

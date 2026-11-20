@@ -19,7 +19,7 @@
 // Modulo PURO: l'env arriva come valore, il bash di Git come stringa già
 // risolta.
 
-import { dropEnv, INHERITED_SESSION_ENV } from './session-env.js';
+import { bindSession, dropEnv, INHERITED_SESSION_ENV, type SessionBinding } from './session-env.js';
 
 /** Il lanciatore di Windows Terminal: l'alias d'esecuzione in `WindowsApps`,
  *  che `spawn` trova nel `PATH` e lancia senza shell (misurato). */
@@ -105,20 +105,22 @@ function hasKey(env: Readonly<Record<string, string | undefined>>, key: string):
  * variabili di sessione (`INHERITED_SESSION_ENV`), con la task della
  * conversazione e il bash di Git.
  *
- * `task` = `null` per le tab senza task (`--no-task`, il tasto `t`): una
+ * `binding.task` = `null` per le tab senza task (`--no-task`, il tasto `t`): una
  * `LOOM_TASK` ereditata legherebbe a una task una sessione che non ne ha, e
- * l'hook `SessionStart` ne inietterebbe il task file. `CLAUDE_CODE_GIT_BASH_PATH`
+ * l'hook `SessionStart` ne inietterebbe il task file. T220 — `binding.regia`
+ * c'è solo quando la richiesta dichiara la regia: `LOOM_REGIA` sta nella lista
+ * delle variabili tolte, quindi una tab non la eredita mai dal deck che la apre.
+ * `CLAUDE_CODE_GIT_BASH_PATH`
  * entra quando manca e il bash si trova: la tab eredita anche il `PATH`, e col
  * `PATH` di Git Bash `claude` eseguirebbe gli hook del plugin in PowerShell
  * (T174 verdetto 9), cioè senza la task in contesto.
  */
 export function windowsTabEnv(
   env: Readonly<Record<string, string | undefined>>,
-  task: string | null,
+  binding: SessionBinding,
   gitBash: string | null,
 ): Record<string, string | undefined> {
-  const out = dropEnv(env, [...INHERITED_SESSION_ENV, 'LOOM_TASK', TAB_ARGV_ENV]);
-  if (task) out.LOOM_TASK = task;
+  const out = bindSession(dropEnv(env, [...INHERITED_SESSION_ENV, 'LOOM_TASK', TAB_ARGV_ENV]), binding);
   if (gitBash && !hasKey(env, GIT_BASH_ENV)) out[GIT_BASH_ENV] = gitBash;
   return out;
 }

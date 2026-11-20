@@ -103,6 +103,9 @@ export interface HeadlessState {
   prompt: string;
   /** Il processo non è partito: il motivo. */
   launchError?: string;
+  /** T220 — la regia di QUESTO turno, come `LOOM_REGIA`: dichiarata
+   *  dall'`open` o dal `reply` che lo ha avviato. Assente se nessuna. */
+  regia?: string;
 }
 
 /** Quanto testo del turno entra nello stato: lo legge un umano, non una

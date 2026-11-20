@@ -13,7 +13,8 @@
 //   prompt         --prompt-kind none|recap|… | --prompt <testo>
 //   modello        --model fable|opus|sonnet|haiku
 // Fuori dai quattro, e volutamente non un asse: --new-window, che cambia SOLO
-// dove nasce la tab (finestra nuova invece della finestra attiva).
+// dove nasce la tab (finestra nuova invece della finestra attiva), e --regia
+// (T220), che dice alla conversazione quale regia l'ha aperta.
 //
 // Modulo PURO: argv in ingresso, richiesta o errore d'uso in uscita. Le regole e
 // i messaggi sono quelli dello script bash, parola per parola: il gate di parità
@@ -55,6 +56,29 @@ export interface TabRequest {
   /** Vuoto = flag non passato: la cascata (env, catalogo, default) si risolve
    *  nella composizione. */
   model: string;
+  /** T220 — il perimetro della regia che apre la conversazione (`T197`), vuoto
+   *  se nessuna regia l'ha chiesta. Diventa `LOOM_REGIA` nella sessione
+   *  (`memberRegia`). */
+  regia: string;
+}
+
+/**
+ * T220/P3 — la regia che la conversazione riceve come `LOOM_REGIA`: quella
+ * dichiarata, tranne quando la conversazione aperta È una regia (kind `regia`).
+ *
+ * La successora di una regia (T221, passaggio di consegne) è una regia, non un
+ * membro: con `LOOM_REGIA` si vedrebbe negare `AskUserQuestion` e leggerebbe una
+ * riga dell'organigramma falsa. La dichiarazione si scarta e non si rifiuta,
+ * perché la regia si dichiara a ogni spawn per regola generale e un rifiuto
+ * farebbe fallire il passaggio ogni volta.
+ *
+ * Una regola sola per due chiamanti che conoscono il kind in due momenti: la
+ * composizione (`composeTab`), per chi chiede `--prompt-kind regia` a mano, e il
+ * piano di una richiesta (`planSpawnRequest`), perché dal deck il prompt viaggia
+ * come testo letterale e la composizione non vede più il kind.
+ */
+export function memberRegia(kind: string, regia: string): string {
+  return kind === 'regia' ? '' : regia;
 }
 
 /** Un errore d'uso: le righe da scrivere su stderr, e l'uscita è sempre 2. */
@@ -101,7 +125,11 @@ export const USAGE = `uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <k
                  (ridotta a lettere/cifre/spazi/-/_, cap 60 char)
 
   --new-window   apre una FINESTRA nuova invece di una tab nella finestra
-                 attiva. Per chi chiama da fuori dalla finestra del progetto`;
+                 attiva. Per chi chiama da fuori dalla finestra del progetto
+
+  --regia        perimetro della regia che apre la conversazione (T<numero>):
+                 esportato come LOOM_REGIA. Ignorato con --prompt-kind regia,
+                 perché la conversazione è a sua volta una regia`;
 
 /** I flag che portano un valore, nel campo della richiesta che lo riceve. */
 const VALUED: Readonly<Record<string, keyof TabRequest>> = {
@@ -111,6 +139,7 @@ const VALUED: Readonly<Record<string, keyof TabRequest>> = {
   '--prompt': 'promptText',
   '--session-id': 'sessionId',
   '--resume': 'resumeId',
+  '--regia': 'regia',
 };
 
 function usageError(...lines: string[]): UsageError {
@@ -148,6 +177,7 @@ export function parseTabArgs(argv: readonly string[]): TabRequest | UsageError |
     promptText: '',
     promptGiven: false,
     model: '',
+    regia: '',
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -203,6 +233,17 @@ export function parseTabArgs(argv: readonly string[]): TabRequest | UsageError |
     return usageError(
       '--prompt-kind richiede una task: una sessione --no-task non ha prompt iniziale',
     );
+  }
+  // T220 — la regia è un id di task: il valore entra nella riga in-tab e
+  // nell'env di ogni processo della sessione, e un testo libero lì sarebbe una
+  // riga dell'organigramma che nomina qualunque cosa.
+  if (req.regia && !/^T\d+$/.test(req.regia)) {
+    return usageError(`--regia: perimetro non valido: '${req.regia}' (forma T<numero>)`);
+  }
+  // Una regia apre conversazioni sui membri del suo perimetro, cioè su task:
+  // una sessione nuda dichiarata dalla regia non ha un membro da portare avanti.
+  if (req.regia && req.noTask) {
+    return usageError('--regia richiede una task: la regia apre conversazioni sui membri del perimetro');
   }
   // Due modi di dire la stessa cosa: accettarli insieme obbligherebbe a
   // stabilire quale vince.

@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { listenEndpoint, type RequestHandler } from '../src/endpoint-server.js';
-import { parseClientArgs, runClient } from '../src/spawn-client.js';
+import { parseClientArgs, regiaSessionOf, runClient } from '../src/spawn-client.js';
 import { endpointFor, type SpawnRequest } from '../src/spawn-endpoint.js';
 
 /** Un progetto con file di progetto e una cartella runtime propria per i
@@ -67,6 +67,71 @@ test('argomenti: kind, perimetro solo con run, modello e nota', () => {
     ['T5', 'run', '--force'],
   ];
   for (const argv of bad) assert.ok('usage' in parseClientArgs(argv), argv.join(' '));
+});
+
+// T220 — la regia dichiarata con --regia; la sua sessione il client la legge
+// dal proprio ambiente, e solo se è un sessionId intero.
+const REGIA_SID = '0a1b2c3d-1111-2222-3333-444455556666';
+
+test('argomenti: --regia, con la sessione della regia letta dall’ambiente', () => {
+  assert.deepEqual(parseClientArgs(['T5', 'run', '--regia', 'T197'], { CLAUDE_CODE_SESSION_ID: REGIA_SID }), {
+    request: { verb: 'spawn', task: 'T5', kind: 'run', regia: 'T197', regiaSession: REGIA_SID },
+    root: null,
+  });
+  assert.deepEqual(parseClientArgs(['T5', 'run', '--regia', 'T197']), {
+    request: { verb: 'spawn', task: 'T5', kind: 'run', regia: 'T197' },
+    root: null,
+  });
+  // La sessione senza --regia non parte: chi non si dichiara regia non lo è.
+  assert.deepEqual(parseClientArgs(['T5', 'run'], { CLAUDE_CODE_SESSION_ID: REGIA_SID }), {
+    request: { verb: 'spawn', task: 'T5', kind: 'run' },
+    root: null,
+  });
+  assert.ok('usage' in parseClientArgs(['T5', 'run', '--regia', 'epica']));
+  assert.ok('usage' in parseClientArgs(['T5', 'run', '--regia']));
+  assert.equal(regiaSessionOf({ CLAUDE_CODE_SESSION_ID: '0a1b2c3d' }), null, 'un prefisso non è una sessione');
+  assert.equal(regiaSessionOf({}), null);
+});
+
+test('regia: riportata dal deck nella sua riga; un deck vecchio che la ignora dà l’avviso, uscita 0', async () => {
+  const p = project();
+  const reply = (req: SpawnRequest, regia?: string | null) => ({
+    ok: true as const,
+    sessionId: 's',
+    task: req.task,
+    kind: req.kind,
+    model: 'opus' as const,
+    prompt: '',
+    title: 't',
+    inTab: 'c',
+    ...(regia === undefined ? {} : { regia }),
+  });
+  let seen: SpawnRequest | null = null;
+  const env = { ...p.env, CLAUDE_CODE_SESSION_ID: REGIA_SID };
+  const known = await withDeck(
+    p,
+    async (req) => {
+      seen = req;
+      return reply(req, 'T197');
+    },
+    () => client(['T5', 'none', '--regia', 'T197'], { root: p.root, env }),
+  );
+  assert.equal(known.code, 0, known.err);
+  assert.deepEqual(seen, { verb: 'spawn', task: 'T5', kind: 'none', regia: 'T197', regiaSession: REGIA_SID });
+  assert.match(known.out, /^regia: +T197 \(LOOM_REGIA\)$/m);
+  assert.doesNotMatch(known.out, /⚠/);
+
+  const old = await withDeck(p, async (req) => reply(req), () => client(['T5', 'none', '--regia', 'T197'], p));
+  assert.equal(old.code, 0, 'la tab esiste già');
+  assert.match(old.out, /^⚠ LOOM_REGIA non impostata: il deck acceso è più vecchio, riavvialo$/m);
+  assert.doesNotMatch(old.out, /^regia:/m);
+
+  // Scartata di proposito (kind regia, P3): `regia: null`, nessun avviso.
+  const dropped = await withDeck(p, async (req) => reply(req, null), () => client(['T5', 'none', '--regia', 'T197'], p));
+  assert.doesNotMatch(dropped.out, /⚠|^regia:/m);
+  // Nessuna regia chiesta, nessun avviso anche da un deck vecchio.
+  const plain = await withDeck(p, async (req) => reply(req), () => client(['T5', 'none'], p));
+  assert.doesNotMatch(plain.out, /⚠/);
 });
 
 test('errore d’uso: uscita 2, nessuna connessione', async () => {

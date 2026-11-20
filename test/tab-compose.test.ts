@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { isHelpRequest, isUsageError, parseTabArgs, USAGE, type TabRequest } from '../src/tab-args.js';
+import { isHelpRequest, isUsageError, memberRegia, parseTabArgs, USAGE, type TabRequest } from '../src/tab-args.js';
 import { composeTab, posixQuote, projectLabel, ptyxisArgv, type ComposeContext } from '../src/tab-compose.js';
 import type { CatalogEntry } from '../src/prompt-catalog.js';
 import { unixOnly } from './platform-gates.js';
@@ -123,6 +123,40 @@ test('nota ridotta in coda alla task, fork in coda a tutto, label in testa', () 
 test('binding: LOOM_TASK sul ramo bound, mai su --no-task', () => {
   assert.deepEqual(composeTab(req(['T1']), ctx()).sessionEnv, { LOOM_TASK: 'T1' });
   assert.deepEqual(composeTab(req(['--no-task']), ctx()).sessionEnv, {});
+});
+
+// T220 — la regia che apre la conversazione: un id di task, solo su una task,
+// esportata come LOOM_REGIA accanto a LOOM_TASK, scartata quando la
+// conversazione è a sua volta una regia.
+test('regia: --regia diventa LOOM_REGIA, anche su una ripresa', () => {
+  assert.equal(req(['T1', '--regia', 'T197']).regia, 'T197');
+  assert.equal(req(['T1', '--regia=T197']).regia, 'T197');
+  assert.deepEqual(composeTab(req(['T1', '--regia', 'T197']), ctx()).sessionEnv, { LOOM_TASK: 'T1', LOOM_REGIA: 'T197' });
+  assert.deepEqual(composeTab(req(['T1', '--resume', SID, '--regia', 'T197']), ctx()).sessionEnv, {
+    LOOM_TASK: 'T1',
+    LOOM_REGIA: 'T197',
+  });
+  assert.match(
+    composeTab(req(['T1', '--regia', 'T197']), ctx({ config: LABELED })).inTab,
+    /^PTYXIS_PROFILE=demo LOOM_TASK=T1 LOOM_REGIA=T197 claude /,
+  );
+  // Nessun --regia, nessuna variabile: la composizione non la inventa.
+  assert.equal(composeTab(req(['T1']), ctx()).sessionEnv.LOOM_REGIA, undefined);
+});
+
+test('regia: perimetro fuori forma e sessione nuda sono errori d’uso', () => {
+  assert.match(usage(['T1', '--regia', 'foo'])[0]!, /^--regia: perimetro non valido: 'foo'/);
+  assert.equal(req(['T1', '--regia', '']).regia, '', 'vuoto = flag non passato, come gli altri valori');
+  assert.match(usage(['--no-task', '--regia', 'T197'])[0]!, /^--regia richiede una task/);
+});
+
+test('regia: una conversazione che è una regia non riceve la regia che la chiede (P3)', () => {
+  assert.equal(memberRegia('regia', 'T197'), '');
+  assert.equal(memberRegia('run', 'T197'), 'T197');
+  assert.equal(memberRegia('', 'T197'), 'T197');
+  const p = composeTab(req(['T197', '--prompt-kind', 'regia', '--regia', 'T197']), ctx());
+  assert.deepEqual(p.sessionEnv, { LOOM_TASK: 'T197' });
+  assert.deepEqual(p.warnings.filter((w) => /regia/i.test(w)), [], 'scartata, non rifiutata');
 });
 
 test('continuità: la ripresa non porta prompt, il fork aggiunge --fork-session', () => {

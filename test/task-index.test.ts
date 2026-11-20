@@ -9,6 +9,7 @@ import {
   appendOrigin,
   appendPin,
   appendPriority,
+  appendRegia,
   appendSessionMeta,
   appendSessionRecord,
   appendTaskBinding,
@@ -488,4 +489,24 @@ test('origin last-wins: un valore diverso da endpoint toglie la marca; un record
 
 test('origin: file assente → insieme vuoto', () => {
   assert.equal(loadSessionIndex(root()).endpointBorn.size, 0);
+});
+
+// T220 — la regia che ha aperto la conversazione: un record solo, perimetro e
+// sessione insieme; la sessione manca se il client non la conosceva.
+test('appendRegia: un record con perimetro e sessione, la sessione solo se c\'è', () => {
+  const r = root();
+  appendRegia(r, 'sid-a', 'T197', '0a1b2c3d-1111-2222-3333-444455556666');
+  appendRegia(r, 'sid-b', 'T197');
+  const recs = readFileSync(taskIndexPath(r), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(recs.length, 2);
+  assert.deepEqual(
+    recs.map(({ ts: _ts, ...rest }) => rest),
+    [
+      { sessionId: 'sid-a', regia: 'T197', regiaSession: '0a1b2c3d-1111-2222-3333-444455556666' },
+      { sessionId: 'sid-b', regia: 'T197' },
+    ],
+  );
+  // Provenienza: non tocca nessun campo che il deck legge.
+  const idx = loadSessionIndex(r);
+  assert.equal(idx.bindings.size, 0);
 });

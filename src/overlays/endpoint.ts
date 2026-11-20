@@ -62,7 +62,9 @@ export function useSpawnEndpoint(deps: EndpointDeps) {
           defaults: (kind, taskId) => d.actions.spawnTaskDefaults(kind, taskId),
           // T204 — la conversazione nasce marcata `origin: endpoint`: è ciò che
           // la rende chiudibile da un'altra conversazione (D2 preflight).
-          spawn: (id, model, note, prompt) => d.actions.spawnForTask(id, model, note, prompt, false, ORIGIN_ENDPOINT),
+          // T220 — e con la regia che la chiede, quando la richiesta la dichiara.
+          spawn: (id, model, note, prompt, regia) =>
+            d.actions.spawnForTask(id, model, note, prompt, false, ORIGIN_ENDPOINT, regia),
           // T198 — l'`id` si rilegge a ogni richiesta, come la lista task: il
           // file di progetto può cambiare a deck acceso.
           windowCheck: isAvailable('windowCheck') ? () => checkProjectWindow(loadProjectId(cwd)) : undefined,

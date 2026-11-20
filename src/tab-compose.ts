@@ -16,7 +16,7 @@ import { saneNote } from './sane-note.js';
 import { MODEL_DEFAULT, MODELS, type PromptKind } from './spawn-catalog.js';
 import type { CatalogEntry } from './prompt-catalog.js';
 import { shellQuote } from './spawn.js';
-import type { TabRequest } from './tab-args.js';
+import { memberRegia, type TabRequest } from './tab-args.js';
 import { twinTitle } from './twin-title.js';
 
 /** Gli ingressi della composizione oltre alla richiesta. */
@@ -41,8 +41,9 @@ export interface TabPlan {
   title: string;
   /** Gli argomenti di `claude`, nome del comando escluso. */
   claudeArgs: string[];
-  /** Le env che legano la sessione: `LOOM_TASK` sul ramo bound, la chiave di
-   *  stato per compass su Linux. */
+  /** Le env che legano la sessione: `LOOM_TASK` sul ramo bound, `LOOM_REGIA`
+   *  quando una regia l'ha chiesta (T220), la chiave di stato per compass su
+   *  Linux. */
   sessionEnv: Record<string, string>;
   /** La riga in-tab. Su Linux è il comando passato a `bash -lc`; su Windows è
    *  la sua resa, perché lì nessuna shell la parsa — l'argv vero viaggia in
@@ -247,6 +248,11 @@ export function composeTab(req: TabRequest, ctx: ComposeContext): TabPlan {
   const sessionEnv: Record<string, string> = {};
   if (key) sessionEnv.PTYXIS_PROFILE = key;
   if (!req.noTask) sessionEnv.LOOM_TASK = req.task;
+  // T220 — la regia entra solo quando la richiesta la dichiara (P2): il deck
+  // non la rilegge dal sidecar, quindi una ripresa con ⏎, un restore o un fork
+  // nascono senza. Su kind `regia` si scarta (P3, `memberRegia`).
+  const regia = memberRegia(catalogKind(req), req.regia);
+  if (regia) sessionEnv.LOOM_REGIA = regia;
 
   // La riga in-tab nella grafia storica dello script: ogni flag seguito da uno
   // spazio, il prompt in coda fra apici. Il gate di parità su Linux confronta

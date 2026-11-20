@@ -146,7 +146,7 @@ const req = (task: string, kind: string, extra: Record<string, unknown> = {}) =>
 // ── ambiente e argv ────────────────────────────────────────────────────────
 
 test('ambiente del turno: via i marcatori della conversazione, il profilo e il binding di chi lancia', () => {
-  const env = headlessEnv(REGIA_ENV, 'T9', 'linux');
+  const env = headlessEnv(REGIA_ENV, { task: 'T9' }, 'linux');
   for (const k of HEADLESS_DROP_ENV) if (k !== 'LOOM_TASK') assert.equal(env[k], undefined, k);
   for (const k of INHERITED_SESSION_ENV) assert.ok(HEADLESS_DROP_ENV.includes(k), `${k} ereditata dal turno`);
   assert.equal(env.BUN_INSPECT, undefined);
@@ -154,7 +154,7 @@ test('ambiente del turno: via i marcatori della conversazione, il profilo e il b
   assert.equal(env.CLAUDE_CONFIG_DIR, '/cfg', 'la configurazione dell’utente passa');
   assert.equal(env.CLAUDE_CODE_GIT_BASH_PATH, 'C:\\bash.exe');
   assert.equal(env.PATH, '/usr/bin');
-  assert.equal(headlessEnv(REGIA_ENV, null, 'linux').LOOM_TASK, undefined, 'una conversazione senza task non eredita la task di chi lancia');
+  assert.equal(headlessEnv(REGIA_ENV, { task: null }, 'linux').LOOM_TASK, undefined, 'una conversazione senza task non eredita la task di chi lancia');
 });
 
 test('argv del turno: -p, esito json, nessuno risponde ai permessi, -- prima del testo', () => {
@@ -219,6 +219,46 @@ test('open: binding, nota e modello nel sidecar PRIMA del processo; argv e stato
   assert.equal(st.turn, 1);
   assert.equal(st.kind, 'preflight');
   assert.equal(st.task, 'T9');
+});
+
+// T220 — un turno aperto da una regia porta LOOM_REGIA come una tab; il
+// sidecar registra la regia prima del processo; una LOOM_REGIA di chi lancia
+// non passa mai.
+const REGIA_SID = '0a1b2c3d-1111-2222-3333-444455556666';
+
+test('open --regia: LOOM_REGIA nel turno, regia e sessione nel sidecar prima del processo, regia nello stato', async () => {
+  const root = project();
+  const io = fakeIo({ env: { ...REGIA_ENV, LOOM_REGIA: 'T1' } });
+  const r = await openHeadless(req('T9', 'preflight', { regia: 'T10', regiaSession: REGIA_SID }), root, io);
+  assert.ok(r.ok, JSON.stringify(r));
+  const l = io.launches[0]!;
+  assert.equal(l.opts.env.LOOM_REGIA, 'T10');
+  assert.equal(l.opts.env.LOOM_TASK, 'T9');
+  const recs = l.sidecar.trim().split('\n').map((x) => JSON.parse(x));
+  const regia = recs.find((x) => 'regia' in x);
+  assert.deepEqual({ regia: regia.regia, regiaSession: regia.regiaSession, sessionId: regia.sessionId }, {
+    regia: 'T10',
+    regiaSession: REGIA_SID,
+    sessionId: SID,
+  });
+  assert.equal(readState(root, SID)!.regia, 'T10');
+
+  // Senza --regia: nessuna LOOM_REGIA, nemmeno quella di chi lancia.
+  const root2 = project();
+  const io2 = fakeIo({ env: { ...REGIA_ENV, LOOM_REGIA: 'T1' } });
+  await openHeadless(req('T9', 'preflight'), root2, io2);
+  assert.equal(io2.launches[0]!.opts.env.LOOM_REGIA, undefined);
+  assert.doesNotMatch(io2.launches[0]!.sidecar, /"regia"/);
+  assert.equal(readState(root2, SID)!.regia, undefined);
+});
+
+test('open --regia: una regia che non è un perimetro è un rifiuto, senza processo né sidecar', async () => {
+  const root = project();
+  const io = fakeIo();
+  const r = await openHeadless(req('T9', 'preflight', { regia: 'T9' }), root, io);
+  assert.deepEqual(r, { ok: false, reason: "regia T9: non è un'epica né un mandato" });
+  assert.equal(io.launches.length, 0);
+  assert.throws(() => readFileSync(taskIndexPath(root)));
 });
 
 test('open: override di progetto sul modello, perimetro del run in coda al prompt', async () => {
@@ -309,6 +349,41 @@ test('reply: --resume sulla conversazione, task e nota dal sidecar, modello dal 
   assert.equal(st.turn, 2);
   assert.equal(st.kind, 'preflight');
   assert.equal(st.prompt, 'D1: A');
+});
+
+// T220/P2 — la regia si dichiara a ogni reply: un turno è un processo nuovo, e
+// la variabile non si rilegge dal sidecar.
+test('reply --regia: LOOM_REGIA in quel turno; senza, il turno dopo non la porta', async () => {
+  const root = project();
+  const io = fakeIo();
+  await openHeadless(req('T9', 'preflight', { regia: 'T10' }), root, io);
+  transcript(root, SID);
+  const withRegia = await replyHeadless(SID, 'D1: A', root, io, undefined, 'T10');
+  assert.ok(withRegia.ok, JSON.stringify(withRegia));
+  assert.equal(io.launches[1]!.opts.env.LOOM_REGIA, 'T10');
+  assert.equal(readState(root, SID)!.regia, 'T10');
+  const without = await replyHeadless(SID, 'continua', root, io);
+  assert.ok(without.ok);
+  assert.equal(io.launches[2]!.opts.env.LOOM_REGIA, undefined, 'il sidecar dice T10, ma la variabile segue la richiesta');
+  assert.equal(readState(root, SID)!.regia, undefined);
+  // Il sidecar non riceve un secondo record di regia dalle risposte.
+  const regiaRecs = readFileSync(taskIndexPath(root), 'utf8').split('\n').filter((x) => x.includes('"regia"'));
+  assert.equal(regiaRecs.length, 1);
+});
+
+test('reply --regia: rifiutata su una regia che non è un perimetro e su una conversazione senza task', async () => {
+  const root = project();
+  const io = fakeIo();
+  await openHeadless(req('T9', 'preflight'), root, io);
+  transcript(root, SID);
+  const bad = await replyHeadless(SID, 'x', root, io, undefined, 'T9');
+  assert.deepEqual(bad, { ok: false, reason: "regia T9: non è un'epica né un mandato" });
+  const spot = 'deadbeef-0000-0000-0000-000000000000';
+  transcript(root, spot);
+  const r = await replyHeadless(spot, 'x', root, io, undefined, 'T10');
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.match(r.reason, /non è legata a una task/);
+  assert.equal(io.launches.length, 1, 'nessun turno per i due rifiuti');
 });
 
 test('reply: --model vince sul transcript', async () => {
@@ -472,9 +547,21 @@ test('argomenti: sottocomandi, sessione, --wait, -- nel messaggio', () => {
     ['reply', '0a1b2c3d'],
     ['reply', '0a1b2c3d', '--model', 'gpt', 'x'],
     ['reply', '0a1b2c3d', '--boh', 'x'],
+    // T220 — la regia è un id di task, e vale solo dove parte un turno.
+    ['reply', '0a1b2c3d', 'x', '--regia', 'epica'],
+    ['reply', '0a1b2c3d', 'x', '--regia'],
+    ['status', '0a1b2c3d', '--regia', 'T10'],
   ]) {
     assert.ok('usage' in parseHeadlessArgs(bad), bad.join(' '));
   }
+  assert.deepEqual(parseHeadlessArgs(['reply', '0a1b2c3d', 'D1:', 'A', '--regia', 'T10']), {
+    cmd: 'reply',
+    session: '0a1b2c3d',
+    words: ['D1:', 'A'],
+    root: null,
+    model: undefined,
+    regia: 'T10',
+  });
 });
 
 test('client: open stampa il sessionId, reply legge lo stdin, status mappa le uscite', async () => {
@@ -582,7 +669,7 @@ test(
     const errFile = join(dir, 'e.txt');
     const r = await launchDetached(process.execPath, [script, '-p', '--', 'ciao'], {
       cwd: dir,
-      env: headlessEnv(REGIA_ENV, 'T9', 'linux') as NodeJS.ProcessEnv & { PATH: string },
+      env: headlessEnv(REGIA_ENV, { task: 'T9' }, 'linux') as NodeJS.ProcessEnv & { PATH: string },
       outFile,
       errFile,
     });
