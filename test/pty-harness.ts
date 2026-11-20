@@ -14,7 +14,7 @@
 // La dipendenza va in un verso solo — nessun modulo di `test/` importa un
 // `*.test.ts`.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,18 +26,24 @@ export const PKG = dirname(HERE);
 export const PROJECT = dirname(PKG);
 export const TASKS = join(PROJECT, 'runtime', 'tasks.md');
 
-/** Il deck che i gate avviano. */
-const DECK_CMD = [
-  join(PKG, 'node_modules', '.bin', 'tsx'),
-  '--tsconfig',
-  join(PKG, 'tsconfig.json'),
-  join(PKG, 'src', 'cli.tsx'),
-];
+/**
+ * Il deck che i gate avviano è la BUILD, non i sorgenti: `tsx src/cli.tsx`
+ * transpilava il deck a ogni cattura, e le catture sono centinaia per suite.
+ *
+ * Il prezzo: un file pty lanciato a mano senza `npm run build` misura la build
+ * precedente, e può passare su codice che non esiste più. `npm test` e
+ * `npm run test:full` buildano prima (`pretest`, `pretest:full`); chi lancia un
+ * file a mano builda da sé. È la stessa trappola di `deck-run.test.ts`, che
+ * esegue lo shim su `dist/`.
+ */
+export const DECK_CLI = join(PKG, 'dist', 'cli.js');
+const DECK_CMD = [process.execPath, DECK_CLI];
 
 // T175 — il motivo del salto lo dà `ptyGate`, e nomina la dipendenza vera: su
 // Windows il gate non parte nemmeno con Python installato. T232 — nella suite
-// rapida (`npm test`) non parte nessun gate pty.
-export const SKIP = ptyGate(TASKS);
+// rapida (`npm test`) non parte nessun gate pty, e senza build non c'è il deck
+// da avviare.
+export const SKIP = ptyGate(TASKS) || (existsSync(DECK_CLI) ? false : 'build assente: npm run build');
 export const CAN_RUN = SKIP === false;
 
 export interface DeckRun {

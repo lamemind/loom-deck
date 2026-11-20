@@ -190,7 +190,11 @@ test('click sul bottone di restore → riprese in serie nell’ordine della marc
   // blocco parte `termWidth(right)` colonne prima. Il click cade due colonne
   // dentro il bottone.
   const col = cols - 2 - termWidth(right) + 1 + 2;
-  const raw = capture(cols, 38, `W@${col},2;W`, { HOME: join(dirname(proj), 'home') }, proj);
+  // Dopo il click, cinque `W` (3,5 s di attesa fissa): un passo della serie
+  // avanza sul proprio timeout (`RESTORE_STEP_TIMEOUT_MS` di `actions.ts`, 3 s),
+  // e la cattura non aspetta da sé — dopo l'ultimo tasto chiude sulla quiete
+  // dello schermo, che arriva prima che la seconda ripresa parta.
+  const raw = capture(cols, 38, `W@${col},2;WWWWW`, { HOME: join(dirname(proj), 'home') }, proj);
   const frame = lastFrame(raw);
   assertFrameFits(raw, cols, 'restore click');
   assert.ok(!frame[1]!.includes('restore 2 sessions'), `bottone ancora a schermo: ${frame[1]}`);

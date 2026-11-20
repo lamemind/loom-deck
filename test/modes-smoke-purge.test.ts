@@ -92,8 +92,8 @@ test('il bulk nomina le scartate, non solo le potate', { skip: SKIP }, () => {
 // sequenza, che `pty-frame.py` dichiara in coda (`<<PROC alive|exit=N>>`). Il
 // buffer di un deck vivo e quello di un deck appena morto sono indistinguibili
 // senza quella riga — l'ultimo frame disegnato è lo stesso.
-/** Attesa senza tasti: ogni `W` vale il pump fra due tasti (0.7s), otto
- *  superano la finestra di 5s. */
+/** Attesa senza tasti: ogni `W` vale 0,7 s di attesa fissa (`WAIT_S` di
+ *  `pty-frame.py`), otto superano la finestra di 5s. */
 const WAIT_OVER_WINDOW = 'W'.repeat(8);
 
 test('un ^C solo avverte e NON chiude', { skip: SKIP }, () => {
