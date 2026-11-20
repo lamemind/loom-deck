@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dropEnv, INHERITED_SESSION_ENV } from '../src/session-env.js';
-import { skillEnv } from '../src/spawn.js';
+import { SKILL_DROP_ENV, skillEnv } from '../src/spawn.js';
 
 // ── la lista ───────────────────────────────────────────────────────────────
 
@@ -59,13 +59,14 @@ test('dropEnv toglie ignorando le maiuscole, tiene il resto e non tocca l’orig
 const SESSION = Object.fromEntries(INHERITED_SESSION_ENV.map((k) => [k, '1']));
 const BASH = 'C:\\Git\\bin\\bash.exe';
 
-test('skillEnv: via le variabili di sessione, su Linux nient’altro', () => {
-  const env = skillEnv({ ...SESSION, PATH: '/usr/bin', LOOM_TASK: 'T1' }, 'linux', () => BASH);
+test('skillEnv: via le variabili di sessione e il profilo di stato, su Linux nient’altro', () => {
+  const env = skillEnv({ ...SESSION, PTYXIS_PROFILE: 'loom-works', PATH: '/usr/bin', LOOM_TASK: 'T1' }, 'linux', () => BASH);
   assert.deepEqual(env, { PATH: '/usr/bin', LOOM_TASK: 'T1' });
+  for (const k of INHERITED_SESSION_ENV) assert.ok(SKILL_DROP_ENV.includes(k), k);
 });
 
 test('skillEnv: su Windows anche il bash di Git', () => {
-  const env = skillEnv({ ...SESSION, PATH: 'C:\\x' }, 'win32', () => BASH);
+  const env = skillEnv({ ...SESSION, PTYXIS_PROFILE: 'loom-works', PATH: 'C:\\x' }, 'win32', () => BASH);
   assert.deepEqual(env, { PATH: 'C:\\x', CLAUDE_CODE_GIT_BASH_PATH: BASH });
 });
 
@@ -95,7 +96,7 @@ function fakeClaude(dir: string): { cmd: string; probe: string } {
   return { cmd: bin, probe };
 }
 
-test('spawnSkill: il claude -p di una skill non eredita le variabili di sessione del deck', () => {
+test('spawnSkill: il claude -p di una skill non eredita le variabili di sessione né il profilo di stato del deck', () => {
   const dir = mkdtempSync(join(tmpdir(), 'loom-deck-skill-'));
   const claude = fakeClaude(dir);
   // Un driver che chiama `spawnCreateTask` col deck vero, in un processo suo:
@@ -112,6 +113,8 @@ test('spawnSkill: il claude -p di una skill non eredita le variabili di sessione
       ...process.env,
       ...SESSION,
       BUN_INSPECT: 'ws://127.0.0.1:9222/',
+      // Il profilo di stato della tab del deck: i deck vivi lo portano.
+      PTYXIS_PROFILE: 'loom-works',
       LOOM_DECK_CLAUDE_CMD: claude.cmd,
       CLAUDE_CONFIG_DIR: join(dir, 'cfg'),
     },
@@ -121,6 +124,7 @@ test('spawnSkill: il claude -p di una skill non eredita le variabili di sessione
   assert.equal(r.status, 0, r.stderr);
   assert.deepEqual(JSON.parse(r.stdout), { ok: true });
   const received = JSON.parse(readFileSync(claude.probe, 'utf8')) as Record<string, string>;
-  for (const k of INHERITED_SESSION_ENV) assert.equal(received[k], undefined, `${k} ereditata dalla skill`);
+  for (const k of SKILL_DROP_ENV) assert.equal(received[k], undefined, `${k} ereditata dalla skill`);
+  assert.equal(received.PTYXIS_PROFILE, undefined, 'profilo di stato ereditato dalla skill');
   assert.equal(received.CLAUDE_CONFIG_DIR, join(dir, 'cfg'), 'la configurazione dell’utente passa');
 });

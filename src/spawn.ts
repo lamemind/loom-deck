@@ -502,21 +502,30 @@ export function spawnTerminal(cwd: string, title: string | null) {
 export const CLAUDE_CMD = process.env.LOOM_DECK_CLAUDE_CMD || 'claude';
 
 /**
- * T217 — l'env del `claude -p` di una skill: quello del deck meno le variabili
- * di sessione (`INHERITED_SESSION_ENV`), e su Windows col bash di Git
- * (`claudeEnv`).
+ * T217 — ciò che il `claude -p` di una skill NON eredita dal deck.
  *
- * Il deck nasce di norma fuori da ogni conversazione, ma un deck avviato da una
- * shell aperta dentro Claude Code le porta tutte: senza toglierle, la skill
- * girerebbe senza transcript (`CLAUDE_CODE_CHILD_SESSION`) e, su Windows, con
- * l'inspector di Bun sulla porta della conversazione (`BUN_INSPECT`).
+ *  - le variabili di sessione (`INHERITED_SESSION_ENV`): il deck nasce di norma
+ *    fuori da ogni conversazione, ma un deck avviato da una shell aperta dentro
+ *    Claude Code le porta tutte, e la skill girerebbe senza transcript
+ *    (`CLAUDE_CODE_CHILD_SESSION`) e, su Windows, con l'inspector di Bun sulla
+ *    porta della conversazione (`BUN_INSPECT`);
+ *  - `PTYXIS_PROFILE`: il deck lo porta, perché la sua tab lo porta. Con il
+ *    profilo gli hook di stato del turno cambiano lo stato del PROGETTO in
+ *    compass — `done` accende badge e suono, `end` lo riporta a `idle`
+ *    cancellando l'`ask` di una tab vera —, come per un turno headless
+ *    (`HEADLESS_DROP_ENV`): un `claude -p` non ha una tab a cui badge e «Vai»
+ *    possano portare.
  */
+export const SKILL_DROP_ENV: readonly string[] = [...INHERITED_SESSION_ENV, 'PTYXIS_PROFILE'];
+
+/** L'env del `claude -p` di una skill: quello del deck meno `SKILL_DROP_ENV`,
+ *  e su Windows col bash di Git (`claudeEnv`). */
 export function skillEnv(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
   bash: () => string | null = gitBash,
 ): NodeJS.ProcessEnv {
-  const out = dropEnv(env, INHERITED_SESSION_ENV) as NodeJS.ProcessEnv;
+  const out = dropEnv(env, SKILL_DROP_ENV) as NodeJS.ProcessEnv;
   return claudeEnv(platform, out, bash) ?? out;
 }
 
@@ -545,7 +554,7 @@ function spawnSkill(
   // T175 — il lanciatore risolto (shim npm compreso, mai una shell) e, su
   // Windows, l'env col bash di Git: senza, un deck avviato da Git Bash passa al
   // figlio il `PATH` che manda gli hook del plugin in PowerShell. T217 — senza
-  // le variabili di sessione (`skillEnv`).
+  // le variabili di sessione né il profilo di stato (`skillEnv`).
   const claude = claudeLauncher();
   const child = spawnOut(
     claude.cmd,
