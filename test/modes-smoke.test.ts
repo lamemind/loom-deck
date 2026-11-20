@@ -1140,17 +1140,72 @@ test('secondo click sulla task già selezionata apre il detail, come ⏎', { ski
   assert.match(after, new RegExp(target), `il detail non è della task cliccata: ${after}`);
 });
 
+/**
+ * T229 — progetto SINTETICO con cinque conversazioni ferme, per i click sulla
+ * lista conversazioni che devono riprenderne una.
+ *
+ * Sul cappello vero la riga cliccata è quella che capita: una conversazione
+ * viva, o col turno headless in corso — anche quella della sessione che lancia
+ * la suite —, su cui il secondo click porta davanti la tab o scrive la nota
+ * del turno in corso, e il resume giustamente non parte. Qui `HOME` è
+ * dirottato: nessun registro dei vivi, nessuno stato headless, e cinque
+ * transcript bastano a riempire la riga 10 del frame (la terza riga del pane).
+ * Gli id sono UUID veri perché `sessionAtRow` cerca otto cifre esadecimali.
+ */
+function clickSessionsProject(): { proj: string; env: NodeJS.ProcessEnv } {
+  const root = mkdtempSync(join(tmpdir(), 'loom-deck-clicksessions-'));
+  const proj = join(root, 'proj');
+  mkdirSync(join(proj, 'runtime', 'tasks'), { recursive: true });
+  writeFileSync(
+    join(proj, 'runtime', 'tasks.md'),
+    ['# Tasks', '', '## Tasks Overview', '', '| ID | Pri | Prog | Task |', '| --- | --- | --- | --- |'].join(
+      '\n',
+    ) + '\n',
+  );
+  const projects = join(root, 'home', '.claude', 'projects', proj.replace(/[^a-zA-Z0-9]/g, '-'));
+  mkdirSync(projects, { recursive: true });
+  for (let i = 1; i <= 5; i++) {
+    const sid = `0000000${i}-1111-4222-8333-44445555666${i}`;
+    const at = (s: number) => new Date(Date.UTC(2026, 10, 20, 10, i, s)).toISOString();
+    writeFileSync(
+      join(projects, `${sid}.jsonl`),
+      [
+        JSON.stringify({
+          type: 'user',
+          sessionId: sid,
+          cwd: proj,
+          timestamp: at(0),
+          message: { role: 'user', content: `conversazione ${i}` },
+        }),
+        JSON.stringify({
+          type: 'assistant',
+          sessionId: sid,
+          cwd: proj,
+          timestamp: at(1),
+          message: { role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'text', text: 'ok' }] },
+        }),
+      ].join('\n') + '\n',
+    );
+  }
+  return { proj, env: { HOME: join(root, 'home') } };
+}
+
 test('secondo click sulla conversazione già selezionata fa il resume, come ⏎', { skip: SKIP }, () => {
   // Il bersaglio si legge dallo STESSO frame in cui si misura l'esito: la lista
   // conversazioni è ordinata su dati che arrivano asincroni, quindi la riga 10
   // di un secondo avvio del deck può portare un'altra conversazione.
+  //
+  // T229 — su un progetto sintetico di sole conversazioni ferme: il resume è
+  // l'esito del secondo click solo su una conversazione che non è viva e non
+  // ha un turno headless in corso (`enterSession`).
   //
   // L'hash sopravvive nella riga di stato perché `resumeArgs` tiene
   // `--resume <uuid>` in CODA all'argv, dove il taglio al mezzo non arriva. Con
   // `--title-note` in fondo — argomento a lunghezza libera — bastava un titolo
   // di conversazione lungo perché l'elisione si mangiasse proprio l'hash, e il
   // test cadeva su un resume partito correttamente.
-  const after = lastFrame(capture('@70,10;@70,10;'));
+  const { proj, env } = clickSessionsProject();
+  const after = lastFrame(capture('@70,10;@70,10;', proj, env));
   const target = sessionAtRow(after, 10);
   assert.match(
     after,
