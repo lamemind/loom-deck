@@ -22,7 +22,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { endpointFor } from '../src/spawn-endpoint.js';
 import { procStartOf } from '../src/live-sessions.js';
-import { unixOnly } from './platform-gates.js';
+import { ptyDriverGate } from './platform-gates.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = join(HERE, '..');
@@ -30,13 +30,8 @@ const CLI = join(PKG, 'dist', 'cli.js');
 const CLIENT = join(PKG, 'dist', 'loom-deck-spawn.js');
 const CLOSE = join(PKG, 'dist', 'loom-deck-close.js');
 
-function hasPython(): boolean {
-  return spawnSync('python3', ['-c', 'pass'], { stdio: 'ignore' }).status === 0;
-}
-const SKIP =
-  unixOnly('pty-frame.py usa pty e termios') ||
-  (hasPython() ? false : 'python3 assente') ||
-  (existsSync(CLIENT) ? false : 'build assente: npm run build');
+// T232 — il gate del driver pty: nella suite rapida di `npm test` non parte.
+const SKIP = ptyDriverGate() || (existsSync(CLIENT) ? false : 'build assente: npm run build');
 
 // Una cartella runtime per l'intero file: è la `$XDG_RUNTIME_DIR` dei deck e del
 // client, come sulla macchina vera, dove tutti i deck dell'utente ne condividono

@@ -32,15 +32,41 @@ function hasPython(): boolean {
 }
 
 /**
- * Il gate dei test che avviano il deck vero sotto `test/pty-frame.py`: la
- * piattaforma prima di tutto (su Windows `python3` non si interroga nemmeno — è
- * spesso l'alias dello Store), poi l'interprete, poi il progetto loom su cui il
- * deck gira.
+ * T232 — la variabile con cui `test/run.mjs` chiede la suite RAPIDA, quella di
+ * `npm test`: i gate pty — i test che avviano il deck vero sotto
+ * `test/pty-frame.py` — non partono, e la suite sta nel timeout di foreground di
+ * chi la lancia. La suite completa è `npm run test:full`.
+ *
+ * La imposta solo il runner, in modalità di default, e `--full` la toglie
+ * dall'ambiente del figlio anche quando la shell di chi lancia la porta: un
+ * file pty lanciato a mano con `tsx --test` non la vede, e gira per intero.
+ */
+export const QUICK_SUITE_ENV = 'LOOM_DECK_TEST_QUICK';
+
+/** Il motivo per cui un gate pty non gira nella suite rapida, o `false`. */
+export function quickSuite(): string | false {
+  return process.env[QUICK_SUITE_ENV] === '1'
+    ? 'suite rapida: i gate pty girano con npm run test:full'
+    : false;
+}
+
+/**
+ * Il gate del driver `test/pty-frame.py`, comune a ogni test che lo usa: la
+ * suite rapida prima di tutto, poi la piattaforma (su Windows `python3` non si
+ * interroga nemmeno — è spesso l'alias dello Store), poi l'interprete.
+ */
+export function ptyDriverGate(): string | false {
+  return (
+    quickSuite() ||
+    unixOnly('pty-frame.py usa pty, termios e TIOCSWINSZ') ||
+    (hasPython() ? false : 'python3 assente')
+  );
+}
+
+/**
+ * Il gate dei test che avviano il deck vero sotto `test/pty-frame.py` sul
+ * progetto loom che contiene il deck: il driver, poi il progetto.
  */
 export function ptyGate(tasksPath: string): string | false {
-  return (
-    unixOnly('pty-frame.py usa pty, termios e TIOCSWINSZ') ||
-    (hasPython() ? false : 'python3 assente') ||
-    (existsSync(tasksPath) ? false : `progetto loom assente (${tasksPath})`)
-  );
+  return ptyDriverGate() || (existsSync(tasksPath) ? false : `progetto loom assente (${tasksPath})`);
 }

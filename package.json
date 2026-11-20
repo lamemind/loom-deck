@@ -18,6 +18,8 @@
     "build": "tsc",
     "pretest": "tsc",
     "test": "node test/run.mjs",
+    "pretest:full": "tsc",
+    "test:full": "node test/run.mjs --full",
     "start": "node dist/cli.js",
     "prepare": "tsc"
   },
