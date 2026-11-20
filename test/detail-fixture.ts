@@ -10,7 +10,7 @@
 // aver misurato niente. Qui la popolazione è del test.
 //
 // Ordine della lista (Pri ↓, poi id ↑): T1 è l'unico 🔥, quindi `DD` lo apre;
-// `DDD`, `DDDD`, `DDDDD` e `DDDDDD` aprono T2, T3, T4 e T5.
+// `DDD`, `DDDD`, `DDDDD`, `DDDDDD` e `DDDDDDD` aprono T2, T3, T4, T5 e T6.
 //
 //   T1  M, preflight fatto, 14 DLV (1, 3, 8 fatti) → si apre sulla lista DLV
 //   T2  ✔️ in tasks.md, DLV tutti fatti            → campi; lista spenta
@@ -18,6 +18,7 @@
 //   T4  nessun `## Deliverables Checklist`          → campi; lista vuota
 //   T5  Size: Mandate, membri T1 T2 T3 T9 (T9 senza riga), con una checklist
 //       → coda `[1/3`, campi senza run, lista DLV spenta col motivo (T212)
+//   T6  Size: Epic senza figlie né DLV            → campi, con la regia (T203)
 //
 // Il blocco `spawn` sovrascrive modello e titolo di `run`: il modo DLV deve
 // ereditarli (D3), ed è il caso che un default coincidente coprirebbe.
@@ -52,6 +53,7 @@ export function detailProject(): { proj: string; env: NodeJS.ProcessEnv } {
     ['T3', '⚡', '🔵', 'Size L senza preflight'],
     ['T4', '⚡', '🔵', 'senza deliverable'],
     ['T5', '⚡', '🔵', 'mandato del collaudo'],
+    ['T6', '⚡', '🔵', 'epica del collaudo'],
   ];
   writeFileSync(
     join(proj, 'runtime', 'tasks.md'),
@@ -106,5 +108,8 @@ export function detailProject(): { proj: string; env: NodeJS.ProcessEnv } {
     join(tasks, 'T5-mandato.md'),
     file('T5', 'Mandate', ['- [ ] una voce che il mandato non esegue'], preflight, members),
   );
+  // T203 — l'epica: nessun DLV, così il detail si apre sui campi come sul
+  // mandato, e la riga azioni porta `direct` in coda.
+  writeFileSync(join(tasks, 'T6-epica.md'), file('T6', 'Epic', [], preflight));
   return { proj, env: { HOME: join(root, 'home') } };
 }

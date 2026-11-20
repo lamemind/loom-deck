@@ -97,6 +97,7 @@ const PROMPTS: Array<[string, string | null]> = [
   ['preflight', '/loom-works:preflight-task T56'],
   ['run', '/loom-works:run-task T56'],
   ['checkpoint', '/loom-works:checkpoint-task T56'],
+  ['regia', '/loom-works:orchestrate-mandate T56'],
 ];
 
 for (const [kind, prompt] of PROMPTS) {
@@ -387,6 +388,7 @@ for (const [kind, emoji] of [
   ['run', '🚀'],
   ['recap', '📊'],
   ['checkpoint', '🏁'],
+  ['regia', '🎬'],
   ['drain', '🧹'],
   ['unwrap', '📏'],
 ] as const) {
@@ -597,6 +599,21 @@ test('--prompt-kind run con --model esplicito: il flag vince sul catalogo', () =
     inTabCmd(['T56', '--session-id', SID, '--prompt-kind', 'run', '--model', 'haiku']),
     /--model haiku\b/,
   );
+});
+
+// T203 — la regia: opus dal catalogo dati, senza `--model` né override. È il
+// percorso di chi la lancia a mano da `deck-run`; dal detail il modello arriva
+// già risolto come `--model`.
+test('--prompt-kind regia senza --model: opus, e il prompt della skill di regia', () => {
+  const cmd = inTabCmd(['T56', '--prompt-kind', 'regia']);
+  assert.match(cmd, /--model opus\b/, `modello della regia: ${cmd}`);
+  assert.ok(cmd.endsWith("'/loom-works:orchestrate-mandate T56'"), `prompt della regia: ${cmd}`);
+});
+
+test('--prompt-kind regia senza task: errore d’uso, come ogni kind', () => {
+  const r = deckRun(['--no-task', '--prompt-kind', 'regia']);
+  assert.equal(r.ok, false);
+  assert.match(r.err, /--prompt-kind richiede una task/);
 });
 
 test('--prompt-kind preflight senza --model: il default del catalogo è fable', () => {

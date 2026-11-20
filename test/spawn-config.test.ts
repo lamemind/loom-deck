@@ -222,6 +222,29 @@ test('senza override: un’azione con un kind prende modello e prompt dal catalo
   assert.equal(r.title, '🚀 la mia task');
 });
 
+// T203 — la regia è una riga del catalogo come le altre: il default viene dal
+// catalogo dati VERO (opus, la skill di regia), e un override nel blocco
+// `spawn` di `.claude/loom-works.json` ne cambia le tre celle.
+test('regia: default opus dal catalogo dati, titolo 🎬', () => {
+  const r = resolveSpawn(spawnAction('regia')!, NONE, loadPromptCatalog(), { TASK: 'T6', slug: 'epica' });
+  assert.equal(r.model, 'opus');
+  assert.equal(r.prompt, '/loom-works:orchestrate-mandate T6');
+  assert.equal(r.title, '🎬 epica');
+  assert.equal(r.overridden.size, 0);
+});
+
+test('regia: l’override di progetto cambia modello, titolo e prompt', () => {
+  const parsed = parseSpawnOverrides({
+    [SPAWN_BLOCK]: { regia: { model: 'fable', title: 'regia {slug}', prompt: '/loom-works:orchestrate-mandate {TASK} a modo mio' } },
+  });
+  assert.deepEqual(parsed.warnings, []);
+  const r = resolveSpawn(spawnAction('regia')!, parsed.entries, loadPromptCatalog(), { TASK: 'T6', slug: 'epica' });
+  assert.equal(r.model, 'fable');
+  assert.equal(r.title, 'regia epica');
+  assert.equal(r.prompt, '/loom-works:orchestrate-mandate T6 a modo mio');
+  assert.deepEqual([...r.overridden].sort(), ['model', 'prompt', 'title']);
+});
+
 test('riga di catalogo dati senza modello → si cade su MODEL_DEFAULT', () => {
   const r = resolveSpawn(spawnAction('preflight')!, NONE, CATALOG, { TASK: 'T42', slug: 'x' });
   assert.equal(r.model, 'fable');

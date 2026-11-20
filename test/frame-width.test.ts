@@ -699,6 +699,13 @@ const DETAIL_SCENARIOS: Array<[string, string, number[], string]> = [
   ['detail · mandato senza run', 'DDDDDD\r', [100, 176], '[ preflight ]  [ status ]'],
   // Il modo DLV spento col motivo, anche con una checklist nel file.
   ['detail DLV · mandato', 'DDDDDD\rT', [80, 176], 'mandato: il lavoro sta nei membri'],
+  // T203 — la regia in coda alla riga azioni dei perimetri: sei bottoni
+  // sull'epica, cinque sul mandato. A 80 colonne la riga non ci sta intera e
+  // `cutParts` la taglia attorno alla selezione: il gate misura che il taglio
+  // tenga il bordo; a 100 la riga entra tutta, e `direct` è l'ultimo bottone.
+  ['detail · epica con la regia', 'DDDDDDD\r', [80, 100, 176], '[ checkpoint ]  [ direct ]'],
+  ['detail · epica, regia selezionata', 'DDDDDDD\rd', [80, 100, 176], '🎬 epica'],
+  ['detail · mandato con la regia', 'DDDDDD\r', [100, 176], '[ checkpoint ]  [ direct ]'],
 ];
 
 for (const [label, keys, widths, needle] of DETAIL_SCENARIOS) {
