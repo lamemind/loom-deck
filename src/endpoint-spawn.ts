@@ -17,7 +17,7 @@ import { dlvPrompt, parseDeliverables } from './deliverables.js';
 import { INTAB_MARKER, TITLE_MARKER, type Spawned } from './spawn.js';
 import { specializeRecap, type ModelKind, type PromptKind } from './spawn-catalog.js';
 import type { ResolvedSpawn } from './spawn-config.js';
-import type { SpawnReply, SpawnRequest } from './spawn-endpoint.js';
+import { kindRefusal, type RequestChannel, type SpawnReply, type SpawnRequest } from './spawn-endpoint.js';
 import { taskIsMandate, taskIsPerimeter } from './tasks.js';
 import type { WindowCheck } from './window-check.js';
 
@@ -65,7 +65,7 @@ export type SpawnPlan =
 export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDeps): Promise<SpawnReply> {
   const off = deps.spawnOff();
   if (off) return { ok: false, reason: off };
-  const plan = planSpawnRequest(req, deps);
+  const plan = planSpawnRequest(req, deps, 'endpoint');
   if (!plan.ok) return plan;
   const { kind, model, note, prompt } = plan;
 
@@ -95,17 +95,13 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
  * divergerebbero al primo ritocco, e il turno headless partirebbe dove la tab
  * è rifiutata.
  */
-export function planSpawnRequest(req: SpawnRequest, deps: SpawnPlanDeps): SpawnPlan {
-  // T203/P3 — la regia vale dal detail e da `deck-run` a mano. `PROMPT_KINDS`
-  // la accetta perché è la lista di `deck-run`, e l'endpoint e il turno
-  // headless validano sulla stessa lista: senza questo rifiuto la regia si
-  // aprirebbe da ogni conversazione prima della marca e delle guardie che la
-  // rendono chiudibile (T221), e in un turno `claude -p` morirebbe al primo
-  // turno, perché vive ore su un monitor. Prima della task: il motivo non
-  // dipende dalla task chiesta.
-  if (req.kind === 'regia') {
-    return { ok: false, reason: 'regia: si apre dal detail del deck o con deck-run, non da una richiesta' };
-  }
+export function planSpawnRequest(req: SpawnRequest, deps: SpawnPlanDeps, channel: RequestChannel): SpawnPlan {
+  // T203/P3 — un kind che il canale non accetta (la regia, oggi su entrambi):
+  // `PROMPT_KINDS` è la lista di `deck-run`, e la richiesta valida sulla stessa
+  // lista. La regola sta in `kindRefusal`, che fa anche l'elenco dell'help dei
+  // client. Prima della task: il motivo non dipende dalla task chiesta.
+  const refused = kindRefusal(req.kind, channel);
+  if (refused) return { ok: false, reason: refused };
   if (!deps.taskExists(req.task)) return { ok: false, reason: `${req.task} non è nella lista task del progetto` };
   const text = deps.taskText(req.task);
 

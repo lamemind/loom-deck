@@ -8,10 +8,13 @@ import type { ChildProcess } from 'node:child_process';
 import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { awaitAnnounce, handleSpawnRequest, type SpawnRequestDeps } from '../src/endpoint-spawn.js';
+import { awaitAnnounce, handleSpawnRequest, planSpawnRequest, type SpawnRequestDeps } from '../src/endpoint-spawn.js';
+import { HEADLESS_USAGE } from '../src/headless-client.js';
+import { CLIENT_USAGE } from '../src/spawn-client.js';
+import { PROMPT_KINDS } from '../src/tab-args.js';
+import { kindRefusal, requestKinds, type RequestChannel, type SpawnRequest } from '../src/spawn-endpoint.js';
 import { spawnDeck } from '../src/spawn.js';
 import type { PromptKind } from '../src/spawn-catalog.js';
-import type { SpawnRequest } from '../src/spawn-endpoint.js';
 import { unixOnly } from './platform-gates.js';
 
 const TASK_TEXT = `# Task: demo
@@ -144,6 +147,41 @@ test('regia: rifiutata dall endpoint prima della tab, su un epica come su un man
   }
   assert.equal(calls.spawned.length, 0);
   assert.deepEqual(calls.defaults, [], 'nessuna terna risolta per un rifiuto certo');
+});
+
+// T203 S1 — l'help dei client elenca i kind che il canale accetta, e nasce
+// dalla stessa regola del rifiuto: un kind fuori dall'elenco è un kind che
+// `planSpawnRequest` rifiuta su quel canale, e viceversa.
+test('requestKinds: la regia fuori da endpoint e headless, gli altri kind dentro', () => {
+  for (const channel of ['endpoint', 'headless'] as const) {
+    const kinds = requestKinds(channel);
+    assert.ok(!kinds.includes('regia'), `${channel}: la regia è nell'elenco`);
+    for (const k of ['recap', 'preflight', 'run', 'checkpoint'] as const) {
+      assert.ok(kinds.includes(k), `${channel}: ${k} manca dall'elenco`);
+    }
+  }
+});
+
+test('requestKinds e il rifiuto di planSpawnRequest sono la stessa regola', () => {
+  const allow = { taskExists: () => true, taskText: () => TASK_TEXT, defaults: deps().defaults };
+  for (const channel of ['endpoint', 'headless'] as RequestChannel[]) {
+    for (const kind of PROMPT_KINDS) {
+      const plan = planSpawnRequest(req({ kind }), allow, channel);
+      const listed = requestKinds(channel).includes(kind);
+      assert.equal(plan.ok, listed, `${channel}/${kind}: elenco e rifiuto divergono`);
+      if (!plan.ok) assert.equal(plan.reason, kindRefusal(kind, channel));
+    }
+  }
+});
+
+test('l help di loom-deck-spawn e di loom-deck-headless non promette la regia', () => {
+  const kindLine = (usage: string) => usage.split('\n').find((l) => l.trim().startsWith('<kind>'))!;
+  for (const usage of [CLIENT_USAGE, HEADLESS_USAGE]) {
+    const line = kindLine(usage);
+    assert.ok(line, `riga <kind> assente: ${usage}`);
+    assert.doesNotMatch(line, /regia/, `la regia è nell'help: ${line}`);
+    assert.match(line, /checkpoint/, `l'elenco non è quello dei kind: ${line}`);
+  }
 });
 
 test('rifiuti prima della tab: piattaforma, task assente, perimetro fuori range o chiuso', async () => {

@@ -27,6 +27,7 @@ import {
   ENDPOINT_SINCE,
   endpointFor,
   parseScope,
+  requestKinds,
   type SpawnReply,
   type SpawnRequest,
 } from './spawn-endpoint.js';
@@ -39,7 +40,7 @@ Chiede al deck acceso sul progetto di aprire una conversazione sulla task, come
 il tasto del deck: stesso binding, titolo e modello (override di progetto
 compreso).
 
-  <kind>       ${PROMPT_KINDS.join(' | ')}
+  <kind>       ${requestKinds('endpoint').join(' | ')}
   [perimetro]  solo con run: DLV come in run-task, 1,3-5 (assente = tutti gli aperti)
   --model      ${MODELS.join(' | ')} (assente = il modello dell'azione nel deck)
   --note       nota del titolo della tab (assente = il titolo dell'azione)

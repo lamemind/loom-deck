@@ -279,8 +279,8 @@ function clip(text: string): string {
  * `loom-deck-spawn`, eseguita senza tab.
  *
  * I rifiuti, in ordine: un'azione senza prompt (`none`, o un override che lo
- * svuota) non ha un turno da eseguire; i rifiuti di `planSpawnRequest` (task
- * assente, run su un mandato, perimetro); `run` e `checkpoint` su un progetto
+ * svuota) non ha un turno da eseguire; i rifiuti di `planSpawnRequest` (la
+ * regia, task assente, run su un mandato, perimetro); `run` e `checkpoint` su un progetto
  * `manual` (D2 preflight) — un canale senza nessuno che guarda non allarga il
  * permesso che il progetto ha dichiarato, e in `manual` ogni comando di un run
  * sarebbe negato.
@@ -302,7 +302,7 @@ export async function openHeadless(req: SpawnRequest, root: string, io: Headless
     },
     taskText: (id) => loadTaskFileText(ctx.tasksDir, id),
     defaults: (kind, id) => resolveSpawnId(kind, overrides, ctx.catalog, taskHoles(ctx.tasksDir, id)),
-  });
+  }, 'headless');
   if (!plan.ok) return plan;
   if (!plan.prompt) return { ok: false, reason: `l'azione ${plan.kind} non ha prompt (override di progetto?)` };
 

@@ -155,6 +155,43 @@ export interface SpawnRequest {
   note?: string;
 }
 
+/**
+ * T203 — i due canali che aprono una conversazione da una RICHIESTA invece che
+ * da un tasto del deck: l'endpoint (`loom-deck-spawn`, una tab) e il turno
+ * headless (`loom-deck-headless open`, un `claude -p`). Condividono
+ * `planSpawnRequest`, ma un kind può valere su uno e non sull'altro.
+ */
+export type RequestChannel = 'endpoint' | 'headless';
+
+/**
+ * I kind che un canale rifiuta, col motivo. Fonte UNICA di due cose: il rifiuto
+ * di `planSpawnRequest` e l'elenco dei kind nell'uso dei due client
+ * (`requestKinds`). Con due copie l'help prometterebbe un kind che il deck
+ * rifiuta, o ne tacerebbe uno che accetta.
+ *
+ * La regia (P3 preflight T203) vale dal detail e da `deck-run` a mano. Sul
+ * turno headless il rifiuto è permanente: una regia vive ore su un monitor, e
+ * un turno `claude -p` finisce al primo turno. Sull'endpoint è in attesa di
+ * T221, che apre la regia alle conversazioni insieme alla marca e alle guardie
+ * che la rendono chiudibile: togliere la riga `endpoint` qui la fa comparire
+ * anche nell'help di `loom-deck-spawn`, senza un secondo ritocco.
+ */
+const CHANNEL_REFUSALS: Readonly<Record<RequestChannel, Partial<Record<PromptKind, string>>>> = {
+  endpoint: { regia: 'regia: si apre dal detail del deck o con deck-run, non da una richiesta' },
+  headless: { regia: 'regia: si apre dal detail del deck o con deck-run, non in un turno headless' },
+};
+
+/** Il motivo per cui il canale rifiuta il kind, o `null` se lo accetta. */
+export function kindRefusal(kind: PromptKind, channel: RequestChannel): string | null {
+  return CHANNEL_REFUSALS[channel][kind] ?? null;
+}
+
+/** I kind che il canale accetta, nell'ordine di `PROMPT_KINDS`: l'elenco
+ *  dell'uso dei client. */
+export function requestKinds(channel: RequestChannel): readonly PromptKind[] {
+  return PROMPT_KINDS.filter((k) => kindRefusal(k, channel) === null);
+}
+
 export type SpawnReply =
   | {
       ok: true;

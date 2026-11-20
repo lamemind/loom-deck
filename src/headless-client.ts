@@ -24,8 +24,7 @@ import {
 import { headlessIds, readState, type HeadlessState, type Outcome } from './headless-state.js';
 import { isModelKind, MODELS, type ModelKind } from './spawn-catalog.js';
 import { parseClientArgs } from './spawn-client.js';
-import { normalizeSession } from './spawn-endpoint.js';
-import { PROMPT_KINDS } from './tab-args.js';
+import { normalizeSession, requestKinds } from './spawn-endpoint.js';
 import { findProjectRoot } from './tab-launch.js';
 
 export const HEADLESS_USAGE = `uso: loom-deck-headless open <TaskID> <kind> [perimetro] [--model <alias>] [--note <testo>] [--root <dir>]
@@ -38,7 +37,7 @@ status. Nessuna tab, nessun cambio di finestra o di focus.
 
   open     apre la conversazione con un'azione del catalogo del deck, con titolo,
            modello e binding del tasto del deck (override di progetto compresi)
-             <kind>       ${PROMPT_KINDS.filter((k) => k !== 'none').join(' | ')}
+             <kind>       ${requestKinds('headless').filter((k) => k !== 'none').join(' | ')}
              [perimetro]  solo con run: DLV come in run-task, 1,3-5
            su un progetto permissionMode manual rifiuta run e checkpoint
   reply    manda il messaggio a una conversazione ferma del progetto e ne avvia
