@@ -20,7 +20,6 @@ import {
   HEADLESS_ORPHAN_GRACE_MS,
   headlessArgs,
   headlessEnv,
-  INHERITED_SESSION_ENV,
   openHeadless,
   PENDING_MAX_MS,
   replyHeadless,
@@ -30,6 +29,7 @@ import {
   type HeadlessIo,
   type LaunchOptions,
 } from '../src/headless.js';
+import { INHERITED_SESSION_ENV } from '../src/session-env.js';
 import {
   classifyTurn,
   dropHeadlessState,
@@ -107,6 +107,9 @@ const REGIA_ENV: Record<string, string> = {
   CLAUDE_CODE_SESSION_ID: 'regia',
   CLAUDE_EFFORT: 'xhigh',
   CLAUDE_CODE_MESSAGING_TOKEN: 'segreto',
+  // T217 — l'inspector di Bun della regia: su Windows il turno che lo eredita
+  // muore con EADDRINUSE prima di scrivere il transcript.
+  BUN_INSPECT: 'ws://127.0.0.1:9222/',
   CLAUDE_CONFIG_DIR: '/cfg',
   CLAUDE_CODE_GIT_BASH_PATH: 'C:\\bash.exe',
 };
@@ -145,12 +148,13 @@ const req = (task: string, kind: string, extra: Record<string, unknown> = {}) =>
 test('ambiente del turno: via i marcatori della conversazione, il profilo e il binding di chi lancia', () => {
   const env = headlessEnv(REGIA_ENV, 'T9', 'linux');
   for (const k of HEADLESS_DROP_ENV) if (k !== 'LOOM_TASK') assert.equal(env[k], undefined, k);
+  for (const k of INHERITED_SESSION_ENV) assert.ok(HEADLESS_DROP_ENV.includes(k), `${k} ereditata dal turno`);
+  assert.equal(env.BUN_INSPECT, undefined);
   assert.equal(env.LOOM_TASK, 'T9');
   assert.equal(env.CLAUDE_CONFIG_DIR, '/cfg', 'la configurazione dell’utente passa');
   assert.equal(env.CLAUDE_CODE_GIT_BASH_PATH, 'C:\\bash.exe');
   assert.equal(env.PATH, '/usr/bin');
   assert.equal(headlessEnv(REGIA_ENV, null, 'linux').LOOM_TASK, undefined, 'una conversazione senza task non eredita la task di chi lancia');
-  assert.equal(INHERITED_SESSION_ENV.length, 12);
 });
 
 test('argv del turno: -p, esito json, nessuno risponde ai permessi, -- prima del testo', () => {

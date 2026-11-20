@@ -19,6 +19,8 @@
 // Modulo PURO: l'env arriva come valore, il bash di Git come stringa già
 // risolta.
 
+import { dropEnv, INHERITED_SESSION_ENV } from './session-env.js';
+
 /** Il lanciatore di Windows Terminal: l'alias d'esecuzione in `WindowsApps`,
  *  che `spawn` trova nel `PATH` e lancia senza shell (misurato). */
 export const WT_CMD = 'wt.exe';
@@ -31,32 +33,6 @@ export const WT_PROFILE_DEFAULT = 'loom-deck';
 
 /** La variabile con cui l'argv di `claude` arriva al wrapper della tab. */
 export const TAB_ARGV_ENV = 'LOOM_DECK_TAB_ARGV';
-
-/**
- * I marker che una sessione Claude Code inietta nei processi figli (P4
- * preflight, misurati nella shell di una sessione su Windows).
- *
- * La tab eredita tutto l'env del deck, e un deck avviato da una shell aperta
- * dentro Claude Code li porterebbe nella conversazione nuova: con
- * `CLAUDE_CODE_CHILD_SESSION` la sessione non salva il transcript («Transcript
- * saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker») e non compare
- * nello storico del deck. Lista chiusa e non ogni `CLAUDE*`: un
- * `CLAUDE_CONFIG_DIR` o un `CLAUDE_CODE_GIT_BASH_PATH` dell'utente sparirebbero
- * senza segnale, mentre un marker nuovo di una versione futura si annuncia da
- * sé, nel messaggio di avvio di `claude` che lo nomina.
- */
-export const SESSION_MARKERS: readonly string[] = [
-  'CLAUDECODE',
-  'CLAUDE_CODE_CHILD_SESSION',
-  'CLAUDE_CODE_SESSION_ID',
-  'CLAUDE_PID',
-  'CLAUDE_EFFORT',
-  'CLAUDE_CODE_MESSAGING_SOCKET',
-  'CLAUDE_CODE_MESSAGING_TOKEN',
-  'CLAUDE_CODE_ENTRYPOINT',
-  'CLAUDE_CODE_SESSION_ATTENDED',
-  'CLAUDE_CODE_EXECPATH',
-];
 
 const GIT_BASH_ENV = 'CLAUDE_CODE_GIT_BASH_PATH';
 
@@ -119,21 +95,15 @@ export function semicolonArg(args: readonly string[]): string | null {
   return args.find((a) => a.includes(';')) ?? null;
 }
 
-/** Toglie una chiave ignorando le maiuscole: su Windows l'env non le distingue,
- *  e una copia di `process.env` può portare `Path` invece di `PATH`. */
-function deleteKey(env: Record<string, string | undefined>, key: string): void {
-  const want = key.toUpperCase();
-  for (const k of Object.keys(env)) if (k.toUpperCase() === want) delete env[k];
-}
-
 function hasKey(env: Readonly<Record<string, string | undefined>>, key: string): boolean {
   const want = key.toUpperCase();
   return Object.keys(env).some((k) => k.toUpperCase() === want && env[k]);
 }
 
 /**
- * L'env di una tab aperta dal deck su Windows: quello del deck, meno i marker di
- * sessione, con la task della conversazione e il bash di Git.
+ * L'env di una tab aperta dal deck su Windows: quello del deck, meno le
+ * variabili di sessione (`INHERITED_SESSION_ENV`), con la task della
+ * conversazione e il bash di Git.
  *
  * `task` = `null` per le tab senza task (`--no-task`, il tasto `t`): una
  * `LOOM_TASK` ereditata legherebbe a una task una sessione che non ne ha, e
@@ -147,10 +117,7 @@ export function windowsTabEnv(
   task: string | null,
   gitBash: string | null,
 ): Record<string, string | undefined> {
-  const out: Record<string, string | undefined> = { ...env };
-  for (const marker of SESSION_MARKERS) deleteKey(out, marker);
-  deleteKey(out, 'LOOM_TASK');
-  deleteKey(out, TAB_ARGV_ENV);
+  const out = dropEnv(env, [...INHERITED_SESSION_ENV, 'LOOM_TASK', TAB_ARGV_ENV]);
   if (task) out.LOOM_TASK = task;
   if (gitBash && !hasKey(env, GIT_BASH_ENV)) out[GIT_BASH_ENV] = gitBash;
   return out;

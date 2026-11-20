@@ -15,10 +15,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runDeckRun, TAB_WRAPPER_JS, type DeckRunIo } from '../src/tab-launch.js';
 import { USAGE } from '../src/tab-args.js';
+import { INHERITED_SESSION_ENV } from '../src/session-env.js';
 import {
   parseTabArgv,
   semicolonArg,
-  SESSION_MARKERS,
   TAB_ARGV_ENV,
   windowsTabEnv,
   wtNewTabArgs,
@@ -70,13 +70,17 @@ const PARENT: Record<string, string> = {
   CLAUDE_CONFIG_DIR: 'C:\\cfg',
   LOOM_TASK: 'T9',
   [TAB_ARGV_ENV]: '["vecchio"]',
-  ...Object.fromEntries(SESSION_MARKERS.map((m) => [m, '1'])),
+  ...Object.fromEntries(INHERITED_SESSION_ENV.map((m) => [m, '1'])),
   claude_pid: '42',
 };
 
-test('env: via i marker di sessione (anche in minuscolo), resta la configurazione dell’utente', () => {
+test('env: via le variabili di sessione (anche in minuscolo), resta la configurazione dell’utente', () => {
   const env = windowsTabEnv(PARENT, 'T1', null);
-  for (const m of SESSION_MARKERS) assert.equal(env[m], undefined, m);
+  for (const m of INHERITED_SESSION_ENV) assert.equal(env[m], undefined, m);
+  // T217 — le due che la lista delle tab non toglieva, e l'inspector di Bun.
+  for (const m of ['CLAUDE_AFK_TIMEOUT_MS', 'CLAUDE_CODE_BRIDGE_SESSION_ID', 'BUN_INSPECT']) {
+    assert.equal(env[m], undefined, m);
+  }
   assert.equal(env.claude_pid, undefined);
   assert.equal(env.CLAUDE_CONFIG_DIR, 'C:\\cfg');
   assert.equal(env.PATH, 'C:\\x');

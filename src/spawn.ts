@@ -13,6 +13,7 @@ import { MODEL_DEFAULT, PROJECT_STATUS_MODEL, type ModelKind } from './spawn-cat
 import { isAvailable } from './platform.js';
 import { claudeLauncher } from './claude-cmd.js';
 import { claudeEnv, gitBash } from './git-bash.js';
+import { dropEnv, INHERITED_SESSION_ENV } from './session-env.js';
 import { windowsTabEnv, WT_CMD, wtNewTabArgs, wtProfile } from './windows-terminal.js';
 import { relayCommand, toastCommand, type NotifyCommand } from './windows-notify.js';
 
@@ -500,6 +501,25 @@ export function spawnTerminal(cwd: string, title: string | null) {
 // `node …cli.js` da uno shim npm: nelle note resta il nome che l'utente conosce.
 export const CLAUDE_CMD = process.env.LOOM_DECK_CLAUDE_CMD || 'claude';
 
+/**
+ * T217 — l'env del `claude -p` di una skill: quello del deck meno le variabili
+ * di sessione (`INHERITED_SESSION_ENV`), e su Windows col bash di Git
+ * (`claudeEnv`).
+ *
+ * Il deck nasce di norma fuori da ogni conversazione, ma un deck avviato da una
+ * shell aperta dentro Claude Code le porta tutte: senza toglierle, la skill
+ * girerebbe senza transcript (`CLAUDE_CODE_CHILD_SESSION`) e, su Windows, con
+ * l'inspector di Bun sulla porta della conversazione (`BUN_INSPECT`).
+ */
+export function skillEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  bash: () => string | null = gitBash,
+): NodeJS.ProcessEnv {
+  const out = dropEnv(env, INHERITED_SESSION_ENV) as NodeJS.ProcessEnv;
+  return claudeEnv(platform, out, bash) ?? out;
+}
+
 // T30: invocazione di una skill del plugin da CC HEADLESS (`-p`), con
 // `--session-id` pinnato. È la TERZA strada per eseguire uno script del plugin
 // da un consumer che non ha `CLAUDE_PLUGIN_ROOT`: il path version-pinned della
@@ -524,7 +544,8 @@ function spawnSkill(
 ) {
   // T175 — il lanciatore risolto (shim npm compreso, mai una shell) e, su
   // Windows, l'env col bash di Git: senza, un deck avviato da Git Bash passa al
-  // figlio il `PATH` che manda gli hook del plugin in PowerShell.
+  // figlio il `PATH` che manda gli hook del plugin in PowerShell. T217 — senza
+  // le variabili di sessione (`skillEnv`).
   const claude = claudeLauncher();
   const child = spawnOut(
     claude.cmd,
@@ -539,7 +560,7 @@ function spawnSkill(
       ...extraArgs,
       prompt,
     ],
-    { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: claudeEnv() },
+    { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env: skillEnv() },
   );
 
   let buf = '';

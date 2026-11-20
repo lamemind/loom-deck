@@ -47,44 +47,18 @@ import { isModelKind, MODEL_DEFAULT, type ModelKind } from './spawn-catalog.js';
 import { loadSpawnOverrides, resolveSpawnId, taskHoles } from './spawn-config.js';
 import { normalizeSession, type SpawnRequest } from './spawn-endpoint.js';
 import { deckArgs, resumeArgs } from './spawn.js';
+import { dropEnv, INHERITED_SESSION_ENV } from './session-env.js';
 import { isHelpRequest, isUsageError, parseTabArgs } from './tab-args.js';
 import { composeTab, permissionMode, type TabPlan } from './tab-compose.js';
 import { appendNote, appendSessionMeta, appendTaskBinding, loadSessionIndex } from './task-index.js';
 import { loadTaskFileText, loadTasks, resolveTasksDir, resolveTasksPath } from './tasks.js';
 
 /**
- * Le variabili con cui un processo lanciato dalla Bash di una conversazione
- * Claude Code descrive QUELLA conversazione (misura 11 della sonda T205).
- *
- * Una headless la lancia di norma una regia, cioè una conversazione: senza
- * toglierle, il turno girerebbe con l'effort della regia (`CLAUDE_EFFORT`), ne
- * vedrebbe il canale dei messaggi e il Remote Control, e un `claude` interattivo
- * nato così non salva nemmeno il transcript (`CLAUDE_CODE_CHILD_SESSION`). Una
- * tab del deck nasce da un processo fuori da ogni conversazione e non ne porta
- * nessuna.
- *
- * Elenco chiuso e per nome, non un prefisso: `CLAUDE_CONFIG_DIR` e
- * `CLAUDE_CODE_GIT_BASH_PATH` sono configurazione dell'utente e devono passare.
- */
-export const INHERITED_SESSION_ENV: readonly string[] = [
-  'CLAUDECODE',
-  'CLAUDE_CODE_CHILD_SESSION',
-  'CLAUDE_CODE_SESSION_ID',
-  'CLAUDE_PID',
-  'CLAUDE_EFFORT',
-  'CLAUDE_CODE_ENTRYPOINT',
-  'CLAUDE_CODE_EXECPATH',
-  'CLAUDE_CODE_SESSION_ATTENDED',
-  'CLAUDE_AFK_TIMEOUT_MS',
-  'CLAUDE_CODE_BRIDGE_SESSION_ID',
-  'CLAUDE_CODE_MESSAGING_SOCKET',
-  'CLAUDE_CODE_MESSAGING_TOKEN',
-];
-
-/**
  * Tutto ciò che il turno NON eredita da chi lo lancia.
  *
- *  - i marcatori della conversazione che lancia (sopra);
+ *  - le variabili della conversazione che lancia (`INHERITED_SESSION_ENV`, la
+ *    lista che il deck toglie a ogni `claude` che lancia): una headless la
+ *    lancia di norma una regia, cioè una conversazione;
  *  - `PTYXIS_PROFILE`: con il profilo, gli hook di stato del turno cambiano lo
  *    stato del PROGETTO in compass — `done` accende badge e suono, `end` lo
  *    riporta a `idle` cancellando l'`ask` di una tab vera (misura 10). Una
@@ -111,8 +85,7 @@ export function headlessEnv(
   platform: NodeJS.Platform,
   bash?: () => string | null,
 ): NodeJS.ProcessEnv {
-  const out: NodeJS.ProcessEnv = { ...env };
-  for (const k of HEADLESS_DROP_ENV) delete out[k];
+  const out = dropEnv(env, HEADLESS_DROP_ENV) as NodeJS.ProcessEnv;
   if (task) out.LOOM_TASK = task;
   return claudeEnv(platform, out, bash) ?? out;
 }
