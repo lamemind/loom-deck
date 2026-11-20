@@ -138,7 +138,7 @@ test('taskColumns: la coda è il massimo della popolazione, più il proprio gutt
   const list = [t('T9', '⚡', '🔵'), t('T90', '⚡', '🔵')];
   const data: TaskRowData = {
     childCount: new Map([['T9', 3], ['T90', 12]]),
-    live: new Map([['T90', { count: 2, status: 'busy' }]]),
+    live: new Map([['T90', { count: 2, status: 'busy', tabs: 2 }]]),
     dirty: new Set<string>(),
     ...NO_EPIC_DATA,
   };
@@ -174,7 +174,7 @@ test('taskColumns: accendere una viva qualsiasi allarga la colonna di 2 celle', 
   const spenta = taskColumns(list, { ...base, live: new Map() }).tail;
   const accesa = taskColumns(list, {
     ...base,
-    live: new Map([['T9', { count: 1, status: 'idle' as const }]]),
+    live: new Map([['T9', { count: 1, status: 'idle' as const, tabs: 1 }]]),
   }).tail;
   assert.equal(accesa - spenta, 2);
 });
@@ -463,7 +463,7 @@ test('mandateTail: quadra senza chiusa, coda vuota senza membri', () => {
 test('rowTail: il mandato scrive i membri al posto delle conversazioni, la task resta com era', () => {
   const data: TaskRowData = {
     childCount: new Map([['T5', 4], ['T6', 4]]),
-    live: new Map([['T5', { count: 1, status: 'idle' as const }]]),
+    live: new Map([['T5', { count: 1, status: 'idle' as const, tabs: 1 }]]),
     dirty: new Set(['T5']),
     ...NO_EPIC_DATA,
     mandates: new Set(['T5']),

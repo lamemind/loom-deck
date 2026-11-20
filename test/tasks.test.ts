@@ -387,7 +387,7 @@ test('parità con lw_task_members del plugin sui casi del contratto', { skip: ME
     // Due membri senza task file: il lettore li marca MISSING, nello stesso
     // ordine degli altri — il deck li tiene nella lista allo stesso posto.
     for (const id of ['T52', 'T61', 'T73']) writeFileSync(join(dir, `${id}-membro.md`), `# Task: ${id}\n`);
-    const env = { ...process.env, PROJECT_ROOT: root };
+    const env: NodeJS.ProcessEnv = { ...process.env, PROJECT_ROOT: root };
     delete env.LOOM_TASK;
     const out = execFileSync('bash', ['-c', 'source "$1" && lw_task_members T230', 'parity', PLUGIN_LIB], {
       cwd: root,

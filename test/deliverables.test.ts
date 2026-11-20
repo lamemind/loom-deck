@@ -194,7 +194,7 @@ function scriptRuns(files: readonly string[]): Map<string, { exit: number; out: 
     '  printf "@@@ exit %d\\n" "$?"',
     'done',
   ].join('\n');
-  const env = { ...process.env, PROJECT_ROOT: PROJECT };
+  const env: NodeJS.ProcessEnv = { ...process.env, PROJECT_ROOT: PROJECT };
   delete env.LOOM_TASK;
   const raw = execFileSync('bash', ['-c', loop, 'parity', SCRIPT, ...files], {
     cwd: PROJECT,

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { listenEndpoint, type RequestHandler } from '../src/endpoint-server.js';
 import { parseClientArgs, queuedLines, regiaSessionOf, runClient } from '../src/spawn-client.js';
-import { endpointFor, type SpawnRequest } from '../src/spawn-endpoint.js';
+import { endpointFor, type SpawnReply, type SpawnRequest } from '../src/spawn-endpoint.js';
 
 /** Un progetto con file di progetto e una cartella runtime propria per i
  *  socket: ogni test ha il suo indirizzo. */
@@ -272,7 +272,7 @@ test('finestra del progetto: rifiuto con l’istruzione, o tab aperta con l’av
 test('richiesta in coda: uscita 4, sessionId, task, prompt, regia e scadenza su stdout', async () => {
   const p = project();
   const expires = new Date(Date.UTC(2026, 10, 20, 17, 30, 0));
-  const queuedReply = (req: SpawnRequest) => ({
+  const queuedReply = (req: SpawnRequest): SpawnReply => ({
     ok: false,
     reason: 'in coda: finestra del progetto non in focus (demo), la tab nasce quando …',
     queued: {

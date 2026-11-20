@@ -185,7 +185,7 @@ export function assertBordersHold(region: Array<{ line: string; i: number }>, la
     // Un box annidato (il pannello di dettaglio) aggiunge colonne: va bene
     // finché non ne PERDE. Perderne una significa che il testo ci è passato
     // sopra — cioè la riga era più larga del suo box.
-    const missing = expected.filter((c) => !got.includes(c));
+    const missing: number[] = expected.filter((c) => !got.includes(c));
     assert.deepEqual(
       missing,
       [],

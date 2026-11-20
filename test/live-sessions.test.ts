@@ -179,8 +179,11 @@ const live = (sessionId: string, pid: number, status: 'idle' | 'busy'): LiveSess
   sessionId,
   pid,
   status,
+  state: status,
+  procStart: '',
   name: '',
   cwd: '/p',
+  startedAt: 0,
 });
 
 test('liveSig cambia quando cambia lo stato', () => {

@@ -501,7 +501,7 @@ test('shellCommand ricompone eseguibile e argv come si scriverebbero in bash', (
 function fakeChild(): { child: ChildProcess; out: PassThrough } {
   const out = new PassThrough();
   const child = new EventEmitter() as ChildProcess;
-  (child as { stdout: PassThrough }).stdout = out;
+  (child as unknown as { stdout: PassThrough }).stdout = out;
   return { child, out };
 }
 

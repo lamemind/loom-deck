@@ -16,9 +16,9 @@
   "scripts": {
     "dev": "tsx src/cli.tsx",
     "build": "tsc",
-    "pretest": "tsc",
+    "pretest": "tsc && tsc -p tsconfig.test.json",
     "test": "node test/run.mjs",
-    "pretest:full": "tsc",
+    "pretest:full": "tsc && tsc -p tsconfig.test.json",
     "test:full": "node test/run.mjs --full",
     "start": "node dist/cli.js",
     "prepare": "tsc"

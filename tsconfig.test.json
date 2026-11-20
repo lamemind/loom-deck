@@ -1,0 +1,15 @@
+// Il controllo dei tipi di src/ e test/ insieme, lanciato da pretest e
+// pretest:full. tsconfig.json compila solo src/, e la suite esegue i test con
+// tsx, che toglie i tipi senza controllarli: senza questo file un test può
+// costruire una fixture che non rispetta più il tipo che dichiara, e nessuno
+// lo vede. ES2023 per i metodi di array che i test usano (findLastIndex),
+// presenti nel Node su cui gira la suite.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "lib": ["ES2023"]
+  },
+  "include": ["src", "test"]
+}

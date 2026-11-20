@@ -718,7 +718,7 @@ test('sessionProcesses: ogni forma di processo vivo della conversazione, parseLi
   entry(13, SID, { entrypoint: 'cli', kind: 'bg' });
   entry(14, 'altra', { entrypoint: 'cli', kind: 'interactive' });
   entry(15, SID, { entrypoint: 'sdk-cli', kind: 'interactive' });
-  const alive = (pairs: { pid: number }[]) => pairs.map((p) => p.pid !== 15);
+  const alive = (pairs: readonly { pid: number }[]) => pairs.map((p) => p.pid !== 15);
   const got = sessionProcesses(SID, reg, alive).sort((a, b) => a.pid - b.pid);
   assert.deepEqual(got, [
     { pid: 11, entrypoint: 'cli', kind: 'interactive', state: 'idle' },

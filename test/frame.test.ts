@@ -50,11 +50,13 @@ const session = (sessionId: string): Session => ({
   firstPromptTs: 0,
   lastReplyTs: 0,
   model: '',
+  bodies: [],
 });
 
 const row = (sessionId: string): SessionRow => ({
   kind: 'session',
   sessionId,
+  pinned: false,
   session: session(sessionId),
 });
 

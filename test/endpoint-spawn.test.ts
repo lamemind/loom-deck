@@ -58,7 +58,12 @@ function deps(over: Partial<SpawnRequestDeps> = {}, calls: Calls = { spawned: []
     taskText: () => TASK_TEXT,
     defaults: (kind, taskId) => {
       calls.defaults.push(kind);
-      return { model: 'sonnet', title: `${kind}-titolo`, prompt: kind === 'none' ? '' : `/loom-works:${kind} ${taskId}` };
+      return {
+        model: 'sonnet',
+        title: `${kind}-titolo`,
+        prompt: kind === 'none' ? '' : `/loom-works:${kind} ${taskId}`,
+        overridden: new Set(),
+      };
     },
     spawn: (id, model, note, prompt) => {
       calls.spawned.push({ id, model, note, prompt });

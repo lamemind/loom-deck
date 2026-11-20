@@ -94,7 +94,8 @@ test('colonne a 0 (stdout non tty) ricadono sul default 80', () => {
 });
 
 function session(title: string, firstPrompt = ''): Session {
-  return { sessionId: 's1', title, firstPrompt, ts: 0, size: 0, turns: 0, path: '' } as Session;
+  // Fixture parziale: `conversationLabel` legge solo titolo e primo prompt.
+  return { sessionId: 's1', title, firstPrompt, ts: 0, size: 0, turns: 0, path: '' } as unknown as Session;
 }
 
 test('conversationLabel toglie il core di progetto dal titolo', () => {
