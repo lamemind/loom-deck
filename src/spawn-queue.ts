@@ -312,11 +312,12 @@ export class SpawnQueue {
           this.rewait();
           break;
         }
-        if ('warning' in check) {
+        if ('warning' in check || 'locked' in check) {
           // Dopo un `no` non si apre alla cieca: senza compass la finestra
           // non si sa, e la richiesta muore.
+          const why = 'warning' in check ? check.warning : check.locked;
           for (const item of this.items.filter((i) => i.state === 'ready')) {
-            this.drop(item, `finestra non verificabile all'apertura: ${check.warning}`);
+            this.drop(item, `finestra non verificabile all'apertura: ${why}`);
           }
           continue;
         }

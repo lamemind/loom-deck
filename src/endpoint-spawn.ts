@@ -106,6 +106,9 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
     if (deps.queue) return deps.queue.enqueue(req, plan);
     return { ok: false, reason: check.refuse };
   }
+  // T234 — schermo bloccato con compass abilitato: nessuna tab, che nascerebbe
+  // nella finestra attiva mentre l'utente non c'è.
+  if ('locked' in check) return { ok: false, reason: check.locked };
   return spawnPlanned(req, plan, deps, 'warning' in check ? check.warning : null);
 }
 

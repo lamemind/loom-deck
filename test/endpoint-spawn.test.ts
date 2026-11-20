@@ -291,6 +291,17 @@ test('finestra del progetto non in focus: rifiuto col motivo, nessuno spawn e qu
   assert.equal(calls.spawned.length, 0, 'il binding lo scrive spawn, e spawn non parte');
 });
 
+// T234 — schermo bloccato con compass abilitato: nessuna tab alla cieca.
+test('schermo bloccato senza la coda: rifiuto col motivo, nessuno spawn', async () => {
+  const calls: Calls = { spawned: [], defaults: [] };
+  const r = await handleSpawnRequest(
+    req({}),
+    deps({ windowCheck: async () => ({ locked: 'schermo bloccato (demo): …' }) }, calls),
+  );
+  assert.deepEqual(r, { ok: false, reason: 'schermo bloccato (demo): …' });
+  assert.equal(calls.spawned.length, 0);
+});
+
 // T229 — con la coda il `no` non rifiuta: la richiesta pianificata passa alla
 // coda, che risponde «in coda»; lo spawn non parte, quindi nessun binding.
 test('finestra del progetto non in focus con la coda: la richiesta pianificata va in coda, nessuno spawn', async () => {

@@ -7,9 +7,16 @@
 // parole di compass, il compass vecchio senza il metodo e il bus senza compass.
 // File separato perché il binario si legge a import-time
 // (`LOOM_DECK_FOCUS_CMD`), come in `focus-channel.test.ts`.
+//
+// T234 — lo stesso finto risponde anche alle due domande allo shell sul ramo
+// `ServiceUnknown`: `GetActive` legge il file `active` (assente = shell senza
+// il salvaschermo), `GetExtensionInfo` il file `extinfo`. Ogni metodo chiamato
+// si accoda a `calls`, così un test vede quali domande sono partite. Il blocco
+// dello schermo si collauda così, senza bloccare lo schermo di chi lancia la
+// suite.
 import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { unixOnly } from './platform-gates.js';
@@ -17,11 +24,25 @@ import { unixOnly } from './platform-gates.js';
 const dir = mkdtempSync(join(tmpdir(), 'window-check-'));
 const fake = join(dir, 'gdbus');
 const argvLog = join(dir, 'argv');
+const callsLog = join(dir, 'calls');
+const activeFile = join(dir, 'active');
+const extinfoFile = join(dir, 'extinfo');
 writeFileSync(
   fake,
   `#!/bin/sh
 printf '%s\\n' "$@" > '${argvLog}'
+printf '%s\\n' "$8" >> '${callsLog}'
 for last; do :; done
+# T234 — le domande allo shell: il salvaschermo e la scheda di compass.
+case "$8" in
+  *GetActive)
+    if [ -f '${activeFile}' ]; then cat '${activeFile}'; exit 0; fi
+    echo "Errore: GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable" >&2
+    exit 1 ;;
+  *GetExtensionInfo)
+    cat '${extinfoFile}'
+    exit 0 ;;
+esac
 # T229 — AwaitProjectFocus: l'id del progetto è l'undicesimo argomento.
 case "$8" in
   *AwaitProjectFocus)
@@ -51,8 +72,15 @@ esac
 );
 chmodSync(fake, 0o755);
 process.env.LOOM_DECK_FOCUS_CMD = fake;
-const { AWAIT_MARGIN_S, awaitProjectFocus, checkProjectWindow, refuseReason, windowCheckOf, WINDOW_CHECK_TIMEOUT_S } =
-  await import('../src/window-check.js');
+const {
+  AWAIT_MARGIN_S,
+  awaitProjectFocus,
+  checkProjectWindow,
+  lockedReason,
+  refuseReason,
+  windowCheckOf,
+  WINDOW_CHECK_TIMEOUT_S,
+} = await import('../src/window-check.js');
 
 // T175 — il `gdbus` finto è uno script sh con exec bit, che Windows non lancia.
 const channel = (name: string, fn: () => Promise<void>) =>
@@ -73,6 +101,19 @@ nodeTest('decisione: si apre, no rifiuta, ogni «non lo so» apre con l’avviso
     assert.match(w.warning, re);
     assert.match(w.warning, /^finestra non verificata .*: la tab nasce nella finestra di terminale attiva$/);
   }
+});
+
+nodeTest('T234 decisione: schermo bloccato solo con compass fuori dal bus, ogni altro guasto resta l’avviso', () => {
+  const offBus = { unreachable: 'GDBus.Error:org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable' };
+  assert.deepEqual(windowCheckOf(offBus, 'demo', true), { locked: lockedReason('demo') });
+  assert.ok('warning' in windowCheckOf(offBus, 'demo', false), 'sbloccato: compass assente, come T198');
+  // Il blocco detto dallo shell non vale dove compass è sul bus, o dove manca
+  // gdbus: lì il guasto non dipende dal blocco.
+  for (const r of [{ unreachable: 'ENOENT' }, { unreachable: 'GDBus.Error:…UnknownMethod: …' }, { word: 'ignoto' }]) {
+    assert.ok('warning' in windowCheckOf(r, 'demo', true), JSON.stringify(r));
+  }
+  assert.deepEqual(windowCheckOf({ word: 'no' }, 'demo', true), { refuse: refuseReason('demo') });
+  assert.match(lockedReason('loom-works'), /^schermo bloccato \(loom-works\): compass è spento dal blocco/);
 });
 
 nodeTest('il motivo del rifiuto dice il fatto e l’istruzione per l’utente', () => {
@@ -154,4 +195,80 @@ channel('attesa interrotta: il gdbus si uccide, e la sua fine arriva come canale
   stop();
   await new Promise((r) => setTimeout(r, 300));
   assert.ok(got !== null && 'unreachable' in got, JSON.stringify(got));
+});
+
+// T234 — il ramo `ServiceUnknown` chiede allo shell: salvaschermo attivo e
+// compass abilitato insieme fanno `locked`, ogni altro esito resta l’avviso.
+const COMPASS_ON = `({'uuid': <'compass@lamemind'>, 'state': <2.0>, 'enabled': <true>, 'sessionModes': <[<'user'>]>},)`;
+const COMPASS_OFF = `({'uuid': <'compass@lamemind'>, 'state': <2.0>, 'enabled': <false>},)`;
+const NOT_INSTALLED = '(@a{sv} {},)';
+
+/** Il controllo su compass fuori dal bus, con lo shell che risponde `active` e
+ *  `extinfo` (`null` = il servizio non c'è) → l’esito e i metodi chiamati. */
+async function offBusCheck(active: string | null, extinfo: string) {
+  rmSync(activeFile, { force: true });
+  if (active !== null) writeFileSync(activeFile, `${active}\n`);
+  writeFileSync(extinfoFile, `${extinfo}\n`);
+  writeFileSync(callsLog, '');
+  try {
+    const check = await checkProjectWindow('spento');
+    const calls = readFileSync(callsLog, 'utf8').trim().split('\n').map((m) => m.replace(/^.*\./, ''));
+    return { check, calls };
+  } finally {
+    rmSync(activeFile, { force: true });
+  }
+}
+
+channel('T234 canale: schermo bloccato con compass abilitato → locked, nessuna tab', async () => {
+  const { check, calls } = await offBusCheck('(true,)', COMPASS_ON);
+  assert.deepEqual(check, { locked: lockedReason('spento') });
+  assert.deepEqual(calls, ['ProjectFocused', 'GetActive', 'GetExtensionInfo']);
+  const argv = readFileSync(argvLog, 'utf8').trim().split('\n');
+  assert.deepEqual(argv.slice(2), [
+    '--dest',
+    'org.gnome.Shell',
+    '--object-path',
+    '/org/gnome/Shell',
+    '--method',
+    'org.gnome.Shell.Extensions.GetExtensionInfo',
+    '--timeout',
+    '2',
+    'compass@lamemind',
+  ]);
+});
+
+channel('T234 canale: schermo sbloccato, una domanda sola e l’avviso di T198', async () => {
+  const { check, calls } = await offBusCheck('(false,)', COMPASS_ON);
+  assert.ok('warning' in check, JSON.stringify(check));
+  assert.match(check.warning, /compass non raggiungibile: .*ServiceUnknown/);
+  assert.deepEqual(calls, ['ProjectFocused', 'GetActive']);
+});
+
+channel('T234 canale: bloccato ma compass non installato o disabilitato, o shell senza salvaschermo → avviso', async () => {
+  const cases: Array<[string | null, string, string[]]> = [
+    ['(true,)', NOT_INSTALLED, ['ProjectFocused', 'GetActive', 'GetExtensionInfo']],
+    ['(true,)', COMPASS_OFF, ['ProjectFocused', 'GetActive', 'GetExtensionInfo']],
+    ['(true,)', 'risposta che non è una scheda', ['ProjectFocused', 'GetActive', 'GetExtensionInfo']],
+    [null, COMPASS_ON, ['ProjectFocused', 'GetActive']],
+    ['forse', COMPASS_ON, ['ProjectFocused', 'GetActive']],
+  ];
+  for (const [active, extinfo, expectedCalls] of cases) {
+    const { check, calls } = await offBusCheck(active, extinfo);
+    assert.ok('warning' in check, `${active} ${extinfo}: ${JSON.stringify(check)}`);
+    assert.match(check.warning, /^finestra non verificata \(compass non raggiungibile: .*ServiceUnknown/);
+    assert.deepEqual(calls, expectedCalls, `${active} ${extinfo}`);
+  }
+});
+
+channel('T234 canale: compass sul bus ma vecchio, nessuna domanda allo shell', async () => {
+  writeFileSync(activeFile, '(true,)\n');
+  writeFileSync(extinfoFile, `${COMPASS_ON}\n`);
+  writeFileSync(callsLog, '');
+  try {
+    const check = await checkProjectWindow('vecchio');
+    assert.ok('warning' in check && /da aggiornare/.test(check.warning), JSON.stringify(check));
+    assert.deepEqual(readFileSync(callsLog, 'utf8').trim().split('\n'), ['org.lamemind.Compass.ProjectFocused']);
+  } finally {
+    rmSync(activeFile, { force: true });
+  }
 });

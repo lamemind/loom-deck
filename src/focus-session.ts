@@ -97,11 +97,14 @@ export function parseFocusReply(stdout: string): string | null {
 /** compass ha risposto con una parola, oppure il canale non c'è. */
 export type CompassReply = { word: string } | { unreachable: string };
 
+/** Un `gdbus` uscito 0 col suo stdout, oppure il canale non c'è. */
+export type GdbusOutcome = { stdout: string } | { unreachable: string };
+
 /**
- * Chiama il metodo `method` di compass con l'argomento `arg` (o gli argomenti,
- * in ordine) e consegna la parola della risposta a `onResult`, una volta sola.
- * Il canale di `FocusSession` (T184), di `ProjectFocused` (T198) e di
- * `AwaitProjectFocus` (T229): metodi che rispondono una parola, `(s)`.
+ * Lancia `gdbus` con `args` e consegna l'esito a `onResult`, una volta sola:
+ * lo stdout se esce 0, il motivo se no. Il canale di ogni chiamata del deck
+ * verso la sessione GNOME — i metodi di compass (`compassCall`) e, da T234, le
+ * domande allo shell sul blocco dello schermo (`screen-lock.ts`).
  *
  * Il listener su `error` è OBBLIGATORIO e non difensivo: senza `gdbus` (su
  * Windows, o su un Linux senza glib) lo spawn fallisce con un `error`
@@ -112,17 +115,12 @@ export type CompassReply = { word: string } | { unreachable: string };
  * sistema (`Errore: GDBus.Error:…ServiceUnknown`), e ne resta solo l'ultima
  * riga come motivo, per chi legge il risultato in un test o in un avviso.
  *
- * `timeoutS` è il timeout che `gdbus` applica alla risposta; Node uccide il
- * figlio un secondo dopo, se nemmeno quello esce — per esempio con un bus di
- * sessione che non risponde alla connessione.
+ * `timeoutS` è il timeout che `gdbus` applica da sé; Node uccide il figlio un
+ * secondo dopo, se nemmeno quello esce — per esempio con un bus di sessione
+ * che non risponde alla connessione.
  */
-export function compassCall(
-  method: string,
-  arg: string | readonly string[],
-  timeoutS: number,
-  onResult: (r: CompassReply) => void,
-): ChildProcess {
-  const child = spawnOut(FOCUS_CMD, compassArgs(method, arg, timeoutS), {
+export function gdbusRun(args: string[], timeoutS: number, onResult: (r: GdbusOutcome) => void): ChildProcess {
+  const child = spawnOut(FOCUS_CMD, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: (timeoutS + 1) * 1000,
   });
@@ -137,7 +135,7 @@ export function compassCall(
   // `error` e `close` possono arrivare entrambi per lo stesso spawn fallito:
   // il risultato è uno solo.
   let done = false;
-  const finish = (r: CompassReply) => {
+  const finish = (r: GdbusOutcome) => {
     if (done) return;
     done = true;
     onResult(r);
@@ -149,10 +147,32 @@ export function compassCall(
       finish({ unreachable: signal ? `timeout (${signal})` : last || `exit ${code}` });
       return;
     }
-    const word = parseFocusReply(out);
-    finish(word === null ? { unreachable: `risposta inattesa: ${out.trim()}` } : { word });
+    finish({ stdout: out });
   });
   return child;
+}
+
+/**
+ * Chiama il metodo `method` di compass con l'argomento `arg` (o gli argomenti,
+ * in ordine) e consegna la parola della risposta a `onResult`, una volta sola.
+ * Il canale di `FocusSession` (T184), di `ProjectFocused` (T198) e di
+ * `AwaitProjectFocus` (T229): metodi che rispondono una parola, `(s)`.
+ * `timeoutS` è il timeout che `gdbus` applica alla risposta (`gdbusRun`).
+ */
+export function compassCall(
+  method: string,
+  arg: string | readonly string[],
+  timeoutS: number,
+  onResult: (r: CompassReply) => void,
+): ChildProcess {
+  return gdbusRun(compassArgs(method, arg, timeoutS), timeoutS, (r) => {
+    if ('unreachable' in r) {
+      onResult(r);
+      return;
+    }
+    const word = parseFocusReply(r.stdout);
+    onResult(word === null ? { unreachable: `risposta inattesa: ${r.stdout.trim()}` } : { word });
+  });
 }
 
 /**

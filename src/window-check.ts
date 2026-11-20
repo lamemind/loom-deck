@@ -25,9 +25,18 @@
 // Il tasto ⏎ del deck non passa di qui: chi preme il tasto ha davanti la
 // finestra del deck per costruzione.
 //
+// T234 — un «non lo so» non è più sempre «compass assente». Con lo schermo
+// bloccato lo shell spegne compass, e `ProjectFocused` risponde
+// `ServiceUnknown` come su una macchina senza compass. Su quel ramo, e solo
+// lì, il controllo chiede allo shell se lo schermo è bloccato con compass
+// abilitato (`screen-lock.ts`): se sì l'esito è `locked`, nessuna tab, e la
+// richiesta aspetta lo sblocco; se no resta l'avviso di T198.
+//
 // Due metà, come `focus-session.ts`: la DECISIONE (`windowCheckOf`, pura) e il
-// CANALE (`checkProjectWindow`, un `gdbus call` via `compassCall`).
+// CANALE (`checkProjectWindow`, un `gdbus call` via `compassCall`, più le
+// domande allo shell sul ramo `ServiceUnknown`).
 import { compassCall, type CompassReply } from './focus-session.js';
+import { screenLockedWithCompass } from './screen-lock.js';
 import { NO_SPAWN } from './spawn.js';
 
 /** Il timeout di `gdbus` sulla risposta, in secondi. `ProjectFocused` legge il
@@ -36,8 +45,9 @@ import { NO_SPAWN } from './spawn.js';
  *  subito `ServiceUnknown`). */
 export const WINDOW_CHECK_TIMEOUT_S = 2;
 
-/** Il seguito del controllo: apri, rifiuta col motivo, o apri e avvisa. */
-export type WindowCheck = { ok: true } | { refuse: string } | { warning: string };
+/** Il seguito del controllo: apri, rifiuta col motivo, aspetta lo sblocco
+ *  dello schermo (T234), o apri e avvisa. */
+export type WindowCheck = { ok: true } | { refuse: string } | { locked: string } | { warning: string };
 
 /** La coda di ogni avviso: la conseguenza per chi ha chiesto. */
 const UNVERIFIED = 'la tab nasce nella finestra di terminale attiva';
@@ -58,6 +68,23 @@ export function unverifiedWarning(why: string): string {
   return `finestra non verificata (${why}): ${UNVERIFIED}`;
 }
 
+/** T234 — il motivo di una tab non aperta a schermo bloccato. Comincia col
+ *  fatto, `schermo bloccato`, come `refuseReason`. */
+export function lockedReason(projectId: string): string {
+  return (
+    `schermo bloccato (${projectId}): compass è spento dal blocco e la finestra del progetto non si può verificare. ` +
+    'Richiedi lo spawn dopo lo sblocco'
+  );
+}
+
+/** T234 — compass non è sul bus: il nome non c'è, `ServiceUnknown`. È il solo
+ *  «non lo so» su cui il blocco dello schermo si chiede allo shell: un
+ *  `gdbus` che manca o un compass che non ha il metodo non dipendono dal
+ *  blocco. */
+export function compassOffBus(r: CompassReply): boolean {
+  return 'unreachable' in r && /ServiceUnknown/.test(r.unreachable);
+}
+
 /**
  * La risposta di compass tradotta nel seguito. Una parola che questa versione
  * non conosce non rifiuta: un compass più nuovo che aggiungesse un esito non
@@ -66,9 +93,14 @@ export function unverifiedWarning(why: string): string {
  * `ServiceUnknown` è compass assente dal bus; `UnknownMethod` è un compass
  * acceso ma più vecchio di T198. Il secondo si nomina, perché il rimedio è
  * diverso: aggiornare compass, non avviarlo.
+ *
+ * T234 — `locked` è la risposta dello shell sul ramo `ServiceUnknown`: lo
+ * schermo è bloccato con compass abilitato. Vale solo lì, dove compass non è
+ * sul bus.
  */
-export function windowCheckOf(r: CompassReply, projectId: string): WindowCheck {
+export function windowCheckOf(r: CompassReply, projectId: string, locked = false): WindowCheck {
   if ('unreachable' in r) {
+    if (locked && compassOffBus(r)) return { locked: lockedReason(projectId) };
     if (/UnknownMethod/.test(r.unreachable)) return { warning: unverifiedWarning('compass senza ProjectFocused, da aggiornare') };
     return { warning: unverifiedWarning(`compass non raggiungibile: ${r.unreachable}`) };
   }
@@ -101,7 +133,13 @@ export function checkProjectWindow(projectId: string | null): Promise<WindowChec
   if (NO_SPAWN) return Promise.resolve({ warning: unverifiedWarning('deck col freno LOOM_DECK_NO_SPAWN, compass non chiesto') });
   if (projectId === null) return Promise.resolve({ warning: unverifiedWarning('progetto senza id in .claude/loom-works.json') });
   return new Promise((resolve) =>
-    compassCall('ProjectFocused', projectId, WINDOW_CHECK_TIMEOUT_S, (r) => resolve(windowCheckOf(r, projectId))),
+    compassCall('ProjectFocused', projectId, WINDOW_CHECK_TIMEOUT_S, (r) => {
+      // T234 — compass non è sul bus: spento dal blocco o assente dalla
+      // macchina. Lo dice lo shell, con una o due domande in più su questo
+      // ramo soltanto.
+      if (!compassOffBus(r)) return resolve(windowCheckOf(r, projectId));
+      void screenLockedWithCompass().then((locked) => resolve(windowCheckOf(r, projectId, locked)));
+    }),
   );
 }
 
