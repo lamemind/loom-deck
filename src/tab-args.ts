@@ -61,6 +61,13 @@ export interface UsageError {
   lines: string[];
 }
 
+/** T217 — la richiesta dell'uso (`-h`, `--help`): l'uso su stdout e uscita 0,
+ *  come negli altri comandi del deck. Non è un errore, quindi non è una
+ *  `UsageError`: la differenza è lo stream e il codice d'uscita. */
+export interface HelpRequest {
+  help: true;
+}
+
 export const USAGE = `uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <kind>] [--session-id <uuid>]
                                                    (es. deck-run T18)
      | deck-run --no-task                          (sessione nuda, senza task)
@@ -68,6 +75,7 @@ export const USAGE = `uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <k
      | deck-run --no-task --resume <uuid>          (riprende sessione spot)
      | deck-run <TaskID> --resume <uuid> --fork [--session-id <nuovo-uuid>]
                                                    (forka: ramo con id NUOVO)
+     | deck-run -h | --help                        (stampa quest'uso)
 
   --prompt-kind  prompt iniziale della sessione bound (default: recap)
        none        nessun prompt — sessione aperta sulla task, a mani nude
@@ -108,16 +116,24 @@ function usageError(...lines: string[]): UsageError {
 }
 
 /**
- * L'argv di `deck-run` come richiesta validata, o l'errore d'uso.
+ * L'argv di `deck-run` come richiesta validata, l'errore d'uso, o la richiesta
+ * dell'uso.
  *
  * Le due forme di un flag con valore (`--model x` e `--model=x`) valgono uguale;
  * un argomento che non è un flag noto è il TaskID se il TaskID non c'è ancora,
- * altrimenti un errore — anche `--qualcosa`, come nello script.
+ * altrimenti un errore.
+ *
+ * T217 — `-h` e `--help` chiedono l'uso in qualunque posizione, e un argomento
+ * che comincia con `-` e non è un flag noto è un'opzione ignota, mai il TaskID:
+ * fino a T217 `deck-run --help` apriva una conversazione vera sulla «task»
+ * `--help`. Il valore di un flag resta un valore anche quando comincia con `-`
+ * (`--prompt --help` è il prompt «--help»), perché lo consuma il flag prima che
+ * il ciclo lo guardi come argomento.
  *
  * L'ordine delle validazioni è quello dello script, perché è l'ordine in cui un
  * chiamante riceve i messaggi quando più regole sono violate insieme.
  */
-export function parseTabArgs(argv: readonly string[]): TabRequest | UsageError {
+export function parseTabArgs(argv: readonly string[]): TabRequest | UsageError | HelpRequest {
   const req: TabRequest = {
     task: '',
     noTask: false,
@@ -145,9 +161,11 @@ export function parseTabArgs(argv: readonly string[]): TabRequest | UsageError {
       if (field === 'promptText') req.promptGiven = true;
       continue;
     }
+    if (arg === '-h' || arg === '--help') return { help: true };
     if (arg === '--fork') req.fork = true;
     else if (arg === '--no-task') req.noTask = true;
     else if (arg === '--new-window') req.newWindow = true;
+    else if (arg.startsWith('-')) return usageError(`opzione ignota: '${arg}'`);
     else if (!req.task) req.task = arg;
     else return { lines: [`argomento inatteso: '${arg}'`] };
   }
@@ -194,6 +212,10 @@ export function parseTabArgs(argv: readonly string[]): TabRequest | UsageError {
   return req;
 }
 
-export function isUsageError(r: TabRequest | UsageError): r is UsageError {
+export function isUsageError(r: TabRequest | UsageError | HelpRequest): r is UsageError {
   return 'lines' in r;
+}
+
+export function isHelpRequest(r: TabRequest | UsageError | HelpRequest): r is HelpRequest {
+  return 'help' in r;
 }

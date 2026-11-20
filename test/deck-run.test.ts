@@ -46,7 +46,7 @@ mkdirSync(workdir, { recursive: true });
 // conversazione viva che ha chiesto `cc T56` cambierebbe il titolo atteso.
 const emptyRegistry = mkdtempSync(join(tmpdir(), 'loom-deck-reg-'));
 
-type Run = { ok: boolean; out: string; err: string };
+type Run = { ok: boolean; status: number | null; out: string; err: string };
 
 // spawnSync e non execFileSync: quest'ultimo espone lo stderr solo lanciando,
 // cioè solo sui fallimenti — ma deck-run avvisa su stderr anche quando riesce
@@ -78,7 +78,7 @@ function deckRun(args: string[], env: Record<string, string | undefined> = {}): 
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  return { ok: r.status === 0, out: r.stdout ?? '', err: r.stderr ?? '' };
+  return { ok: r.status === 0, status: r.status, out: r.stdout ?? '', err: r.stderr ?? '' };
 }
 
 /** Ultimo argv dello shim = il comando passato a `bash -lc` dentro la tab. */
@@ -253,6 +253,27 @@ test('catalogo assente: avviso su stderr e nessun prompt', () => {
   assert.match(r.err, /catalogo prompt non leggibile/);
   const cmd = r.out.trimEnd().split('\n').pop() ?? '';
   assert.ok(!cmd.trimEnd().endsWith("'"), `prompt inventato senza catalogo: ${cmd}`);
+});
+
+// T217 — `deck-run --help` prendeva `--help` come TaskID e apriva una
+// conversazione vera. Lo shim `ptyxis` stampa i propri argv su stdout: uno
+// stdout che è solo l'uso dice che nessuna tab è partita.
+for (const flag of ['--help', '-h']) {
+  test(`${flag}: l'uso su stdout, uscita 0, nessuna tab`, () => {
+    const r = deckRun([flag]);
+    assert.equal(r.status, 0, r.err);
+    assert.match(r.out, /^uso: deck-run <TaskID>/);
+    assert.ok(!r.out.includes('LOOM_DECK_INTAB'), `annuncio di una tab: ${r.out}`);
+    assert.ok(!r.out.includes('--tab'), `ptyxis lanciato: ${r.out}`);
+    assert.equal(r.err, '');
+  });
+}
+
+test('un TaskID che comincia con «-»: uscita 2 con l’uso, nessuna tab', () => {
+  const r = deckRun(['-T56']);
+  assert.equal(r.status, 2);
+  assert.equal(r.out, '', `stdout di una tab: ${r.out}`);
+  assert.match(r.err, /^opzione ignota: '-T56'\nuso: deck-run/);
 });
 
 test('--prompt-kind ignoto: errore d’uso, non fallback silenzioso', () => {

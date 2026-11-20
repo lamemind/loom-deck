@@ -14,6 +14,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runDeckRun, TAB_WRAPPER_JS, type DeckRunIo } from '../src/tab-launch.js';
+import { USAGE } from '../src/tab-args.js';
 import {
   parseTabArgv,
   semicolonArg,
@@ -194,6 +195,24 @@ test('un errore d’uso esce 2 senza annuncio né lancio', async () => {
   assert.equal(r.exit, 2);
   assert.equal(r.launches.length, 0);
   assert.deepEqual(r.out, []);
+});
+
+test('--help e -h stampano l’uso su stdout ed escono 0, senza annuncio né lancio (T217)', async () => {
+  for (const argv of [['--help'], ['-h'], ['T1', '--help']]) {
+    const r = await fakeRun(argv);
+    assert.equal(r.exit, 0, argv.join(' '));
+    assert.equal(r.launches.length, 0, argv.join(' '));
+    assert.deepEqual(r.out, [`${USAGE}\n`], argv.join(' '));
+    assert.deepEqual(r.err, [], argv.join(' '));
+  }
+});
+
+test('un TaskID che comincia con «-» esce 2 con l’uso, senza annuncio né lancio (T217)', async () => {
+  const r = await fakeRun(['-x']);
+  assert.equal(r.exit, 2);
+  assert.equal(r.launches.length, 0);
+  assert.deepEqual(r.out, []);
+  assert.deepEqual(r.err, ["opzione ignota: '-x'\n", `${USAGE}\n`]);
 });
 
 test('il terminale che non parte esce 127 e lo nomina', async () => {

@@ -3,6 +3,7 @@
 //
 // Il contratto verso chi lo lancia è quello dello script bash che ha sostituito:
 //  - uscita 2 e messaggio su stderr per un errore d'uso, nessun annuncio;
+//  - uscita 0 e l'uso su stdout per `-h`/`--help`, nessun annuncio (T217);
 //  - prima di aprire la tab, su stdout, la riga `LOOM_DECK_TITLE <titolo>` col
 //    titolo della tab e la riga `LOOM_DECK_INTAB <comando>` col comando che gira
 //    nella tab — il deck le legge (`onInTabCommand` per la riga di stato,
@@ -18,7 +19,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { constants } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isUsageError, parseTabArgs } from './tab-args.js';
+import { isHelpRequest, isUsageError, parseTabArgs, USAGE } from './tab-args.js';
 import { composeTab, ptyxisArgv } from './tab-compose.js';
 import { loadPromptCatalog, PROMPT_CATALOG } from './prompt-catalog.js';
 import { configFilePath } from './config.js';
@@ -110,6 +111,10 @@ function describe(cmd: string, args: readonly string[]): string {
 
 export async function runDeckRun(argv: readonly string[], io: DeckRunIo): Promise<number> {
   const req = parseTabArgs(argv);
+  if (isHelpRequest(req)) {
+    io.stdout(`${USAGE}\n`);
+    return 0;
+  }
   if (isUsageError(req)) {
     for (const line of req.lines) io.stderr(`${line}\n`);
     return 2;

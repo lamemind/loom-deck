@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { isUsageError, parseTabArgs, USAGE, type TabRequest } from '../src/tab-args.js';
+import { isHelpRequest, isUsageError, parseTabArgs, USAGE, type TabRequest } from '../src/tab-args.js';
 import { composeTab, posixQuote, projectLabel, ptyxisArgv, type ComposeContext } from '../src/tab-compose.js';
 import type { CatalogEntry } from '../src/prompt-catalog.js';
 import { unixOnly } from './platform-gates.js';
@@ -69,6 +69,28 @@ test('gli errori d’uso, nell’ordine e con le parole dello script', () => {
   // Un secondo posizionale è un errore senza l'uso in coda, come nello script.
   assert.deepEqual(usage(['T1', 'T2']), ["argomento inatteso: 'T2'"]);
   assert.match(usage(['T1', '--model'])[0]!, /--model richiede un valore/);
+});
+
+// T217 — `deck-run --help` apriva una conversazione vera sulla «task» `--help`.
+test('-h e --help chiedono l’uso in qualunque posizione', () => {
+  for (const argv of [['--help'], ['-h'], ['T1', '--help'], ['--no-task', '-h'], ['-h', 'T1', '--model', 'opus']]) {
+    const r = parseTabArgs(argv);
+    assert.ok(isHelpRequest(r), `uso non chiesto: ${argv.join(' ')}`);
+    assert.ok(!isUsageError(r), `uso letto come errore: ${argv.join(' ')}`);
+  }
+});
+
+test('un --help che è il valore di un flag resta un valore', () => {
+  const r = req(['T1', '--prompt', '--help']);
+  assert.equal(r.promptText, '--help');
+  assert.equal(req(['T1', '--title-note', '-h']).titleNote, '-h');
+});
+
+test('un argomento ignoto che comincia con «-» non è mai il TaskID', () => {
+  for (const arg of ['-x', '--bogus', '-', '--bogus=1']) {
+    assert.deepEqual(usage([arg]), [`opzione ignota: '${arg}'`, USAGE], arg);
+    assert.deepEqual(usage(['T1', arg]), [`opzione ignota: '${arg}'`, USAGE], `T1 ${arg}`);
+  }
 });
 
 test('un fork pinna un id nuovo, una ripresa nuda no', () => {

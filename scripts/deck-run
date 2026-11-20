@@ -4,7 +4,7 @@
 #
 # Apre una tab di terminale nella finestra attiva e vi avvia una sessione Claude
 # Code: Ptyxis su Linux, Windows Terminal su Windows. Argomenti, regole e
-# messaggi: `deck-run` senza argomenti stampa l'uso.
+# messaggi: `deck-run --help` stampa l'uso.
 #
 # T176 — la composizione è TypeScript (`src/tab-args.ts`, `src/tab-compose.ts`,
 # `src/tab-launch.ts`), una sola per le due piattaforme. Questo file resta allo

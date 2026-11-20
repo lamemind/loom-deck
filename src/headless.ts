@@ -47,7 +47,7 @@ import { isModelKind, MODEL_DEFAULT, type ModelKind } from './spawn-catalog.js';
 import { loadSpawnOverrides, resolveSpawnId, taskHoles } from './spawn-config.js';
 import { normalizeSession, type SpawnRequest } from './spawn-endpoint.js';
 import { deckArgs, resumeArgs } from './spawn.js';
-import { isUsageError, parseTabArgs } from './tab-args.js';
+import { isHelpRequest, isUsageError, parseTabArgs } from './tab-args.js';
 import { composeTab, permissionMode, type TabPlan } from './tab-compose.js';
 import { appendNote, appendSessionMeta, appendTaskBinding, loadSessionIndex } from './task-index.js';
 import { loadTaskFileText, loadTasks, resolveTasksDir, resolveTasksPath } from './tasks.js';
@@ -251,6 +251,10 @@ function projectContext(root: string, io: HeadlessIo): ProjectContext {
 function compose(args: string[], ctx: ProjectContext, io: HeadlessIo): TabPlan {
   const req = parseTabArgs(args);
   if (isUsageError(req)) throw new Error(`argomenti di composizione rifiutati: ${req.lines.join(' ')}`);
+  // Gli argomenti li compone il deck (`deckArgs`, `resumeArgs`), e un testo
+  // dell'utente ci entra solo come valore di `--prompt` o `--title-note`:
+  // un `--help` nudo è un guasto della composizione, non una domanda.
+  if (isHelpRequest(req)) throw new Error(`argomenti di composizione rifiutati: --help fra ${args.join(' ')}`);
   return composeTab(req, {
     env: io.env,
     config: ctx.config,
