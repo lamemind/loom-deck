@@ -1,6 +1,6 @@
 // T194 — il catalogo del modale delle combo: le tre liste e le righe che le
-// dispongono. Sotto pty il modale vero lo misurano `modes-smoke.test.ts` e
-// `frame-width.test.ts`.
+// dispongono. Sotto pty il modale vero lo misurano `modes-smoke*.test.ts` e
+// `frame-width*.test.ts`.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

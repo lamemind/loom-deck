@@ -1,5 +1,5 @@
 // T189 — progetto SINTETICO per il detail della task, condiviso dai due gate pty
-// (`frame-width.test.ts` misura il frame, `modes-smoke.test.ts` l'argv dello
+// (`frame-width*.test.ts` misurano il frame, `modes-smoke*.test.ts` l'argv dello
 // spawn). Non è un file di test: il runner non lo esegue, lo importano.
 //
 // Perché sintetico. Gli scenari del detail sul cappello vero aprono la prima

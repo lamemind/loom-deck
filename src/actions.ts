@@ -11,8 +11,8 @@
 // cosa è selezionato e cosa deve partire, non sa come si compone un argv né
 // cosa c'è a schermo.
 //
-// Le stringhe di `setNote` di questo file sono ASSERITE dal gate
-// `test/modes-smoke.test.ts` (`seleziona una task`, `terminale su`, `deck-run`,
+// Le stringhe di `setNote` di questo file sono ASSERITE dai gate
+// `test/modes-smoke*.test.ts` (`seleziona una task`, `terminale su`, `deck-run`,
 // `nessun push`, `eliminare N task?`, `scartate`): si copiano verbatim, non si
 // migliorano di passaggio.
 import { useRef } from 'react';

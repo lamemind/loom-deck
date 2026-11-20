@@ -1,9 +1,10 @@
 // T21 — unit del MOUSE: parse delle sequenze SGR e hit-test sulle superfici.
 //
 // Le forme sotto misura non sono inventate: vengono da uno spike sotto pty in
-// cui un'app Ink stampava ciò che `useInput` le consegnava. Il gate pty
-// (`modes-smoke.test.ts`) verifica che un click faccia l'azione giusta sul deck
-// vero; questi unit fissano la grammatica che quel gate non può isolare.
+// cui un'app Ink stampava ciò che `useInput` le consegnava. I gate pty
+// (`modes-smoke-mouse.test.ts`, `modes-smoke-click.test.ts`) verificano che un
+// click faccia l'azione giusta sul deck vero; questi unit fissano la grammatica
+// che quei gate non possono isolare.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

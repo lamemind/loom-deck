@@ -495,7 +495,7 @@ function Deck({
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
       {/* Riga di testata: project status a sinistra, versione ancorata a
           destra. È una riga full-width come la riga dei pane — `space-between`
-          la riempie fino al bordo, quindi il gate di `frame-width.test.ts`
+          la riempie fino al bordo, quindi il gate di `frame-width*.test.ts`
           continua a misurare esattamente `columns`.
           T121/D1 — il nome del programma esce dalla cornice: resta nel fallback
           compatto e nel titolo della tab Ptyxis, che sono i due posti dove

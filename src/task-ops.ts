@@ -13,8 +13,8 @@
 // due creazioni e due rimozioni capaci di divergere.
 //
 // Le stringhe di `setNote` di questo file sono ASSERITE dal gate
-// `test/modes-smoke.test.ts` (`eliminare N task?`, `nessun push`, `scartate`,
-// `tasks.md`): si copiano verbatim, non si migliorano di passaggio.
+// `test/modes-smoke-purge.test.ts` (`eliminare N task?`, `nessun push`,
+// `scartate`, `tasks.md`): si copiano verbatim, non si migliorano di passaggio.
 import { randomUUID } from 'node:crypto';
 import { loadTasks, type Task } from './tasks.js';
 import { appendTaskBinding } from './task-index.js';
