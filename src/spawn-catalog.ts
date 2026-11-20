@@ -115,12 +115,20 @@ export interface DetailAction {
   label: string;
 }
 
+//
+// T203 — `direct` è la regia, e sta in coda: nessun bottone esistente si sposta
+// sotto le dita. L'etichetta nomina l'intenzione («fare la regia») e non il
+// kind, e la sua iniziale `d` è libera: `regia` darebbe `r`, che è di `run`.
+// Sta qui e non solo nella lista di un perimetro perché questo è il catalogo
+// intero, cioè la lista su cui `ACTION_HOTKEYS` presidia l'unicità delle
+// lettere; `detailActions` la toglie dove non vale.
 export const DETAIL_ACTIONS: ReadonlyArray<DetailAction> = [
   { kind: 'none', label: 'open' },
   { kind: 'preflight', label: 'preflight' },
   { kind: 'run', label: 'run' },
   { kind: 'recap', label: 'status' },
   { kind: 'checkpoint', label: 'checkpoint' },
+  { kind: 'regia', label: 'direct' },
 ];
 
 /**
@@ -133,17 +141,21 @@ export const DETAIL_ACTIONS: ReadonlyArray<DetailAction> = [
  * il suo `run`: con DLV propri resta lanciabile (T189 D2), e il rifiuto
  * eventuale è della skill.
  *
+ * T203 — la regia (`direct`) c'è sui soli perimetri, epica o mandato: la skill
+ * `orchestrate-mandate` segue i membri di un perimetro, e una task semplice non
+ * ne ha. Voce assente per la stessa ragione del `run` sul mandato.
+ *
  * Funzione della forma e non lista fissa: è il punto dove un'azione che vale
- * solo su un perimetro (la regia di T203) entra senza toccare chi le disegna.
- * L'ordine resta quello di `DETAIL_ACTIONS`, così una voce tolta non sposta le
- * altre sotto le dita.
+ * solo su una forma entra senza toccare chi le disegna. L'ordine resta quello
+ * di `DETAIL_ACTIONS`, così una voce tolta non sposta le altre sotto le dita.
  */
 export function detailActions(shape: TaskShape): ReadonlyArray<DetailAction> {
+  if (shape === 'task') return DETAIL_ACTIONS.filter((a) => a.kind !== 'regia');
   if (shape === 'mandate') return DETAIL_ACTIONS.filter((a) => a.kind !== 'run');
   return DETAIL_ACTIONS;
 }
 
-// T117 — selezione DIRETTA di un'azione con la sua iniziale (`o p r s c`),
+// T117 — selezione DIRETTA di un'azione con la sua iniziale (`o p r s c d`),
 // accanto allo scorrimento `←→`. Derivate dalle label e non cablate: una voce
 // aggiunta al catalogo porta con sé la propria lettera, invece di lasciare
 // indietro una seconda lista.

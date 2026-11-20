@@ -312,11 +312,12 @@ test('nessuno spawn su bersaglio vuoto', () => {
 
 test('ogni azione del detail è un prompt-kind valido', () => {
   const kinds = DETAIL_ACTIONS.map((a) => a.kind);
-  assert.deepEqual(kinds, ['none', 'preflight', 'run', 'recap', 'checkpoint']);
+  assert.deepEqual(kinds, ['none', 'preflight', 'run', 'recap', 'checkpoint', 'regia']);
   // Le etichette non ripetono i kind: dove differiscono, il kind nomina il
   // MECCANISMO e l'etichetta l'INTENZIONE.
   assert.equal(DETAIL_ACTIONS[0]!.label, 'open');
   assert.equal(DETAIL_ACTIONS[3]!.label, 'status');
+  assert.equal(DETAIL_ACTIONS[5]!.label, 'direct');
 });
 
 test('specializeRecap: solo `recap` si sdoppia, gli altri kind passano intatti', () => {
@@ -324,7 +325,7 @@ test('specializeRecap: solo `recap` si sdoppia, gli altri kind passano intatti',
   assert.equal(specializeRecap('recap', true), 'recap-epic');
   // Il flag epic non deve poter deviare un kind che non lo riguarda: un `run` su
   // un cappello resta un `run` (che poi run-task rifiuta, ed è un altro strato).
-  for (const k of ['none', 'preflight', 'run', 'checkpoint'] as const) {
+  for (const k of ['none', 'preflight', 'run', 'checkpoint', 'regia'] as const) {
     assert.equal(specializeRecap(k, true), k);
     assert.equal(specializeRecap(k, false), k);
   }
@@ -372,6 +373,7 @@ test('titolo: ogni azione del detail produce un titolo distinto', () => {
       '🚀 deck titolo conversazione auto',
       '📊 deck titolo conversazione auto',
       '🏁 deck titolo conversazione auto',
+      '🎬 deck titolo conversazione auto',
     ]);
     // Cinque azioni, cinque titoli: nessuna collisione.
     assert.equal(new Set(titles).size, titles.length);

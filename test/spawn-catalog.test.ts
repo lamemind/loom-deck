@@ -198,13 +198,42 @@ test('MODELS e MODEL_DEFAULT restano gli alias del CLI, mai id versionati', () =
 test('detailActions: sul mandato il run non c è, l ordine delle altre resta', () => {
   assert.deepEqual(
     detailActions('mandate').map((a) => a.label),
-    ['open', 'preflight', 'status', 'checkpoint'],
+    ['open', 'preflight', 'status', 'checkpoint', 'direct'],
   );
 });
 
-test('detailActions: task ed epica tengono il catalogo intero, run compreso', () => {
-  assert.deepEqual(detailActions('task'), DETAIL_ACTIONS);
+test('detailActions: sull epica la regia sta in coda, su una task non c è', () => {
+  assert.deepEqual(
+    detailActions('epic').map((a) => a.label),
+    ['open', 'preflight', 'run', 'status', 'checkpoint', 'direct'],
+  );
+  assert.deepEqual(
+    detailActions('task').map((a) => a.label),
+    ['open', 'preflight', 'run', 'status', 'checkpoint'],
+  );
+});
+
+test('detailActions: l epica tiene il catalogo intero, run compreso', () => {
   assert.deepEqual(detailActions('epic'), DETAIL_ACTIONS, 'un epica con DLV propri resta lanciabile (T189 D2)');
+});
+
+test('detailActions: la regia (direct, d) c è sui soli perimetri, e nomina la riga regia', () => {
+  for (const shape of ['epic', 'mandate'] as const) {
+    const list = detailActions(shape);
+    const keys = actionHotkeys(list);
+    assert.equal(list[keys['d']!]!.kind, 'regia', `${shape}: d non seleziona la regia`);
+    assert.equal(keys['d'], list.length - 1, `${shape}: la regia non è in coda`);
+    assert.ok(spawnAction(specializeRecap('regia', true)), 'la regia non ha una riga di catalogo');
+  }
+  assert.equal(actionHotkeys(detailActions('task'))['d'], undefined, 'su una task d non seleziona niente');
+});
+
+test('detailActions: le lettere delle altre voci non si spostano col direct in coda', () => {
+  const keys = actionHotkeys(detailActions('epic'));
+  assert.deepEqual(
+    { o: keys['o'], p: keys['p'], r: keys['r'], s: keys['s'], c: keys['c'] },
+    { o: 0, p: 1, r: 2, s: 3, c: 4 },
+  );
 });
 
 test('actionHotkeys: le iniziali indicizzano la lista della task, non il catalogo', () => {
