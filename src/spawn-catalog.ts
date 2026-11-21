@@ -370,8 +370,9 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     // 🎬 è il glifo che lo stato della regia su disco (T219) usa già: la tab e
     // il quadro della regia si riconoscono a colpo d'occhio.
     //
-    // Vale dal detail e da `deck-run` a mano, non dall'endpoint né da un turno
-    // headless: `planSpawnRequest` lo rifiuta lì (P3 preflight T203).
+    // Vale dal detail e da `deck-run` a mano, non da un turno headless:
+    // `planSpawnRequest` lo rifiuta lì (P3 preflight T203). Dall'endpoint vale
+    // da T221, per la successora di un passaggio di consegne.
     id: 'regia',
     label: 'regia di un perimetro',
     surface: 'detail d · perimetro',

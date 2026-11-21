@@ -15,6 +15,7 @@ import {
   appendTaskBinding,
   loadSessionIndex,
   ORIGIN_ENDPOINT,
+  ORIGIN_REGIA,
   taskIndexPath,
 } from '../src/task-index.js';
 
@@ -489,6 +490,27 @@ test('origin last-wins: un valore diverso da endpoint toglie la marca; un record
 
 test('origin: file assente → insieme vuoto', () => {
   assert.equal(loadSessionIndex(root()).endpointBorn.size, 0);
+  assert.equal(loadSessionIndex(root()).regiaHanded.size, 0);
+});
+
+// T221 — la regia che passa le consegne: un insieme suo, e `origin` resta un
+// valore solo, last-wins. Una successora nata dall'endpoint che a sua volta
+// passa le consegne cambia insieme, e resta chiudibile.
+test('origin: regia → fra le regie che hanno passato le consegne, last-wins con endpoint', () => {
+  const r = root();
+  appendTaskBinding(r, 'vecchia', 'T197');
+  appendOrigin(r, 'vecchia', ORIGIN_REGIA);
+  appendOrigin(r, 'nuova', ORIGIN_ENDPOINT);
+  let idx = loadSessionIndex(r);
+  assert.deepEqual([...idx.regiaHanded], ['vecchia']);
+  assert.deepEqual([...idx.endpointBorn], ['nuova']);
+  assert.equal(idx.bindings.get('vecchia'), 'T197');
+  appendOrigin(r, 'nuova', ORIGIN_REGIA);
+  idx = loadSessionIndex(r);
+  assert.deepEqual([...idx.regiaHanded].sort(), ['nuova', 'vecchia']);
+  assert.equal(idx.endpointBorn.has('nuova'), false);
+  appendOrigin(r, 'vecchia', 'key');
+  assert.equal(loadSessionIndex(r).regiaHanded.has('vecchia'), false);
 });
 
 // T220 — la regia che ha aperto la conversazione: un record solo, perimetro e

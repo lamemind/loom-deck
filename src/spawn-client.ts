@@ -48,6 +48,9 @@ il tasto del deck: stesso binding, titolo e modello (override di progetto
 compreso).
 
   <kind>       ${requestKinds('endpoint').join(' | ')}
+               regia: la successora di una regia che passa le consegne, chiesta
+               dalla conversazione della regia — il deck marca chi chiede
+               (CLAUDE_CODE_SESSION_ID) chiudibile dalla successora
   [perimetro]  solo con run: DLV come in run-task, 1,3-5 (assente = tutti gli aperti)
   --model      ${MODELS.join(' | ')} (assente = il modello dell'azione nel deck)
   --note       nota del titolo della tab (assente = il titolo dell'azione)
@@ -127,6 +130,14 @@ export function parseClientArgs(
     const session = regiaSessionOf(env);
     if (session) request.regiaSession = session;
   }
+  // T221 — la regia che passa le consegne è la conversazione che chiede: il
+  // suo sessionId viene dall'ambiente, mai da un argomento, così una
+  // conversazione marca solo sé stessa. Senza, il deck rifiuterebbe.
+  if (kind === 'regia') {
+    const from = regiaSessionOf(env);
+    if (!from) return { usage: ['kind regia: serve CLAUDE_CODE_SESSION_ID, il sessionId della regia che passa le consegne'] };
+    request.from = from;
+  }
   return { request, root };
 }
 
@@ -196,6 +207,8 @@ export async function runClient(argv: readonly string[], io: ClientIo): Promise<
     `prompt:    ${r.prompt || '(nessuno)'}`,
   ];
   if (r.regia) lines.push(`regia:     ${r.regia} (LOOM_REGIA)`);
+  // T221 — la marca è scritta: la successora potrà chiudere chi ha chiesto.
+  if (r.handoff) lines.push(`consegne:  ${r.handoff} marcata origin regia, chiudibile dalla successora`);
   if (r.title !== null) lines.push(`titolo:    ${r.title}`);
   if (r.inTab !== null) lines.push(`in-tab:    ${r.inTab}`);
   io.stdout(`${lines.join('\n')}\n`);

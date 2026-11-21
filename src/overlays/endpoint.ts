@@ -37,7 +37,7 @@ import { notifyDone } from '../spawn.js';
 import { SpawnQueue } from '../spawn-queue.js';
 import { awaitProjectFocus, checkProjectWindow } from '../window-check.js';
 import { awaitCompassBack, screenLockedSettled } from '../screen-lock.js';
-import { appendLive, loadSessionIndex, ORIGIN_ENDPOINT } from '../task-index.js';
+import { appendLive, appendOrigin, loadSessionIndex, ORIGIN_ENDPOINT, ORIGIN_REGIA } from '../task-index.js';
 import { loadTaskFileText, loadTasks } from '../tasks.js';
 import type { DeckActions } from '../actions.js';
 import { POLL_MS } from '../model.js';
@@ -83,6 +83,9 @@ export function useSpawnEndpoint(deps: EndpointDeps) {
     // T229 — e col `sessionId` già annunciato, quando esce dalla coda.
     const spawn: SpawnRequestDeps['spawn'] = (id, model, note, prompt, regia, sessionId) =>
       latest.current.actions.spawnForTask(id, model, note, prompt, false, ORIGIN_ENDPOINT, regia, sessionId);
+    // T221 — la regia che passa le consegne diventa chiudibile dalla
+    // successora: la marca la scrive lo spawn della successora, sul `from`.
+    const markHandoff = (sid: string) => appendOrigin(cwd, sid, ORIGIN_REGIA);
     // T198 — l'`id` si rilegge a ogni richiesta, come la lista task: il file di
     // progetto può cambiare a deck acceso.
     const windowCheck = isAvailable('windowCheck') ? () => checkProjectWindow(loadProjectId(cwd)) : undefined;
@@ -97,7 +100,7 @@ export function useSpawnEndpoint(deps: EndpointDeps) {
           screenLocked: () => screenLockedSettled(),
           awaitCompass: awaitCompassBack,
           replan: (req) => planSpawnRequest(req, planDeps(), 'endpoint'),
-          open: (req, plan, sessionId) => spawnPlanned(req, plan, { spawn }, null, sessionId),
+          open: (req, plan, sessionId) => spawnPlanned(req, plan, { spawn, markHandoff }, null, sessionId),
           note: (s) => latest.current.setNote(s),
           notify: (title, body) => {
             notifyDone(title, body);
@@ -110,6 +113,7 @@ export function useSpawnEndpoint(deps: EndpointDeps) {
           spawnOff: () => (isAvailable('spawn') ? null : offText('spawn')),
           ...planDeps(),
           spawn,
+          markHandoff,
           windowCheck,
           ...(queue ? { queue } : {}),
         }),

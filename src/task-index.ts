@@ -82,6 +82,13 @@ import { sanitize } from './width.js';
 // deck resta chiudibile, una passata da un `/clear` (stesso processo,
 // `sessionId` nuovo) o un fork no.
 //
+// T221 — `origin` prende un secondo valore, `regia`: la regia che passa le
+// consegne a una regia nuova. La scrive il deck dentro lo spawn della
+// successora, sul `sessionId` di chi lo chiede (`from` della richiesta), e mai
+// altrove: una conversazione aperta a mano diventa chiudibile da un'altra solo
+// se è una regia che ha passato le consegne davvero — il consenso l'utente lo
+// ha dato lanciandola —, e una conversazione può marcare solo sé stessa.
+//
 // T220 — `regia` e `regiaSession` dicono quale regia ha aperto la
 // conversazione: il perimetro (`T197`) e il `sessionId` della conversazione che
 // faceva da regia. Scritti in un record solo, allo spawn chiesto da una regia
@@ -120,7 +127,9 @@ export interface SessionRecord {
    *  è ciò che fa sopravvivere l'ultimo insieme alla chiusura del deck. */
   live?: boolean;
   /** T204 — da dove è nata la conversazione: `endpoint` = da una richiesta
-   *  `spawn` sull'endpoint del deck. Scritto una volta, allo spawn. */
+   *  `spawn` sull'endpoint del deck. Scritto una volta, allo spawn.
+   *  T221 — `regia` = una regia che ha passato le consegne: scritto sulla
+   *  regia vecchia allo spawn della successora. */
   origin?: string;
   /** T220 — il perimetro della regia che ha aperto la conversazione. Scritto
    *  una volta, allo spawn, insieme a `regiaSession`. */
@@ -132,6 +141,9 @@ export interface SessionRecord {
 
 /** T204 — il valore di `origin` di una conversazione aperta dall'endpoint. */
 export const ORIGIN_ENDPOINT = 'endpoint';
+
+/** T221 — il valore di `origin` di una regia che ha passato le consegne. */
+export const ORIGIN_REGIA = 'regia';
 
 export function taskIndexPath(projectRoot: string): string {
   return join(projectRoot, '.claude', 'loom', 'session-tasks.jsonl');
@@ -270,6 +282,9 @@ export interface SessionIndex {
   /** T204 — le conversazioni nate da una richiesta `spawn` sull'endpoint del
    *  deck (`origin: endpoint`, last-wins): le sole che il verbo `close` chiude. */
   endpointBorn: Set<string>;
+  /** T221 — le regie che hanno passato le consegne (`origin: regia`,
+   *  last-wins): chiudibili dal verbo `close` come le nate dall'endpoint. */
+  regiaHanded: Set<string>;
 }
 
 // Una sola lettura del JSONL per entrambe le mappe: il deck poll-a l'indice a
@@ -287,11 +302,12 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
   const models = new Map<string, string>();
   const liveMarks = new Map<string, number>();
   const endpointBorn = new Set<string>();
+  const regiaHanded = new Set<string>();
   let content: string;
   try {
     content = readFileSync(taskIndexPath(projectRoot), 'utf8');
   } catch {
-    return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks, endpointBorn };
+    return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks, endpointBorn, regiaHanded };
   }
   let order = 0; // posizione crescente dei record pinned → rango di pin (D2)
   let liveOrder = 0; // T181 — idem per i record live:true → rango di entrata
@@ -375,13 +391,18 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
       }
       // T204 — last-wins come gli altri campi: un `origin` diverso da
       // `endpoint` scritto dopo toglie la marca.
+      // T221 — `origin` è un valore solo: la successora nata dall'endpoint che
+      // a sua volta passa le consegne esce da `endpointBorn` ed entra in
+      // `regiaHanded`, e resta chiudibile.
       if (typeof d.origin === 'string') {
         if (d.origin === ORIGIN_ENDPOINT) endpointBorn.add(d.sessionId);
         else endpointBorn.delete(d.sessionId);
+        if (d.origin === ORIGIN_REGIA) regiaHanded.add(d.sessionId);
+        else regiaHanded.delete(d.sessionId);
       }
     } catch {
       // riga corrotta → skip
     }
   }
-  return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks, endpointBorn };
+  return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks, endpointBorn, regiaHanded };
 }

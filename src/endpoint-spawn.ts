@@ -67,6 +67,9 @@ export interface SpawnRequestDeps extends SpawnPlanDeps {
    *  dopo le verifiche della richiesta e prima dello spawn: un `no` non apre
    *  la tab e non scrive il binding nel sidecar, che scrive `spawn`. */
   windowCheck?: () => Promise<WindowCheck>;
+  /** T221 — scrive la marca `origin: regia` sulla regia che passa le consegne,
+   *  dopo lo spawn vero della successora. Assente = nessuna marca. */
+  markHandoff?: (sessionId: string) => void;
   /** T229 — la coda degli spawn (`spawn-queue.ts`): sul `no` del controllo la
    *  richiesta va in coda invece di essere rifiutata. Assente = rifiuto, come
    *  in T198. T234 — anche a schermo bloccato, con la causa `locked`. */
@@ -85,7 +88,17 @@ export interface RegiaOrigin {
 /** Una richiesta risolta: il kind effettivo, la terna e il prompt col
  *  perimetro, la regia da impostare, o il rifiuto col suo motivo. */
 export type SpawnPlan =
-  | { ok: true; kind: PromptKind; model: ModelKind; note: string; prompt: string; regia: RegiaOrigin | null }
+  | {
+      ok: true;
+      kind: PromptKind;
+      model: ModelKind;
+      note: string;
+      prompt: string;
+      regia: RegiaOrigin | null;
+      /** T221 — la regia che passa le consegne, da marcare `origin: regia`
+       *  allo spawn della successora; solo col kind `regia`. */
+      handoff?: string;
+    }
   | { ok: false; reason: string };
 
 /** Un piano riuscito: ciò che la coda tiene fino allo spawn vero. */
@@ -128,15 +141,19 @@ export async function handleSpawnRequest(req: SpawnRequest, deps: SpawnRequestDe
 export async function spawnPlanned(
   req: SpawnRequest,
   plan: OkPlan,
-  deps: Pick<SpawnRequestDeps, 'spawn' | 'announceTimeoutMs'>,
+  deps: Pick<SpawnRequestDeps, 'spawn' | 'announceTimeoutMs' | 'markHandoff'>,
   warning: string | null = null,
   sessionId?: string,
 ): Promise<SpawnReply> {
-  const { kind, model, note, prompt, regia } = plan;
+  const { kind, model, note, prompt, regia, handoff } = plan;
   const out = deps.spawn(req.task, model, note, prompt, regia, sessionId);
   if (!out) return { ok: false, reason: 'spawn rifiutato dal deck' };
   const announced = await awaitAnnounce(out.spawned.child, deps.announceTimeoutMs ?? ANNOUNCE_TIMEOUT_MS);
   if ('error' in announced) return { ok: false, reason: announced.error };
+  // T221 — la marca sulla regia che passa le consegne, a successora annunciata:
+  // esiste solo se un passaggio è partito davvero. Da una richiesta in coda si
+  // scrive qui, allo spawn vero, come il binding.
+  if (handoff && deps.markHandoff) deps.markHandoff(handoff);
   // T220/P4 — `regia` sempre nella risposta, anche `null`: è ciò che separa un
   // deck che la conosce da uno più vecchio, che la ignorerebbe in silenzio.
   const base = {
@@ -147,6 +164,7 @@ export async function spawnPlanned(
     model,
     prompt,
     regia: regia?.regia ?? null,
+    ...(handoff && deps.markHandoff ? { handoff } : {}),
     ...(warning ? { warning } : {}),
   };
   if ('inert' in announced) return { ...base, title: null, inTab: null, inert: true };
@@ -165,9 +183,9 @@ export async function spawnPlanned(
  *
  * `refusals` è la tabella dei kind rifiutati per canale, `CHANNEL_REFUSALS` per
  * ogni chiamante del deck. Un parametro e non solo la costante perché un test
- * deve poter arrivare alle regole che oggi stanno dietro un rifiuto — la regia
- * scartata sul kind `regia` (T220/P3), che T221 renderà raggiungibile togliendo
- * la riga `endpoint` — senza aspettare che il rifiuto cada.
+ * deve poter arrivare alle regole che stanno dietro un rifiuto — la regia
+ * scartata sul kind `regia` (T220/P3) — senza dipendere dalla tabella del
+ * momento.
  */
 export function planSpawnRequest(
   req: SpawnRequest,
@@ -175,7 +193,7 @@ export function planSpawnRequest(
   channel: RequestChannel,
   refusals: ChannelRefusals = CHANNEL_REFUSALS,
 ): SpawnPlan {
-  // T203/P3 — un kind che il canale non accetta (la regia, oggi su entrambi):
+  // T203/P3 — un kind che il canale non accetta (la regia, sul turno headless):
   // `PROMPT_KINDS` è la lista di `deck-run`, e la richiesta valida sulla stessa
   // lista. La regola sta in `kindRefusal`, che fa anche l'elenco dell'help dei
   // client. Prima della task: il motivo non dipende dalla task chiesta.
@@ -198,6 +216,20 @@ export function planSpawnRequest(
     return { ok: false, reason: `${req.task} è un mandato: il lavoro sta nei membri, niente run` };
   }
 
+  // T221 — la regia che una richiesta apre è la successora di un passaggio di
+  // consegne: un perimetro, come dal detail, e la richiesta porta chi passa le
+  // consegne. Senza `from` la regia vecchia resterebbe non chiudibile dalla
+  // nuova, e il passaggio a metà.
+  if (req.kind === 'regia') {
+    if (!taskIsPerimeter(req.task, text)) return { ok: false, reason: `regia ${req.task}: non è un'epica né un mandato` };
+    if (channel === 'endpoint' && !req.from) {
+      return {
+        ok: false,
+        reason: 'regia: la richiesta non porta il sessionId di chi passa le consegne (from), serve loom-deck-spawn dalla conversazione della regia',
+      };
+    }
+  }
+
   if (req.scope) {
     const bad = scopeProblem(req.task, text, req.scope);
     if (bad) return { ok: false, reason: bad };
@@ -217,13 +249,12 @@ export function planSpawnRequest(
   // T220/P3 — una conversazione che è a sua volta una regia non riceve la
   // regia che la chiede. Qui e non solo in `composeTab`: dal deck il prompt
   // arriva a `deck-run` come testo letterale, e la composizione non vede il
-  // kind. Oggi il kind `regia` lo rifiuta `kindRefusal` più su; la regola
-  // serve al canale che lo aprirà (T221).
+  // kind. Vale sull'endpoint dal passaggio di consegne (T221).
   const regiaId = req.regia ? memberRegia(kind, req.regia) : '';
   const regia: RegiaOrigin | null = regiaId
     ? { regia: regiaId, ...(req.regiaSession ? { session: req.regiaSession } : {}) }
     : null;
-  return { ok: true, kind, model, note, prompt, regia };
+  return { ok: true, kind, model, note, prompt, regia, ...(kind === 'regia' && req.from ? { handoff: req.from } : {}) };
 }
 
 /**

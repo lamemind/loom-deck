@@ -93,6 +93,46 @@ test('argomenti: --regia, con la sessione della regia letta dall’ambiente', ()
   assert.equal(regiaSessionOf({}), null);
 });
 
+// T221 — il kind regia: la successora di un passaggio di consegne, chiesta
+// dalla regia stessa, che il client nomina dal proprio ambiente.
+test('argomenti: kind regia porta chi passa le consegne, e senza la sessione è un errore d’uso', () => {
+  assert.deepEqual(parseClientArgs(['T197', 'regia'], { CLAUDE_CODE_SESSION_ID: REGIA_SID }), {
+    request: { verb: 'spawn', task: 'T197', kind: 'regia', from: REGIA_SID },
+    root: null,
+  });
+  const missing = parseClientArgs(['T197', 'regia']);
+  assert.ok('usage' in missing);
+  assert.match(missing.usage[0]!, /kind regia: serve CLAUDE_CODE_SESSION_ID/);
+});
+
+test('regia: la marca sulla regia che passa le consegne nella riga consegne', async () => {
+  const p = project();
+  let seen: SpawnRequest | null = null;
+  const env = { ...p.env, CLAUDE_CODE_SESSION_ID: REGIA_SID };
+  const r = await withDeck(
+    p,
+    async (req) => {
+      seen = req;
+      return {
+        ok: true as const,
+        sessionId: 'nuova',
+        task: req.task,
+        kind: req.kind,
+        model: 'opus' as const,
+        prompt: '/loom-works:orchestrate-mandate T197',
+        title: 't',
+        inTab: 'c',
+        regia: null,
+        handoff: REGIA_SID,
+      };
+    },
+    () => client(['T197', 'regia'], { root: p.root, env }),
+  );
+  assert.equal(r.code, 0, r.err);
+  assert.deepEqual(seen, { verb: 'spawn', task: 'T197', kind: 'regia', from: REGIA_SID });
+  assert.match(r.out, new RegExp(`^consegne: +${REGIA_SID} marcata origin regia, chiudibile dalla successora$`, 'm'));
+});
+
 test('regia: riportata dal deck nella sua riga; un deck vecchio che la ignora dà l’avviso, uscita 0', async () => {
   const p = project();
   const reply = (req: SpawnRequest, regia?: string | null) => ({

@@ -161,6 +161,12 @@ export interface SpawnRequest {
    *  proprio ambiente (`CLAUDE_CODE_SESSION_ID`): solo provenienza, nel campo
    *  `regiaSession` del sidecar. Assente se il client non lo trova. */
   regiaSession?: string;
+  /** T221 — il `sessionId` intero della conversazione che chiede, solo col
+   *  kind `regia`: è la regia che passa le consegne alla regia che si apre, e
+   *  il deck le scrive la marca `origin: regia` allo spawn vero. Il client lo
+   *  legge dal proprio ambiente, come `regiaSession`: una conversazione marca
+   *  solo sé stessa. */
+  from?: string;
 }
 
 /**
@@ -179,15 +185,14 @@ export type RequestChannel = 'endpoint' | 'headless';
  *
  * La regia (P3 preflight T203) vale dal detail e da `deck-run` a mano. Sul
  * turno headless il rifiuto è permanente: una regia vive ore su un monitor, e
- * un turno `claude -p` finisce al primo turno. Sull'endpoint è in attesa di
- * T221, che apre la regia alle conversazioni insieme alla marca e alle guardie
- * che la rendono chiudibile: togliere la riga `endpoint` qui la fa comparire
- * anche nell'help di `loom-deck-spawn`, senza un secondo ritocco.
+ * un turno `claude -p` finisce al primo turno. Sull'endpoint vale da T221, per
+ * il passaggio di consegne: una regia apre la successora, e la richiesta porta
+ * il suo `sessionId` (`from`), che il deck marca chiudibile.
  */
 export type ChannelRefusals = Readonly<Record<RequestChannel, Partial<Record<PromptKind, string>>>>;
 
 export const CHANNEL_REFUSALS: ChannelRefusals = {
-  endpoint: { regia: 'regia: si apre dal detail del deck o con deck-run, non da una richiesta' },
+  endpoint: {},
   headless: { regia: 'regia: si apre dal detail del deck o con deck-run, non in un turno headless' },
 };
 
@@ -230,6 +235,9 @@ export type SpawnReply =
        *  al client che il deck acceso è più vecchio, e la regia dichiarata si
        *  è persa senza errore (P4 preflight). */
       regia?: string | null;
+      /** T221 — la regia marcata `origin: regia` allo spawn della successora
+       *  (il `from` della richiesta); presente solo col kind `regia`. */
+      handoff?: string;
     }
   /** Rifiuto, o T229 richiesta in coda (`queued`). La coda viaggia sul ramo
    *  `ok: false` di proposito: un client più vecchio di T229 la legge come un
@@ -413,6 +421,15 @@ function spawnFields(r: Record<string, unknown>): SpawnRequest | { error: string
       return { error: `sessione della regia non valida: ${JSON.stringify(r.regiaSession)} (sessionId intero)` };
     }
     req.regiaSession = sid;
+  }
+  // T221 — chi passa le consegne: un sessionId intero, e solo con la regia.
+  if (r.from !== undefined) {
+    if (req.kind !== 'regia') return { error: 'from ammesso solo con kind regia' };
+    const from = normalizeSession(r.from);
+    if (from === null || from.length !== SESSION_MAX) {
+      return { error: `mittente non valido: ${JSON.stringify(r.from)} (sessionId intero)` };
+    }
+    req.from = from;
   }
   return req;
 }

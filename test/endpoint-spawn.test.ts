@@ -13,7 +13,6 @@ import { HEADLESS_USAGE } from '../src/headless-client.js';
 import { CLIENT_USAGE } from '../src/spawn-client.js';
 import { PROMPT_KINDS } from '../src/tab-args.js';
 import {
-  CHANNEL_REFUSALS,
   kindRefusal,
   requestKinds,
   type RequestChannel,
@@ -147,21 +146,22 @@ test('regia: una task che non è un perimetro, o che non c’è, è un rifiuto s
 });
 
 // T220/P3 — la regia dichiarata si scarta quando la conversazione aperta è a sua
-// volta una regia. Oggi il kind `regia` lo rifiuta `kindRefusal` prima: il test
-// arriva alla regola con la tabella dei rifiuti senza la riga `endpoint`, cioè
-// nello stato che T221 (passaggio di consegne della regia) renderà vero.
-test('regia: con il kind regia aperto sull’endpoint, la regia dichiarata si scarta senza rifiuto', () => {
-  const open = { ...CHANNEL_REFUSALS, endpoint: {} };
+// volta una regia. T221 — il kind `regia` passa dall'endpoint (passaggio di
+// consegne): la regola vale con la tabella vera.
+test('regia: con il kind regia sull’endpoint, la regia dichiarata si scarta senza rifiuto', () => {
   const d = regiaDeps([]);
-  // Senza la riga, il kind passa; la tabella vera lo rifiuta ancora.
-  assert.equal(kindRefusal('regia', 'endpoint', open), null);
-  assert.notEqual(kindRefusal('regia', 'endpoint'), null);
-  const asRegia = planSpawnRequest(req({ task: 'T197', kind: 'regia', regia: 'T197', regiaSession: REGIA_SID }), d, 'endpoint', open);
+  assert.equal(kindRefusal('regia', 'endpoint'), null);
+  assert.notEqual(kindRefusal('regia', 'headless'), null);
+  const asRegia = planSpawnRequest(
+    req({ task: 'T197', kind: 'regia', regia: 'T197', regiaSession: REGIA_SID, from: REGIA_SID }),
+    d,
+    'endpoint',
+  );
   assert.equal(asRegia.ok, true, JSON.stringify(asRegia));
   assert.equal(asRegia.ok && asRegia.kind, 'regia');
   assert.equal(asRegia.ok && asRegia.regia, null, 'una regia non è un membro: nessuna LOOM_REGIA');
-  // Stessa tabella, kind di un membro: la regia resta, sessione compresa.
-  const asMember = planSpawnRequest(req({ kind: 'run', regia: 'T197', regiaSession: REGIA_SID }), d, 'endpoint', open);
+  // Kind di un membro: la regia resta, sessione compresa.
+  const asMember = planSpawnRequest(req({ kind: 'run', regia: 'T197', regiaSession: REGIA_SID }), d, 'endpoint');
   assert.deepEqual(asMember.ok && asMember.regia, { regia: 'T197', session: REGIA_SID });
 });
 
@@ -218,26 +218,85 @@ test('mandato: run rifiutato prima della tab, recap del perimetro, il resto part
   assert.equal(preflight.ok, true);
 });
 
-// T203/P3 — la regia si apre dal detail o da `deck-run`, mai da una richiesta:
-// nessuna tab e nessun binding, su qualunque task, perimetro compreso.
-test('regia: rifiutata dall endpoint prima della tab, su un epica come su un mandato', async () => {
-  const calls: Calls = { spawned: [], defaults: [] };
-  for (const text of ['- **Size**: Epic\n', MANDATE_TEXT, TASK_TEXT]) {
-    const out = await handleSpawnRequest(req({ kind: 'regia' }), deps({ taskText: () => text }, calls));
-    assert.equal(out.ok, false);
-    assert.match((out as { reason: string }).reason, /regia: si apre dal detail del deck o con deck-run/);
+// T221 — la regia si apre da una richiesta solo come successora di un passaggio
+// di consegne: su un perimetro, con chi passa le consegne (`from`), che il deck
+// marca `origin: regia` dopo l'annuncio della successora.
+const OLD_REGIA = '9f8e7d6c-1111-2222-3333-444455556666';
+
+test('regia: successora su un’epica e su un mandato, la marca su chi passa le consegne', async () => {
+  for (const text of ['- **Size**: Epic\n', MANDATE_TEXT]) {
+    const calls: Calls = { spawned: [], defaults: [] };
+    const marked: string[] = [];
+    const out = await handleSpawnRequest(
+      req({ kind: 'regia', from: OLD_REGIA }),
+      deps({ taskText: () => text, markHandoff: (sid) => marked.push(sid) }, calls),
+    );
+    assert.equal(out.ok, true, JSON.stringify(out));
+    assert.equal(out.ok && out.handoff, OLD_REGIA);
+    assert.equal(out.ok && out.regia, null);
+    assert.deepEqual(marked, [OLD_REGIA]);
+    assert.deepEqual(calls.defaults, ['regia']);
+    assert.equal(calls.spawned.length, 1);
   }
+});
+
+test('regia: senza chi passa le consegne, o su una task che non è un perimetro, nessuna tab', async () => {
+  const calls: Calls = { spawned: [], defaults: [] };
+  const marked: string[] = [];
+  const noFrom = await handleSpawnRequest(
+    req({ kind: 'regia' }),
+    deps({ taskText: () => '- **Size**: Epic\n', markHandoff: (sid) => marked.push(sid) }, calls),
+  );
+  assert.equal(noFrom.ok, false);
+  assert.match((noFrom as { reason: string }).reason, /non porta il sessionId di chi passa le consegne \(from\)/);
+  const notPerimeter = await handleSpawnRequest(
+    req({ kind: 'regia', from: OLD_REGIA }),
+    deps({ markHandoff: (sid) => marked.push(sid) }, calls),
+  );
+  assert.deepEqual(notPerimeter, { ok: false, reason: "regia T9: non è un'epica né un mandato" });
   assert.equal(calls.spawned.length, 0);
-  assert.deepEqual(calls.defaults, [], 'nessuna terna risolta per un rifiuto certo');
+  assert.deepEqual(marked, [], 'nessuna marca senza successora');
+});
+
+test('regia: la marca solo a successora annunciata, anche quando esce dalla coda', async () => {
+  const plan = planSpawnRequest(req({ kind: 'regia', from: OLD_REGIA }), deps({ taskText: () => MANDATE_TEXT }), 'endpoint');
+  assert.ok(plan.ok);
+  const marked: string[] = [];
+  // deck-run esce senza annunciare: la tab non c'è, la regia vecchia resta com'è.
+  const failed = await spawnPlanned(req({ kind: 'regia', from: OLD_REGIA }), plan, {
+    spawn: () => ({ sessionId: 'sid-x', spawned: { child: fakeChild(null, 2), cmd: 'deck-run' } }),
+    markHandoff: (sid) => marked.push(sid),
+  });
+  assert.equal(failed.ok, false);
+  assert.equal(marked.length, 0);
+  // Dalla coda: il sessionId annunciato, e la marca allo spawn vero.
+  const seen: Array<string | undefined> = [];
+  const queued = await spawnPlanned(
+    req({ kind: 'regia', from: OLD_REGIA }),
+    plan,
+    {
+      spawn: (_id, _m, _n, _p, _r, sid) => {
+        seen.push(sid);
+        return { sessionId: sid ?? 'sid-y', spawned: { child: fakeChild(['LOOM_DECK_INTAB claude …']), cmd: 'deck-run' } };
+      },
+      markHandoff: (sid) => marked.push(sid),
+    },
+    null,
+    'sid-coda',
+  );
+  assert.equal(queued.ok && queued.sessionId, 'sid-coda');
+  assert.deepEqual(seen, ['sid-coda']);
+  assert.deepEqual(marked, [OLD_REGIA]);
 });
 
 // T203 S1 — l'help dei client elenca i kind che il canale accetta, e nasce
 // dalla stessa regola del rifiuto: un kind fuori dall'elenco è un kind che
 // `planSpawnRequest` rifiuta su quel canale, e viceversa.
-test('requestKinds: la regia fuori da endpoint e headless, gli altri kind dentro', () => {
+test('requestKinds: la regia sull’endpoint e non sul turno headless, gli altri kind dentro', () => {
+  assert.ok(requestKinds('endpoint').includes('regia'), "endpoint: la regia manca dall'elenco");
+  assert.ok(!requestKinds('headless').includes('regia'), "headless: la regia è nell'elenco");
   for (const channel of ['endpoint', 'headless'] as const) {
     const kinds = requestKinds(channel);
-    assert.ok(!kinds.includes('regia'), `${channel}: la regia è nell'elenco`);
     for (const k of ['recap', 'preflight', 'run', 'checkpoint'] as const) {
       assert.ok(kinds.includes(k), `${channel}: ${k} manca dall'elenco`);
     }
@@ -245,10 +304,17 @@ test('requestKinds: la regia fuori da endpoint e headless, gli altri kind dentro
 });
 
 test('requestKinds e il rifiuto di planSpawnRequest sono la stessa regola', () => {
-  const allow = { taskExists: () => true, taskText: () => TASK_TEXT, defaults: deps().defaults };
+  // La regia vuole un perimetro e chi passa le consegne: il resto della task
+  // non deve decidere qui, la regola sotto misura il solo canale.
+  const allow = {
+    taskExists: () => true,
+    taskText: (id: string) => (id === 'T1' ? '- **Size**: Epic\n' : TASK_TEXT),
+    defaults: deps().defaults,
+  };
   for (const channel of ['endpoint', 'headless'] as RequestChannel[]) {
     for (const kind of PROMPT_KINDS) {
-      const plan = planSpawnRequest(req({ kind }), allow, channel);
+      const r = kind === 'regia' ? req({ task: 'T1', kind, from: OLD_REGIA }) : req({ kind });
+      const plan = planSpawnRequest(r, allow, channel);
       const listed = requestKinds(channel).includes(kind);
       assert.equal(plan.ok, listed, `${channel}/${kind}: elenco e rifiuto divergono`);
       if (!plan.ok) assert.equal(plan.reason, kindRefusal(kind, channel));
@@ -256,12 +322,16 @@ test('requestKinds e il rifiuto di planSpawnRequest sono la stessa regola', () =
   }
 });
 
-test('l help di loom-deck-spawn e di loom-deck-headless non promette la regia', () => {
+test('l help di loom-deck-spawn promette la regia, quello di loom-deck-headless no', () => {
   const kindLine = (usage: string) => usage.split('\n').find((l) => l.trim().startsWith('<kind>'))!;
-  for (const usage of [CLIENT_USAGE, HEADLESS_USAGE]) {
+  for (const [usage, regia] of [
+    [CLIENT_USAGE, true],
+    [HEADLESS_USAGE, false],
+  ] as const) {
     const line = kindLine(usage);
     assert.ok(line, `riga <kind> assente: ${usage}`);
-    assert.doesNotMatch(line, /regia/, `la regia è nell'help: ${line}`);
+    if (regia) assert.match(line, /\| regia\b/, `la regia manca dall'help: ${line}`);
+    else assert.doesNotMatch(line, /regia/, `la regia è nell'help: ${line}`);
     assert.match(line, /checkpoint/, `l'elenco non è quello dei kind: ${line}`);
   }
 });

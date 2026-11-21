@@ -17,7 +17,8 @@
 //     è una viva: non c'è una tab da chiudere, e la risposta dice il motivo
 //     vero invece di «nessuna viva»;
 //  3. non è la conversazione che chiede (P2);
-//  4. è nata da una richiesta `spawn` sull'endpoint (D2): le conversazioni
+//  4. è nata da una richiesta `spawn` sull'endpoint (D2), o è una regia che ha
+//     passato le consegne (`origin: regia`, T221): le altre conversazioni
 //     aperte a mano le chiude solo l'umano;
 //  5. è ferma: `idle`, o `waiting` su un permesso che nessuno darà (D3).
 //     `busy` e `shell` si rifiutano, e nessuna forzatura.
@@ -69,8 +70,13 @@ export interface CloseRequestDeps {
   /** T206 — i turni headless in corso del progetto, letti allo stesso modo.
    *  Servono solo al rifiuto: un turno headless non si chiude da qui. */
   headless?: () => ReadonlyMap<string, LiveSession>;
-  /** Dal sidecar: le conversazioni nate dall'endpoint e i binding alle task. */
-  sidecar: () => { endpointBorn: ReadonlySet<string>; bindings: ReadonlyMap<string, string> };
+  /** Dal sidecar: le conversazioni nate dall'endpoint, le regie che hanno
+   *  passato le consegne (T221; assente = nessuna) e i binding alle task. */
+  sidecar: () => {
+    endpointBorn: ReadonlySet<string>;
+    regiaHanded?: ReadonlySet<string>;
+    bindings: ReadonlyMap<string, string>;
+  };
   /** Ritira la marca `live` della conversazione chiusa (P3 preflight). */
   retire: (sessionId: string) => void;
   /** Le chiusure in corso, per `sessionId`: condiviso fra le richieste. */
@@ -104,8 +110,9 @@ export async function handleCloseRequest(req: CloseRequest, deps: CloseRequestDe
       };
     }
     // Il sidecar distingue «chiusa» da «di nessuno qui»: una conversazione nata
-    // dall'endpoint di questo progetto e non più viva è già stata chiusa.
-    const born = [...side.endpointBorn].some((id) => id.startsWith(req.session));
+    // dall'endpoint di questo progetto, o una regia che ha passato le consegne,
+    // e non più viva è già stata chiusa.
+    const born = [...closableIds(side)].some((id) => id.startsWith(req.session));
     return {
       ok: false,
       reason: born
@@ -123,8 +130,11 @@ export async function handleCloseRequest(req: CloseRequest, deps: CloseRequestDe
   const t = found.target;
   const id = short(t.sessionId);
   if (req.from === t.sessionId) return { ok: false, reason: `${id}: è la conversazione che chiede la chiusura` };
-  if (!side.endpointBorn.has(t.sessionId)) {
-    return { ok: false, reason: `${id}: non è nata da una richiesta spawn sull'endpoint del deck, la chiude solo l'utente` };
+  if (!closableIds(side).has(t.sessionId)) {
+    return {
+      ok: false,
+      reason: `${id}: non è nata da una richiesta spawn sull'endpoint del deck né è una regia che ha passato le consegne, la chiude solo l'utente`,
+    };
   }
   const blocked = stateProblem(t.state);
   if (blocked) return { ok: false, reason: `${id}: ${blocked}` };
@@ -180,6 +190,12 @@ async function terminateAndWait(
     return { ...base, warning: `marca live non ritirata (${e instanceof Error ? e.message : String(e)}): il restore potrebbe riaprirla` };
   }
   return base;
+}
+
+/** Le conversazioni che un'altra conversazione può far chiudere: le nate
+ *  dall'endpoint e le regie che hanno passato le consegne (T221). */
+function closableIds(side: ReturnType<CloseRequestDeps['sidecar']>): Set<string> {
+  return new Set([...side.endpointBorn, ...(side.regiaHanded ?? [])]);
 }
 
 type Resolved = { target: LiveSession } | { none: true } | { ambiguous: string[] };

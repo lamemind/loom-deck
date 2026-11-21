@@ -122,6 +122,14 @@ test('richiesta con la regia: perimetro e sessione della regia', () => {
   });
 });
 
+// T221 — chi passa le consegne: solo col kind regia, un sessionId intero.
+test('richiesta di regia: chi passa le consegne, in minuscolo', () => {
+  assert.deepEqual(
+    parseSpawnRequest(JSON.stringify({ verb: 'spawn', task: 'T197', kind: 'regia', from: REGIA_SID.toUpperCase() })),
+    { verb: 'spawn', task: 'T197', kind: 'regia', from: REGIA_SID },
+  );
+});
+
 test('richieste rifiutate nella forma, col motivo', () => {
   const cases: Array<[unknown, RegExp]> = [
     ['non json', /non è JSON/],
@@ -139,6 +147,9 @@ test('richieste rifiutate nella forma, col motivo', () => {
     [{ verb: 'spawn', task: 'T1', kind: 'run', regia: 197 }, /regia non valida/],
     [{ verb: 'spawn', task: 'T1', kind: 'run', regiaSession: REGIA_SID }, /regiaSession senza regia/],
     [{ verb: 'spawn', task: 'T1', kind: 'run', regia: 'T197', regiaSession: '0a1b2c3d' }, /sessione della regia non valida/],
+    // T221 — `from` solo con la regia, e intero.
+    [{ verb: 'spawn', task: 'T1', kind: 'run', from: REGIA_SID }, /from ammesso solo con kind regia/],
+    [{ verb: 'spawn', task: 'T1', kind: 'regia', from: '0a1b2c3d' }, /mittente non valido/],
   ];
   for (const [raw, re] of cases) {
     const r = parseSpawnRequest(typeof raw === 'string' ? raw : JSON.stringify(raw));
