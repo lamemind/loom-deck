@@ -10,7 +10,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { isHelpRequest, isUsageError, memberRegia, parseTabArgs, USAGE, type TabRequest } from '../src/tab-args.js';
-import { composeTab, posixQuote, projectLabel, ptyxisArgv, type ComposeContext } from '../src/tab-compose.js';
+import { composeTab, posixQuote, projectLabel, ptyxisArgv, ptyxisEnv, type ComposeContext } from '../src/tab-compose.js';
+import { INHERITED_SESSION_ENV } from '../src/session-env.js';
 import type { CatalogEntry } from '../src/prompt-catalog.js';
 import { unixOnly } from './platform-gates.js';
 
@@ -244,6 +245,37 @@ test('Windows: nessuna chiave di stato, compass lì non esiste', () => {
 test('Linux: argv di Ptyxis, tab o finestra nuova', () => {
   assert.deepEqual(ptyxisArgv(false, '/wd', 'cc T1', 'cmd'), ['--tab', '-d', '/wd', '-T', 'cc T1', '--', 'bash', '-lc', 'cmd']);
   assert.equal(ptyxisArgv(true, '/wd', 't', 'c')[0], '--new-window');
+});
+
+// T228 — l'env del processo `ptyxis` diventa quello dell'istanza quando
+// nessuna è aperta: via le variabili della conversazione che ha lanciato il
+// deck e la sua task, resta quello che serve a Ptyxis per aprire una finestra.
+test('Linux: env di ptyxis senza variabili di sessione né LOOM_TASK, il resto passa', () => {
+  const parent: Record<string, string> = {
+    ...Object.fromEntries(INHERITED_SESSION_ENV.map((m) => [m, '1'])),
+    claude_pid: '42',
+    LOOM_TASK: 'T9',
+    LOOM_REGIA: 'T197',
+    PATH: '/usr/bin',
+    WAYLAND_DISPLAY: 'wayland-0',
+    DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+    CLAUDE_CONFIG_DIR: '/cfg',
+    PTYXIS_PROFILE: 'loom-works',
+    LOOM_DECK_INTAB_CMD: 'env',
+  };
+  const env = ptyxisEnv(parent);
+  for (const m of [...INHERITED_SESSION_ENV, 'claude_pid', 'LOOM_TASK', 'LOOM_REGIA']) {
+    assert.equal(env[m], undefined, m);
+  }
+  assert.deepEqual(env, {
+    PATH: '/usr/bin',
+    WAYLAND_DISPLAY: 'wayland-0',
+    DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+    CLAUDE_CONFIG_DIR: '/cfg',
+    PTYXIS_PROFILE: 'loom-works',
+    LOOM_DECK_INTAB_CMD: 'env',
+  });
+  assert.equal(parent.LOOM_TASK, 'T9', 'l’env di partenza resta intatto');
 });
 
 // AC3 — il prompt arriva a `claude` identico. Su Windows l'argv viaggia come

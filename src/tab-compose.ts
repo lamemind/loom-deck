@@ -13,6 +13,7 @@
 // ha sostituito, e il gate di parità su Linux (`test/deck-run.test.ts`) li
 // misura sul comando in-tab.
 import { saneNote } from './sane-note.js';
+import { dropEnv, INHERITED_SESSION_ENV } from './session-env.js';
 import { MODEL_DEFAULT, MODELS, type PromptKind } from './spawn-catalog.js';
 import type { CatalogEntry } from './prompt-catalog.js';
 import { shellQuote } from './spawn.js';
@@ -279,8 +280,36 @@ export function composeTab(req: TabRequest, ctx: ComposeContext): TabPlan {
  * deck), o una finestra nuova con `--new-window` (T162) per chi chiama da fuori
  * dalla finestra del progetto. Il comando gira dentro `bash -lc`, e le env di
  * sessione viaggiano DENTRO il comando: `ptyxis --tab` consegna la tab
- * all'istanza già aperta, che non eredita l'env di chi la chiede.
+ * all'istanza già aperta, che le dà il proprio env e non quello di chi la chiede
+ * (misurato in T228). L'env di chi chiede conta solo quando non c'è nessuna
+ * istanza: lì lo filtra `ptyxisEnv`.
  */
 export function ptyxisArgv(newWindow: boolean, workdir: string, title: string, inTab: string): string[] {
   return [newWindow ? '--new-window' : '--tab', '-d', workdir, '-T', title, '--', 'bash', '-lc', inTab];
+}
+
+/**
+ * T228 — le variabili tolte all'env del processo `ptyxis`: le variabili di
+ * sessione (`INHERITED_SESSION_ENV`) e `LOOM_TASK`.
+ *
+ * Con un'istanza di Ptyxis già sul bus di sessione il processo `ptyxis` le
+ * consegna la richiesta ed esce, e la tab nasce con l'env dell'istanza: il suo
+ * env non arriva a nessuna tab. Senza istanza il processo `ptyxis` DIVENTA
+ * l'istanza, e ogni tab che apre — questa e quelle dopo, anche aperte a mano —
+ * ne eredita l'env. È il caso di un deck che gira fuori da Ptyxis: lanciato
+ * dalla shell di una conversazione Claude Code, porterebbe nella conversazione
+ * nuova `CLAUDE_CODE_CHILD_SESSION`, che le toglie il transcript.
+ *
+ * Il filtro sta qui e non nella riga in-tab (`env -u …`) perché la riga pulisce
+ * solo il `claude` della tab, mentre l'istanza nata sporca sporca ogni tab
+ * successiva. `LOOM_TASK` se ne va per la stessa ragione di `windowsTabEnv`:
+ * una tab `--no-task` la erediterebbe, e sul ramo bound la riga in-tab la
+ * riscrive comunque. `PTYXIS_PROFILE` resta: Ptyxis la riscrive in ogni tab col
+ * proprio profilo, anche nell'istanza nata da chi chiede.
+ */
+export const PTYXIS_DROP_ENV: readonly string[] = [...INHERITED_SESSION_ENV, 'LOOM_TASK'];
+
+/** L'env del processo `ptyxis`: una copia di `env` senza `PTYXIS_DROP_ENV`. */
+export function ptyxisEnv(env: Readonly<Record<string, string | undefined>>): Record<string, string | undefined> {
+  return dropEnv(env, PTYXIS_DROP_ENV);
 }

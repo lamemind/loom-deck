@@ -827,6 +827,42 @@ test('ripresa spot: nessuna LOOM_TASK', () => {
   assert.ok(cmd.includes(`--resume ${SID}`), cmd);
 });
 
+// ── T228 — l'env del processo ptyxis ────────────────────────────────────────
+//
+// Senza un'istanza di Ptyxis aperta il processo `ptyxis` diventa l'istanza, e
+// ogni sua tab ne eredita l'env. Qui lo shim stampa l'env che riceve, cioè
+// quello con cui un'istanza nuova partirebbe: il processo vero, non il valore
+// che `runDeckRun` passa a un lancio finto.
+const envShimDir = mkdtempSync(join(tmpdir(), 'loom-deck-envshim-'));
+writeFileSync(
+  join(envShimDir, 'ptyxis'),
+  '#!/usr/bin/env bash\nfor v in CLAUDECODE CLAUDE_CODE_CHILD_SESSION CLAUDE_PID LOOM_TASK LOOM_T228_MARKER; do\n' +
+    '  printf \'%s=%s\\n\' "$v" "${!v-<assente>}"\ndone\n',
+);
+chmodSync(join(envShimDir, 'ptyxis'), 0o755);
+
+test('ptyxis parte senza le variabili della conversazione che lancia il deck', () => {
+  const r = deckRun(['--no-task'], {
+    PATH: `${envShimDir}:${process.env.PATH ?? ''}`,
+    CLAUDECODE: '1',
+    CLAUDE_CODE_CHILD_SESSION: '1',
+    CLAUDE_PID: '42',
+    LOOM_TASK: 'T9',
+    LOOM_T228_MARKER: 'passa',
+  });
+  assert.ok(r.ok, r.err);
+  const seen = r.out
+    .split('\n')
+    .filter((l) => /^[A-Z_0-9]+=/.test(l) && !l.startsWith('LOOM_DECK_'));
+  assert.deepEqual(seen, [
+    'CLAUDECODE=<assente>',
+    'CLAUDE_CODE_CHILD_SESSION=<assente>',
+    'CLAUDE_PID=<assente>',
+    'LOOM_TASK=<assente>',
+    'LOOM_T228_MARKER=passa',
+  ]);
+});
+
 // ── T182 — la conversazione gemella ─────────────────────────────────────────
 //
 // Un gemello è una conversazione VIVA che ha chiesto lo stesso `--name`. Il

@@ -20,7 +20,7 @@ import { constants } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isHelpRequest, isUsageError, parseTabArgs, USAGE } from './tab-args.js';
-import { composeTab, ptyxisArgv } from './tab-compose.js';
+import { composeTab, ptyxisArgv, ptyxisEnv } from './tab-compose.js';
 import { loadPromptCatalog, PROMPT_CATALOG } from './prompt-catalog.js';
 import { configFilePath } from './config.js';
 import { liveRequestedNames, liveSessionsRoot } from './live-sessions.js';
@@ -169,6 +169,10 @@ export async function runDeckRun(argv: readonly string[], io: DeckRunIo): Promis
     const inTab = io.env.LOOM_DECK_INTAB_CMD || plan.inTab;
     cmd = 'ptyxis';
     args = ptyxisArgv(req.newWindow, workdir, plan.title, inTab);
+    // T228 — conta solo quando nessuna istanza di Ptyxis è sul bus e questo
+    // processo lo diventa: senza il filtro ogni sua tab erediterebbe le
+    // variabili della conversazione che ha lanciato il deck.
+    env = ptyxisEnv(io.env);
     io.stdout(announceTitle(plan.title));
     io.stdout(`LOOM_DECK_INTAB ${inTab}\n`);
   }

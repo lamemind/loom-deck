@@ -223,8 +223,31 @@ test('Linux: la stessa richiesta apre una tab Ptyxis con bash -lc', async () => 
   const r = await fakeRun(['T1', '--prompt-kind', 'none'], { platform: 'linux' });
   const l = r.launches[0]!;
   assert.equal(l.cmd, 'ptyxis');
-  assert.equal(l.env, undefined);
   assert.deepEqual(l.args.slice(-3, -1), ['bash', '-lc']);
+});
+
+// T228 — `ptyxis` senza istanza aperta diventa l'istanza e dà il proprio env a
+// ogni tab: parte senza le variabili della conversazione che ha lanciato il
+// deck, e la task arriva solo dalla riga in-tab.
+test('Linux: ptyxis parte senza variabili di sessione, la task sta nella riga in-tab', async () => {
+  const env = {
+    LOOM_DECK_PROMPT_CATALOG: '/non/esiste',
+    LOOM_DECK_STATE_PROFILE: '',
+    LOOM_TASK: 'T9',
+    CLAUDECODE: '1',
+    CLAUDE_CODE_CHILD_SESSION: '1',
+    WAYLAND_DISPLAY: 'wayland-0',
+  };
+  const bound = await fakeRun(['T1', '--prompt-kind', 'none'], { platform: 'linux', env });
+  const l = bound.launches[0]!;
+  assert.equal(l.env?.CLAUDECODE, undefined);
+  assert.equal(l.env?.CLAUDE_CODE_CHILD_SESSION, undefined);
+  assert.equal(l.env?.LOOM_TASK, undefined);
+  assert.equal(l.env?.WAYLAND_DISPLAY, 'wayland-0');
+  assert.match(l.args.at(-1)!, /^LOOM_TASK=T1 claude /);
+  const bare = await fakeRun(['--no-task', '--new-window'], { platform: 'linux', env });
+  assert.equal(bare.launches[0]!.env?.LOOM_TASK, undefined);
+  assert.match(bare.launches[0]!.args.at(-1)!, /^claude /);
 });
 
 test('un errore d’uso esce 2 senza annuncio né lancio', async () => {

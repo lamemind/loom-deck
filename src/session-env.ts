@@ -1,8 +1,10 @@
 // T217 — le variabili di sessione che nessun `claude` lanciato dal deck eredita:
-// una lista sola per i tre punti che ne lanciano uno con l'env del deck.
+// una lista sola per i quattro punti che ne lanciano uno con l'env del deck.
 //
 //  - le tab di Windows Terminal (`windowsTabEnv`): la tab eredita l'env del
 //    processo che lancia `wt.exe`;
+//  - le tab Ptyxis su Linux (`ptyxisEnv`, T228): la tab eredita l'env del
+//    processo `ptyxis` solo quando nessuna istanza è aperta e lui lo diventa;
 //  - i turni `claude -p` di `loom-deck-headless` (`headlessEnv`), che di norma
 //    lancia una regia, cioè una conversazione;
 //  - il `claude -p` delle skill che il deck lancia da sé (`spawnSkill`):
