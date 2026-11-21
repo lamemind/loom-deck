@@ -300,3 +300,34 @@ test('AC3 — Linux: una shell vera riceve il prompt come UN argomento', { skip:
 test('posixQuote chiude e riapre sugli apici', () => {
   assert.equal(posixQuote("a'b"), `'a'\\''b'`);
 });
+
+// T228 — Ptyxis riscrive la riga prima di bash, apici ignorati: `${NOME}`
+// espansa con l'env della tab, `$$` ridotto a `$` (misurato su Ptyxis 50.1).
+// La riga non deve portare nessuna delle due sequenze, e bash deve ricucire il
+// testo identico.
+const DOLLARS = ['${CLAUDE_PLUGIN_ROOT}/x', 'costa $$', '$$$', '${HOME', '$${A}', "a$'b", '$HOME e $1', 'fine $'];
+
+test('posixQuote: nessun `${` né `$$` nella riga, nessun cambio senza', () => {
+  assert.equal(posixQuote('a${HOME}b$$c'), `'a$''{HOME}b$''$c'`);
+  assert.equal(posixQuote('$HOME e $1 · fine $'), `'$HOME e $1 · fine $'`);
+  for (const text of DOLLARS) {
+    const q = posixQuote(text);
+    assert.ok(!q.includes('${') && !q.includes('$$'), `${text} → ${q}`);
+  }
+});
+
+test('posixQuote: bash ricuce il testo identico', { skip: unixOnly('serve bash') }, () => {
+  for (const text of DOLLARS) {
+    const probe = spawnSync('bash', ['-c', `printf '%s' ${posixQuote(text)}`], { encoding: 'utf8' });
+    assert.equal(probe.stdout, text);
+  }
+});
+
+test('Linux: un prompt con `${…}` e `$$` arriva a claude identico, la riga non li porta', { skip: unixOnly('serve bash') }, () => {
+  const prompt = 'leggi ${CLAUDE_PLUGIN_ROOT}/docs, costa $$';
+  const p = composeTab(req(['T1', '--prompt', prompt]), ctx());
+  assert.ok(!p.inTab.includes('${') && !p.inTab.includes('$$'), p.inTab);
+  assert.equal(p.claudeArgs.at(-1), prompt);
+  const probe = spawnSync('bash', ['-c', `claude() { printf '%s' "\${@: -1}"; }; ${p.inTab}`], { encoding: 'utf8' });
+  assert.equal(probe.stdout, prompt);
+});

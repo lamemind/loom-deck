@@ -205,11 +205,23 @@ function stateKey(ctx: ComposeContext, warnings: string[]): string {
   return raw;
 }
 
-/** Un testo come UN argomento di una shell POSIX: sempre fra apici singoli, con
- *  l'apice stesso chiuso, escapato e riaperto (`'\''`). Dentro gli apici nessun
- *  altro carattere resta speciale, newline compresi. */
+/**
+ * Un testo come UN argomento di una shell POSIX: sempre fra apici singoli, con
+ * l'apice stesso chiuso, escapato e riaperto (`'\''`). Dentro gli apici nessun
+ * altro carattere resta speciale per bash, newline compresi.
+ *
+ * T228 — e nessun `$` resta davanti a un `$` o a una `{`: lì gli apici si
+ * chiudono e si riaprono subito dopo il `$` (`$''{`, `$''$`), e bash ricuce il
+ * testo identico. La riga passa da Ptyxis prima che da bash, e Ptyxis la
+ * riscrive ignorando gli apici: espande `${NOME}` con l'env della tab e riduce
+ * `$$` a `$`. Un prompt che nomina `${CLAUDE_PLUGIN_ROOT}` arriverebbe a
+ * `claude` col path al posto del nome, o vuoto. `$NOME` senza graffe Ptyxis lo
+ * lascia intatto, e la riga resta identica per ogni testo senza `$$` né `${`.
+ */
 export function posixQuote(text: string): string {
-  return `'${text.replace(/'/g, `'\\''`)}'`;
+  // Il rimpiazzo è una funzione e non una stringa: in una stringa di `replace`
+  // `$'` vuol dire «il testo dopo la corrispondenza».
+  return `'${text.replace(/'/g, `'\\''`).replace(/\$(?=[${])/g, () => `$''`)}'`;
 }
 
 /**
