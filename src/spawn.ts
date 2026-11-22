@@ -372,58 +372,6 @@ export function spawnClaudeEmpty(cwd: string, model: ModelKind): Spawned {
   return launchDeckRun(emptyArgs(model), cwd);
 }
 
-/**
- * T134 — sessione NUDA con un prompt letterale: `deck-run --no-task --prompt
- * <testo> --model <alias>`.
- *
- * Il lavoro che apre non sta su una task (D10 preflight). Legarlo a una task esporterebbe `LOOM_TASK`,
- * farebbe scattare l'hook `SessionStart` che inietta in contesto un task file
- * che col lavoro non c'entra, e metterebbe `· T<n>` nel titolo della tab.
- *
- * Presidiata, non headless (D11): `spawnSkill` resta dov'è e non si estende
- * qui. C'è un umano nella tab che guarda il diff prima del commit, ed è lui a
- * incontrare per primo un errore che la sessione mostra: il deck non deve
- * replicare le guardie della sessione per sapere in anticipo se l'azione
- * morirebbe al primo passo.
- *
- * Il modello è passato SEMPRE, anche sul default, per la stessa ragione di
- * `permissionMode`: lo spawn resta deterministico e leggibile nel process tree
- * invece di dipendere da un default che può cambiare fra versioni.
- *
- * `sessionId` e `title` viaggiano INSIEME o non viaggiano: il titolo lo mostrano
- * due superfici — la tab Ptyxis (via `--title-note`) e la riga della lista
- * sessioni (via la nota nel sidecar, che è keyed sul sessionId) — e senza un id
- * pinnato la seconda non ha una chiave su cui scrivere. Pinnarlo è quindi ciò
- * che rende il titolo visibile in entrambe, non un binding task: una sessione
- * `--no-task` non ne ha uno, ma un NOME ce l'ha.
- *
- * Il titolo sta in TESTA all'argv, prima del prompt: la riga di stato del deck
- * taglia il comando al mezzo, e il prompt è l'argomento più lungo — in coda al
- * titolo lo spingerebbe fuori vista. Stessa ragione dell'ordine di `resumeArgs`.
- */
-export function bareArgs(
-  prompt: string,
-  model: ModelKind,
-  sessionId?: string,
-  title?: string,
-): string[] {
-  const args = ['--no-task'];
-  if (title) args.push('--title-note', title);
-  if (sessionId) args.push('--session-id', sessionId);
-  args.push('--prompt', prompt, '--model', model);
-  return args;
-}
-
-export function spawnBare(
-  cwd: string,
-  prompt: string,
-  model: ModelKind,
-  sessionId?: string,
-  title?: string,
-): Spawned {
-  return launchDeckRun(bareArgs(prompt, model, sessionId, title), cwd);
-}
-
 // T39/T32: voce `launch` custom del file config, eseguita con cwd = project root.
 // Spawn detached come spawnDeck: il deck lancia ma non possiede il processo.
 // Shell login+interattiva (bash -lic) perché i comandi tipici sono alias o

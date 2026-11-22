@@ -318,9 +318,8 @@ test('titolo tab senza task: solo la label, nessun suffisso', () => {
 });
 
 test('una sessione nuda può avere titolo e sessionId insieme al prompt', () => {
-  // La forma di `bareArgs`: nessuna
-  // guardia rifiuta `--title-note` né `--session-id` per l'assenza di una task —
-  // il binding manca, il NOME no.
+  // Nessuna guardia di `deck-run` rifiuta `--title-note` né `--session-id` per
+  // l'assenza di una task: il binding manca, il NOME no.
   const cmd = inTabCmd(
     [
       '--no-task',

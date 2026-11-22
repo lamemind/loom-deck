@@ -353,8 +353,7 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
   {
     // T42/T154 — la sessione a mani nude. Configurabile sul solo modello (P12):
     // non pinna un `sessionId` e non scrive nel sidecar, quindi un titolo
-    // comparirebbe nella tab e non in lista — la divergenza che `bareArgs`
-    // esiste per non avere — e un prompt la renderebbe non nuda.
+    // comparirebbe nella tab e non in lista, e un prompt la renderebbe non nuda.
     id: 'bare',
     label: 'sessione nuda',
     surface: 'tasto c',
