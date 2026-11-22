@@ -3,9 +3,9 @@
 //
 // Il deck non pota: ordina la potatura a `loom-works:clean-tasks`, che possiede
 // l'intera sequenza distruttiva (task file + folder dot-prefixed + riga in
-// tasks.md, un commit atomico per task, symlink `current-task.md` rimosso,
-// righe orfane riconciliate). Qui non c'è nessun `git rm` e nessuna riscrittura
-// di tasks.md — solo il calcolo di CHI si può potare.
+// tasks.md, un commit atomico per task, righe orfane riconciliate). Qui non
+// c'è nessun `git rm` e nessuna riscrittura di tasks.md — solo il calcolo di
+// CHI si può potare.
 //
 // D3/D4 (preflight) — il gate `--ignored-files` di `clean-tasks.sh` esce 2
 // PRIMA di toccare qualsiasi cosa: in un'invocazione su N target, una sola

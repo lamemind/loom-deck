@@ -138,7 +138,7 @@ Due conseguenze visibili di come è fatto:
 
 ### `CANC` — eliminare task
 
-Il deck **ordina** la potatura, non la esegue: la fa `loom-works:clean-tasks`, invocato da un processo Claude headless. Nessun `git rm` e nessuna riscrittura di `tasks.md` vivono qui — quella sequenza (task file + folder dot-prefixed + riga in `tasks.md`, un commit atomico per task, symlink `current-task.md` rimosso, righe orfane riconciliate) è implementata una volta sola, e averne una seconda darebbe due rimozioni capaci di divergere.
+Il deck **ordina** la potatura, non la esegue: la fa `loom-works:clean-tasks`, invocato da un processo Claude headless. Nessun `git rm` e nessuna riscrittura di `tasks.md` vivono qui — quella sequenza (task file + folder dot-prefixed + riga in `tasks.md`, un commit atomico per task, righe orfane riconciliate) è implementata una volta sola, e averne una seconda darebbe due rimozioni capaci di divergere.
 
 Lo **stesso tasto ha due bersagli di taglia diversa**, e a discriminarli è la **selezione prima della vista**:
 
