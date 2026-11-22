@@ -61,8 +61,6 @@ import { MODEL_DEFAULT, type ModelKind, type PromptKind, type SpawnActionId } fr
 import { modelAlias } from './glyphs.js';
 import { resolveSpawnId, taskHoles as taskHolesOf, type ResolvedSpawn, type SpawnOverrides } from './spawn-config.js';
 import { useTaskOps } from './task-ops.js';
-import { inboxPrompt, inboxWords, type InboxFile } from './inbox.js';
-import { docTargetKind, docWords, type DocRow } from './doc-tree.js';
 import { wrapWords } from './wrap-scan.js';
 import { enterSession, focusSession } from './focus-session.js';
 import { refuse } from './platform.js';
@@ -150,12 +148,10 @@ export function useDeckActions({
    * T161 — la TERNA di un'azione: default del deck ← override di progetto, coi
    * buchi già riempiti.
    *
-   * Un punto solo. Prima di questa task ogni sede di chiamata sceglieva da sé —
-   * `MODEL_DEFAULT` dentro `drainInbox`, `'sonnet'` dentro `unwrapPath`,
-   * `modelFor(catalog, kind)` dentro `spawnTaskSession`, `PROJECT_STATUS_MODEL`
-   * dentro `spawnProjectStatus` — e nessuna delle quattro poteva essere
-   * indirizzata da una configurazione, perché non esisteva un nome con cui
-   * nominarla.
+   * Un punto solo. Prima di T161 ogni sede di chiamata sceglieva da sé il
+   * proprio modello — `'sonnet'` dentro `unwrapPath`, `modelFor(catalog, kind)`
+   * dentro `spawnTaskSession` — e nessuna poteva essere indirizzata da una
+   * configurazione, perché non esisteva un nome con cui nominarla.
    */
   function spawnDefaults(
     id: SpawnActionId,
@@ -692,130 +688,11 @@ export function useDeckActions({
   }
 
   /**
-   * T134 — apre la sessione PRESIDIATA che drena un file inbox.
-   *
-   * Il prompt arriva già composto dall'overlay (`inboxPrompt`), che è l'unico
-   * posto in cui vive la mappa natura → skill: derivarlo qui una seconda volta
-   * darebbe due tabelle capaci di divergere, e la seconda si scoprirebbe solo
-   * il giorno in cui una natura nuova apre la skill sbagliata.
-   *
-   * Sessione NUDA: il drain lavora sulla doc, non sulla task (D10 preflight).
-   * Modello e titolo vengono dalla riga `drain` del catalogo delle azioni
-   * (T161), non più da un letterale scritto qui; il PROMPT resta del chiamante,
-   * perché la skill è una funzione della natura del file e quella mappa vive in
-   * un posto solo (`inboxPrompt`, `src/inbox.ts`).
-   *
-   * Il titolo interpola il basename del file, e serve un `sessionId` pinnato
-   * per scriverlo nel sidecar — senza, la nota non avrebbe una chiave e la riga
-   * in lista resterebbe nuda mentre la tab porta un nome. Le due scritture
-   * stanno qui accanto per la stessa ragione di `spawnForTask`: il nome che le
-   * due superfici mostrano nasce da un valore solo.
-   */
-  function drainInbox(file: InboxFile, prompt: string) {
-    if (refuse('spawn', '⏎', setNote)) return;
-    const sid = randomUUID();
-    const d = spawnDefaults('drain', { file: inboxWords(file) });
-    const title = d.title ?? '';
-    if (title) appendNote(cwd, sid, title);
-    const spawned = spawnBare(cwd, prompt, d.model, sid, title);
-    spawned.child.on('error', () => setNote(`⚠ drain ${file.basename} fallito (${DECK_RUN})`));
-    noteSpawn(spawned);
-  }
-
-  /**
-   * T160 — la terna della riga `rebalance` sul bersaglio selezionato.
-   *
-   * Separata dallo spawn perché ha due chiamanti che la vogliono in due momenti
-   * diversi: la schermata, che MOSTRA il comando in fondo prima che `⏎` lo
-   * lanci, e l'attuatore, che lo lancia. Comporlo due volte darebbe due comandi
-   * capaci di divergere — e quello mostrato è la sola cosa che rende `⏎` una
-   * scelta invece di un salto nel buio.
-   *
-   * P9 — su una riga SENZA FLAG il prompt è vuoto, e il deck non spawna. Il
-   * flag resta un invito a guardare e non un ordine, quindi la skill su un
-   * bersaglio in equilibrio produrrebbe un report e nient'altro: aprire una
-   * conversazione per farselo dire è un giro di modello pagato per niente. La
-   * ragione viaggia accanto al vuoto (`hint`), o la riga muta si leggerebbe come
-   * un comando che non si è riusciti a comporre.
-   */
-  function rebalanceSpawn(row: DocRow): { prompt: string; hint: string } {
-    // La coda inbox PRIMA dei flag: un file inbox porta sempre il suo flag, e
-    // senza questo ramo cadrebbe nel ramo del rebalance con l'aria di essere un
-    // bersaglio legittimo. La skill è la stessa che offre il pane di destra —
-    // il prompt lo compone `inboxPrompt`, unico posto in cui vive la mappa
-    // natura → skill, esattamente come per il `⏎` del pane inbox.
-    const kind = docTargetKind(row, model.docsRoot);
-    if (kind !== 'doc') {
-      const f = kind === 'inbox-file' ? inboxFileAt(row.path) : null;
-      if (f) return { prompt: inboxPrompt(f), hint: '' };
-      return {
-        prompt: '',
-        hint:
-          kind === 'inbox-dir'
-            ? `${row.path} è la coda inbox: si drena un file alla volta, non si riorganizza`
-            : `${row.path} è un file inbox: la sua natura non è ancora stata misurata, aprilo dal pane di destra`,
-      };
-    }
-    if (row.flags.length === 0) {
-      return {
-        prompt: '',
-        hint: `${row.path} non porta flag: rebalance-doc non ha niente da fare qui`,
-      };
-    }
-    const d = spawnDefaults('rebalance', { target: row.path, words: docWords(row.path) });
-    return { prompt: d.prompt ?? '', hint: '' };
-  }
-
-  /** Il file della coda inbox che sta dietro una riga dell'albero doc. Le due
-   *  misure sono due scan distinti dello stesso script: l'albero conosce il
-   *  path, la natura la sa solo la coda, e il prompt di drain è una funzione
-   *  della natura. */
-  function inboxFileAt(path: string): InboxFile | null {
-    return model.inboxAll.find((f) => f.path === path) ?? null;
-  }
-
-  /**
-   * T160 — apre la sessione che RIORGANIZZA la topologia attorno a un bersaglio.
-   *
-   * Gemella di `drainInbox` e `unwrapPath` nella forma: sessione NUDA (il
-   * rebalance lavora sulla doc, non su una task), `sessionId` pinnato per poter
-   * scrivere la nota nel sidecar, titolo dalla riga di catalogo.
-   *
-   * Il modello della riga è `sonnet` ed è una cella FISSA, non una preferenza:
-   * `rebalance-doc` dichiara `model: sonnet` nel frontmatter e quel campo
-   * ri-timbra il modello della sessione qualunque `--model` arrivi dallo spawn.
-   * Passarlo comunque nell'argv resta giusto — lo spawn è deterministico e la
-   * riga di stato mostra il comando vero — ma configurarlo sarebbe una cella che
-   * mente.
-   */
-  function rebalanceDoc(row: DocRow, prompt: string) {
-    if (!prompt) return;
-    if (refuse('spawn', '⏎', setNote)) return;
-    // Il bersaglio inbox prende la terna della riga `drain`, non quella di
-    // `rebalance`: il prompt da solo non basterebbe — modello e titolo della tab
-    // verrebbero comunque dalla riga sbagliata, e la conversazione si
-    // chiamerebbe «rebalance» mentre esegue un drain.
-    const f = inboxFileAt(row.path);
-    if (f) {
-      drainInbox(f, prompt);
-      return;
-    }
-    const sid = randomUUID();
-    const d = spawnDefaults('rebalance', { target: row.path, words: docWords(row.path) });
-    const title = d.title ?? '';
-    if (title) appendNote(cwd, sid, title);
-    const spawned = spawnBare(cwd, prompt, d.model, sid, title);
-    spawned.child.on('error', () => setNote(`⚠ rebalance ${row.path} fallito (${DECK_RUN})`));
-    noteSpawn(spawned);
-  }
-
-  /**
    * T134 — apre la sessione che SROTOLA l'hard-wrap di un path.
    *
    * Terna intera dalla riga `unwrap` del catalogo (T161): il modello, il titolo
-   * e anche il PROMPT, che fino a T134 era cablato in `wrap-scan.ts`. A
-   * differenza del drain qui un template unico basta — la skill è sempre la
-   * stessa e l'unico buco è il `{path}`.
+   * e anche il PROMPT, che fino a T134 era cablato in `wrap-scan.ts`: un
+   * template unico basta, e l'unico buco è il `{path}`.
    *
    * Il default resta `sonnet` e non il modello di default del deck (D9): lo
    * srotolamento è una passata meccanica con un verificatore deterministico
@@ -887,9 +764,6 @@ export function useDeckActions({
     togglePriority,
     dropDraftFor,
     dropSession,
-    drainInbox,
-    rebalanceSpawn,
-    rebalanceDoc,
     unwrapPath,
     openTerminal,
     openClaude,

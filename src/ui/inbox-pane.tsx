@@ -1,4 +1,4 @@
-// T134 — il pane della coda inbox, che in modo doc occupa lo slot DESTRO.
+// T134 — il pane degli inbox, che in modo doc occupa lo slot DESTRO.
 //
 // T160 · D1 — estratto da `ui/panes.tsx` insieme al pane doc, per la ragione
 // scritta in `coding-standards` §Un criterio verificato una volta non è un
@@ -88,7 +88,7 @@ export function InboxPane({
   ok: boolean;
   /** Almeno uno scan è stato tentato. */
   scanned: boolean;
-  /** T175 — `false` = lo script della coda non gira su questa piattaforma. */
+  /** T175 — `false` = lo script degli inbox non gira su questa piattaforma. */
   available?: boolean;
 }) {
   const width = paneTextWidth(columns);
@@ -125,11 +125,11 @@ export function InboxPane({
         columns={columns}
       />
       {!available ? (
-        // T175 — un quarto vuoto, il solo che non è uno stato della coda: la
-        // misura qui non esiste. Va detto per nome, o si leggerebbe come «coda
+        // T175 — un quarto vuoto, il solo che non è uno stato degli inbox: la
+        // misura qui non esiste. Va detto per nome, o si leggerebbe come «inbox
         // non ancora misurata» per sempre.
         <Text color="yellow" wrap="truncate-end">
-          {cut(offText('pluginScripts', 'coda inbox'), width)}
+          {cut(offText('pluginScripts', 'pane inbox'), width)}
         </Text>
       ) : paneCount === 0 ? (
         // Tre vuoti diversi, e dirlo è il punto: «non ho ancora misurato» non è
@@ -139,9 +139,9 @@ export function InboxPane({
         <Text color="yellow" wrap="truncate-end">
           {cut(
             !scanned
-              ? 'coda non ancora misurata'
+              ? 'inbox non ancora misurata'
               : !ok
-                ? 'misura della coda fallita: plugin assente o script in errore'
+                ? 'misura degli inbox fallita: plugin assente o script in errore'
                 : inboxView(activeView).empty,
             width,
           )}
@@ -167,8 +167,8 @@ export function InboxPane({
             >
               {sel ? CARET : CARET_OFF}
               <Text
-                color={mark === 'broken' ? 'red' : mark === 'queued' ? 'green' : undefined}
-                dimColor={mark === 'held' || mark === 'branched'}
+                color={mark === 'broken' ? 'red' : mark === 'released' ? 'green' : undefined}
+                dimColor={mark === 'wip' || mark === 'branched'}
               >
                 {pad(NATURA_SHORT[f.natura], NATURA_W)}
               </Text>{' '}
@@ -176,7 +176,7 @@ export function InboxPane({
                 {pad(INBOX_MARK[mark], INBOX_MARK_W)}
               </Text>{' '}
               {branchMark ? <Text color="yellow">{sanitize(branchMark)}</Text> : null}
-              <Text dimColor={mark !== 'queued'}>{name}</Text>
+              <Text dimColor={mark !== 'released'}>{name}</Text>
               {' '.repeat(Math.max(0, inner - termWidth(name)))}{' '}
               <Text dimColor>{pad(age, ageW, 'right')}</Text>
             </Text>

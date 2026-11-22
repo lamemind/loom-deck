@@ -185,7 +185,7 @@ test('childSessionsOf: senza task selezionata restano le spot, non tutte', () =>
 // l'ultima misura invece dello stato di adesso, e nulla a schermo diceva che il
 // numero fosse vecchio.
 
-test('switchMode: entrare in modo doc fa ripartire lo scan della coda inbox', () => {
+test('switchMode: entrare in modo doc fa ripartire lo scan degli inbox', () => {
   const src = readFileSync(
     join(fileURLToPath(new URL('.', import.meta.url)), '..', 'src', 'deck-model.ts'),
     'utf8',

@@ -188,19 +188,17 @@ function Deck({
     setNote,
   });
 
-  // T134/T160 — le DUE istanze dello sheet di file: la coda inbox e il bersaglio
+  // T134/T160 — le DUE istanze dello sheet di file: il file inbox e la riga
   // doc. Stesso hook (`useFileSheet`, P11), due modi distinti — `esc` da una
   // torna al pane inbox, dall'altra al pane doc, e un modo condiviso
-  // obbligherebbe a ricordare altrove da dove si era entrati. Come lo sheet
-  // della task ricevono lo spawn come callback: un hook di overlay non esce dal
-  // deck.
+  // obbligherebbe a ricordare altrove da dove si era entrati. Nessuna delle due
+  // lancia una conversazione: si legge e basta.
   const inbox = useFileSheet<InboxFile>({
     mode: 'inbox',
     rows,
     columns,
     setMode,
     setNote,
-    onEnter: actions.drainInbox,
   });
 
   const docSheet = useFileSheet<DocRow>({
@@ -209,7 +207,6 @@ function Deck({
     columns,
     setMode,
     setNote,
-    onEnter: actions.rebalanceDoc,
   });
 
   // T134 — l'hard-wrap. Come il project status non è solo un overlay: i suoi
@@ -374,7 +371,6 @@ function Deck({
         : null,
       inbox: {
         counts: model.inboxCounts,
-        stale: model.inboxStale,
         scanned: model.inboxScanned,
         ok: model.inboxOk,
         available: model.pluginScripts,
@@ -623,7 +619,7 @@ function Deck({
           />
         )}
         {/* T160 — il MODO sceglie la coppia: lista task + conversazioni, oppure
-            albero doc + coda inbox. Con quattro pane distinti i tipi delle righe
+            albero doc + inbox. Con quattro pane distinti i tipi delle righe
             restano disgiunti, e ogni azione continua a valere solo dove il suo
             oggetto esiste. */}
         {model.deckMode === 'doc' ? (

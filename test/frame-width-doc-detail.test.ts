@@ -1,5 +1,5 @@
 // T232 — gate di larghezza (vedi `frame-width.test.ts`): il detail del modo doc
-// — un file, una cartella, un bersaglio senza flag, un file inbox — sulla cache
+// — un file, una cartella, un file senza flag, un file inbox — sulla cache
 // finta di `docCacheRoot()`. Il gate misura la LARGHEZZA: sugli scenari dove una
 // riga li distingue si asserisce anche il CONTENUTO.
 
@@ -10,27 +10,24 @@ import { assertFrameFits, capture, docCacheRoot, lastFrame } from './frame-kit.j
 
 const DOC_SCENARIOS: Array<[string, string, number[], string?]> = [
   // Il detail di un FILE doc: schermata sostitutiva col testo reso a piena
-  // larghezza più la riga dell'azione, che porta il comando col path intero.
+  // larghezza più la riga in fondo, che dice che da qui non parte niente.
   // Le `D` contano le righe dell'ALBERO della fixture, non i file: fra un file e
   // l'altro ci sono le righe cartella. `DDDD` cade su `plugin-dev.md`, il primo
   // file vero dopo `inbox/` e `project/`.
-  ['detail doc · file', `${CTRL_B}DDDD\r`, [80, 100, 176], 'rebalance-doc'],
+  ['detail doc · file', `${CTRL_B}DDDD\r`, [80, 100, 176], 'la doc si legge e basta'],
   // Il detail di una CARTELLA (P10): stesso gesto, e al posto del testo l'elenco
   // dei suoi file coi loro flag.
   ['detail doc · cartella', `${CTRL_B}D\r`, [80, 100, 176], 'file ·'],
-  // Il bersaglio SENZA flag: la riga azione porta la ragione invece del comando,
-  // ed è più lunga di lui — il caso che sfonda se il budget è tarato sul comando.
-  // `runtime/tasks.md` è l'ULTIMA riga dell'albero (quindici in tutto) ed è
-  // l'unica senza flag: quattordici `D` dalla radice.
-  ['detail doc · bersaglio senza flag', `${CTRL_B}${'D'.repeat(14)}\r`, [80, 100], 'non porta flag'],
-  // Il detail di un file inbox, raggiunto dal pane destro del modo doc.
-  ['detail inbox', `${CTRL_B}RD\r`, [80, 100, 176]],
+  // Il file SENZA flag: la riga meta lo dice a parole. `runtime/tasks.md` è
+  // l'ULTIMA riga dell'albero (quindici in tutto): quattordici `D` dalla radice.
+  ['detail doc · file senza flag', `${CTRL_B}${'D'.repeat(14)}\r`, [80, 100], 'nessun flag'],
+  // Il detail di un file inbox, raggiunto dal pane destro del modo doc: la riga
+  // in fondo dice che nessuna skill lo consuma.
+  ['detail inbox', `${CTRL_B}RD\r`, [80, 100, 176], 'nessuna skill consuma un file inbox'],
   // Lo STESSO file raggiunto dall'ALBERO, che lo misura perché sta sotto la
-  // docs-root: l'azione proposta deve essere la stessa del pane di destra. `DD`
-  // scende su `inbox/` e poi sul suo unico file. Il gate assertava solo la
-  // larghezza, e una riga azione con la skill sbagliata ci stava dentro
-  // benissimo.
-  ['detail doc · file inbox dall’albero', `${CTRL_B}DD\r`, [80, 100, 176], 'drain-notions'],
+  // docs-root: si legge come ogni file della doc, coi suoi flag. `DD` scende su
+  // `inbox/` e poi sul suo unico file.
+  ['detail doc · file inbox dall’albero', `${CTRL_B}DD\r`, [80, 100, 176], 'INBOX'],
 ];
 
 for (const [label, keys, widths, needle] of DOC_SCENARIOS) {

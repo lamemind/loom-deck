@@ -376,21 +376,16 @@ export function spawnClaudeEmpty(cwd: string, model: ModelKind): Spawned {
  * T134 — sessione NUDA con un prompt letterale: `deck-run --no-task --prompt
  * <testo> --model <alias>`.
  *
- * Il lavoro che apre — drenare un file inbox, srotolare l'hard-wrap di un path
- * — sta sulla DOC, non su una task (D10 preflight). Legarlo a un cappello
- * esporterebbe `LOOM_TASK`, farebbe scattare l'hook `SessionStart` che inietta
- * in contesto il task file di un lavoro spesso già chiuso, e metterebbe
- * `· T<n>` nel titolo della tab; per un file `sweep` senza cappello la strada
- * non esisterebbe nemmeno.
+ * Il lavoro che apre — srotolare l'hard-wrap di un path — sta sulla DOC, non su
+ * una task (D10 preflight). Legarlo a una task esporterebbe `LOOM_TASK`,
+ * farebbe scattare l'hook `SessionStart` che inietta in contesto un task file
+ * che col lavoro non c'entra, e metterebbe `· T<n>` nel titolo della tab.
  *
  * Presidiata, non headless (D11): `spawnSkill` resta dov'è e non si estende
- * qui. Ne discendono due cose. Il confine presidiata / non presidiata delle
- * skill di doc smette di essere un vincolo — anche `align-doc`, che apre un
- * branch con PR, è offribile, perché c'è un umano nella tab che la guarda. E la
- * guardia d'ingresso `doc-guard.sh worktree`, che esce 2 su worktree sporco
- * sotto `inbox/`, `reference/` o `CLAUDE.md`, la incontra la sessione e la
- * mostra a chi l'ha lanciata: il deck non deve replicarla per sapere in
- * anticipo se l'azione morirebbe allo step 0.
+ * qui. C'è un umano nella tab che guarda il diff prima del commit, ed è lui a
+ * incontrare per primo un errore che la sessione mostra: il deck non deve
+ * replicare le guardie della sessione per sapere in anticipo se l'azione
+ * morirebbe al primo passo.
  *
  * Il modello è passato SEMPRE, anche sul default, per la stessa ragione di
  * `permissionMode`: lo spawn resta deterministico e leggibile nel process tree

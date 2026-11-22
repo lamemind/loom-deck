@@ -96,7 +96,7 @@ test('deckLegend: in modo doc le colonne seguono i pane, e nessun tasto inerte r
   // Un tasto inerte che resta in legenda descrive un deck che non esiste.
   const legend = deckLegend(docBase);
   assert.equal(legend.left.title, 'albero doc');
-  assert.equal(legend.right.title, 'coda inbox');
+  assert.equal(legend.right.title, 'inbox');
   assert.deepEqual(legend.left.voices, ['⏎ apri']);
   assert.deepEqual(legend.right.voices, ['⏎ apri']);
   const text = allVoices(legend).join(' · ');

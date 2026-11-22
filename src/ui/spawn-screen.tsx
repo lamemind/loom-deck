@@ -35,10 +35,11 @@ const MARK_W = 2;
  *  testata di colonna troncata con l'ellissi si legge come un difetto. */
 const MODEL_W = 7;
 
-/** Tetto della colonna funzione: la label più lunga del catalogo (`drain di un
- *  file inbox`) sta esattamente dentro. Un tetto più alto le celle le
- *  toglierebbe al prompt, che è l'unico dei quattro valori senza una forma
- *  breve; più basso troncherebbe due label su undici già a piena larghezza. */
+/** Tetto della colonna funzione: la label più lunga del catalogo
+ *  (`srotolamento hard-wrap`) sta esattamente dentro. Un tetto più alto le
+ *  celle le toglierebbe al prompt, che è l'unico dei quattro valori senza una
+ *  forma breve; più basso troncherebbe le label più lunghe già a piena
+ *  larghezza. */
 const FUNC_MAX = 22;
 
 /** Le etichette delle righe dell'area, in italiano come ogni altra etichetta a

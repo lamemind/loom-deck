@@ -83,7 +83,7 @@ export function useGitlink(deps: GitlinkDeps) {
       if (!alive.current) return;
       // Un tentativo fallito NON butta via l'esito dell'ultimo riuscito: le
       // righe precedenti restano vere, e il guasto si dice col glifo di allerta
-      // accanto al numero. Stessa regola del project status e della coda inbox.
+      // accanto al numero. Stessa regola dell'hard-wrap e degli inbox.
       setOk(res.ok);
       setScanned(true);
       if (res.ok || res.members.length > 0) setMembers(res.members);

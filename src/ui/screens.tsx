@@ -441,14 +441,12 @@ export function screenFor(input: ScreensInput) {
         top={start}
         total={inbox.lines.length}
         capacity={inbox.capacity}
-        prompt={inbox.prompt}
-        hint={inbox.hint}
         columns={columns}
       />
     );
   }
 
-  // ── T160 · detail di un bersaglio doc ───────────────────────────────────
+  // ── T160 · detail di una riga doc ───────────────────────────────────────
   // Nona schermata sostitutiva: la stessa dell'inbox (`useFileSheet`, due
   // istanze) su un altro oggetto. Su una cartella il corpo porta l'elenco dei
   // suoi file al posto di un testo (P10): il gesto è lo stesso, cambia cosa si
@@ -467,8 +465,6 @@ export function screenFor(input: ScreensInput) {
         top={start}
         total={doc.lines.length}
         capacity={doc.capacity}
-        prompt={doc.prompt}
-        hint={doc.hint}
         columns={columns}
       />
     );

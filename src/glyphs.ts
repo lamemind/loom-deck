@@ -128,26 +128,27 @@ export function liveCell(
  * T134 — colonna di stato della riga inbox, larga 2 come la cella marker della
  * lista sessioni.
  *
- * `held` non ha glifo, e non è una dimenticanza: un file senza il token
- * `drainable` resta eseguibile se qualcuno lo nomina, quindi ogni simbolo di
- * divieto direbbe una cosa più forte del vero. L'assenza dice «non è in coda»
- * senza promettere altro, e la colonna natura accanto continua a nominarlo.
+ * `wip` non ha glifo, e non è una dimenticanza: un file senza il token
+ * `drainable` è in lavorazione, cioè lo stato normale di un inbox mentre la sua
+ * task è aperta, e ogni simbolo direbbe una cosa più forte del vero. L'assenza
+ * dice «non ancora chiuso» senza promettere altro, e la colonna natura accanto
+ * continua a nominarlo.
  *
  * Nessun glifo è riusato dalla lista sessioni con un significato spostato: là
  * `●`/`◍` dicono la liveness di un processo e `📌`/`🔗`/`○` l'appartenenza,
- * qui si parla di una coda di lavoro. Un falso amico costa più di un simbolo
+ * qui si parla dello stato di un file. Un falso amico costa più di un simbolo
  * nuovo.
  */
-export const INBOX_MARK: Record<'broken' | 'branched' | 'held' | 'queued', string> = {
+export const INBOX_MARK: Record<'broken' | 'branched' | 'wip' | 'released', string> = {
   broken: WARN,
   branched: sanitize('🔒'),
-  held: '',
-  queued: sanitize('⏳'),
+  wip: '',
+  released: sanitize('⏳'),
 };
 
 /** Larghezza della cella marker della riga inbox, gemella dei 2 della lista
  *  sessioni: la cella si riempie di spazi anche quando è vuota, o le righe
- *  `held` sposterebbero a sinistra tutto ciò che segue. */
+ *  `wip` sposterebbero a sinistra tutto ciò che segue. */
 export const INBOX_MARK_W = 2;
 
 /**

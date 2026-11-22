@@ -6,7 +6,7 @@
 // chiamata — quale modello e quale prompt passare. Il modello veniva da quattro
 // sorgenti diverse (il catalogo `prompt-catalog` per kind, il transcript per
 // resume e fork, un selettore vivo per la nuda, un letterale in `actions.ts` per
-// drain e srotolamento) e non esisteva nessun posto in cui leggerne l'elenco.
+// lo srotolamento) e non esisteva nessun posto in cui leggerne l'elenco.
 // Senza quell'elenco non c'è nessuna tabella da mostrare, e nessuna riga che un
 // override di progetto possa indirizzare.
 //
@@ -183,9 +183,7 @@ export const ACTION_HOTKEYS: Readonly<Record<string, number>> = actionHotkeys(DE
 export type SpawnActionId =
   | PromptKind
   | 'bare'
-  | 'drain'
   | 'unwrap'
-  | 'rebalance'
   | 'project-status';
 
 /** Le tre celle configurabili di una riga. */
@@ -202,8 +200,8 @@ export interface SpawnAction {
   /**
    * La chiave con cui si legge `scripts/prompt-catalog`, o `null` per le azioni
    * che non hanno una riga lì (P2 preflight): il catalogo dati indicizza sui
-   * valori di `--prompt-kind`, e drain, srotolamento, nuda e project status non
-   * ne passano nessuno — una riga lì sarebbe irraggiungibile da ogni chiamante.
+   * valori di `--prompt-kind`, e srotolamento, nuda e project status non ne
+   * passano nessuno — una riga lì sarebbe irraggiungibile da ogni chiamante.
    */
   kind: PromptKind | null;
   /**
@@ -219,9 +217,8 @@ export interface SpawnAction {
   model: ModelKind | null;
   /**
    * Prompt cablato. `null` con un `kind` = lo porta il catalogo dati; `null`
-   * senza `kind` = il testo lo compone il CHIAMANTE (il drain, dove la skill è
-   * una funzione della natura del file); `''` = nessun prompt, che è un valore
-   * e non un'assenza.
+   * senza `kind` = il testo lo compone il CHIAMANTE; `''` = nessun prompt, che
+   * è un valore e non un'assenza.
    */
   prompt: string | null;
   /** I buchi che titolo e prompt di questa azione sanno interpolare, senza
@@ -257,7 +254,7 @@ const UNWRAP_PROMPT =
   'puoi committare direttamente';
 
 /**
- * Le TREDICI azioni configurabili, nell'ordine in cui la pagina le elenca.
+ * Le UNDICI azioni configurabili, nell'ordine in cui la pagina le elenca.
  *
  * Il perimetro è quello di D1: entra una riga se ha almeno una cella editabile.
  * Ne restano fuori resume e fork — lì il modello non è una preferenza ma
@@ -270,11 +267,11 @@ const UNWRAP_PROMPT =
  * T156 — le emoji dei titoli sono ASTRALI (code point ≥ U+10000) per necessità,
  * non per gusto: `sanitize` (`src/width.ts`) sostituisce con `·` ogni glifo su
  * cui le due contabilità di larghezza divergono, e le emoji del BMP a
- * presentazione testo divergono sempre. Le stesse OTTO (T160 aggiunge `🧭`,
- * T203 `🎬`)
- * stanno nella whitelist di `saneNote` (`src/sane-note.ts`), la riduzione del
- * titolo: un'emoji cambiata qui e non là sparisce fra la tabella e la tab,
- * senza errore.
+ * presentazione testo divergono sempre. Ognuna sta anche nella whitelist di
+ * `saneNote` (`src/sane-note.ts`), la riduzione del titolo: un'emoji cambiata
+ * qui e non là sparisce fra la tabella e la tab, senza errore. La whitelist ne
+ * tiene due in più (`🧹`, `🧭`), dei titoli di due righe uscite dal catalogo:
+ * restano lecite in una nota scritta a mano.
  */
 export const SPAWN_ACTIONS: readonly SpawnAction[] = [
   {
@@ -402,21 +399,6 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     },
   },
   {
-    // T134 — il drain di un file inbox. Il prompt lo compone `inboxPrompt`
-    // (`src/inbox.ts`), che è l'unico posto in cui vive la mappa natura →
-    // skill: un template unico non saprebbe esprimerla, e spezzare la riga in
-    // una per natura contraddirebbe il perimetro di D1.
-    id: 'drain',
-    label: 'drain di un file inbox',
-    surface: 'pane inbox ⏎⏎',
-    kind: null,
-    title: '🧹 {file}',
-    model: MODEL_DEFAULT,
-    prompt: null,
-    holes: ['file'],
-    fixed: { prompt: 'natura del file' },
-  },
-  {
     // T134 — lo srotolamento dell'hard-wrap. `sonnet` e non il default: è una
     // passata meccanica con un verificatore deterministico dietro (`md-wrap
     // --apply` confronta le due versioni normalizzate e rimette indietro il
@@ -431,35 +413,6 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     prompt: UNWRAP_PROMPT,
     holes: ['path'],
     fixed: {},
-  },
-  {
-    // T160 — il rebalance della topologia doc su un bersaglio (file o cartella).
-    //
-    // La cella MODELLO è fissa, e la ragione mostrata al posto del valore non è
-    // una scorciatoia: `rebalance-doc` dichiara `model: sonnet` nel frontmatter,
-    // e quel campo ri-timbra il modello della sessione per la durata della
-    // skill, qualunque `--model` sia stato passato allo spawn. Una cella
-    // editabile qui accetterebbe un valore che non sopravvive all'invocazione —
-    // cioè mentirebbe senza produrre nessun errore. Lo stesso vale per le altre
-    // tre skill doc (`drain-notions`, `derive-notions`, `align-doc`), che la
-    // riga `drain` non ha ancora recepito.
-    //
-    // DUE buchi per lo stesso dato, e servono entrambi: `{target}` è il path
-    // VERO, che la skill risolve contro la colonna `PATH` della misura, e
-    // `{words}` lo stesso path reso a parole per il titolo. L'alfabeto di
-    // `saneNote` non ha né `/` né `.`, quindi un `{target}` in un template di
-    // titolo uscirebbe con le parole saldate (`runtimereferencedoc-systemmd`) e
-    // la tab mostrerebbe un nome diverso da quello che il deck legge dal
-    // sidecar.
-    id: 'rebalance',
-    label: 'rebalance della doc',
-    surface: 'pane doc ⏎⏎',
-    kind: null,
-    title: '🧭 {words}',
-    model: 'sonnet',
-    prompt: '/loom-works:rebalance-doc {target}',
-    holes: ['target', 'words'],
-    fixed: { model: 'lo impone il frontmatter della skill' },
   },
   {
     // T121 — il recap di progetto, headless (`claude -p`): nessuna tab, quindi
@@ -491,20 +444,13 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
 export const EXAMPLE_HOLES: Readonly<Record<string, string>> = {
   TASK: 'T42',
   slug: 'esempio di task',
-  file: 'T42-nozioni',
   path: 'runtime reference',
-  // T160 — i due buchi della riga `rebalance`, che portano lo stesso dato in due
-  // alfabeti: il path vero per il prompt della skill, le parole per il titolo
-  // della tab. L'esempio li mostra entrambi nella forma in cui arrivano davvero,
-  // o chi scrive un template li scambierebbe senza accorgersene.
-  target: 'runtime/reference/doc-system',
-  words: 'runtime reference doc-system',
 };
 
 /**
  * I valori sono quelli che i FORNITORI dei buchi producono davvero, non testo
  * grezzo: lo slug arriva dal nome del task file coi trattini già sciolti in
- * spazi, il basename dell'inbox senza `.md`, il path già reso in parole. Un
+ * spazi, il path già reso in parole. Un
  * esempio con dentro un `/` o un `.` mostrerebbe l'effetto della riduzione — le
  * parole saldate — su un caso che allo spawn non si presenta mai, e chi lo
  * legge correggerebbe un titolo che non è rotto.
@@ -533,9 +479,8 @@ export function editableFields(action: SpawnAction): readonly SpawnField[] {
  * Cosa mostra una cella della tabella.
  *
  * Il perimetro di D1 fa entrare righe che non sono commensurabili — la nuda non
- * ha un titolo, il project status gira headless, il prompt del drain è una
- * funzione della natura del file — quindi alcune celle non hanno un valore da
- * mostrare. La regola è che una cella senza valore **dice perché**, invece di
+ * ha un titolo, il project status gira headless — quindi alcune celle non hanno
+ * un valore da mostrare. La regola è che una cella senza valore **dice perché**, invece di
  * restare vuota: una cella muta si legge come un dato mancante, cioè come un
  * difetto, e manda a cercare un guasto che non c'è.
  *

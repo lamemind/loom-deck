@@ -147,19 +147,17 @@ export function inboxHeaderParts(
 
 /**
  * T160 — header del pane doc, quarto gemello: `Doc` nomina il pane e non si
- * seleziona, poi le cinque viste del catalogo, poi l'avviso di misura parziale,
- * poi `↑N`/`↓N`.
+ * seleziona, poi le viste del catalogo (una, `Tutti`), poi l'avviso di misura
+ * parziale, poi `↑N`/`↓N`.
  *
- * L'attenuazione la decide il catalogo (`v.dim(counts)`) come per l'inbox: la
- * voce `Tutti` conta ogni riga dell'albero ma si grigia su quante ne sono
- * flaggate, perché è quello a dire se c'è qualcosa da lanciare.
+ * L'attenuazione la decide il catalogo (`v.dim(counts)`) come per l'inbox.
  *
  * L'avviso `senza cartelle` copre il caso della cascata (P2): il deck esegue lo
  * script dalla cache installata del plugin e può incontrare una versione che
  * emette la sola tabella dei file. L'albero si costruisce lo stesso — le
- * cartelle si deducono dai path — ma i flag di cartella non ci sono, e senza
- * l'avviso un `REGROUP (0)` direbbe «nessuna cartella da riorganizzare» invece
- * di «non l'ho potuto misurare». Sta PRIMA di `↑N`/`↓N` perché è
+ * cartelle si deducono dai path — ma il conteggio file e il peso di una
+ * cartella non ci sono, e senza l'avviso una cartella a `0 file` si leggerebbe
+ * come vuota invece che come non misurata. Sta PRIMA di `↑N`/`↓N` perché è
  * un'informazione sulla misura, e i contatori di scroll sono i primi a cedere il
  * posto su un terminale stretto.
  */

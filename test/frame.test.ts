@@ -87,7 +87,7 @@ const frameInput = (over: Partial<Parameters<typeof frameGeometry>[0]> = {}) =>
     inboxViewId: 'all',
     docRows: [],
     selDocPath: null,
-    docCounts: { total: 0, split: 0, merge: 0, tldr: 0, regroup: 0 },
+    docCounts: { total: 0 },
     docViewId: 'all',
     docHasDirs: false,
     restoreCount: 0,

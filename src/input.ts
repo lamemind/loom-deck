@@ -43,7 +43,7 @@ import { LEFT_PANE, META_ROWS, QUIT_WINDOW_MS, RIGHT_PANE, type Mode } from './m
 import { TASK_VIEWS, taskView, type SessionViewId, type TaskViewId } from './pane-views.js';
 import type { InboxViewId } from './inbox-views.js';
 import type { DocViewId } from './doc-views.js';
-import { inboxPrompt, loadInboxText } from './inbox.js';
+import { loadInboxText } from './inbox.js';
 import { dirListing, loadDocText } from './doc-tree.js';
 import { refuse } from './platform.js';
 import type { Frame } from './frame.js';
@@ -549,46 +549,30 @@ export function useDeckInput({
       // gira, `⏎` lo dice invece di rispondere «nessuna riga selezionata».
       if (
         (model.focus === 'doctree' || model.focus === 'inbox') &&
-        refuse('pluginScripts', '⏎', setNote, model.focus === 'inbox' ? 'coda inbox' : 'albero doc')
+        refuse('pluginScripts', '⏎', setNote, model.focus === 'inbox' ? 'pane inbox' : 'albero doc')
       ) {
         return;
       }
       if (model.focus === 'doctree') {
-        // T160 — `⏎` apre il DETAIL del bersaglio, non la sessione: la sessione
-        // la apre il `⏎` di dentro, come sul pane inbox. Il gesto è lo stesso su
-        // un file e su una cartella (P10) — cambia cosa si legge nel corpo, non
-        // cosa si preme: il testo del file, oppure l'elenco che dice perché la
-        // cartella è flaggata.
+        // T160 — `⏎` apre il DETAIL della riga, e nient'altro: nessuna
+        // conversazione parte dal pane doc. Il gesto è lo stesso su un file e su
+        // una cartella (P10) — cambia cosa si legge nel corpo, non cosa si
+        // preme: il testo del file, oppure l'elenco dei file della cartella.
         const r = model.selDoc;
         if (!r) {
           setNote('nessuna riga doc selezionata');
         } else {
-          const { prompt, hint } = actions.rebalanceSpawn(r);
           overlays.doc.open({
             item: r,
             text: r.kind === 'dir' ? dirListing(model.docData, r.path) : loadDocText(cwd, r.path),
-            prompt,
-            hint,
           });
         }
       } else if (model.focus === 'inbox') {
-        // T134 — `⏎` apre il DETAIL del file, non la sessione: la sessione la
-        // apre il `⏎` di dentro. Stessa scala del pane task, dove `⏎` apre il
-        // detail e le combo restano per chi sa già cosa vuole — con la
-        // differenza che qui non esiste un acceleratore, perché la skill non è
-        // una scelta ma una conseguenza della natura del file.
+        // T134 — `⏎` apre il DETAIL del file, e nient'altro: nessuna skill
+        // consuma un file inbox, quindi nessuna conversazione parte da qui.
         const f = model.selInbox;
         if (!f) setNote('nessun file inbox selezionato');
-        else
-          overlays.inbox.open({
-            item: f,
-            text: loadInboxText(cwd, f.path),
-            // T134 — la skill la decide la NATURA del file, e quella mappa vive
-            // in un posto solo (`inboxPrompt`, `src/inbox.ts`): il prompt si
-            // compone qui, dove si apre lo sheet, e non dentro l'hook — che da
-            // T160 è condiviso con un bersaglio di tutt'altra natura.
-            prompt: inboxPrompt(f),
-          });
+        else overlays.inbox.open({ item: f, text: loadInboxText(cwd, f.path) });
       } else if (model.focus === 'tasks') {
         // T66 — ⏎ apre il DETAIL, non più una sessione. Secondo rimappaggio in
         // due task (T56 lo spostò da recap a sessione a mani nude), e la

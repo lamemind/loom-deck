@@ -201,8 +201,8 @@ export interface GitlinkScan {
  * Invoca lo script e ne parsa l'output.
  *
  * I modi di non avere il dato — plugin non installato su questa macchina,
- * script in errore, git muto — collassano in un solo `ok: false`, come per la
- * coda inbox: a schermo non cambiano la prima mossa di chi li vede. Nessuno dei
+ * script in errore, git muto — collassano in un solo `ok: false`, come per lo
+ * scan degli inbox: a schermo non cambiano la prima mossa di chi li vede. Nessuno dei
  * due è un throw, un indicatore informativo non può rompere il deck.
  *
  * Lo stdout si legge ANCHE quando l'exit è non-zero: lo script classifica tutti

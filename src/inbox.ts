@@ -1,4 +1,4 @@
-// T134 — la coda inbox come dato del deck.
+// T134 — i file inbox come dato del deck.
 //
 // La misura non la fa il deck: la fa `doc-metrics.sh --inbox`, che per ogni file
 // invoca `inbox.sh parse` e ne riporta natura e marcatori. È il contrario della
@@ -26,15 +26,16 @@ export const INBOX_METRICS_SCRIPT = 'scripts/docs/doc-metrics.sh';
  *
  * Gli altri tre scan periodici misurano dati che si muovono al ritmo del
  * calendario (l'età di una task) o di una riscrittura di massa (l'hard-wrap dei
- * `.md`). La coda inbox si muove invece a ogni checkpoint: un file nuovo appare
- * quando una sessione trasloca le sue nozioni, e con la cadenza a 6h il
- * contatore resterebbe fermo per l'intera mattina di lavoro che lo ha riempito.
+ * `.md`). La cartella inbox si muove invece a ogni checkpoint: un file nuovo
+ * appare quando una sessione trasloca le sue nozioni, un file cambia stato
+ * quando la sua task si chiude, e con la cadenza a 6h il contatore resterebbe
+ * fermo per l'intera mattina di lavoro che lo ha mosso.
  * Il costo di un giro resta uno spawn di `doc-metrics.sh` su una cartella di
  * pochi file, quindi trascurabile anche a questa frequenza.
  */
 export const INBOX_SCAN_INTERVAL_MS = 30 * 60 * 1000;
 
-/** Le tre nature che una skill sa consumare, più il file che non si parsa. */
+/** Le tre nature del marker inbox, più il file che non si parsa. */
 export const NATURE = ['nozioni', 'derivazione', 'sweep'] as const;
 export type Natura = (typeof NATURE)[number];
 export type InboxNatura = Natura | 'malformato';
@@ -83,9 +84,8 @@ function natura(cell: string): InboxNatura {
  *   PATH · NATURA · INDEXED · DRAINABLE · BRANCH · NOZIONI · APERTE · CHAR ·
  *   CREATED · AGE_DAYS · CAPPELLO
  *
- * `AGE_DAYS` si scarta di proposito: è troncato al giorno, e la soglia della
- * sirena è in ORE — con i giorni interi 47 e 49 ore sarebbero lo stesso numero.
- * L'età la ricalcola `ageHours` da `CREATED`.
+ * `AGE_DAYS` si scarta di proposito: è troncato al giorno, e l'età che la riga
+ * mostra la rende `relTime` da `CREATED`, al minuto.
  */
 export function parseInboxTsv(stdout: string): InboxFile[] {
   const out: InboxFile[] = [];
@@ -107,28 +107,23 @@ export function parseInboxTsv(stdout: string): InboxFile[] {
       cappello: c[10] ?? '',
     });
   }
-  // Dal più vecchio in cima (D8): i più vecchi sono i più urgenti. Lo script
-  // emette già in quest'ordine — riordinare qui costa nulla e toglie di mezzo
-  // la dipendenza da una garanzia scritta altrove.
+  // Dal più vecchio in cima (D8). Lo script emette già in quest'ordine —
+  // riordinare qui costa nulla e toglie di mezzo la dipendenza da una garanzia
+  // scritta altrove.
   return out.sort((a, b) => a.created - b.created);
 }
 
-/** Ore intere trascorse da `created` (epoch in secondi). */
-export function ageHours(created: number, now: number): number {
-  return Math.floor((now - created * 1000) / 3_600_000);
-}
-
 /**
- * Il file promette lavoro che una skill può prendere DA SOLA, senza che nessuno
- * lo nomini: `drainable` e nessun branch che lo congeli.
+ * Il file descrive un RILASCIO CHIUSO: `drainable` e nessun branch che lo
+ * congeli. È il criterio dei contatori del bottone di testata e delle tre viste
+ * per natura.
  *
- * Non è un criterio di ammissibilità dell'azione, ed è la distinzione che tiene
- * in piedi D5: le tre skill dichiarano tutte che un file NOMINATO si esegue
- * anche senza `drainable` — nominarlo è già la decisione che il token
- * dichiarerebbe. Replicare qui quel criterio come guardia impedirebbe ciò che
- * l'utente ha appena chiesto. Serve solo a decidere cosa entra nei contatori.
+ * `drainable` lo accende il checkpoint che chiude la task: da lì il file è
+ * congelato e resta in `inbox/` come nozione di un lavoro finito. Senza il token
+ * il file è in lavorazione e appartiene alla task che lo scrive; con `branch:` è
+ * congelato finché `pull-repos` non trova il branch su main.
  */
-export function isQueued(f: InboxFile): boolean {
+export function isReleased(f: InboxFile): boolean {
   return f.drainable && !f.branch && f.natura !== 'malformato';
 }
 
@@ -152,131 +147,51 @@ export const NATURA_SHORT: Record<InboxNatura, string> = {
 export const NATURA_W = 3;
 
 /**
- * Perché un file è o non è nella coda automatica. Quattro casi, in ordine di
- * precedenza — ognuno esclude quelli sotto:
+ * Lo stato di un file inbox. Quattro casi, in ordine di precedenza — ognuno
+ * esclude quelli sotto:
  *
- *  - `broken`   — nessuna natura leggibile: non lo prende nessuna delle tre
- *                 skill, e il file va riparato prima che drenato;
- *  - `branched` — `branch:<nome>`, congelato per CHIUNQUE finché il branch non
- *                 è su main: lo sblocca `pull-repos`, non chi guarda il deck;
- *  - `held`     — senza il token `drainable`: fuori dalla coda del notturno, ma
- *                 eseguibile eccome se qualcuno lo NOMINA (D5). Non è un
- *                 divieto, ed è la ragione per cui il deck non ci mette sopra
- *                 una guardia;
- *  - `queued`   — lavoro che una skill può prendere da sola.
+ *  - `broken`   — nessuna natura leggibile: il marker va riparato a mano;
+ *  - `branched` — `branch:<nome>`, congelato finché il branch non è su main: lo
+ *                 sblocca `pull-repos`, non chi guarda il deck;
+ *  - `wip`      — senza il token `drainable`: in lavorazione, appartiene alla
+ *                 task che lo scrive;
+ *  - `released` — `drainable`: il rilascio è chiuso e il file è congelato.
  */
-export type InboxMark = 'broken' | 'branched' | 'held' | 'queued';
+export type InboxMark = 'broken' | 'branched' | 'wip' | 'released';
 
 export function inboxMark(f: InboxFile): InboxMark {
   if (f.natura === 'malformato') return 'broken';
   if (f.branch) return 'branched';
-  if (!f.drainable) return 'held';
-  return 'queued';
+  if (!f.drainable) return 'wip';
+  return 'released';
 }
+
+/** Lo stato a parole, per la testata del detail: il glifo della lista dice
+ *  QUALE stato, la parola lo nomina. */
+export const INBOX_MARK_LABEL: Record<InboxMark, string> = {
+  broken: 'marker illeggibile',
+  branched: 'congelato su branch',
+  wip: 'in lavorazione',
+  released: 'rilascio chiuso',
+};
 
 export type NaturaCounts = Record<Natura, number>;
 
 /**
- * Un contatore per natura, sui soli file in coda. Un `malformato` non ha natura
- * e non entra in nessuno dei tre — ma resta in lista, perché nasconderlo
- * produrrebbe un contatore che mente al ribasso proprio quando qualcosa si è
- * rotto.
+ * Un contatore per natura, sui soli file a rilascio chiuso. Un `malformato` non
+ * ha natura e non entra in nessuno dei tre — ma resta in lista, perché
+ * nasconderlo produrrebbe un contatore che mente al ribasso proprio quando
+ * qualcosa si è rotto.
  */
 export function countByNatura(files: readonly InboxFile[]): NaturaCounts {
   const counts: NaturaCounts = { nozioni: 0, derivazione: 0, sweep: 0 };
-  for (const f of files) if (isQueued(f)) counts[f.natura as Natura]++;
+  for (const f of files) if (isReleased(f)) counts[f.natura as Natura]++;
   return counts;
 }
 
-export function totalQueued(counts: NaturaCounts): number {
-  return counts.nozioni + counts.derivazione + counts.sweep;
-}
-
 /**
- * D10 — 48 ore. Un campionamento a 6 ore sbaglia al massimo di un ottavo, cioè
- * entro il rumore di una soglia scelta a mano.
- */
-export const DEFAULT_INBOX_STALE_HOURS = 48;
-
-/** Quanti file in coda hanno passato la soglia: è il numero accanto alla sirena. */
-export function staleCount(
-  files: readonly InboxFile[],
-  hours: number,
-  now: number,
-): number {
-  return files.filter((f) => isQueued(f) && ageHours(f.created, now) >= hours).length;
-}
-
-/**
- * La skill che consuma ogni natura (D8). Il file viaggia come BASENAME e non
- * come path: la grammatica di matching è identica per le tre — path completo,
- * basename con o senza `.md`, case-insensitive contro `{docs_root}/inbox/` —
- * quindi il deck non deve conoscere il path, e non lo compone.
- */
-const DRAIN_SKILL: Record<Natura, string> = {
-  nozioni: 'drain-notions',
-  derivazione: 'derive-notions',
-  sweep: 'align-doc',
-};
-
-/**
- * Il prompt della sessione che il deck apre su un file inbox.
- *
- * Su un `malformato` NON è un drain ma una RIPARAZIONE: nessuna delle tre skill
- * prende un file senza natura, quindi offrirgliene una significherebbe aprire
- * una sessione destinata a fermarsi allo step 0.
- *
- * Nessuna guardia sul token `drainable` né sul branch (D5): le tre skill
- * dichiarano tutte, con le stesse parole, che un file NOMINATO si esegue anche
- * senza `drainable` — quel token governa la coda automatica del notturno, non
- * il permesso di eseguire, e nominare un file È la decisione che il token
- * dichiarerebbe. Il solo `branch:` lo rifiutano loro, e lo fanno per chiunque:
- * replicarlo qui aggiungerebbe una seconda copia divergibile per impedire ciò
- * che l'utente ha appena chiesto.
- *
- * Niente backtick nel testo: il prompt attraversa `--prompt` come argv singolo
- * e poi `bash -lc` dentro `deck-run`, dove viene quotato ad apici singoli. Con
- * quel quoting un backtick sarebbe inerte, ma il testo lo si legge anche in
- * riga di stato e in un titolo di tab — un carattere che non serve non si
- * spende.
- */
-export function inboxPrompt(f: InboxFile): string {
-  if (f.natura === 'malformato') {
-    return (
-      `il file inbox ${f.basename} non ha un marker leggibile: nessuna delle tre skill di drain ` +
-      'lo prende. aprilo, stabilisci di che natura e (nozioni, derivazione o sweep) e riporta il ' +
-      'marker alla grammatica di scripts/docs/inbox.sh del plugin. non drenare niente finche il ' +
-      'marker non e valido.'
-    );
-  }
-  return `/loom-works:${DRAIN_SKILL[f.natura]} ${f.basename}`;
-}
-
-/**
- * T161 — il buco `{file}` del titolo di una sessione di drain: il basename senza
- * estensione e senza punti. L'emoji del prefisso non sta più qui — è dentro il
- * template della riga `drain` del catalogo delle azioni, dove il progetto può
- * riscriverla.
- *
- * Il `.md` si toglie QUI e non lo si lascia cadere a valle: l'alfabeto di
- * `saneNote` non ha il punto, quindi il titolo della tab uscirebbe con le due
- * lettere saldate al nome (`…-prioritariamd`) mentre la lista del deck, che
- * legge la nota grezza dal sidecar, mostrerebbe il nome intero — la stessa
- * conversazione con due nomi, senza errore.
- *
- * Uno per ogni natura, `malformato` compreso: quella sessione ripara il marker
- * invece di drenare, ma l'oggetto su cui lavora è lo stesso file, ed è il file
- * che il titolo nomina. L'azione la dice il prompt.
- */
-export function inboxWords(f: InboxFile): string {
-  return f.basename.replace(/\.md$/i, '').replace(/\./g, '-');
-}
-
-/**
- * Il testo del file inbox, per il detail fullscreen. `null` = illeggibile —
- * il detail lo dice e tiene l'azione attiva, come fa quello della task con un
- * task file mancante: la skill risolve il file per nome, non per il testo che
- * il deck è riuscito a leggere.
+ * Il testo del file inbox, per il detail fullscreen. `null` = illeggibile, e il
+ * detail lo dice.
  *
  * `sanitize` AL CONFINE DI CARICAMENTO, come `loadTaskFileText` e il gemello
  * `loadDocText`: la catena dichiarata in `markdown.ts` è `sanitize →

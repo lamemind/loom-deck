@@ -68,7 +68,7 @@ test("l'avviso nomina il tasto, la funzione e la piattaforma", () => {
     offNote('CANC', 'liveSessions', 'eliminazione delle conversazioni', 'win32'),
     '⚠ CANC → eliminazione delle conversazioni n/d su Windows',
   );
-  assert.equal(offText('pluginScripts', 'coda inbox', 'win32'), 'coda inbox n/d su Windows');
+  assert.equal(offText('pluginScripts', 'pane inbox', 'win32'), 'pane inbox n/d su Windows');
 });
 
 test('LOOM_DECK_PLATFORM sostituisce la piattaforma vera, e si legge a ogni chiamata', () => {
@@ -98,11 +98,11 @@ test('refuse: su una funzione accesa non scrive niente e lascia passare', () => 
 test('gli indicatori di una funzione spenta tengono l\'etichetta e mostrano n/d', () => {
   const counts = { nozioni: 0, derivazione: 0, sweep: 0, all: 0 } as never;
   assert.equal(
-    inboxButton({ counts, stale: 3, scanned: false, ok: false, available: false }),
-    inboxButton({ counts, stale: 0, scanned: true, ok: true, available: false }),
-    'sirena e allerta non devono comparire accanto a una misura che non esiste',
+    inboxButton({ counts, scanned: false, ok: false, available: false }),
+    inboxButton({ counts, scanned: true, ok: true, available: false }),
+    'l\'allerta non deve comparire accanto a una misura che non esiste',
   );
-  assert.match(inboxButton({ counts, stale: 0, scanned: true, ok: true, available: false }), /^\[ Doc .* n\/d \]$/);
+  assert.match(inboxButton({ counts, scanned: true, ok: true, available: false }), /^\[ Doc .* n\/d \]$/);
   assert.equal(wrapIndicator({ count: 4, mtime: 1, ok: true, scanning: false, available: false }), `wrap ${OFF_MARK}`);
   assert.equal(
     gitlinkIndicator({ count: 2, attention: 1, scanned: true, ok: true, failed: true, available: false }),

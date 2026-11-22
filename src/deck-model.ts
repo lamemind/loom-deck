@@ -25,7 +25,7 @@ import {
   useTaskDetail,
   useTasks,
 } from './hooks.js';
-import { DEFAULT_INBOX_STALE_HOURS, staleCount, type InboxFile } from './inbox.js';
+import type { InboxFile } from './inbox.js';
 import { aliveIds, restoreSet } from './live-marks.js';
 import type { DocRow, DocScanData } from './doc-tree.js';
 import {
@@ -306,8 +306,7 @@ export function useDeckModel({
   // conversazioni).
   const [selInboxPath, setSelInboxPath] = useState<string | null>(null);
   // T160 — gemella della precedente, sul pane doc: keyed sul PATH e mai
-  // sull'indice, perché la lista cambia forma fra le viste (albero con le
-  // cartelle, liste piatte per flag) e si riordina a ogni scan.
+  // sull'indice, perché l'albero si riordina e si accorcia a ogni scan.
   const [selDocPath, setSelDocPath] = useState<string | null>(null);
 
   // T136 — data dell'ultimo commit di ogni task file, per la chiave `commit`
@@ -363,21 +362,17 @@ export function useDeckModel({
   const archivableSig = useMemo(() => [...archivable].sort().join(','), [archivable]);
   const dirtyFolders = useDirtyFolders(archivableSig, tasksDir, cwd);
 
-  // T134 — terzo scan della famiglia (D1): coda inbox per natura, età del più
-  // vecchio. T175 — la docs-root è quella di `tasksPath`, risolta una volta in
-  // `cli.tsx`: lista task e coda inbox guardano la stessa cartella.
-  // T175 — coda inbox e albero doc li misura lo stesso script del plugin: dove
-  // non gira, nessuno dei due scan parte e i due pane dicono perché.
+  // T134 — terzo scan della famiglia (D1): i file inbox per natura e stato.
+  // T175 — la docs-root è quella di `tasksPath`, risolta una volta in
+  // `cli.tsx`: lista task e pane inbox guardano la stessa cartella.
+  // T175 — inbox e albero doc li misura lo stesso script del plugin: dove non
+  // gira, nessuno dei due scan parte e i due pane dicono perché.
   const pluginScripts = isAvailable('pluginScripts');
   const inbox = useInboxScan(cwd, docsRoot, pluginScripts);
   const inboxCounts: InboxViewCounts = useMemo(
     () => deriveInboxCounts(inbox.files),
     [inbox.files],
   );
-  // Il numero accanto alla sirena: solo i file in coda oltre soglia. `Date.now()`
-  // letto a ogni render e non memoizzato — è una sottrazione, e congelarlo
-  // lascerebbe la sirena ferma sull'ora dello scan invece che sull'ora corrente.
-  const inboxStale = staleCount(inbox.files, DEFAULT_INBOX_STALE_HOURS, Date.now());
   const inboxFiles = useMemo(
     () => selectInboxRows(inboxViewId, inbox.files),
     [inboxViewId, inbox.files],
@@ -558,9 +553,9 @@ export function useDeckModel({
   useEffect(() => {
     setResumeModel(modelAlias(selSessionObj?.model ?? '') ?? MODEL_DEFAULT);
   }, [selSessionId]);
-  // T134 — gemello dei due sopra: un file drenato sparisce dalla coda al primo
-  // scan successivo, e la selezione cade sulla prima riga della lista invece
-  // che su una posizione a caso.
+  // T134 — gemello dei due sopra: un file che sparisce da `inbox/` (o da una
+  // vista, quando cambia stato) esce dalla lista al primo scan successivo, e la
+  // selezione cade sulla prima riga invece che su una posizione a caso.
   useEffect(() => {
     if (selInboxPath !== null && !inboxFiles.some((f) => f.path === selInboxPath)) {
       setSelInboxPath(inboxFiles[0]?.path ?? null);
@@ -568,9 +563,9 @@ export function useDeckModel({
       setSelInboxPath(inboxFiles[0]!.path);
     }
   }, [inboxFiles, selInboxPath]);
-  // T160 — gemello del precedente sul pane doc: un file splittato sparisce dalla
-  // vista `SPLIT` al primo scan dopo l'operazione, e la selezione cade sulla
-  // prima riga invece che su una posizione a caso.
+  // T160 — gemello del precedente sul pane doc: un file tolto o spostato
+  // sparisce dall'albero al primo scan, e la selezione cade sulla prima riga
+  // invece che su una posizione a caso.
   useEffect(() => {
     if (selDocPath !== null && !docRows.some((r) => r.path === selDocPath)) {
       setSelDocPath(docRows[0]?.path ?? null);
@@ -653,7 +648,7 @@ export function useDeckModel({
   }
 
   /** Gemelle delle due sopra, sul pane doc. Nessuna riga è non-selezionabile:
-   *  una cartella è un bersaglio di `rebalance-doc` quanto un file. */
+   *  `⏎` apre una cartella quanto un file. */
   function selectDocRow(index: number) {
     const r = docRows[index];
     if (r) setSelDocPath(r.path);
@@ -695,7 +690,7 @@ export function useDeckModel({
    * Erede del `toggleInboxPane` di T134, che scambiava il solo pane destro. Un
    * tasto per slot avrebbe reso raggiungibili le due combinazioni che l'asse
    * unico esiste per non avere (albero doc accanto alle conversazioni, lista
-   * task accanto alla coda inbox), e ne avrebbe richiesto un secondo che nessuna
+   * task accanto al pane inbox), e ne avrebbe richiesto un secondo che nessuna
    * legenda ha spazio per annunciare.
    *
    * Il FOCUS segue la POSIZIONE, non il contenuto: chi stava guardando a
@@ -845,12 +840,7 @@ export function useDeckModel({
     inboxOk: inbox.ok,
     inboxViewId,
     inboxCounts,
-    inboxStale,
     inboxFiles,
-    // La coda INTERA, non filtrata dalla vista: il pane doc la interroga per
-    // path e la vista attiva del pane inbox non c'entra niente con quale file
-    // l'albero stia mostrando.
-    inboxAll: inbox.files,
     selInboxPath,
     selInbox,
     // derivazioni del pane doc

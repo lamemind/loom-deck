@@ -207,22 +207,27 @@ export type IndicatorRow = {
 };
 
 /**
- * Il bottone che monta il modo doc: `[ Doc 📄 3/1/2 🚨2 ]`.
+ * Il bottone che monta il modo doc: `[ Doc 📄 3/1/2 ]`.
  *
  * T160/P4 — nomina il MODO, non più il solo pane inbox di T134, perché è quello
  * che `^B` monta adesso. I contatori restano quelli dell'inbox e non ne
- * guadagnano di doc: un contatore dei flag doc obbligherebbe a tenere lo scan da
- * quattro secondi acceso anche in modo task, cioè a pagarlo quando nessuno
- * guarda l'albero — l'opposto dell'interruttore di `useDocScan`.
+ * guadagnano di doc: un contatore sull'albero obbligherebbe a tenere lo scan da
+ * secondi acceso anche in modo task, cioè a pagarlo quando nessuno guarda
+ * l'albero — l'opposto dell'interruttore di `useDocScan`.
  *
  * SEMPRE ACCESO, mai grigio (D7 di T134): è un modo, non un sottoinsieme che può
- * essere vuoto. I tre numeri sono le tre nature nell'ordine del catalogo; la
- * sirena e il suo contatore compaiono solo sopra la soglia.
+ * essere vuoto. I tre numeri sono le tre nature nell'ordine del catalogo, e
+ * contano i file a rilascio chiuso: `drainable` e nessun `branch:`.
+ *
+ * Nessuna sirena sui file vecchi: un file `drainable` resta in `inbox/` a tempo
+ * indeterminato, e nessun gesto riporterebbe a zero un contatore dei file oltre
+ * una certa età. Un contatore che non arriva mai a zero smette di essere letto,
+ * la stessa regola dell'hard-wrap e del gitlink qui sotto.
  *
  * Il nome non si scambia col modo montato, a differenza della voce di legenda
- * qui sopra: il bottone porta i contatori della coda inbox, che vive in modo
- * doc, quindi è l'etichetta di quel mondo — e un `[ Task 📄 3/1/2 ]` leggerebbe
- * quei tre numeri come se fossero delle task.
+ * qui sopra: il bottone porta i contatori degli inbox, che vivono in modo doc,
+ * quindi è l'etichetta di quel mondo — e un `[ Task 📄 3/1/2 ]` leggerebbe quei
+ * tre numeri come se fossero delle task.
  *
  * Prima del primo scan i numeri non esistono ancora, e stampare `0/0/0` direbbe
  * «ho misurato e non c'è niente» — cioè la cosa sbagliata (D2 preflight:
@@ -232,10 +237,9 @@ export type IndicatorRow = {
  */
 export function inboxButton(state: {
   counts: InboxViewCounts;
-  stale: number;
   scanned: boolean;
   ok: boolean;
-  /** T175 — `false` = lo script che misura la coda non gira su questa
+  /** T175 — `false` = lo script che misura gli inbox non gira su questa
    *  piattaforma: `n/d` al posto dei numeri, che sarebbero tre zeri mai misurati. */
   available?: boolean;
 }): string {
@@ -243,9 +247,8 @@ export function inboxButton(state: {
   const numbers = state.scanned
     ? `${state.counts.nozioni}/${state.counts.derivazione}/${state.counts.sweep}`
     : STATUS_MISSING;
-  const siren = state.stale > 0 ? ` 🚨${state.stale}` : '';
   const warn = state.ok ? '' : ` ${WARN}`;
-  return sanitize(`[ Doc 📄 ${numbers}${siren}${warn} ]`);
+  return sanitize(`[ Doc 📄 ${numbers}${warn} ]`);
 }
 
 /**

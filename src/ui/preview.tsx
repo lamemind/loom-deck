@@ -105,8 +105,8 @@ export function PreviewPane(p: PreviewProps) {
  *
  * Porta ciò che la riga di lista non può: il nome INTERO (in lista si tronca
  * su un pane largo la metà del terminale), le cifre del marker e il cappello.
- * Il perché di uno stato — `branch:` che congela per chiunque, `drainable`
- * assente che tiene fuori dalla coda ma non vieta l'esecuzione — è scritto per
+ * Il perché di uno stato — `branch:` che congela finché il branch non è su
+ * main, `drainable` assente che dice un lavoro ancora aperto — è scritto per
  * esteso, perché il glifo della lista dice solo QUALE stato, non cosa comporta.
  */
 export function InboxPreview({ file, columns }: { file: InboxFile; columns: number }) {
@@ -114,12 +114,12 @@ export function InboxPreview({ file, columns }: { file: InboxFile; columns: numb
   const width = previewTextWidth(columns);
   const state =
     mark === 'broken'
-      ? 'marker illeggibile: nessuna skill lo prende, va riparato'
+      ? 'marker illeggibile: va riparato a mano'
       : mark === 'branched'
         ? `congelato su ${file.branch}: lo sblocca pull-repos quando il branch è su main`
-        : mark === 'held'
-          ? 'fuori dalla coda automatica (nessun drainable): eseguibile se lo nomini'
-          : 'in coda: una skill può prenderlo da sola';
+        : mark === 'wip'
+          ? 'in lavorazione (nessun drainable): appartiene alla task che lo scrive'
+          : 'rilascio chiuso (drainable): congelato';
   return (
     <>
       <Text bold wrap="truncate-end">
@@ -142,10 +142,8 @@ export function InboxPreview({ file, columns }: { file: InboxFile; columns: numb
  * e Ink passa a `clearTerminal`.
  *
  * Porta le due cose che la riga di lista non può (P6): il PATH intero — in lista
- * l'albero mostra l'ultimo segmento e le viste piatte troncano — e i NOMI INTERI
- * dei flag accanto alle cifre che li spiegano. Le short di riga dicono quale
- * flag; qui si legge perché ce l'ha, che è il dato su cui si decide se lanciare
- * l'operazione.
+ * l'albero mostra l'ultimo segmento — e i NOMI INTERI dei flag accanto alle
+ * cifre. Le short di riga dicono quale flag; qui si legge il nome.
  *
  * La riga meta cambia di natura fra file e cartella e non è un ramo di
  * cortesia: `char` di un file è la sua lunghezza, `char` di una cartella è la
@@ -166,7 +164,7 @@ export function DocPreview({ row, columns }: { row: DocRow; columns: number }) {
           ? `${row.files} file · ${fmtSize(row.chars)} in cartella`
           : `${fmtSize(row.chars)} · TLDR ${row.tldr || 'assente'}`}
         {' · '}
-        {names.length > 0 ? names.join(' · ') : 'nessun flag: in equilibrio'}
+        {names.length > 0 ? names.join(' · ') : 'nessun flag'}
       </Text>
     </>
   );

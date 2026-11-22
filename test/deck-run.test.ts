@@ -196,13 +196,12 @@ test('--prompt e --prompt-kind sono mutuamente esclusivi', () => {
 
 // T134/D9 — il divieto è caduto, e l'asimmetria col kind è il punto: i sette
 // template del catalogo interpolano tutti `{TASK}`, un testo già composto no.
-// Il caso vivo è il deck che offre il drain di un file inbox e lo srotolamento
-// dei `.md` di un path: due lavori sulla doc, che non appartengono a nessuna
-// task e non devono ereditarne una.
+// Il caso vivo è il deck che offre lo srotolamento dei `.md` di un path: un
+// lavoro sulla doc, che non appartiene a nessuna task e non deve ereditarne una.
 test('--prompt con --no-task: ammesso, e il prompt arriva alla sessione', () => {
-  const cmd = inTabCmd(['--no-task', '--prompt', '/loom-works:drain-notions T134-x.md']);
+  const cmd = inTabCmd(['--no-task', '--prompt', 'lancia md-wrap su runtime/reference']);
   assert.ok(
-    cmd.endsWith("'/loom-works:drain-notions T134-x.md'"),
+    cmd.endsWith("'lancia md-wrap su runtime/reference'"),
     `il prompt non è arrivato nella sessione nuda: ${cmd}`,
   );
   // Nuda resta nuda: nessun LOOM_TASK, nessun suffisso di task nel titolo.
@@ -320,23 +319,23 @@ test('titolo tab senza task: solo la label, nessun suffisso', () => {
 });
 
 test('una sessione nuda può avere titolo e sessionId insieme al prompt', () => {
-  // La forma che il deck compone per drain e srotolamento (`bareArgs`): nessuna
+  // La forma che il deck compone per lo srotolamento (`bareArgs`): nessuna
   // guardia rifiuta `--title-note` né `--session-id` per l'assenza di una task —
   // il binding manca, il NOME no.
   const cmd = inTabCmd(
     [
       '--no-task',
       '--title-note',
-      '🧹 T158-conversazione-prioritaria',
+      '📏 runtime reference',
       '--session-id',
       SID,
       '--prompt',
-      '/loom-works:drain-notions T158-conversazione-prioritaria.md',
+      'lancia md-wrap su runtime/reference',
     ],
     { LOOM_DECK_WORKDIR: labeledWd },
   );
   assert.ok(
-    cmd.includes("--name '🧵 demo 🧹 T158-conversazione-prioritaria'"),
+    cmd.includes("--name '🧵 demo 📏 runtime reference'"),
     `titolo inatteso: ${cmd}`,
   );
   assert.ok(cmd.includes(`--session-id ${SID}`), `sessionId non pinnato: ${cmd}`);
@@ -380,17 +379,19 @@ test('--title-note: nota tutta scartata → nessun suffisso a vuoto', () => {
 // slug mentre la lista del deck, che riceve la nota grezza dal sidecar,
 // mostrava il prefisso — due titoli per la stessa conversazione, senza nessun
 // errore a segnalarlo.
-// Le due in coda non vengono da `ACTION_EMOJI`: nominano l'oggetto di una
-// sessione senza task — il file inbox che si drena (`inboxTitle`) e il path che
-// si srotola (`wrapTitle`). Stessa whitelist, stessa divergenza se cade.
+// Le tre in coda non vengono da `ACTION_EMOJI`: `📏` nomina il path che si
+// srotola (`wrapTitle`), `🧹` e `🧭` vengono dai titoli di due righe uscite dal
+// catalogo e restano lecite in una nota scritta a mano. Stessa whitelist, stessa
+// divergenza se cade.
 for (const [kind, emoji] of [
   ['preflight', '📐'],
   ['run', '🚀'],
   ['recap', '📊'],
   ['checkpoint', '🏁'],
   ['regia', '🎬'],
-  ['drain', '🧹'],
   ['unwrap', '📏'],
+  ['nota a mano', '🧹'],
+  ['nota a mano', '🧭'],
 ] as const) {
   test(`--title-note: il prefisso di fallback \`${emoji}\` (${kind}) sopravvive alla riduzione`, () => {
     const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', `${emoji} prova`], {

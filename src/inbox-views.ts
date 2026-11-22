@@ -20,14 +20,14 @@
 //    un header che dice un numero e una lista che ne mostra un altro è un
 //    contatore che mente, e non c'è schermata che lo dica.
 
-import { NATURE, countByNatura, isQueued, type InboxFile, type Natura } from './inbox.js';
+import { NATURE, countByNatura, isReleased, type InboxFile, type Natura } from './inbox.js';
 
 export type InboxViewId = 'all' | Natura;
 
 export interface InboxViewCounts {
-  /** Ogni file in inbox, malformati e branched compresi: è l'insieme che la
-   *  vista `Tutti` elenca (D5 — il contatore promette lavoro ordinabile, la
-   *  lista mostra tutto). */
+  /** Ogni file in inbox, malformati, branched e in lavorazione compresi: è
+   *  l'insieme che la vista `Tutti` elenca (D5 — il contatore conta i rilasci
+   *  chiusi, la lista mostra tutto). */
   total: number;
   /** I tre contatori del bottone di pane: solo drainable non-branched. */
   nozioni: number;
@@ -45,9 +45,9 @@ export interface InboxViewEntry extends Styling {
   count(counts: InboxViewCounts): number;
   /** Attenuazione della voce. È una FUNZIONE e non un flag come nei due
    *  cataloghi storici perché la voce `Tutti` non si grigia sul proprio
-   *  contatore (D7): la lista può essere piena di file congelati su un branch,
-   *  e il pane vale per il lavoro ORDINABILE — a somma delle tre nature zero
-   *  non c'è niente da prendere, anche con dieci righe a schermo. */
+   *  contatore (D7): la lista può essere piena di file in lavorazione o
+   *  congelati su un branch, e a somma delle tre nature zero non c'è nessun
+   *  rilascio chiuso, anche con dieci righe a schermo. */
   dim(counts: InboxViewCounts): boolean;
   rows(files: readonly InboxFile[]): InboxFile[];
   /** Nota mostrata quando la vista non ha righe: una lista vuota deve dire
@@ -55,8 +55,8 @@ export interface InboxViewEntry extends Styling {
   empty: string;
 }
 
-/** La somma dei tre contatori: quanto lavoro una skill può prendere da sola. */
-export function queuedTotal(c: InboxViewCounts): number {
+/** La somma dei tre contatori: quanti file descrivono un rilascio chiuso. */
+export function releasedTotal(c: InboxViewCounts): number {
   return c.nozioni + c.derivazione + c.sweep;
 }
 
@@ -72,8 +72,8 @@ const NATURA_VIEWS: InboxViewEntry[] = NATURE.map((natura) => ({
   label: (c) => `${natura} (${c[natura]})`,
   count: (c) => c[natura],
   dim: (c) => c[natura] === 0,
-  rows: (files) => files.filter((f) => isQueued(f) && f.natura === natura),
-  empty: `nessun file ${natura} in coda`,
+  rows: (files) => files.filter((f) => isReleased(f) && f.natura === natura),
+  empty: `nessun file ${natura} a rilascio chiuso`,
 }));
 
 export const INBOX_VIEWS: readonly InboxViewEntry[] = [
@@ -81,11 +81,11 @@ export const INBOX_VIEWS: readonly InboxViewEntry[] = [
     id: 'all',
     label: (c) => `Tutti (${c.total})`,
     count: (c) => c.total,
-    dim: (c) => queuedTotal(c) === 0,
+    dim: (c) => releasedTotal(c) === 0,
     // Nessun filtro: `parseInboxTsv` consegna già l'ordine per età decrescente
-    // (D8 — i più vecchi in cima sono i più urgenti).
+    // (D8 — i più vecchi in cima).
     rows: (files) => [...files],
-    empty: 'inbox vuota: nessun file da collocare',
+    empty: 'inbox vuota: nessun file in inbox/',
   },
   ...NATURA_VIEWS,
 ];

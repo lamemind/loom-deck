@@ -2,7 +2,7 @@
 // header. Sono presentazionali puri: ricevono la vista già selezionata e le
 // larghezze già calcolate, non li derivano.
 //
-// T160 · D1 — i pane dell'altro modo sono usciti di qui: la coda inbox in
+// T160 · D1 — i pane dell'altro modo sono usciti di qui: il pane inbox in
 // `ui/inbox-pane.tsx`, l'albero doc in `ui/doc-pane.tsx`, e ciò che tutti e
 // quattro condividono (`HeaderLine`) in `ui/header-line.tsx`. L'asse dello split
 // è per PANE e non per livello: ogni pane porta il proprio header, la propria

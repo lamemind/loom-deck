@@ -1,8 +1,8 @@
 // T160 — il pane dell'albero doc, che in modo doc occupa lo slot SINISTRO.
 //
-// Risponde a una domanda sola, ed è la ragione della sua forma: **vale la pena
-// lanciare `rebalance-doc` adesso, e su cosa?** Da qui la colonna dei flag in
-// testa, dove si scorre con l'occhio, e il nome come unica cella elastica.
+// Mostra l'albero della docs-root, e non lancia niente: `⏎` apre il testo di un
+// file o l'elenco di una cartella, e basta. La colonna dei flag sta in testa e
+// dice cos'è un file (`ONL`, `INB`, `GEN`), il nome è l'unica cella elastica.
 //
 // Le CIFRE non stanno in riga (P6): char, lunghezza del TLDR e conteggio file
 // vivono nel blocco preview, insieme ai nomi interi dei flag. Su un pane largo la
@@ -31,22 +31,6 @@ import { offText } from '../platform.js';
  * gerarchia, perché le cartelle stanno comunque prima dei loro file.
  */
 const INDENT_W = 1;
-
-/** I flag che chiamano un'operazione di `rebalance-doc`: la riga che ne porta
- *  almeno uno è quella per cui il pane esiste, e si legge accesa. */
-const ACTIONABLE = new Set(['SPLIT', 'MERGE?', 'REGROUP']);
-
-/** Quelli che chiamano `write-tldr`: un difetto vero, ma di un'altra skill. */
-const TLDR_FLAGS = new Set(['TLDR>CAP', 'NOTLDR', 'TLDR-ORFANA']);
-
-/** Il colore della cella flag, dal flag più urgente che la riga porta. Un colore
- *  solo per cella e non uno per short: la cella è un `Text` unico, e stilarne i
- *  pezzi costerebbe tre nodi annidati per riga su una lista lunga quanto la doc. */
-function flagColor(row: DocRow): string | undefined {
-  if (row.flags.some((f) => ACTIONABLE.has(f))) return 'yellow';
-  if (row.flags.some((f) => TLDR_FLAGS.has(f))) return 'cyan';
-  return undefined;
-}
 
 /**
  * Header del pane doc: le parti e il loro taglio vengono da `pane-header.ts`, lo
@@ -143,9 +127,9 @@ export function DocPane({
         </Text>
       ) : paneCount === 0 ? (
         // Quattro vuoti diversi, e dirlo è il punto. Ai tre del pane inbox se ne
-        // aggiunge uno che solo questo scan ha: «sto misurando». Quattro secondi
-        // di wall clock sono abbastanza da vedersi, e un pane vuoto per quattro
-        // secondi si legge come una doc senza file.
+        // aggiunge uno che solo questo scan ha: «sto misurando». Secondi di wall
+        // clock sono abbastanza da vedersi, e un pane vuoto per qualche secondo
+        // si legge come una doc senza file.
         <Text color="yellow" wrap="truncate-end">
           {cut(
             scanning
@@ -178,9 +162,7 @@ export function DocPane({
           return (
             <Text key={r.path} inverse={sel && focused} bold={sel && !focused} wrap="truncate-end">
               {sel ? CARET : CARET_OFF}
-              <Text color={flagColor(r)} dimColor={r.flags.length === 0}>
-                {flagCell(r.flags)}
-              </Text>{' '}
+              <Text dimColor>{flagCell(r.flags)}</Text>{' '}
               <Text bold={r.kind === 'dir'} dimColor={r.kind === 'file' && r.flags.length === 0}>
                 {text}
               </Text>

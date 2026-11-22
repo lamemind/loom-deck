@@ -6,7 +6,7 @@
 // srotolamento itera a colonna ferma) e replicarle qui darebbe due misure
 // destinate a divergere in silenzio.
 //
-// A differenza della coda inbox, questa misura è CARA: cammina l'albero del
+// A differenza dello scan degli inbox, questa misura è CARA: cammina l'albero del
 // progetto intero, submodule compresi. Da qui la forma già in casa per il
 // project status — generare e aprire su due tasti distinti, con una cache su
 // disco in mezzo — invece di uno scan all'avvio che rallenterebbe proprio il

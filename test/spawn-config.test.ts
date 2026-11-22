@@ -73,6 +73,24 @@ test('una voce sbagliata cade da sola: il resto del blocco vive', () => {
   assert.match(r.warnings.join('\n'), /claude-opus-5/);
 });
 
+test('un override su una riga uscita dal catalogo cade con l’avviso, il resto vive', () => {
+  // Il caso vero: un progetto con `spawn.drain.model` scritto quando la riga
+  // esisteva. Il deck non lo applica a niente e lo dice all'avvio.
+  const r = parseSpawnOverrides({
+    [SPAWN_BLOCK]: {
+      drain: { model: 'opus' },
+      rebalance: { title: 'x' },
+      run: { model: 'sonnet' },
+    },
+  });
+  assert.deepEqual([...r.entries.keys()], ['run']);
+  assert.deepEqual(r.entries.get('run'), { model: 'sonnet' });
+  assert.deepEqual(r.warnings, [
+    `${SPAWN_BLOCK}.drain: azione fuori catalogo, voce scartata`,
+    `${SPAWN_BLOCK}.rebalance: azione fuori catalogo, voce scartata`,
+  ]);
+});
+
 test('un campo su una cella fissa cade e lo dice con la sua ragione', () => {
   const r = parseSpawnOverrides({ [SPAWN_BLOCK]: { bare: { title: 'ciao', model: 'haiku' } } });
   assert.deepEqual(r.entries.get('bare'), { model: 'haiku' });
@@ -282,14 +300,8 @@ test('un buco senza valore spegne il titolo invece di lasciare il solo prefisso'
 });
 
 test('il titolo si riduce DOPO l’interpolazione: i buchi portano dentro l’alfabeto sporco', () => {
-  const r = resolveSpawn(spawnAction('drain')!, NONE, CATALOG, { file: 'T158-nozioni.md' });
-  assert.equal(r.title, '🧹 T158-nozionimd');
-});
-
-test('il prompt del drain resta al chiamante: la skill è una funzione della natura', () => {
-  const r = resolveSpawn(spawnAction('drain')!, NONE, CATALOG, { file: 'x' });
-  assert.equal(r.prompt, null);
-  assert.equal(r.model, 'fable');
+  const r = resolveSpawn(spawnAction('unwrap')!, NONE, CATALOG, { path: 'runtime/reference.md' });
+  assert.equal(r.title, '📏 runtimereferencemd');
 });
 
 test('la nuda non ha un titolo da risolvere', () => {

@@ -1,5 +1,5 @@
 // T232 — gate di larghezza (vedi `frame-width.test.ts`): il modo doc — l'albero,
-// le viste, il modale delle combo, la coda inbox.
+// il modale delle combo, il pane inbox.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,14 +21,10 @@ const DOC_SCENARIOS: Array<[string, string, number[], string?]> = [
   // stessa aritmetica che ha fatto uscire dal pane la lista sessioni due volte.
   // Il path più profondo della fixture sta a quattro livelli, dove il rientro
   // morde davvero.
-  ['modo doc · albero', CTRL_B, [80, 100, 176], 'SPL'],
-  // L'header del catalogo doc al completo: `Doc · Tutti (N) · SPLIT (n) · MERGE?
-  // (n) · TLDR (n) · REGROUP (n)` è il più lungo dei quattro cataloghi, e su un
-  // pane stretto è il caso in cui la voce attiva deve restare e le altre cedere.
-  ['modo doc · vista REGROUP attiva', `${CTRL_B}TTTT`, [80, 100, 176], 'REGROUP'],
-  // Una vista PIATTA: le righe portano il path meno la radice invece
-  // dell'ultimo segmento, cioè la cella elastica al suo massimo.
-  ['modo doc · vista SPLIT attiva', `${CTRL_B}T`, [80, 100], 'SPLIT'],
+  ['modo doc · albero', CTRL_B, [80, 100, 176], 'ONL'],
+  // `tab` sul catalogo doc, che ha una voce sola: il giro torna su `Tutti` e la
+  // schermata resta quella dell'albero.
+  ['modo doc · tab sull’unica vista', `${CTRL_B}T`, [80, 100], 'Tutti'],
   // `←→` fra i due pane dello stesso modo: il fuoco si sposta, i bordi no.
   ['modo doc · fuoco a destra e ritorno', `${CTRL_B}RL`, [80, 100]],
   // T194 — il modale delle combo in modo doc: le colonne sono quelle dei due pane.
@@ -36,7 +32,7 @@ const DOC_SCENARIOS: Array<[string, string, number[], string?]> = [
   // Il pane inbox, che in modo doc occupa lo slot destro. Due colonne fisse
   // (natura, marker) più una cella elastica: il nome di un file inbox arriva ai
   // 45 caratteri, cioè sfora da solo il pane a 80 colonne.
-  ['modo doc · coda inbox a destra', `${CTRL_B}R`, [80, 100, 176]],
+  ['modo doc · inbox a destra', `${CTRL_B}R`, [80, 100, 176]],
   ['modo doc · vista inbox sweep attiva', `${CTRL_B}RTTT`, [80, 100]],
 ];
 

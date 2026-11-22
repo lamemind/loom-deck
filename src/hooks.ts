@@ -458,15 +458,15 @@ export function useDirtyFolders(idsSig: string, tasksDir: string, projectRoot: s
 }
 
 /**
- * T134 — la coda inbox, terzo membro della famiglia degli scan periodici
+ * T134 — i file inbox, terzo membro della famiglia degli scan periodici
  * (`useArchivable`, `useDirtyFolders`): scan read-only su una scala tutta sua,
  * un contatore sempre a schermo, una funzione che quel contatore abilita.
  *
  * Fuori dal poll da 1,5s come i due gemelli, per la stessa ragione: ogni giro
  * costa uno spawn di `doc-metrics.sh` che a sua volta invoca `inbox.sh parse`
  * una volta per file. Ma su una cadenza PROPRIA e più stretta dei loro 6h
- * (`INBOX_SCAN_INTERVAL_MS`, 30 minuti): la coda si riempie a ogni checkpoint,
- * non una volta al giorno come l'età di una task.
+ * (`INBOX_SCAN_INTERVAL_MS`, 30 minuti): la cartella inbox cambia a ogni
+ * checkpoint, non una volta al giorno come l'età di una task.
  *
  * A differenza dello scan del wrap (D4) questo PARTE ALL'AVVIO: legge una
  * cartella di pochi file, non cammina l'albero del progetto.
@@ -475,11 +475,11 @@ export function useDirtyFolders(idsSig: string, tasksDir: string, projectRoot: s
  * Un periodico da solo non basta per costruzione: qualunque cadenza si scelga,
  * chi apre il pane vede l'ultima misura invece dello stato di adesso, e la
  * distanza fra le due può arrivare all'intero intervallo. Il caso limite non è
- * teorico — un deck aperto da nove ore su una cadenza da sei mostrava una coda
- * ferma a metà mattina, senza i file che i checkpoint del pomeriggio avevano
+ * teorico — un deck aperto da nove ore su una cadenza da sei mostrava un pane
+ * fermo a metà mattina, senza i file che i checkpoint del pomeriggio avevano
  * aggiunto, e nulla a schermo diceva che il numero fosse vecchio. Il costo di
  * una rimisura è uno spawn di `doc-metrics.sh` su una cartella di pochi file,
- * quindi legarla al gesto che chiede di guardare la coda la paga solo quando
+ * quindi legarla al gesto che chiede di guardare il pane la paga solo quando
  * serve davvero.
  */
 export interface InboxState {
@@ -487,7 +487,7 @@ export interface InboxState {
   /** L'ultimo tentativo è andato a buon fine. */
   ok: boolean;
   /** Almeno un tentativo è stato fatto: distingue «non l'ho ancora misurato»
-   *  da «ho misurato e la coda è vuota», che a schermo sono due cose diverse
+   *  da «ho misurato e la cartella è vuota», che a schermo sono due cose diverse
    *  (D2 preflight — `missing` non è un guasto, è lo stato di partenza). */
   scanned: boolean;
   /** Rimisura adesso e rimanda indietro il timer del periodico. */

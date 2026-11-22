@@ -14,19 +14,13 @@ import stringWidth from 'string-width';
 import { termWidth } from '../src/width.js';
 import {
   DOC_FLAG_W,
+  DOC_FLAGS,
   buildDocTree,
-  countFlagged,
   dirListing,
-  docRoot,
-  docTargetKind,
-  docWords,
   flagCell,
   flagNames,
-  flatDocRows,
   loadDocText,
   parseDocTsv,
-  type DocFlag,
-  type DocRow,
 } from '../src/doc-tree.js';
 
 /**
@@ -41,17 +35,19 @@ import {
  */
 const TSV = [
   'PATH\tCHAR\tTLDR\tFLAGS',
-  'runtime/reference/loom-deck/sessions/spawn.md\t19229\t420\tSPLIT',
-  'runtime/project/plugin-dev.md\t16125\t0\tSPLIT NOTLDR ONLINE',
-  'runtime/reference/assumed-knowledge.md\t537\t293\tTLDR-ORFANA CONFIG',
+  'runtime/reference/loom-deck/sessions/spawn.md\t19229\t420\t-',
+  'runtime/project/plugin-dev.md\t16125\t0\tONLINE',
+  'runtime/reference/assumed-knowledge.md\t537\t293\t-',
   'runtime/reference/INDEX.md\t12000\t0\tGEN',
-  'runtime/reference/piccolo.md\t900\t80\tMERGE?',
+  'runtime/reference/piccolo.md\t900\t80\t-',
+  'runtime/inbox/T160-x.md\t700\t0\tINBOX ONLINE',
   'runtime/tasks.md\t12019\t0\t-',
   '',
   'DIR\tFILES\tCHAR\tFLAGS',
-  'runtime/reference\t3\t13437\tREGROUP',
+  'runtime/reference\t3\t13437\t-',
   'runtime/reference/loom-deck/sessions\t1\t19229\t-',
   'runtime/project\t1\t16125\t-',
+  'runtime/inbox\t1\t700\t-',
   'runtime\t1\t12019\t-',
   '',
 ].join('\n');
@@ -61,20 +57,20 @@ const DATA = parseDocTsv(TSV);
 // ── parse ────────────────────────────────────────────────────────────────
 
 test('parseDocTsv: legge le due tabelle dallo stesso stream', () => {
-  assert.equal(DATA.files.length, 6);
-  assert.equal(DATA.dirs.length, 4);
+  assert.equal(DATA.files.length, 7);
+  assert.equal(DATA.dirs.length, 5);
   assert.equal(DATA.hasDirs, true);
-  assert.deepEqual(DATA.files[0], {
-    path: 'runtime/reference/loom-deck/sessions/spawn.md',
-    chars: 19229,
-    tldr: 420,
-    flags: ['SPLIT'],
+  assert.deepEqual(DATA.files[1], {
+    path: 'runtime/project/plugin-dev.md',
+    chars: 16125,
+    tldr: 0,
+    flags: ['ONLINE'],
   });
   assert.deepEqual(DATA.dirs[0], {
     path: 'runtime/reference',
     files: 3,
     chars: 13437,
-    flags: ['REGROUP'],
+    flags: [],
   });
 });
 
@@ -92,42 +88,62 @@ test('parseDocTsv: il discriminante è l\'header, non la posizione', () => {
 test('parseDocTsv: senza la tabella delle cartelle il parse degrada, non fallisce', () => {
   // Il deck esegue lo script dalla cache installata del plugin e può incontrare
   // una versione che emette la sola tabella dei file (P2). L'albero si costruisce
-  // lo stesso: `hasDirs` è ciò che l'header mostra per non far leggere un
-  // `REGROUP (0)` come «nessuna cartella da riorganizzare».
+  // lo stesso: `hasDirs` è ciò che l'header mostra per non far leggere una
+  // cartella a `0 file` come vuota.
   const soloFile = parseDocTsv(TSV.slice(0, TSV.indexOf('\n\nDIR')));
   assert.equal(soloFile.hasDirs, false);
   assert.equal(soloFile.dirs.length, 0);
-  assert.equal(soloFile.files.length, 6);
+  assert.equal(soloFile.files.length, 7);
   assert.ok(buildDocTree(soloFile).length > 0, "l'albero deve reggere senza la seconda tabella");
 });
 
 test('parseDocTsv: un flag che il deck non conosce si scarta', () => {
   // La sua short non esisterebbe, e la cella uscirebbe di larghezza — cioè il
   // bordo del pane sparirebbe (invariante ③ di width.ts).
-  const d = parseDocTsv(['PATH\tCHAR\tTLDR\tFLAGS', 'a/b.md\t10\t0\tSPLIT FUTURO'].join('\n'));
-  assert.deepEqual(d.files[0]!.flags, ['SPLIT']);
+  const d = parseDocTsv(['PATH\tCHAR\tTLDR\tFLAGS', 'a/b.md\t10\t0\tONLINE FUTURO'].join('\n'));
+  assert.deepEqual(d.files[0]!.flags, ['ONLINE']);
+});
+
+test('parseDocTsv: i flag di un plugin più vecchio si scartano, la colonna resta vuota', () => {
+  // Deck e plugin di versioni diverse convivono: un `doc-metrics.sh` che emette
+  // ancora i flag di topologia e di TLDR non rompe il pane, lascia la colonna
+  // vuota su quei file e tiene i flag descrittivi che il deck conosce.
+  const d = parseDocTsv(
+    [
+      'PATH\tCHAR\tTLDR\tFLAGS',
+      'a/b.md\t10\t0\tSPLIT NOTLDR',
+      'a/c.md\t10\t0\tMERGE? TLDR>CAP ONLINE',
+      '',
+      'DIR\tFILES\tCHAR\tFLAGS',
+      'a\t2\t20\tREGROUP',
+    ].join('\n'),
+  );
+  assert.deepEqual(d.files[0]!.flags, []);
+  assert.deepEqual(d.files[1]!.flags, ['ONLINE']);
+  assert.deepEqual(d.dirs[0]!.flags, []);
+});
+
+test('DOC_FLAGS: i tre flag descrittivi che doc-metrics.sh emette, e nessun altro', () => {
+  assert.deepEqual([...DOC_FLAGS], ['ONLINE', 'INBOX', 'GEN']);
 });
 
 // ── la cella dei flag ────────────────────────────────────────────────────
 
 test('flagCell: larghezza COSTANTE, qualunque sia il numero di flag', () => {
-  for (const flags of [[], ['SPLIT'], ['SPLIT', 'NOTLDR'], ['SPLIT', 'NOTLDR', 'ONLINE']] as const) {
+  for (const flags of [[], ['GEN'], ['INBOX', 'ONLINE'], ['ONLINE', 'INBOX', 'GEN']] as const) {
     assert.equal(flagCell([...flags]).length, DOC_FLAG_W, `larghezza rotta su ${flags.join(',')}`);
   }
 });
 
-test('flagCell: il quarto flag diventa un `+`, e a cedere sono i descrittivi', () => {
-  // L'ordine di lettura mette in testa i flag che chiamano un'operazione: a
-  // restare fuori dalle tre short deve essere sempre l'informazione che non
-  // produce un'azione.
-  const cella = flagCell(['ONLINE', 'CONFIG', 'SPLIT', 'TLDR-ORFANA']);
+test('flagCell: le short nell\'ordine di lettura, non in quello di emissione', () => {
+  const cella = flagCell(['INBOX', 'ONLINE']);
   assert.equal(cella.length, DOC_FLAG_W);
-  assert.ok(cella.startsWith('SPL ORF ONL'), `ordine di lettura non rispettato: "${cella}"`);
-  assert.ok(cella.endsWith('+'), `overflow non segnalato: "${cella}"`);
+  assert.ok(cella.startsWith('ONL INB'), `ordine di lettura non rispettato: "${cella}"`);
+  assert.ok(!cella.includes('+'), `nessun overflow con due flag: "${cella}"`);
 });
 
 test('flagNames: i nomi interi, nello stesso ordine delle short', () => {
-  assert.deepEqual(flagNames(['CONFIG', 'SPLIT', 'NOTLDR']), ['SPLIT', 'NOTLDR', 'CONFIG']);
+  assert.deepEqual(flagNames(['GEN', 'INBOX', 'ONLINE']), ['ONLINE', 'INBOX', 'GEN']);
   assert.deepEqual(flagNames([]), []);
 });
 
@@ -138,6 +154,8 @@ test('buildDocTree: pre-ordine, cartelle prima dei file, radice sola', () => {
   const forma = rows.map((r) => `${'  '.repeat(r.depth)}${r.name}${r.kind === 'dir' ? '/' : ''}`);
   assert.deepEqual(forma, [
     'runtime/',
+    '  inbox/',
+    '    T160-x.md',
     '  project/',
     '    plugin-dev.md',
     '  reference/',
@@ -162,65 +180,20 @@ test('buildDocTree: una cartella intermedia assente dalla misura è una riga di 
   assert.equal(intermedia.files, 0);
   assert.equal(intermedia.chars, 0);
   assert.deepEqual(intermedia.flags, []);
-  assert.equal(docRoot(DATA), 'runtime', 'la radice deve restare una sola');
+  assert.deepEqual(
+    rows.filter((r) => r.depth === 0).map((r) => r.path),
+    ['runtime'],
+    'la radice deve restare una sola',
+  );
 });
 
 test('buildDocTree: la riga porta il path come chiave e l\'ultimo segmento come nome', () => {
   // La selezione è keyed sul path (la lista si riordina a ogni scan), il nome è
-  // solo ciò che si disegna: confonderli spawnerebbe sul bersaglio sbagliato.
+  // solo ciò che si disegna: confonderli aprirebbe il file sbagliato.
   const riga = buildDocTree(DATA).find((r) => r.name === 'spawn.md')!;
   assert.equal(riga.path, 'runtime/reference/loom-deck/sessions/spawn.md');
   assert.equal(riga.chars, 19229);
   assert.equal(riga.tldr, 420);
-});
-
-// ── le viste piatte ──────────────────────────────────────────────────────
-
-test('flatDocRows: nessuna cartella antenata, e il nome perde la radice', () => {
-  const split = flatDocRows(DATA, ['SPLIT']);
-  assert.deepEqual(
-    split.map((r) => r.name),
-    ['reference/loom-deck/sessions/spawn.md', 'project/plugin-dev.md'],
-  );
-  assert.ok(
-    split.every((r) => r.kind === 'file'),
-    'una vista per flag di file non deve portare cartelle',
-  );
-});
-
-test('flatDocRows: ordine char decrescente — il più grosso si guarda per primo', () => {
-  const chars = flatDocRows(DATA, ['SPLIT', 'MERGE?']).map((r) => r.chars);
-  assert.deepEqual(chars, [...chars].sort((a, b) => b - a));
-});
-
-test('flatDocRows: la vista REGROUP elenca cartelle, e porta il loro conteggio file', () => {
-  const regroup = flatDocRows(DATA, ['REGROUP']);
-  assert.equal(regroup.length, 1);
-  assert.equal(regroup[0]!.kind, 'dir');
-  assert.equal(regroup[0]!.path, 'runtime/reference');
-  assert.equal(regroup[0]!.files, 3);
-});
-
-test('countFlagged coincide con le righe che la vista mostra', () => {
-  // L'invariante del catalogo: un header che dice un numero e una lista che ne
-  // mostra un altro è un contatore che mente, e non c'è schermata che lo dica.
-  for (const flags of [['SPLIT'], ['MERGE?'], ['REGROUP'], ['TLDR>CAP', 'NOTLDR', 'TLDR-ORFANA']]) {
-    assert.equal(
-      countFlagged(DATA, flags as never),
-      flatDocRows(DATA, flags as never).length,
-      `contatore e lista divergono su ${flags.join('+')}`,
-    );
-  }
-});
-
-// ── i due buchi del titolo e del prompt ──────────────────────────────────
-
-test('docWords: il path reso a parole, per il titolo della tab', () => {
-  // L'alfabeto di `_sane_note` non ha né `/` né `.`: lasciandoceli cadere le
-  // parole si salderebbero, e la tab mostrerebbe un nome diverso da quello che
-  // la lista del deck legge dal sidecar.
-  assert.equal(docWords('runtime/reference/doc-system'), 'runtime reference doc-system');
-  assert.equal(docWords('runtime/project/plugin-dev.md'), 'runtime project plugin-dev');
 });
 
 // ── lo sheet di una cartella ─────────────────────────────────────────────
@@ -229,12 +202,11 @@ test('dirListing: elenca i file DIRETTI, coi loro flag', () => {
   const testo = dirListing(DATA, 'runtime/reference');
   assert.ok(testo.startsWith('# runtime/reference'), 'manca il titolo');
   assert.ok(testo.includes('3 file'), 'manca il conteggio della cartella');
-  assert.ok(testo.includes('REGROUP'), 'manca il flag della cartella');
   assert.ok(testo.includes('piccolo.md'), 'manca un file diretto');
-  assert.ok(testo.includes('MERGE?'), 'manca il flag di un file diretto');
+  assert.ok(testo.includes('INDEX.md` · 12000 char · TLDR assente — GEN'), 'manca il flag di un file diretto');
   assert.ok(
     !testo.includes('spawn.md'),
-    'un file di una SOTTOcartella non è diretto: il regroup si decide su questo livello',
+    'un file di una SOTTOcartella non è diretto: l\'elenco è di questo livello',
   );
 });
 
@@ -270,46 +242,4 @@ test('dirListing: una cartella di sole sottocartelle lo dice', () => {
     testo.includes('sottocartelle'),
     `un corpo vuoto si legge come uno sheet rotto: ${testo}`,
   );
-});
-
-// ── la coda inbox dentro l'albero ────────────────────────────────────────
-
-test('docTargetKind: un file inbox non è un bersaglio di rebalance', () => {
-  // L'albero misura TUTTA la docs-root, `inbox/` compresa, e senza questa
-  // distinzione la riga di un file di nozioni offriva `rebalance-doc` — cioè la
-  // skill sbagliata sullo stesso file che il pane di destra, nello stesso modo
-  // doc, offre a `drain-notions`.
-  const file = (path: string, flags: DocFlag[] = []): DocRow => ({
-    kind: 'file',
-    path,
-    name: path,
-    depth: 0,
-    chars: 100,
-    tldr: 0,
-    files: 0,
-    flags,
-  });
-  const dir = (path: string): DocRow => ({
-    kind: 'dir',
-    path,
-    name: path,
-    depth: 0,
-    chars: 0,
-    tldr: 0,
-    files: 1,
-    flags: ['REGROUP'],
-  });
-
-  assert.equal(docTargetKind(file('runtime/inbox/T160-x.md', ['INBOX']), 'runtime'), 'inbox-file');
-  assert.equal(docTargetKind(dir('runtime/inbox'), 'runtime'), 'inbox-dir');
-  assert.equal(docTargetKind(file('runtime/project/plugin-dev.md', ['SPLIT']), 'runtime'), 'doc');
-  assert.equal(docTargetKind(dir('runtime/reference'), 'runtime'), 'doc');
-  // Il flag regge anche quando la docs-root del deck e quella della misura
-  // divergono; il path regge anche se una versione dello script smette di
-  // emettere il flag. Due criteri perché ognuno copre il buco dell'altro.
-  assert.equal(docTargetKind(file('docs/inbox/x.md', ['INBOX']), 'runtime'), 'inbox-file');
-  assert.equal(docTargetKind(file('runtime/inbox/x.md'), 'runtime'), 'inbox-file');
-  // `inbox` sotto un'altra radice non è la coda: il confronto è sul path
-  // intero, non su un segmento che si chiama così.
-  assert.equal(docTargetKind(dir('runtime/reference/inbox'), 'runtime'), 'doc');
 });

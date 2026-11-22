@@ -178,8 +178,7 @@ export function loadSpawnOverrides(projectRoot: string): ParsedOverrides {
  * diverse, entrambe distinte dalla stringa vuota:
  *  - `title: null` — l'azione non porta un titolo (la nuda, il project status),
  *    oppure il template nomina un buco che non si è potuto riempire;
- *  - `prompt: null` — il testo lo compone il CHIAMANTE (il drain, dove la skill
- *    è una funzione della natura del file);
+ *  - `prompt: null` — il testo lo compone il CHIAMANTE;
  *  - `''` — nessuna nota / nessun prompt, che è una richiesta esplicita e viene
  *    onorata (`--prompt-kind none`).
  */

@@ -33,7 +33,7 @@ const MAX_DETAIL_LINES = 6;
 // a un pane va scalata qui, o il frame sfonda `rows` e Ink passa a
 // clearTerminal (frame-fantasma nello scrollback di VTE).
 const TASKS_PANE_CHROME = 6; // 2 bordi + header "Tasks (n)" + riga sort + 2 righe meta
-// T134/T160 — vale per TRE pane su quattro: conversazioni, coda inbox e albero
+// T134/T160 — vale per TRE pane su quattro: conversazioni, inbox e albero
 // doc hanno la stessa cornice (2 bordi + header) e ne sono montati al massimo
 // due alla volta, quindi `Budget.sessionRows` è la capienza di ognuno di loro.
 // Solo il pane task ha una cornice propria (`TASKS_PANE_CHROME`), perché porta
@@ -517,9 +517,10 @@ export function statusCapacity(rows: number): number {
 }
 
 // T134/T160 — cornice del detail di un FILE, condivisa dalle due istanze dello
-// sheet (coda inbox e bersaglio doc). Gemella di STATUS_CHROME più una riga: il
-// detail porta in fondo la riga dell'azione (quale comando partirà su `⏎`), che
-// è l'unica cosa che l'utente deve leggere prima di premere.
+// sheet (file inbox e riga doc). Gemella di STATUS_CHROME più una riga: il
+// detail porta in fondo la riga che dice cosa fa `⏎` qui, cioè niente — chi
+// viene dal detail della task si aspetta un secondo `⏎` che apre una
+// conversazione.
 //   2  bordi del box esterno
 //   1  riga di testata (natura o tipo :: nome del bersaglio)
 //   1  riga meta (marcatori · cifre · posizione nel testo)

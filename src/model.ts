@@ -56,14 +56,14 @@ export const META_ROWS = 2;
  *
  * ```
  * task →  lista task   │  conversazioni
- * doc  →  albero doc   │  coda inbox
+ * doc  →  albero doc   │  inbox
  * ```
  *
  * Sostituisce il `RightPane` di T134, che descriveva quale dei due pane
  * occupasse lo slot destro col sinistro fisso. Appena anche il sinistro ha due
  * contenuti alternativi quel disegno non regge: due assi indipendenti
  * renderebbero rappresentabili due combinazioni che non hanno senso — albero doc
- * accanto alle conversazioni, lista task accanto alla coda inbox — e ogni
+ * accanto alle conversazioni, lista task accanto al pane inbox — e ogni
  * consumer dovrebbe escluderle a mano. Un asse solo le rende IRRAPPRESENTABILI
  * invece che vietate, che è la stessa ragione per cui `Focus` sotto è un enum e
  * non un flag.

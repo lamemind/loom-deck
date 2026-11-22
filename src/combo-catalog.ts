@@ -28,7 +28,7 @@ export type DeckLegend = {
   general: ComboList;
   /** Le azioni del pane sinistro: task, o albero doc in modo doc. */
   left: ComboList;
-  /** Le azioni del pane destro: conversazioni, o coda inbox in modo doc. */
+  /** Le azioni del pane destro: conversazioni, o inbox in modo doc. */
   right: ComboList;
 };
 
@@ -43,7 +43,7 @@ export type DeckLegend = {
 export function deckLegend(state: {
   /** `CANC` sul pane task pota in blocco invece della sola selezionata. */
   purgeBulk: boolean;
-  /** T160 — il deck è in modo doc (albero doc + coda inbox). */
+  /** T160 — il deck è in modo doc (albero doc + inbox). */
   docMode: boolean;
   /** T155 — il progetto ha submodule: senza, `^U` non ha bersaglio. */
   gitlink: boolean;
@@ -98,7 +98,7 @@ export function deckLegend(state: {
     return {
       general: voiceList('generali', general),
       left: voiceList('albero doc', ['⏎ apri']),
-      right: voiceList('coda inbox', ['⏎ apri']),
+      right: voiceList('inbox', ['⏎ apri']),
     };
   }
 

@@ -90,7 +90,7 @@ test('combo: le tre liste stanno insieme, qualunque sia il pane a fuoco', { skip
 test('combo: in modo doc le colonne seguono i pane montati', { skip: SKIP }, () => {
   const frame = lastFrame(capture('\x02H'));
   assert.match(frame, /\^B\s+task/, `manca la via di ritorno: ${frame}`);
-  assert.match(frame, /albero doc\s+coda inbox/, `colonne del modo doc assenti: ${frame}`);
+  assert.match(frame, /albero doc\s+inbox/, `colonne del modo doc assenti: ${frame}`);
   assert.doesNotMatch(frame, /C\s+nuova|w\s+salva|f\s+fork/, `voce inerte in modo doc: ${frame}`);
 });
 

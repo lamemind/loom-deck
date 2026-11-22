@@ -1,21 +1,19 @@
 // T160 — l'albero della doc come dato del deck.
 //
 // Gemello di `src/inbox.ts` per forma e per ragione: la misura non la fa il
-// deck, la fa `doc-metrics.sh` nel suo modo principale. Le soglie (split, merge,
-// regroup, cap del TLDR) vivono in `lib-doc.sh` e in nessun altro posto —
-// replicarne anche una sola qui darebbe due verdetti sullo stesso file, e la
-// divergenza si vedrebbe solo il giorno in cui il pane dice `SPLIT` su un file
-// che la skill considera in equilibrio.
+// deck, la fa `doc-metrics.sh` nel suo modo principale. Il deck ne legge le
+// colonne e i flag, e non ne ricalcola nessuno: due calcoli dello stesso dato
+// divergerebbero in silenzio.
 //
 // Lettore puro + spawn: nessun React, nessuna resa. È l'unico modo di provarlo
 // senza pseudo-terminale.
 //
-// COSTO. Questa misura non è quella della coda inbox, benché lo script sia lo
-// stesso: `--inbox` apre una cartella di una quindicina di file e costa
+// COSTO. Questa misura non è quella degli inbox, benché lo script sia lo
+// stesso: `--inbox` apre una cartella di poche decine di file e costa
 // millisecondi, il modo principale apre ogni `.md` sotto la docs-root, ne conta
-// i caratteri, verifica le ancore del TLDR e aggrega per cartella — sul cappello
-// loom-works, 90 file, 4,06 s di wall clock misurati. Da qui la cadenza propria
-// e il divieto di entrare nel poll da 1,5 s (T153).
+// i caratteri e aggrega per cartella — secondi di wall clock su un cappello come
+// loom-works. Da qui la cadenza propria e il divieto di entrare nel poll da
+// 1,5 s (T153).
 
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -33,94 +31,60 @@ export const DOC_METRICS_SCRIPT = 'scripts/docs/doc-metrics.sh';
  *
  * La cifra coincide con quella dello scan inbox ma la ragione è opposta. Lì
  * l'intervallo è stretto perché il dato si muove a ogni checkpoint e costa
- * niente misurarlo; qui è largo perché la topologia della doc si muove al ritmo
- * di uno sweep e ogni giro costa quattro secondi di CPU. Sono due numeri uguali
- * per caso: se uno dei due cambia, l'altro non lo segue.
+ * niente misurarlo; qui è largo perché l'albero della doc cambia di rado e ogni
+ * giro costa secondi di CPU. Sono due numeri uguali per caso: se uno dei due
+ * cambia, l'altro non lo segue.
  *
  * Il gate vero non è l'intervallo ma l'interruttore: il timer è acceso solo
  * finché qualcuno guarda l'albero. Un periodico che girasse in modo task
- * pagherebbe quei quattro secondi per nessuno.
+ * pagherebbe quei secondi per nessuno.
  */
 export const DOC_SCAN_INTERVAL_MS = 30 * 60 * 1000;
 
 /**
- * I flag che `doc-metrics.sh` emette. Nove per file più uno per cartella —
- * `REGROUP`, che nel report vive nella seconda tabella e qui entra nello stesso
- * dominio perché una riga dell'albero può essere l'una o l'altra cosa.
+ * I flag che `doc-metrics.sh` emette. Tre, tutti DESCRITTIVI: `ONLINE` (file
+ * @-importato da `CLAUDE.md`), `INBOX` (file della cartella inbox), `GEN`
+ * (l'indice generato). Nessuno invita a un'operazione, quindi il pane non ha
+ * viste per flag né righe colorate: la colonna dice cos'è un file, non cosa
+ * farne.
  *
  * I nomi sono quelli dello script, LETTERALI: un rename qui li staccherebbe
  * dalla misura senza che niente lo dica, e il pane mostrerebbe una colonna vuota
- * su file che un flag ce l'hanno.
+ * su file che un flag ce l'hanno. Lo stesso accade, per costruzione, davanti a
+ * un plugin di versione diversa che emette un flag che il deck non conosce:
+ * `parseFlags` lo scarta, e la colonna resta vuota su quel file senza errori.
  */
-export const DOC_FLAGS = [
-  'SPLIT',
-  'MERGE?',
-  'REGROUP',
-  'TLDR>CAP',
-  'NOTLDR',
-  'TLDR-ORFANA',
-  'ONLINE',
-  'INBOX',
-  'GEN',
-  'CONFIG',
-] as const;
+export const DOC_FLAGS = ['ONLINE', 'INBOX', 'GEN'] as const;
 
 export type DocFlag = (typeof DOC_FLAGS)[number];
 
 const FLAG_SET = new Set<string>(DOC_FLAGS);
 
 /**
- * L'ordine in cui i flag entrano nella colonna di riga, che NON è quello in cui
- * lo script li emette.
- *
- * La colonna tiene tre short e il resto lo dice un `+` (P6): quale sia il resto
- * lo decide quest'ordine. In testa i tre flag che chiamano un'operazione di
- * `rebalance-doc` — sono la ragione per cui si guarda il pane — poi quelli del
- * TLDR, che chiamano `write-tldr`, e in coda i descrittivi, che non chiamano
- * niente. Così a cedere il posto è sempre l'informazione che non produce
- * un'azione.
+ * L'ordine in cui i flag entrano nella colonna di riga e nella preview.
  *
  * `DOC_FLAGS` resta l'ordine dello script e questo è quello di lettura: tenerli
  * separati costa una costante e toglie di mezzo la tentazione di riordinare
  * l'elenco che deve combaciare con la misura.
  */
-const FLAG_ORDER: readonly DocFlag[] = [
-  'SPLIT',
-  'MERGE?',
-  'REGROUP',
-  'TLDR>CAP',
-  'NOTLDR',
-  'TLDR-ORFANA',
-  'ONLINE',
-  'INBOX',
-  'CONFIG',
-  'GEN',
-];
+const FLAG_ORDER: readonly DocFlag[] = ['ONLINE', 'INBOX', 'GEN'];
 
 /**
  * Le short a tre lettere della colonna di riga.
  *
  * CHIESTE e non derivate con uno `slice(0,3)`, come le short dei modelli e
- * quelle delle nature inbox: `MERGE?` e `TLDR>CAP` non hanno tre lettere iniziali
- * che le distinguano (`MER` e `TLD` collidono con `MERGE`/`TLDR-ORFANA` al primo
- * flag aggiunto), e una regola che sbaglia su due voci su dieci non è una regola.
- * I nomi interi stanno nel blocco preview.
+ * quelle delle nature inbox: una regola di troncamento collide al primo flag
+ * che condivida le iniziali con un altro. I nomi interi stanno nel blocco
+ * preview.
  */
 export const DOC_FLAG_SHORT: Record<DocFlag, string> = {
-  SPLIT: 'SPL',
-  'MERGE?': 'MRG',
-  REGROUP: 'REG',
-  'TLDR>CAP': 'CAP',
-  NOTLDR: 'NOT',
-  'TLDR-ORFANA': 'ORF',
   ONLINE: 'ONL',
   INBOX: 'INB',
   GEN: 'GEN',
-  CONFIG: 'CFG',
 };
 
-/** Quante short entrano nella colonna. Il quarto flag e tutti quelli dopo di lui
- *  diventano il `+` in coda: la cella resta a larghezza fissa, e su un pane largo
+/** Quante short entrano nella colonna. Un flag oltre il terzo diventerebbe il
+ *  `+` in coda alla cella: la cella resta a larghezza fissa, e su un pane largo
  *  la metà del terminale ogni colonna in più la paga la cella del nome, che è
  *  l'unica con cui si riconosce un file. */
 const FLAG_SLOTS = 3;
@@ -246,13 +210,12 @@ export function parseDocTsv(stdout: string): DocScanData {
  */
 export interface DocRow {
   kind: 'dir' | 'file';
-  /** Chiave della selezione e bersaglio dello spawn: il path come lo emette lo
-   *  script, mai il nome mostrato. */
+  /** Chiave della selezione e file che il detail apre: il path come lo emette
+   *  lo script, mai il nome mostrato. */
   path: string;
-  /** Il testo della cella nome: l'ultimo segmento nell'albero, il path
-   *  relativo alla docs-root nelle viste piatte. */
+  /** Il testo della cella nome: l'ultimo segmento del path. */
   name: string;
-  /** Rientro nell'albero; `0` nelle viste piatte, che non hanno gerarchia. */
+  /** Rientro nell'albero. */
   depth: number;
   chars: number;
   /** File: lunghezza del TLDR. Cartella: `0`. */
@@ -339,9 +302,7 @@ function assemble(data: DocScanData): Tree {
  * una preferenza: un elenco misto alfabetico spezza i rami: una sottocartella
  * finisce fra due file e chi scorre non vede più dove comincia il livello sotto.
  *
- * Nessun espandi/comprimi (P7): l'albero scorre a finestra come le altre liste,
- * e la domanda «su cosa lancio rebalance» la risolvono le viste per flag, che
- * sono piatte.
+ * Nessun espandi/comprimi (P7): l'albero scorre a finestra come le altre liste.
  */
 export function buildDocTree(data: DocScanData): DocRow[] {
   const tree = assemble(data);
@@ -379,131 +340,8 @@ export function buildDocTree(data: DocScanData): DocRow[] {
 }
 
 /**
- * La radice dell'albero: la cartella che non ha padre fra le misurate.
- *
- * Serve alle viste piatte, che mostrano il path invece dell'ultimo segmento e
- * senza questo prefisso ripeterebbero `runtime/` su ogni riga — cioè
- * spenderebbero colonne per dire ciò che vale per tutte. Con più di una radice
- * (misura di un sottoalbero, o due docs-root nello stesso stream) non si taglia
- * niente: il prefisso lì distingue davvero le righe.
- */
-export function docRoot(data: DocScanData): string {
-  const tree = assemble(data);
-  return tree.roots.length === 1 ? tree.roots[0]! : '';
-}
-
-function stripRoot(path: string, root: string): string {
-  return root && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
-}
-
-/**
- * Le righe PIATTE dei soli elementi che portano uno dei flag chiesti — file e
- * cartelle insieme, senza le cartelle antenate.
- *
- * L'assenza degli antenati non è una semplificazione: su un pane ad albero
- * l'invariante «il contatore dell'header coincide col numero di righe mostrate»
- * vale anche per le righe di struttura, e ogni cartella aggiunta solo per
- * ospitare una figlia flaggata farebbe divergere il contatore dalla lista.
- *
- * Ordine: char decrescente, che è l'ordine in cui lo script le emette e quello
- * in cui si guardano — il file più grosso è quello da spezzare per primo.
- */
-export function flatDocRows(data: DocScanData, flags: readonly DocFlag[]): DocRow[] {
-  const root = docRoot(data);
-  const wanted = new Set<string>(flags);
-  const hit = (f: readonly DocFlag[]) => f.some((x) => wanted.has(x));
-  const out: DocRow[] = [];
-  for (const d of data.dirs) {
-    if (!hit(d.flags)) continue;
-    out.push({
-      kind: 'dir',
-      path: d.path,
-      name: stripRoot(d.path, root),
-      depth: 0,
-      chars: d.chars,
-      tldr: 0,
-      files: d.files,
-      flags: d.flags,
-    });
-  }
-  for (const f of data.files) {
-    if (!hit(f.flags)) continue;
-    out.push({
-      kind: 'file',
-      path: f.path,
-      name: stripRoot(f.path, root),
-      depth: 0,
-      chars: f.chars,
-      tldr: f.tldr,
-      files: 0,
-      flags: f.flags,
-    });
-  }
-  return out.sort((a, b) => b.chars - a.chars);
-}
-
-/** Quanti elementi (file e cartelle) portano almeno uno dei flag: il numero che
- *  una voce del catalogo mostra, misurato sulla stessa fonte da cui esce la sua
- *  lista. */
-export function countFlagged(data: DocScanData, flags: readonly DocFlag[]): number {
-  const wanted = new Set<string>(flags);
-  const hit = (f: readonly DocFlag[]) => f.some((x) => wanted.has(x));
-  return data.dirs.filter((d) => hit(d.flags)).length + data.files.filter((f) => hit(f.flags)).length;
-}
-
-/**
- * Che cosa sia la riga selezionata per le skill che la consumano.
- *
- * L'albero misura TUTTA la docs-root, quindi ci passa dentro anche `inbox/` —
- * ma la coda inbox non è topologia: un file di nozioni non si spezza e non si
- * fonde, si drena, e la cartella che li tiene non si riorganizza perché il suo
- * contenuto è destinato a sparire un file alla volta. Offrire `rebalance-doc`
- * su una di quelle righe proporrebbe la skill sbagliata sullo stesso bersaglio
- * che il pane di destra, nello stesso modo doc, offre alla skill giusta.
- *
- * Il path è il criterio primario e il flag `INBOX` il secondo: il primo regge
- * anche se una versione dello script smettesse di emettere il flag, il secondo
- * anche se la docs-root passata al deck e quella della misura divergessero.
- */
-export type DocTargetKind = 'doc' | 'inbox-file' | 'inbox-dir';
-
-export function inboxDirOf(docsRoot: string): string {
-  return `${docsRoot}/inbox`;
-}
-
-export function docTargetKind(row: DocRow, docsRoot: string): DocTargetKind {
-  const dir = inboxDirOf(docsRoot);
-  if (row.kind === 'dir') return row.path === dir ? 'inbox-dir' : 'doc';
-  return row.path.startsWith(`${dir}/`) || row.flags.includes('INBOX') ? 'inbox-file' : 'doc';
-}
-
-/**
- * T160 — il buco `{words}` del titolo di una sessione di rebalance: il path reso
- * a parole.
- *
- * Gemello di `wrapWords`, e per la stessa ragione: l'alfabeto di `saneNote`
- * non ha né `/` né `.`, quindi un path lasciato cadere lì dentro esce con le
- * parole saldate (`runtimereferencedoc-systemmd`) mentre la lista del deck, che
- * legge la nota grezza dal sidecar, mostrerebbe il path intero — la stessa
- * conversazione con due nomi, senza errore.
- *
- * Il path VERO resta a disposizione come buco `{target}`: il prompt della skill
- * lo risolve contro la colonna `PATH` della misura, quindi lì deve arrivare
- * intatto. Due buchi per lo stesso dato, perché le due destinazioni hanno due
- * alfabeti.
- */
-export function docWords(path: string): string {
-  return path
-    .replace(/\.md$/i, '')
-    .replace(/[./]+/g, ' ')
-    .trim();
-}
-
-/**
- * Il testo di un file doc, per il detail fullscreen. `null` = illeggibile — il
- * detail lo dice e tiene l'azione attiva, come quello dell'inbox: la skill
- * risolve il bersaglio per path, non per il testo che il deck è riuscito a
- * leggere.
+ * Il testo di un file doc, per il detail fullscreen. `null` = illeggibile, e il
+ * detail lo dice.
  *
  * `sanitize` AL CONFINE DI CARICAMENTO, come `loadTaskFileText`: la catena
  * dichiarata in `markdown.ts` è `sanitize → parseMarkdown → wrapWithOffsets`, e
@@ -526,12 +364,11 @@ export function loadDocText(projectRoot: string, relPath: string): string | null
  * P10 — `⏎` su una CARTELLA apre lo stesso sheet, con l'elenco dei suoi file al
  * posto del testo.
  *
- * Il gesto è identico su file e cartella (`⏎⏎`), quindi anche la schermata deve
+ * Il gesto è identico su file e cartella, quindi anche la schermata deve
  * esserlo: cambia cosa si legge nel corpo, non cosa si preme. Per un file è il
- * suo testo, per una cartella l'elenco che dice PERCHÉ la cartella è flaggata —
- * quanti file, quanto pesano, quali portano un flag proprio. Senza, `⏎` su una
- * riga `REGROUP` aprirebbe un corpo vuoto e la decisione andrebbe presa alla
- * cieca.
+ * suo testo, per una cartella l'elenco dei suoi file diretti — quanti, quanto
+ * pesano, quali portano un flag. Senza, `⏎` su una cartella aprirebbe un corpo
+ * vuoto.
  *
  * Markdown perché lo sheet lo rende (`parseMarkdown`): il titolo diventa un
  * heading e i backtick una cella di codice, senza che questa funzione sappia
@@ -569,7 +406,7 @@ export interface DocScan extends DocScanData {
  *
  * I modi di non avere il dato — plugin non installato su questa macchina, script
  * che esce male, timeout — collassano in un solo `ok: false`, come per lo scan
- * inbox: chi vede l'allerta chiede a Claude di indagare, e distinguerli a
+ * degli inbox: chi vede l'allerta chiede a Claude di indagare, e distinguerli a
  * schermo non cambierebbe la prima mossa. Nessuno dei due è un throw: un pane
  * informativo non può rompere il deck.
  *

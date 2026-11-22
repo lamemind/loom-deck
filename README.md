@@ -115,7 +115,7 @@ H combo
 t 💻 · c 🤖 · 1 📝 codium · 2 ☕ idea
 ```
 
-- **tasti** — `H` apre il modale delle combo: una sola schermata, la stessa da qualunque pane, con le azioni generali in alto, quelle di task a sinistra e quelle di conversazione a destra (in modo doc: albero doc e coda inbox). Una voce manca solo se il suo tasto non può fare niente su questo progetto o in questo modo del deck. Fuori `↑↓`, universale in qualunque TUI.
+- **tasti** — `H` apre il modale delle combo: una sola schermata, la stessa da qualunque pane, con le azioni generali in alto, quelle di task a sinistra e quelle di conversazione a destra (in modo doc: albero doc e inbox). Una voce manca solo se il suo tasto non può fare niente su questo progetto o in questo modo del deck. Fuori `↑↓`, universale in qualunque TUI.
   Nessuna voce di uscita: `^C` non ha bisogno di essere annunciato — è il tasto che si prova per primo, e la prima pressione risponde da sé con l'avviso.
 - **surface** — *dove* puoi aprire qualcosa: prima le due built-in (`t`/`c`), poi le voci `launch` del progetto. Stanno insieme perché hanno la stessa natura — fire-once, `cwd` = project root, nessuno stato — e differiscono solo per essere universali invece che custom.
 
@@ -210,7 +210,7 @@ Due livelli: `↑↓` scorrono la tabella, `⏎` apre sotto di essa l'area di co
 
 Le celle portano il **template grezzo**, coi buchi ancora dentro — `📐 {slug}`, `📏 {path}` — e l'area mostra accanto l'esempio reso: un valore già interpolato si modificherebbe a partire da un esempio, e ogni modifica cancellerebbe il buco senza dirlo. Una riga con almeno un override si marca con `◆`.
 
-Non tutte le celle esistono per tutte le righe, e quelle che non esistono **dicono perché** invece di restare vuote: la sessione nuda non pinna un `sessionId` e quindi non ha un titolo, il project status gira headless e non apre nessuna tab, il prompt del drain è una funzione della natura del file inbox. Resume e fork non hanno una riga affatto — il loro modello è ereditato dalla conversazione d'origine, non una preferenza.
+Non tutte le celle esistono per tutte le righe, e quelle che non esistono **dicono perché** invece di restare vuote: la sessione nuda non pinna un `sessionId` e quindi non ha un titolo, il project status gira headless e non apre nessuna tab. Resume e fork non hanno una riga affatto — il loro modello è ereditato dalla conversazione d'origine, non una preferenza.
 
 Un file assente, illeggibile o con una voce sbagliata non rompe niente: il deck parte sui default e lo dice in riga di stato, una voce alla volta.
 
@@ -342,6 +342,15 @@ Il recap vive in un file markdown sotto `/tmp/loom-deck-status-<uid>/`, col nome
 
 A generazione finita arriva una notifica desktop (`notify-send`): la generazione dura minuti e nel frattempo si guarda altrove, e la notifica di GNOME persiste nel cassetto — cosa che un suono non farebbe. Senza `notify-send` installato non succede **niente**: nessuna riga, nessun messaggio. L'assenza di un binario è una proprietà stabile della macchina, non un evento, e segnalarla a ogni generazione sarebbe rumore ripetuto su una funzione accessoria mentre il deliverable vero è arrivato comunque.
 
+### `^B` — il modo doc
+
+`^B` scambia i due pane: al posto di task e conversazioni, l'albero della doc a sinistra e i file inbox a destra. Il modo doc si legge e basta — nessuna conversazione parte da qui.
+
+- **albero doc** — la docs-root intera, cartelle prima dei file, con una vista sola (`Tutti`). La colonna in testa porta i flag che `doc-metrics.sh` emette, tutti descrittivi: `ONL` (file @-importato da `CLAUDE.md`), `INB` (file della cartella inbox), `GEN` (l'indice generato). `⏎` apre il testo del file, o l'elenco dei file di una cartella.
+- **inbox** — i file di `inbox/`, con una vista per natura (nozioni, derivazione, sweep) oltre a `Tutti`. Il glifo di riga dice lo stato: `⏳` rilascio chiuso (`drainable`), nessun glifo in lavorazione (la task che lo scrive è aperta), `🔒` congelato su un branch finché `pull-repos` non lo trova su main, `⚠` marker illeggibile, da riparare a mano. `⏎` apre il testo del file.
+
+Il bottone in testata, `[ Doc 📄 3/1/2 ]`, monta il modo e conta per natura i file a rilascio chiuso: `drainable` e nessun `branch:`.
+
 ### `^U` — il gitlink dei submodule
 
 Su un progetto **cappello** (un repo che aggrega altri repo come submodule) ogni membro è pinnato a un commit fisso. Quando il membro avanza — un commit nel deck, nel plugin — quel puntatore resta indietro finché qualcuno non lo bumpa, e il gesto vive nella memoria di chi committa. Il deck lo mette sotto gli occhi e lo rende un tasto.
@@ -349,7 +358,7 @@ Su un progetto **cappello** (un repo che aggrega altri repo come submodule) ogni
 L'indicatore sta in coda alla riga della legenda, accanto agli altri due:
 
 ```
-gitlink 2   wrap 77   [ Inbox 📄 3/1/2 ]
+gitlink 2   wrap 77   [ Doc 📄 3/1/2 ]
 ```
 
 | Corpo | Significato |

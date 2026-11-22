@@ -222,30 +222,30 @@ export const ARCHIVABLE_ON = { LOOM_DECK_ARCHIVABLE_DAYS: '1' };
  * sola fra due run.
  *
  * Lo stub risponde a ENTRAMBI i modi dello script: senza il ramo `--inbox` il
- * pane destro del modo doc misurerebbe una coda vuota, e gli scenari che lo
+ * pane destro del modo doc misurerebbe una cartella vuota, e gli scenari che lo
  * attraversano proverebbero metà schermata.
  *
  * I dati sono la forma più LARGA di ogni cella: un path profondo quattro livelli
- * (il rientro dell'albero morde lì), un file con quattro flag (la cella va in
- * overflow e chiude col `+`), una cartella flaggata con un nome lungo.
+ * (il rientro dell'albero morde lì), i tre flag che lo script emette, una
+ * cartella con un nome lungo.
  */
 export function docCacheRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'deck-doc-'));
   const dir = join(root, '99.0.0', 'scripts', 'docs');
   mkdirSync(dir, { recursive: true });
   const files = [
-    'runtime/reference/loom-deck/sessions/loom-deck-spawn-compose.md\\t19229\\t420\\tSPLIT',
-    'runtime/reference/task/task-preflight-contract.md\\t17914\\t388\\tSPLIT TLDR-ORFANA ONLINE CONFIG',
-    'runtime/project/plugin-dev.md\\t16125\\t0\\tSPLIT NOTLDR ONLINE',
-    'runtime/reference/assumed-knowledge.md\\t537\\t293\\tMERGE? TLDR-ORFANA CONFIG',
+    'runtime/reference/loom-deck/sessions/loom-deck-spawn-compose.md\\t19229\\t420\\t-',
+    'runtime/reference/task/task-preflight-contract.md\\t17914\\t388\\tONLINE',
+    'runtime/project/plugin-dev.md\\t16125\\t0\\tONLINE',
+    'runtime/reference/assumed-knowledge.md\\t537\\t293\\t-',
     'runtime/reference/INDEX.md\\t12000\\t0\\tGEN',
-    'runtime/inbox/T160-deck-albero-doc-toggle-unificato.md\\t4371\\t120\\tINBOX',
+    'runtime/inbox/T160-deck-albero-doc-toggle-unificato.md\\t4371\\t120\\tINBOX ONLINE',
     'runtime/tasks.md\\t12019\\t0\\t-',
   ];
   const dirs = [
-    'runtime/reference/doc-system\\t13\\t112382\\tREGROUP',
-    'runtime/reference/loom-deck/sessions\\t7\\t88086\\tREGROUP',
-    'runtime/reference/task\\t7\\t64429\\tREGROUP',
+    'runtime/reference/doc-system\\t13\\t112382\\t-',
+    'runtime/reference/loom-deck/sessions\\t7\\t88086\\t-',
+    'runtime/reference/task\\t7\\t64429\\t-',
     'runtime/reference\\t2\\t12537\\t-',
     'runtime/inbox\\t1\\t4371\\t-',
     'runtime/project\\t1\\t16125\\t-',
