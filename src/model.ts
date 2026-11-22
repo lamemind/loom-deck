@@ -52,61 +52,16 @@ export const ROW_SPOT = 1;
 export const META_ROWS = 2;
 
 /**
- * T160 — il MODO del deck: quale coppia di pane è montata.
+ * Il pane a fuoco: la lista task a sinistra, le conversazioni a destra.
  *
- * ```
- * task →  lista task   │  conversazioni
- * doc  →  albero doc   │  inbox
- * ```
+ * Un enum e non un flag, perché le guardie lo leggono per nome — `focus !==
+ * 'sessions'` (pin, nota, riassegna, fork, resume) e `focus === 'tasks'`
+ * (spawn, edit, purge) — e un nome dice su quale riga l'azione agisce.
  *
- * Sostituisce il `RightPane` di T134, che descriveva quale dei due pane
- * occupasse lo slot destro col sinistro fisso. Appena anche il sinistro ha due
- * contenuti alternativi quel disegno non regge: due assi indipendenti
- * renderebbero rappresentabili due combinazioni che non hanno senso — albero doc
- * accanto alle conversazioni, lista task accanto al pane inbox — e ogni
- * consumer dovrebbe escluderle a mano. Un asse solo le rende IRRAPPRESENTABILI
- * invece che vietate, che è la stessa ragione per cui `Focus` sotto è un enum e
- * non un flag.
- *
- * VOLATILE come la vista attiva (T100, e D6 di T134): non entra in
- * `deck-view.json`, il deck riapre sempre in modo task. Il criterio è il rischio
- * di leggere una schermata parziale credendola quella di sempre — un albero doc
- * all'apertura, al posto della lista task, è quella trappola alzata di un
- * livello.
+ * `←→` sono un binding ASSOLUTO SPAZIALE: `←` porta sempre sul pane sinistro e
+ * `→` sempre sul destro. Il tasto nomina una posizione, non scambia.
  */
-export type DeckMode = 'task' | 'doc';
-
-/**
- * Il pane a fuoco. QUATTRO valori, di cui due montati per volta: `inbox` non è
- * `sessions` con un contenuto diverso, e `doctree` non è `tasks` con un
- * contenuto diverso.
- *
- * È ciò che tiene vere per costruzione tutte le guardie già scritte come
- * `focus !== 'sessions'` (pin, nota, riassegna, fork, resume) e `focus ===
- * 'tasks'` (spawn, edit, purge): col modo doc montato quelle azioni non hanno
- * una riga su cui agire, e nessuna di loro ha dovuto imparare la differenza. Un
- * flag booleano al posto dei due valori nuovi avrebbe invece richiesto di
- * rileggere ogni guardia.
- *
- * `←→` restano un binding ASSOLUTO SPAZIALE: `←` porta sempre sul pane SINISTRO
- * e `→` sempre sul destro — cioè su `tasks`/`doctree` e su `sessions`/`inbox` a
- * seconda del modo. Il tasto nomina una posizione, non un contenuto.
- */
-export type Focus = 'tasks' | 'sessions' | 'inbox' | 'doctree';
-
-/** Il pane SINISTRO di ciascun modo, e il destro. Tabelle e non due ternari
- *  sparsi: `←→`, il toggle del modo e l'hit-test del mouse fanno tutti e tre la
- *  stessa domanda, e tre risposte scritte a mano divergono al primo modo
- *  aggiunto. */
-export const LEFT_PANE: Record<DeckMode, Focus> = { task: 'tasks', doc: 'doctree' };
-
-export const RIGHT_PANE: Record<DeckMode, Focus> = { task: 'sessions', doc: 'inbox' };
-
-/** Il fuoco è sul pane di sinistra? Serve al toggle del modo, che deve portare
- *  chi guardava a sinistra sul pane sinistro dell'altro modo. */
-export function isLeftPane(focus: Focus): boolean {
-  return focus === LEFT_PANE.task || focus === LEFT_PANE.doc;
-}
+export type Focus = 'tasks' | 'sessions';
 
 // Standard shortcut (T39): MAIUSCOLA apre un modale, minuscola è azione
 // immediata, 1..9 sono le voci launch del file config. I modali catturano tutti

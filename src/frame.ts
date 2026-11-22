@@ -14,13 +14,7 @@
 // leggeva dichiarata seicento righe più in basso. Il costo è calcolare il
 // budget anche quando il render esce presto su una schermata sostitutiva:
 // aritmetica su array già in memoria, e `layoutBudget` accetta ogni `Mode`.
-import {
-  docHeaderParts,
-  headerItems,
-  inboxHeaderParts,
-  sessionHeaderParts,
-  taskHeaderParts,
-} from './pane-header.js';
+import { headerItems, sessionHeaderParts, taskHeaderParts } from './pane-header.js';
 import {
   FRAME_TEXT_COL,
   HEADER_ROW,
@@ -38,12 +32,8 @@ import { cellWidth, launchLegend, LAUNCH_SEP, type LaunchEntry } from './config.
 import { layoutBudget, windowRange, type Budget, type PreviewKind } from './viewport.js';
 import { cut, sanitize, termWidth } from './width.js';
 import { MODEL_SHORT_LIST, WARN } from './glyphs.js';
-import { META_ROWS, type DeckMode, type Mode } from './model.js';
+import { META_ROWS, type Mode } from './model.js';
 import type { SessionViewCounts, SessionViewId, TaskViewCounts, TaskViewId } from './pane-views.js';
-import type { InboxViewCounts, InboxViewId } from './inbox-views.js';
-import type { InboxFile } from './inbox.js';
-import type { DocViewCounts, DocViewId } from './doc-views.js';
-import type { DocRow } from './doc-tree.js';
 import { rowIndexOf, type SessionRow } from './session-list.js';
 import type { Task } from './tasks.js';
 import { VERSION } from './version.js';
@@ -68,7 +58,7 @@ export const SURFACE_SEGMENTS: readonly Segment[] = [{ key: 't', text: sanitize(
 
 /**
  * Il corpo di un indicatore di testata prima della sua prima misura: lo dicono
- * il bottone del modo doc, l'hard-wrap e il gitlink. Una parola e non uno zero,
+ * l'hard-wrap e il gitlink. Una parola e non uno zero,
  * perché `0` direbbe «ho misurato e non c'è niente» — cioè la cosa sbagliata
  * (D2 di T134: `missing` e guasto sono stati distinti).
  */
@@ -214,51 +204,6 @@ export type IndicatorRow = {
 };
 
 /**
- * Il bottone che monta il modo doc: `[ Doc 📄 3/1/2 ]`.
- *
- * T160/P4 — nomina il MODO, non più il solo pane inbox di T134, perché è quello
- * che `^B` monta adesso. I contatori restano quelli dell'inbox e non ne
- * guadagnano di doc: un contatore sull'albero obbligherebbe a tenere lo scan da
- * secondi acceso anche in modo task, cioè a pagarlo quando nessuno guarda
- * l'albero — l'opposto dell'interruttore di `useDocScan`.
- *
- * SEMPRE ACCESO, mai grigio (D7 di T134): è un modo, non un sottoinsieme che può
- * essere vuoto. I tre numeri sono le tre nature nell'ordine del catalogo, e
- * contano i file a rilascio chiuso: `drainable` e nessun `branch:`.
- *
- * Nessuna sirena sui file vecchi: un file `drainable` resta in `inbox/` a tempo
- * indeterminato, e nessun gesto riporterebbe a zero un contatore dei file oltre
- * una certa età. Un contatore che non arriva mai a zero smette di essere letto,
- * la stessa regola dell'hard-wrap e del gitlink qui sotto.
- *
- * Il nome non si scambia col modo montato, a differenza della voce di legenda
- * qui sopra: il bottone porta i contatori degli inbox, che vivono in modo doc,
- * quindi è l'etichetta di quel mondo — e un `[ Task 📄 3/1/2 ]` leggerebbe quei
- * tre numeri come se fossero delle task.
- *
- * Prima del primo scan i numeri non esistono ancora, e stampare `0/0/0` direbbe
- * «ho misurato e non c'è niente» — cioè la cosa sbagliata (D2 preflight:
- * `missing` e guasto sono stati distinti). Il glifo di allerta si AGGIUNGE ai
- * numeri invece di sostituirli: un tentativo fallito lascia in piedi l'esito
- * dell'ultimo riuscito, che resta vero e ancora apribile.
- */
-export function inboxButton(state: {
-  counts: InboxViewCounts;
-  scanned: boolean;
-  ok: boolean;
-  /** T175 — `false` = lo script che misura gli inbox non gira su questa
-   *  piattaforma: `n/d` al posto dei numeri, che sarebbero tre zeri mai misurati. */
-  available?: boolean;
-}): string {
-  if (state.available === false) return sanitize(`[ Doc 📄 ${OFF_MARK} ]`);
-  const numbers = state.scanned
-    ? `${state.counts.nozioni}/${state.counts.derivazione}/${state.counts.sweep}`
-    : STATUS_MISSING;
-  const warn = state.ok ? '' : ` ${WARN}`;
-  return sanitize(`[ Doc 📄 ${numbers}${warn} ]`);
-}
-
-/**
  * L'indicatore hard-wrap: `wrap 77`.
  *
  * Etichetta a PAROLA e non un glifo, dopo una misura sotto pty: `〰` (U+3030)
@@ -366,25 +311,19 @@ export function indicatorRow(
     /** T155 — `null` = il progetto non ha `.gitmodules`: nessun segmento, non
      *  uno che dice «0». La riga legenda riceve indietro quelle colonne. */
     gitlink: Parameters<typeof gitlinkIndicator>[0] | null;
-    inbox: Parameters<typeof inboxButton>[0];
     wrap: Parameters<typeof wrapIndicator>[0];
   },
   columns: number,
 ): IndicatorRow {
-  // Ordine di lettura: gli indicatori, poi il bottone. Il bottone sta
-  // all'estremo destro perché è l'unico dei tre che MONTA qualcosa restando in
-  // vista normale — la lista del wrap è una schermata che si apre e si chiude.
-  //
-  // Il gitlink sta in TESTA al blocco, che è ancorato al bordo destro: è l'unico
+  // Il gitlink sta in TESTA al blocco, che è ancorato al bordo destro: è un
   // segmento che può mancare del tutto (il gate su `.gitmodules`), e da lì la
-  // sua assenza non sposta gli altri due. T168 — il glifo launch gli sta davanti
+  // sua assenza non sposta gli altri. T168 — il glifo launch gli sta davanti
   // per la stessa ragione, ed è ancora più intermittente: compare e sparisce
   // col giro di una voce.
   const segments: Segment[] = [
     ...(state.launch ? [{ key: '^l', text: launchIndicator(state.launch) }] : []),
     ...(state.gitlink ? [{ key: '^u', text: gitlinkIndicator(state.gitlink) }] : []),
     { key: '^w', text: wrapIndicator(state.wrap) },
-    { key: '^b', text: inboxButton(state.inbox) },
   ];
   const text = segments.map((s) => s.text).join(INDICATOR_SEP);
   const width = termWidth(text);
@@ -453,23 +392,6 @@ export type FrameInput = {
   parentLabel: string;
   /** `tasks.md` non è stato caricato: al posto delle righe task c'è la riga rossa. */
   hasLoadError: boolean;
-  /** T160 — il modo del deck: quale coppia di pane è montata. */
-  deckMode: DeckMode;
-  /** T134 — la lista inbox INTERA della vista attiva. */
-  inboxFiles: InboxFile[];
-  /** Selezione del pane inbox, keyed sul path. */
-  selInboxPath: string | null;
-  inboxCounts: InboxViewCounts;
-  inboxViewId: InboxViewId;
-  /** T160 — la lista doc INTERA della vista attiva. */
-  docRows: DocRow[];
-  /** Selezione del pane doc, keyed sul path. */
-  selDocPath: string | null;
-  docCounts: DocViewCounts;
-  docViewId: DocViewId;
-  /** La misura portava anche la tabella delle cartelle: l'header lo dice, e
-   *  l'avviso occupa colonne che le regioni cliccabili devono contare. */
-  docHasDirs: boolean;
   /** T181 — quante conversazioni riapre il restore (`restoreSet`); 0 = niente
    *  bottone in testata. */
   restoreCount: number;
@@ -481,17 +403,6 @@ export type Frame = {
   windowTasks: Task[];
   sessionWin: { start: number; end: number };
   windowRows: SessionRow[];
-  /** T134 — finestra e righe visibili del pane inbox, gemelle delle due sopra.
-   *  Calcolate anche quando il pane non è montato: è aritmetica su un array già
-   *  in memoria, e un ramo condizionale qui costerebbe più della somma. */
-  inboxWin: { start: number; end: number };
-  windowInbox: InboxFile[];
-  /** T160 — finestra e righe visibili del pane doc, che occupa lo slot SINISTRO
-   *  in modo doc. La capienza è quella dello slot destro e non quella del pane
-   *  task: la cornice che paga è la sua (2 bordi + header), non quella del pane
-   *  task, che ha in più la riga sort e le due righe meta. */
-  docWin: { start: number; end: number };
-  windowDoc: DocRow[];
   /** `null` in compatto: lì i pane non esistono, quindi non c'è nulla da colpire. */
   listGeometry: ListGeometry | null;
   /** Segmento destro della testata: risoluzione in celle e versione. */
@@ -546,14 +457,6 @@ export function frameGeometry(input: FrameInput): Frame {
   const selRowIndex = rowIndexOf(input.sessionRows, input.selSessionId);
   const sessionWin = windowRange(input.sessionRows.length, selRowIndex, budget.sessionRows);
   const windowRows = input.sessionRows.slice(sessionWin.start, sessionWin.end);
-  // Stessa capienza del pane sessioni: i due hanno la stessa cornice e uno solo
-  // dei due è montato (vedi SESSIONS_PANE_CHROME in viewport.ts).
-  const selInboxIndex = input.inboxFiles.findIndex((f) => f.path === input.selInboxPath);
-  const inboxWin = windowRange(input.inboxFiles.length, selInboxIndex, budget.sessionRows);
-  const windowInbox = input.inboxFiles.slice(inboxWin.start, inboxWin.end);
-  const selDocIndex = input.docRows.findIndex((r) => r.path === input.selDocPath);
-  const docWin = windowRange(input.docRows.length, selDocIndex, budget.sessionRows);
-  const windowDoc = input.docRows.slice(docWin.start, docWin.end);
 
   // T21 — geometria delle liste per l'hit-test del click, dalla STESSA
   // aritmetica che disegna i pane: le parti degli header escono dal modulo che
@@ -589,40 +492,10 @@ export function frameGeometry(input: FrameInput): Frame {
           ),
           spans.sessions.start + PANE_TEXT_PAD,
         ),
-        inboxHeader: inlineRegions(
-          headerItems(
-            inboxHeaderParts(
-              input.inboxCounts,
-              input.inboxViewId,
-              inboxWin.start,
-              input.inboxFiles.length - inboxWin.end,
-              input.columns,
-            ),
-          ),
-          spans.sessions.start + PANE_TEXT_PAD,
-        ),
-        // Il pane doc occupa lo slot SINISTRO, quindi le sue regioni partono
-        // dallo span del pane task — la posizione è del lato, non del contenuto.
-        docHeader: inlineRegions(
-          headerItems(
-            docHeaderParts(
-              input.docCounts,
-              input.docViewId,
-              docWin.start,
-              input.docRows.length - docWin.end,
-              input.columns,
-              input.docHasDirs,
-            ),
-          ),
-          spans.tasks.start + PANE_TEXT_PAD,
-        ),
         // Con un errore di caricamento al posto delle task c'è la riga rossa:
         // restano cliccabili le sole righe meta.
         taskRows: META_ROWS + (input.hasLoadError ? 0 : windowTasks.length),
         sessionRows: windowRows.length,
-        inboxRows: windowInbox.length,
-        docRows: windowDoc.length,
-        mode: input.deckMode,
       };
 
   // Dimensione del terminale in CELLE (colonne×righe, mai pixel — un processo
@@ -647,10 +520,6 @@ export function frameGeometry(input: FrameInput): Frame {
     windowTasks,
     sessionWin,
     windowRows,
-    inboxWin,
-    windowInbox,
-    docWin,
-    windowDoc,
     listGeometry,
     headerRight,
     headerButton,

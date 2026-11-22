@@ -20,7 +20,7 @@
 //    i campi di testo. Con soli 1000+1006 gli eventi sono due per click.
 
 import { termWidth } from './width.js';
-import { LEFT_PANE, RIGHT_PANE, type DeckMode, type Focus } from './model.js';
+import type { Focus } from './model.js';
 
 /** Un evento mouse SGR già parsato. `col`/`row` sono 1-based, come li manda il
  *  terminale. `button` è il codice grezzo: 0/1/2 = sinistro/centrale/destro,
@@ -234,7 +234,7 @@ export const LAUNCH_ROW = 4;
 
 /**
  * T134 — riga della legenda tasti, che ospita anche gli INDICATORI ancorati a
- * destra (bottone inbox, contatore hard-wrap). Sta subito sopra la riga launch,
+ * destra (gitlink, contatore hard-wrap). Sta subito sopra la riga launch,
  * e come lei è incondizionata: bordo superiore, testata, legenda.
  *
  * Gli indicatori sono cliccabili, quindi questa riga entra nell'hit-test come la
@@ -337,32 +337,13 @@ export interface ListGeometry {
   /** Regioni delle viste sull'header del pane task (`key` = id della vista). */
   taskHeader: Region[];
   sessionHeader: Region[];
-  /** T134 — regioni delle viste sull'header del pane inbox. */
-  inboxHeader: Region[];
-  /** T160 — regioni delle viste sull'header del pane doc. */
-  docHeader: Region[];
-  /** T160 — righe della lista doc a schermo. */
-  docRows: number;
   /** Righe della lista task A SCHERMO, righe meta comprese (0 = `≡ tutte`). */
   taskRows: number;
   /** Righe della lista sessioni a schermo, separatore compreso. */
   sessionRows: number;
-  /** T134 — righe della lista inbox a schermo. */
-  inboxRows: number;
-  /**
-   * T160 — il MODO del deck. Le colonne dei due span non cambiano (i pane sono
-   * affiancati al 50% in entrambi i modi), ma header e righe da consultare sì:
-   * senza questo campo il click sul pane inbox interrogherebbe le regioni delle
-   * viste sessione, cioè un altro catalogo con altre chiavi.
-   *
-   * Sostituisce il `rightPane` di T134 per la stessa ragione per cui l'asse è
-   * diventato uno: da qui il modo governa entrambi i lati, non più il solo
-   * destro.
-   */
-  mode: DeckMode;
 }
 
-/** Il pane colpito: i quattro valori di `Focus`, perché il chiamante ne fa
+/** Il pane colpito: i valori di `Focus`, perché il chiamante ne fa
  *  esattamente quell'uso — sposta il fuoco lì. */
 export type HitPane = Focus;
 
@@ -379,24 +360,15 @@ export function listHit(ev: { col: number; row: number }, g: ListGeometry): List
   const inLeft = ev.col >= spans.tasks.start && ev.col <= spans.tasks.end;
   const inRight = ev.col >= spans.sessions.start && ev.col <= spans.sessions.end;
   if (!inLeft && !inRight) return null;
-  const isDoc = g.mode === 'doc';
-  const pane: HitPane = inLeft ? LEFT_PANE[g.mode] : RIGHT_PANE[g.mode];
-  const leftHeader = isDoc ? g.docHeader : g.taskHeader;
-  const rightHeader = isDoc ? g.inboxHeader : g.sessionHeader;
+  const pane: HitPane = inLeft ? 'tasks' : 'sessions';
   if (ev.row === PANE_HEADER_ROW) {
-    const key = hitRegion(inLeft ? leftHeader : rightHeader, ev.col);
+    const key = hitRegion(inLeft ? g.taskHeader : g.sessionHeader, ev.col);
     return key ? { pane, target: 'view', key } : null;
   }
   // Fra header e lista il pane task porta la riga sort/filtri, che non si
-  // seleziona; il pane doc non ce l'ha e la sua lista comincia una riga prima.
-  const first = inLeft && !isDoc ? TASK_LIST_ROW : PANE_BODY_ROW;
-  const count = inLeft
-    ? isDoc
-      ? g.docRows
-      : g.taskRows
-    : isDoc
-      ? g.inboxRows
-      : g.sessionRows;
+  // seleziona: la sua lista comincia una riga dopo quella delle conversazioni.
+  const first = inLeft ? TASK_LIST_ROW : PANE_BODY_ROW;
+  const count = inLeft ? g.taskRows : g.sessionRows;
   const index = ev.row - first;
   if (index < 0 || index >= count) return null;
   return { pane, target: 'row', index };

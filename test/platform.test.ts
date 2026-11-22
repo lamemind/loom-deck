@@ -18,7 +18,7 @@ import {
   UNAVAILABLE,
   type Feature,
 } from '../src/platform.js';
-import { gitlinkIndicator, inboxButton, wrapIndicator } from '../src/frame.js';
+import { gitlinkIndicator, wrapIndicator } from '../src/frame.js';
 import { sessionView } from '../src/pane-views.js';
 
 const ALL: Feature[] = ['spawn', 'liveSessions', 'pluginScripts', 'hardWrap', 'launch', 'notify', 'windowCheck'];
@@ -96,13 +96,6 @@ test('refuse: su una funzione accesa non scrive niente e lascia passare', () => 
 });
 
 test('gli indicatori di una funzione spenta tengono l\'etichetta e mostrano n/d', () => {
-  const counts = { nozioni: 0, derivazione: 0, sweep: 0, all: 0 } as never;
-  assert.equal(
-    inboxButton({ counts, scanned: false, ok: false, available: false }),
-    inboxButton({ counts, scanned: true, ok: true, available: false }),
-    'l\'allerta non deve comparire accanto a una misura che non esiste',
-  );
-  assert.match(inboxButton({ counts, scanned: true, ok: true, available: false }), /^\[ Doc .* n\/d \]$/);
   assert.equal(wrapIndicator({ count: 4, mtime: 1, ok: true, scanning: false, available: false }), `wrap ${OFF_MARK}`);
   assert.equal(
     gitlinkIndicator({ count: 2, attention: 1, scanned: true, ok: true, failed: true, available: false }),

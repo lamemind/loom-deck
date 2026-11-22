@@ -11,9 +11,8 @@
 // in TypeScript darebbe due implementazioni delle due guardie — quella sul verso
 // e quella sul remote — e una divergenza fra le due si vedrebbe solo come un
 // cappello pinnato su un commit sbagliato, giorni dopo, nel clone di qualcun
-// altro. Stesso confine di `inbox.ts` e `wrap-scan.ts`, e non quello di
-// `purge.ts`, che passa da una sessione Claude: qui non c'è nessun prompt, solo
-// un `execFile` con esito sincrono.
+// altro. Il confine non è quello di `purge.ts`, che passa da una sessione
+// Claude: qui non c'è nessun prompt, solo un `execFile` con esito sincrono.
 //
 // Lettore puro + spawn: nessun React, nessuna resa. È l'unico modo di provarlo
 // senza pseudo-terminale.
@@ -201,9 +200,9 @@ export interface GitlinkScan {
  * Invoca lo script e ne parsa l'output.
  *
  * I modi di non avere il dato — plugin non installato su questa macchina,
- * script in errore, git muto — collassano in un solo `ok: false`, come per lo
- * scan degli inbox: a schermo non cambiano la prima mossa di chi li vede. Nessuno dei
- * due è un throw, un indicatore informativo non può rompere il deck.
+ * script in errore, git muto — collassano in un solo `ok: false`: a schermo
+ * non cambiano la prima mossa di chi li vede. Nessuno è un throw, un
+ * indicatore informativo non può rompere il deck.
  *
  * Lo stdout si legge ANCHE quando l'exit è non-zero: lo script classifica tutti
  * i membri prima di agire, quindi su un errore parziale (un `git` che fallisce

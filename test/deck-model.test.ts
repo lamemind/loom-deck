@@ -7,9 +7,6 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { childSessionsOf, rollupChildren, sessionColumns } from '../src/deck-model.js';
 import { TASK_EMPTY } from '../src/glyphs.js';
 import { termWidth } from '../src/width.js';
@@ -174,49 +171,4 @@ test('childSessionsOf: senza task selezionata restano le spot, non tutte', () =>
   const bindings = new Map([['a', 'T1']]);
   const out = childSessionsOf(sessions, bindings, null, false);
   assert.deepEqual(out.map((s) => s.sessionId), ['b']);
-});
-
-// ── il pane inbox rimisura all'apertura ───────────────────────────────────
-//
-// Gate TESTUALE, come quelli di `input-wiring.test.ts`: `useDeckModel` è un
-// hook React e non gira fuori da un render, quindi la sola cosa verificabile
-// senza pseudo-terminale è DOVE sta la chiamata. E il punto è proprio quello —
-// finché la coda si rimisurava solo a intervallo, chi apriva il pane leggeva
-// l'ultima misura invece dello stato di adesso, e nulla a schermo diceva che il
-// numero fosse vecchio.
-
-test('switchMode: entrare in modo doc fa ripartire lo scan degli inbox', () => {
-  const src = readFileSync(
-    join(fileURLToPath(new URL('.', import.meta.url)), '..', 'src', 'deck-model.ts'),
-    'utf8',
-  );
-  const start = src.indexOf('function switchMode');
-  assert.notEqual(start, -1, 'switchMode non trovata in src/deck-model.ts');
-  const body = src.slice(start, src.indexOf('\n  }', start));
-  assert.match(
-    body,
-    /inbox\.scan\(\)/,
-    "switchMode deve chiamare inbox.scan(): senza, il pane si apre sull'ultima " +
-      "misura periodica, vecchia fino a un intero intervallo",
-  );
-  // T160 — e NON deve chiamare quello della doc: il suo hook è keyed
-  // sull'interruttore e riparte da sé quando il modo si monta. Una seconda
-  // chiamata qui darebbe due spawn da quattro secondi per un gesto solo.
-  assert.equal(
-    /doc\.scan\(\)/.test(body),
-    false,
-    'switchMode non deve chiamare doc.scan(): lo scan doc riparte dal proprio effect, ' +
-      "keyed sull'interruttore `enabled`",
-  );
-});
-
-test('useInboxScan: lo scan a richiesta è esposto dallo stato', () => {
-  const src = readFileSync(
-    join(fileURLToPath(new URL('.', import.meta.url)), '..', 'src', 'hooks.ts'),
-    'utf8',
-  );
-  const start = src.indexOf('export interface InboxState');
-  assert.notEqual(start, -1, 'InboxState non trovata in src/hooks.ts');
-  const body = src.slice(start, src.indexOf('\n}', start));
-  assert.match(body, /scan:\s*\(\)\s*=>\s*void/, 'InboxState deve esporre scan()');
 });

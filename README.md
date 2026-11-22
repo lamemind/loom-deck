@@ -113,7 +113,7 @@ H combo
 t 💻 · c 🤖 · 1 📝 codium · 2 ☕ idea
 ```
 
-- **tasti** — `H` apre il modale delle combo: una sola schermata, la stessa da qualunque pane, con le azioni generali in alto, quelle di task a sinistra e quelle di conversazione a destra (in modo doc: albero doc e inbox). Una voce manca solo se il suo tasto non può fare niente su questo progetto o in questo modo del deck. Fuori `↑↓`, universale in qualunque TUI.
+- **tasti** — `H` apre il modale delle combo: una sola schermata, la stessa da qualunque pane, con le azioni generali in alto, quelle di task a sinistra e quelle di conversazione a destra. Una voce manca solo se il suo tasto non può fare niente su questo progetto. Fuori `↑↓`, universale in qualunque TUI.
   Nessuna voce di uscita: `^C` non ha bisogno di essere annunciato — è il tasto che si prova per primo, e la prima pressione risponde da sé con l'avviso.
 - **surface** — *dove* puoi aprire qualcosa: prima le due built-in (`t`/`c`), poi le voci `launch` del progetto. Stanno insieme perché hanno la stessa natura — fire-once, `cwd` = project root, nessuno stato — e differiscono solo per essere universali invece che custom.
 
@@ -314,23 +314,14 @@ I toggle e la query sono **volatili**: sopravvivono alla chiusura del modale, no
 
 **Come fa a essere istantanea.** I corpi dei messaggi restano in RAM dentro la cache mtime-keyed che il deck usa già per la lista sessioni: quei file venivano comunque deserializzati per turni e titoli, e i corpi buttati. Trattenerli non aggiunge I/O, aggiunge memoria — e ne aggiunge poca, perché un JSONL è per l'85% overhead (misurato su un progetto reale: 57 MB su disco = 9,8 MB di testo cercabile). Cercarci dentro costa 1-9 ms; un prefiltro `grep` sugli stessi file ne costerebbe 26, perché rileggerebbe il volume pieno a ogni battuta.
 
-### `^B` — il modo doc
-
-`^B` scambia i due pane: al posto di task e conversazioni, l'albero della doc a sinistra e i file inbox a destra. Il modo doc si legge e basta — nessuna conversazione parte da qui.
-
-- **albero doc** — la docs-root intera, cartelle prima dei file, con una vista sola (`Tutti`). La colonna in testa porta i flag che `doc-metrics.sh` emette, tutti descrittivi: `ONL` (file @-importato da `CLAUDE.md`), `INB` (file della cartella inbox), `GEN` (l'indice generato). `⏎` apre il testo del file, o l'elenco dei file di una cartella.
-- **inbox** — i file di `inbox/`, con una vista per natura (nozioni, derivazione, sweep) oltre a `Tutti`. Il glifo di riga dice lo stato: `📦` rilascio chiuso (`drainable`), nessun glifo in lavorazione (la task che lo scrive è aperta), `🔒` congelato su un branch finché `pull-repos` non lo trova su main, `⚠` marker illeggibile, da riparare a mano. `⏎` apre il testo del file.
-
-Il bottone in testata, `[ Doc 📄 3/1/2 ]`, monta il modo e conta per natura i file a rilascio chiuso: `drainable` e nessun `branch:`.
-
 ### `^U` — il gitlink dei submodule
 
 Su un progetto **cappello** (un repo che aggrega altri repo come submodule) ogni membro è pinnato a un commit fisso. Quando il membro avanza — un commit nel deck, nel plugin — quel puntatore resta indietro finché qualcuno non lo bumpa, e il gesto vive nella memoria di chi committa. Il deck lo mette sotto gli occhi e lo rende un tasto.
 
-L'indicatore sta in coda alla riga della legenda, accanto agli altri due:
+L'indicatore sta in coda alla riga della legenda, accanto a quello dell'hard-wrap:
 
 ```
-gitlink 2   wrap 77   [ Doc 📄 3/1/2 ]
+gitlink 2   wrap 77
 ```
 
 | Corpo | Significato |
@@ -346,7 +337,7 @@ Nel numero entrano solo i membri che un bump può sistemare. Un submodule non in
 
 **`^U` bumpa**, senza conferma: il commit è locale e si annulla con un `git reset` che non tocca nessun remote. Il deck non pusha il cappello — quel gesto resta al flusso normale, perché un gitlink pushato per sbaglio è già nella copia di chiunque abbia pullato.
 
-Il deck **non classifica da sé**: spawna `bump-gitlink.sh` del plugin (in `--dry-run` per la misura, nudo per il bump) e mostra il TSV che ne esce. Nessuna sessione Claude in mezzo — è un `execFile` con esito sincrono, come il contatore inbox e lo scan hard-wrap. Lo stesso script si lancia a mano da shell, ed è lì che vivono le due guardie che rendono il bump sicuro:
+Il deck **non classifica da sé**: spawna `bump-gitlink.sh` del plugin (in `--dry-run` per la misura, nudo per il bump) e mostra il TSV che ne esce. Nessuna sessione Claude in mezzo — è un `execFile` con esito sincrono, come lo scan hard-wrap. Lo stesso script si lancia a mano da shell, ed è lì che vivono le due guardie che rendono il bump sicuro:
 
 - **il verso** — `git submodule status` marca con `+` un checkout diverso dal gitlink **in entrambi i versi**, senza distinguerli. Un cappello pullato senza `git submodule update` ha il checkout più vecchio del gitlink e porta lo stesso `+`: bumparlo pinnerebbe il cappello a un commit precedente. Quel membro si salta, e la riga di stato nomina `git submodule update`.
 - **il remote** — il cappello può pinnare solo commit già raggiungibili dal remote del membro. Un gitlink verso un commit locale produce un cappello che si clona ma non si ricostruisce, e il difetto è invisibile a chi lo introduce: nella sua copia quel commit esiste. Quel membro si salta, e la riga di stato nomina `git -C <membro> push`.

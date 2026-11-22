@@ -34,7 +34,7 @@ export interface TaskDetail {
 
 // La docs-root arriva dal chiamante, già risolta: la cascata che la sceglie
 // (`docsRootName` in `config.ts`) gira una volta per vita del deck, e i due path
-// qui sotto devono nascere dallo stesso valore che leggono gli scan del modo doc.
+// qui sotto devono nascere dallo stesso valore.
 export function resolveTasksPath(cwd: string, docsRoot: string): string {
   return join(cwd, docsRoot, 'tasks.md');
 }

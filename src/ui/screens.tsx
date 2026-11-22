@@ -1,10 +1,9 @@
 // Le SCHERMATE SOSTITUTIVE del deck e i due frammenti che le accompagnano.
 //
 // Una schermata sostitutiva prende il frame intero invece di stare in un box
-// sopra i due pane: assegnazione, detail della task, detail di un file inbox
-// o di una riga doc, ricerca e reader. Il criterio è la taglia del contenuto — una
-// lista di occorrenze, un task file o un file di nozioni non entrano in quattro
-// righe — e la conseguenza è che il budget d'altezza dei pane non viene nemmeno
+// sopra i due pane: assegnazione, detail della task, ricerca e reader, e le
+// pagine. Il criterio è la taglia del contenuto — una lista di occorrenze o un
+// task file non entrano in quattro righe — e la conseguenza è che il budget d'altezza dei pane non viene nemmeno
 // calcolato, perché il render esce prima.
 //
 // `screenFor` è il ROUTER: sceglie fra le sei e restituisce `null` quando
@@ -35,7 +34,6 @@ import type { Mode, PurgeDraft } from '../model.js';
 import type { Session } from '../sessions.js';
 import { AssignScreen } from './assign-screen.js';
 import { DetailScreen } from './detail-screen.js';
-import { FileSheetScreen, docSheetHead, inboxSheetHead } from './file-sheet-screen.js';
 import { WrapScreen } from './wrap-screen.js';
 import { SpawnScreen } from './spawn-screen.js';
 import { LaunchLogScreen, LaunchScreen } from './launch-screen.js';
@@ -47,9 +45,6 @@ import type { useComboOverlay } from '../overlays/combo.js';
 import type { useFinderOverlay } from '../overlays/finder.js';
 import type { useSheetOverlay } from '../overlays/sheet.js';
 import type { useSearchOverlay } from '../overlays/search.js';
-import type { useFileSheet } from '../overlays/file-sheet.js';
-import type { InboxFile } from '../inbox.js';
-import type { DocRow } from '../doc-tree.js';
 import type { useWrapOverlay } from '../overlays/wrap.js';
 import type { useSpawnPage } from '../overlays/spawn.js';
 import type { useLaunchPage } from '../overlays/launch.js';
@@ -59,8 +54,6 @@ type ComboOverlay = ReturnType<typeof useComboOverlay>;
 type FinderOverlay = ReturnType<typeof useFinderOverlay>;
 type SheetOverlay = ReturnType<typeof useSheetOverlay>;
 type SearchOverlay = ReturnType<typeof useSearchOverlay>;
-type InboxOverlay = ReturnType<typeof useFileSheet<InboxFile>>;
-type DocOverlay = ReturnType<typeof useFileSheet<DocRow>>;
 type WrapOverlay = ReturnType<typeof useWrapOverlay>;
 type SpawnPage = ReturnType<typeof useSpawnPage>;
 type LaunchPage = ReturnType<typeof useLaunchPage>;
@@ -233,8 +226,6 @@ export type ScreensInput = {
     finder: FinderOverlay;
     sheet: SheetOverlay;
     search: SearchOverlay;
-    inbox: InboxOverlay;
-    doc: DocOverlay;
     wrap: WrapOverlay;
     spawn: SpawnPage;
     launch: LaunchPage;
@@ -245,14 +236,13 @@ export type ScreensInput = {
  * Sceglie la schermata sostitutiva attiva, o `null` per restare sulla lista.
  *
  * L'ordine dei rami è quello che avevano in `cli.tsx` e non è indifferente: i
- * modi si escludono a vicenda, ma `detail`, `inbox` e `doc` chiedono anche
- * che il proprio contenuto esista (`sheet.sheet`, `inbox.sheet`, `doc.sheet`)
- * — un modo dichiarato senza contenuto deve cadere alla lista, non a una
+ * modi si escludono a vicenda, ma `detail` chiede anche che il proprio
+ * contenuto esista (`sheet.sheet`) — un modo dichiarato senza contenuto deve cadere alla lista, non a una
  * schermata vuota.
  */
 export function screenFor(input: ScreensInput) {
   const { mode, rows, columns, note, overlays } = input;
-  const { assign, combo, finder, sheet, search, inbox, doc, wrap, spawn, launch } = overlays;
+  const { assign, combo, finder, sheet, search, wrap, spawn, launch } = overlays;
 
   // ── T57 · schermata di assegnazione ─────────────────────────────────────
   // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
@@ -377,61 +367,6 @@ export function screenFor(input: ScreensInput) {
         occCur={sheet.occCur}
         dlv={sheet.dlv}
         dlvRows={sheet.dlvRows}
-      />
-    );
-  }
-
-  // ── T134 · detail di un file inbox ──────────────────────────────────────
-  // Sesta schermata sostitutiva, stessa ragione delle altre cinque: un file di
-  // nozioni supera i 28KB, cioè è più lungo di ogni task file del progetto.
-  if (mode === 'inbox' && inbox.sheet) {
-    if (isCompact(inbox.capacity)) {
-      return (
-        <CompactNotice
-          what={inbox.sheet.item.basename}
-          esc="chiude"
-          rows={rows}
-          columns={columns}
-        />
-      );
-    }
-    // Il clamp serve anche qui: un resize può accorciare il testo sotto uno
-    // scroll già dato.
-    const start = Math.min(inbox.top, inbox.maxTop);
-    return (
-      <FileSheetScreen
-        head={inboxSheetHead(inbox.sheet.item)}
-        missing={inbox.sheet.text === null}
-        lines={inbox.lines.slice(start, start + inbox.capacity)}
-        spans={inbox.doc?.spans ?? []}
-        top={start}
-        total={inbox.lines.length}
-        capacity={inbox.capacity}
-        columns={columns}
-      />
-    );
-  }
-
-  // ── T160 · detail di una riga doc ───────────────────────────────────────
-  // Nona schermata sostitutiva: la stessa dell'inbox (`useFileSheet`, due
-  // istanze) su un altro oggetto. Su una cartella il corpo porta l'elenco dei
-  // suoi file al posto di un testo (P10): il gesto è lo stesso, cambia cosa si
-  // legge.
-  if (mode === 'doc' && doc.sheet) {
-    if (isCompact(doc.capacity)) {
-      return <CompactNotice what={doc.sheet.item.path} esc="chiude" rows={rows} columns={columns} />;
-    }
-    const start = Math.min(doc.top, doc.maxTop);
-    return (
-      <FileSheetScreen
-        head={docSheetHead(doc.sheet.item)}
-        missing={doc.sheet.text === null}
-        lines={doc.lines.slice(start, start + doc.capacity)}
-        spans={doc.doc?.spans ?? []}
-        top={start}
-        total={doc.lines.length}
-        capacity={doc.capacity}
-        columns={columns}
       />
     );
   }

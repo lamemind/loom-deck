@@ -59,7 +59,7 @@ export function useGitlink(deps: GitlinkDeps) {
    *  diverso da com'è andata l'ultima misura, e i due restano entrambi veri. */
   const [failed, setFailed] = useState(false);
 
-  // Il flag di corsa sta in un ref e non in stato, come in `useInboxScan`: due
+  // Il flag di corsa sta in un ref e non in stato: due
   // richieste ravvicinate girano nello stesso tick di React, e un valore di
   // stato arriverebbe al render dopo — cioè troppo tardi per impedire il
   // secondo spawn.
@@ -82,7 +82,7 @@ export function useGitlink(deps: GitlinkDeps) {
       if (!alive.current) return;
       // Un tentativo fallito NON butta via l'esito dell'ultimo riuscito: le
       // righe precedenti restano vere, e il guasto si dice col glifo di allerta
-      // accanto al numero. Stessa regola dell'hard-wrap e degli inbox.
+      // accanto al numero.
       setOk(res.ok);
       setScanned(true);
       if (res.ok || res.members.length > 0) setMembers(res.members);
@@ -101,8 +101,7 @@ export function useGitlink(deps: GitlinkDeps) {
    *
    * Il reset non è cosmetico: senza, l'intervallo continuerebbe a scorrere
    * dall'ultimo tick automatico e potrebbe rimisurare pochi istanti dopo un
-   * dato appena misurato — costo pieno, risultato identico. Stessa forma di
-   * `useWrapScan` e `useInboxScan`.
+   * dato appena misurato — costo pieno, risultato identico.
    */
   const refresh = useCallback(() => {
     setEpoch((e) => e + 1);

@@ -400,8 +400,8 @@ export function parseDocsRoot(raw: unknown): string | null {
 }
 
 /**
- * Nome della cartella doc del progetto (`docs`, `runtime`, …): `tasks.md`,
- * `tasks/`, `inbox/` stanno lì sotto.
+ * Nome della cartella doc del progetto (`docs`, `runtime`, …): `tasks.md` e
+ * `tasks/` stanno lì sotto.
  *
  * T175 — precedenza `env → file → default`. Fino a T175 il deck leggeva la sola
  * env `LOOM_DECK_DOCS_ROOT`, contando su chi lo avvia: compass la antepone al
@@ -417,8 +417,8 @@ export function parseDocsRoot(raw: unknown): string | null {
  * `archivableDays`.
  *
  * Si risolve UNA volta per vita del deck, in `cli.tsx`, e il valore scende a
- * chi lo usa: i path di `tasks.md` e dei task file e i due scan del modo doc
- * devono vedere la stessa cartella.
+ * chi lo usa: i path di `tasks.md` e dei task file devono vedere la stessa
+ * cartella.
  */
 export function docsRootName(projectRoot: string): string {
   const env = process.env.LOOM_DECK_DOCS_ROOT;

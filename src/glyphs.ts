@@ -125,38 +125,6 @@ export function liveCell(
 }
 
 /**
- * T134 — colonna di stato della riga inbox, larga 2 come la cella marker della
- * lista sessioni.
- *
- * `wip` non ha glifo, e non è una dimenticanza: un file senza il token
- * `drainable` è in lavorazione, cioè lo stato normale di un inbox mentre la sua
- * task è aperta, e ogni simbolo direbbe una cosa più forte del vero. L'assenza
- * dice «non ancora chiuso» senza promettere altro, e la colonna natura accanto
- * continua a nominarlo.
- *
- * `released` è `📦`, un pacco chiuso: il rilascio della task è chiuso e il
- * file non aspetta più niente. Un glifo d'attesa (`⏳`) direbbe il contrario. È
- * astrale e a presentazione emoji di default, quindi largo 2 senza VS16, come
- * `🔒` accanto.
- *
- * Nessun glifo è riusato dalla lista sessioni con un significato spostato: là
- * `●`/`◍` dicono la liveness di un processo e `📌`/`🔗`/`○` l'appartenenza,
- * qui si parla dello stato di un file. Un falso amico costa più di un simbolo
- * nuovo.
- */
-export const INBOX_MARK: Record<'broken' | 'branched' | 'wip' | 'released', string> = {
-  broken: WARN,
-  branched: sanitize('🔒'),
-  wip: '',
-  released: sanitize('📦'),
-};
-
-/** Larghezza della cella marker della riga inbox, gemella dei 2 della lista
- *  sessioni: la cella si riempie di spazi anche quando è vuota, o le righe
- *  `wip` sposterebbero a sinistra tutto ciò che segue. */
-export const INBOX_MARK_W = 2;
-
-/**
  * T189 — colonna di stato di un DLV nella lista del detail, larga 3 in tutte e
  * tre le forme: il numero e il testo che seguono restano incolonnati.
  *

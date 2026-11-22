@@ -23,7 +23,7 @@ export type Feature =
    *  aperta, e il resume e il restore (T176), che senza liveness riaprirebbero
    *  una conversazione già aperta in un'altra tab. */
   | 'liveSessions'
-  /** Gli script `.sh` del plugin: pane doc, pane inbox, gitlink. */
+  /** Gli script `.sh` del plugin: il gitlink. */
   | 'pluginScripts'
   /** Lo scan hard-wrap: `md-wrap.py` via `python3`. */
   | 'hardWrap'

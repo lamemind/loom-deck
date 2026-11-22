@@ -100,8 +100,6 @@ export function stripAnsi(s: string): string {
 
 export const ESC = '\x1b';
 export const CTRL_A = '\x01';
-/** T134 — `^B` scambia i due pane dello slot destro (modo task ↔ modo doc). */
-export const CTRL_B = '\x02';
 export const CTRL_C = '\x03';
 export const CTRL_F = '\x06';
 /** T168 — `^L` apre la pagina delle voci launch. */

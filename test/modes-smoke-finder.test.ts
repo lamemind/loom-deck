@@ -51,13 +51,6 @@ test('finder: → su una task nascosta porta il pane su nascoste e il fuoco sull
   assert.match(frame, /Sessions · T2/, `il pane conversazioni non segue T2: ${frame}`);
 });
 
-test('finder: → dal modo doc riporta il deck in modo task', { skip: SKIP }, () => {
-  const { proj, env } = finderProject();
-  const frame = lastFrame(capture(`\x02\`T2R`, proj, env));
-  assert.match(frame, /→ T2 · modo task · vista 1 nascoste/, `il salto non ha cambiato modo: ${frame}`);
-  assert.match(frame, /Sessions · T2/, `il pane conversazioni non è montato: ${frame}`);
-});
-
 // ── T194 · il modale delle combo ─────────────────────────────────────────
 
 test('combo: esc torna alla lista, col fuoco sul pane da cui si è entrati', { skip: SKIP }, () => {
@@ -87,23 +80,27 @@ test('combo: le tre liste stanno insieme, qualunque sia il pane a fuoco', { skip
   assert.equal(lastFrame(capture('RH')), onTask, 'il modale cambia col pane a fuoco');
 });
 
-test('combo: in modo doc le colonne seguono i pane montati', { skip: SKIP }, () => {
+test('combo: il deck non ha un modo doc, e `^B` non monta niente', { skip: SKIP }, () => {
+  // T249 — via l'albero doc e il pane inbox: `^B` non ha più un ramo, e il
+  // modale resta quello delle task e delle conversazioni.
   const frame = lastFrame(capture('\x02H'));
-  assert.match(frame, /\^B\s+task/, `manca la via di ritorno: ${frame}`);
-  assert.match(frame, /albero doc\s+inbox/, `colonne del modo doc assenti: ${frame}`);
-  assert.doesNotMatch(frame, /C\s+nuova|w\s+salva|f\s+fork/, `voce inerte in modo doc: ${frame}`);
+  assert.match(frame, /task\s+conversazioni/, `colonne del deck assenti: ${frame}`);
+  assert.doesNotMatch(frame, /\^B|albero doc|inbox/, `il modo doc è ancora annunciato: ${frame}`);
 });
 
 test('riga due: resta la voce del modale, la legenda intera non c\'è più', { skip: SKIP }, () => {
   const line = lastFrame(capture('')).split('\n')[2] ?? '';
   assert.match(line, /H combo/, `voce del modale assente: ${line}`);
-  assert.match(line, /\[ Doc/, `indicatori assenti: ${line}`);
+  assert.match(line, /wrap/, `indicatori assenti: ${line}`);
+  assert.doesNotMatch(line, /\[ Doc/, `bottone del modo doc ancora in riga due: ${line}`);
   assert.doesNotMatch(line, /genera status|T trova|\^B doc/, `legenda ancora in riga due: ${line}`);
 });
 
 test('riga due: il click su un indicatore rientra dalla sua combo', { skip: SKIP }, () => {
-  // Il bottone doc finisce sull'ultima colonna di testo: bordo destro meno bordo e
-  // padding. Colonna 116 di 120 cade dentro il bottone con qualunque contatore.
-  const frame = lastFrame(capture('@116,3;H'));
-  assert.match(frame, /\^B\s+task/, `il click non ha montato il modo doc: ${frame}`);
+  // L'indicatore hard-wrap finisce sull'ultima colonna di testo: bordo destro meno
+  // bordo e padding. Colonna 116 di 120 cade dentro `wrap N` con qualunque
+  // contatore, e il click preme `^W`, che apre la lista. La schermata ha box
+  // annidati, e `lastFrame` ne prenderebbe il più interno: si legge la cattura.
+  const frame = capture('@116,3;');
+  assert.match(frame, /hard-wrap\s+\d+ WRAP/, `il click non ha aperto la lista hard-wrap: ${frame}`);
 });

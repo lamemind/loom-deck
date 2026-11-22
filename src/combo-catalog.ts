@@ -10,7 +10,6 @@
 // Le tre liste non dipendono dal fuoco né dalla selezione: il modale è la mappa
 // del deck, e una mappa che cambia a seconda di dove si è seduti non si impara.
 import { LAUNCH_DIGITS } from './config.js';
-import { TASK_MODE_LEGEND } from './input-modes.js';
 import { pad, sanitize, termWidth } from './width.js';
 
 /** T181 — la voce del restore: la portano il modale e la riga due. */
@@ -26,9 +25,9 @@ export type ComboList = {
 export type DeckLegend = {
   /** Le azioni che non dipendono da un pane: la riga in alto del modale. */
   general: ComboList;
-  /** Le azioni del pane sinistro: task, o albero doc in modo doc. */
+  /** Le azioni del pane sinistro: la lista task. */
   left: ComboList;
-  /** Le azioni del pane destro: conversazioni, o inbox in modo doc. */
+  /** Le azioni del pane destro: le conversazioni. */
   right: ComboList;
 };
 
@@ -36,15 +35,13 @@ export type DeckLegend = {
  * Le tre liste del modale su `H`.
  *
  * Una voce sparisce solo quando il suo tasto non può fare niente su questo
- * progetto o in questo modo del deck: `^U` senza submodule, `^T` senza il bottone
- * a schermo, le cifre senza voci `launch`, i tasti del mondo task in modo doc.
+ * progetto: `^U` senza submodule, `^T` senza il bottone a schermo, le cifre
+ * senza voci `launch`.
  * Fuori: `↑↓`, universale in qualunque TUI.
  */
 export function deckLegend(state: {
   /** `CANC` sul pane task pota in blocco invece della sola selezionata. */
   purgeBulk: boolean;
-  /** T160 — il deck è in modo doc (albero doc + inbox). */
-  docMode: boolean;
   /** T155 — il progetto ha submodule: senza, `^U` non ha bersaglio. */
   gitlink: boolean;
   /** T181 — il bottone di restore è a schermo in testata: senza, `^T` non ha
@@ -62,8 +59,7 @@ export function deckLegend(state: {
     'tab vista',
     '←→ pane',
     // T169 — il finder è la via d'accesso a ogni task, nascoste dai filtri
-    // comprese. Vive in entrambi i modi, come `^F`, perché non legge la selezione
-    // del pane task (P6).
+    // comprese. Non legge la selezione del pane task (P6), come `^F`.
     'T trova',
     '^F cerca',
     // T134 — le voci nominano il GESTO e non l'oggetto: aprire la lista e
@@ -73,10 +69,6 @@ export function deckLegend(state: {
     // T155 — il GESTO, come sopra: «gitlink» da solo direbbe l'oggetto e non che
     // il tasto lo allinea con un commit.
     ...(state.gitlink ? ['^U bumpa gitlink'] : []),
-    // T160 — la voce nomina il MODO che il tasto monta, non quello montato: `^B`
-    // li scambia, e annunciare quello che si sta già guardando direbbe il
-    // contrario di ciò che il tasto fa.
-    state.docMode ? '^B task' : '^B doc',
     // T161 — l'OGGETTO e non il gesto, al contrario di `^W`/`^E`/`^U`: lì il tasto
     // fa qualcosa, qui apre una pagina e basta.
     '^S azioni',
@@ -89,17 +81,6 @@ export function deckLegend(state: {
     ...launchVoice(state.launchDigits),
   ];
 
-  // T160 — in modo doc i due pane sono altri e i tasti di task e conversazioni non
-  // hanno un oggetto su cui agire: annunciarli descriverebbe un deck che non
-  // esiste. Le colonne seguono quindi i pane montati, ognuna al lato del suo.
-  if (state.docMode) {
-    return {
-      general: voiceList('generali', general),
-      left: voiceList('albero doc', ['⏎ apri']),
-      right: voiceList('inbox', ['⏎ apri']),
-    };
-  }
-
   return {
     general: voiceList('generali', general),
     left: voiceList('task', [
@@ -110,10 +91,11 @@ export function deckLegend(state: {
       // voce che annunciasse «tutte» dove il tasto ne pota una sola sarebbe peggio
       // di nessuna voce.
       state.purgeBulk ? 'CANC elimina tutte' : 'CANC elimina',
-      // T160 — queste vengono dall'ELENCO che governa anche il dispatch
-      // (`input-modes.ts` §TASK_MODE_KEYS): due elenchi divergono al primo tasto
-      // aggiunto.
-      ...TASK_MODE_LEGEND,
+      'C nuova',
+      'E edit',
+      'S sort',
+      'F filtri',
+      'w salva',
     ]),
     right: voiceList('conversazioni', [
       '⏎ resume',
@@ -173,8 +155,7 @@ export type ComboRow = {
 
 /**
  * Le voci come coppie tasto + effetto. Ogni voce apre col tasto che annuncia e lo
- * separa con uno spazio (`input-modes.test.ts` lo fissa per le voci di
- * `TASK_MODE_LEGEND`), quindi il taglio sta sul primo spazio.
+ * separa con uno spazio, quindi il taglio sta sul primo spazio.
  */
 export function comboRows(voices: readonly string[]): ComboRow[] {
   return voices.map((voce) => {

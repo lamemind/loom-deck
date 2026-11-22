@@ -1,13 +1,7 @@
-// I due pane del modo TASK — lista task e conversazioni — con i rispettivi
-// header. Sono presentazionali puri: ricevono la vista già selezionata e le
-// larghezze già calcolate, non li derivano.
-//
-// T160 · D1 — i pane dell'altro modo sono usciti di qui: il pane inbox in
-// `ui/inbox-pane.tsx`, l'albero doc in `ui/doc-pane.tsx`, e ciò che tutti e
-// quattro condividono (`HeaderLine`) in `ui/header-line.tsx`. L'asse dello split
-// è per PANE e non per livello: ogni pane porta il proprio header, la propria
-// riga e la propria nota di vuoto, e sono le tre cose che si toccano insieme.
-// Nessuno dei tre moduli estratti importa questo file — la dipendenza va in un
+// I due pane del deck — lista task e conversazioni — con i rispettivi header.
+// Sono presentazionali puri: ricevono la vista già selezionata e le larghezze
+// già calcolate, non li derivano. La resa dell'header (`HeaderLine`) sta in
+// `ui/header-line.tsx`, che non importa questo file: la dipendenza va in un
 // verso solo, ed è verificabile a grep (`coding-standards` §Come si splitta un
 // file ricresciuto).
 import { Box, Text } from 'ink';

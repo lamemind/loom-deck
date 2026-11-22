@@ -20,9 +20,6 @@ import {
   type TaskViewCounts,
   type TaskViewId,
 } from './pane-views.js';
-import { INBOX_VIEWS, type InboxViewCounts, type InboxViewId } from './inbox-views.js';
-import { DOC_VIEWS, type DocViewCounts, type DocViewId } from './doc-views.js';
-import { WARN } from './glyphs.js';
 
 export interface HeaderPart {
   /** Id della vista che la parte seleziona; `null` per le parti non
@@ -104,89 +101,6 @@ export function sessionHeaderParts(
     [
       { key: null, text: 'Sessions', dim: false, active: false },
       ...views,
-      { key: null, text: above > 0 ? ` · ↑${above}` : '', dim: true, active: false },
-      { key: null, text: below > 0 ? ` · ↓${below}` : '', dim: true, active: false },
-    ],
-    columns,
-  );
-}
-
-/**
- * T134 — header del pane inbox, terzo gemello: `Inbox` nomina il pane e non si
- * seleziona, poi le quattro viste del catalogo, poi `↑N`/`↓N`.
- *
- * L'attenuazione la decide il catalogo (`v.dim(counts)`) e non il contatore
- * della voce, a differenza dei due header storici: la voce `Tutti` conta ogni
- * file in lista ma si grigia sulla somma delle tre nature (D7), perché è quella
- * a dire se c'è lavoro da prendere.
- */
-export function inboxHeaderParts(
-  counts: InboxViewCounts,
-  active: InboxViewId,
-  above: number,
-  below: number,
-  columns: number,
-): HeaderParts {
-  const views: HeaderPart[] = INBOX_VIEWS.map((v) => ({
-    key: v.id,
-    text: ` · ${v.label(counts)}`,
-    color: v.color,
-    dim: v.dim(counts),
-    active: v.id === active,
-  }));
-  return finish(
-    [
-      { key: null, text: 'Inbox', dim: false, active: false },
-      ...views,
-      { key: null, text: above > 0 ? ` · ↑${above}` : '', dim: true, active: false },
-      { key: null, text: below > 0 ? ` · ↓${below}` : '', dim: true, active: false },
-    ],
-    columns,
-  );
-}
-
-/**
- * T160 — header del pane doc, quarto gemello: `Doc` nomina il pane e non si
- * seleziona, poi le viste del catalogo (una, `Tutti`), poi l'avviso di misura
- * parziale, poi `↑N`/`↓N`.
- *
- * L'attenuazione la decide il catalogo (`v.dim(counts)`) come per l'inbox.
- *
- * L'avviso `senza cartelle` copre il caso della cascata (P2): il deck esegue lo
- * script dalla cache installata del plugin e può incontrare una versione che
- * emette la sola tabella dei file. L'albero si costruisce lo stesso — le
- * cartelle si deducono dai path — ma il conteggio file e il peso di una
- * cartella non ci sono, e senza l'avviso una cartella a `0 file` si leggerebbe
- * come vuota invece che come non misurata. Sta PRIMA di `↑N`/`↓N` perché è
- * un'informazione sulla misura, e i contatori di scroll sono i primi a cedere il
- * posto su un terminale stretto.
- */
-export function docHeaderParts(
-  counts: DocViewCounts,
-  active: DocViewId,
-  above: number,
-  below: number,
-  columns: number,
-  hasDirs: boolean,
-): HeaderParts {
-  const views: HeaderPart[] = DOC_VIEWS.map((v) => ({
-    key: v.id,
-    text: ` · ${v.label(counts)}`,
-    color: v.color,
-    dim: v.dim(counts),
-    active: v.id === active,
-  }));
-  return finish(
-    [
-      { key: null, text: 'Doc', dim: false, active: false },
-      ...views,
-      {
-        key: null,
-        text: hasDirs ? '' : ` · ${WARN} senza cartelle`,
-        color: 'yellow',
-        dim: false,
-        active: false,
-      },
       { key: null, text: above > 0 ? ` · ↑${above}` : '', dim: true, active: false },
       { key: null, text: below > 0 ? ` · ↓${below}` : '', dim: true, active: false },
     ],

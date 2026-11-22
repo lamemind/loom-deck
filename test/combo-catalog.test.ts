@@ -15,12 +15,10 @@ import {
   type ComboLine,
   type DeckLegend,
 } from '../src/combo-catalog.js';
-import { TASK_MODE_LEGEND } from '../src/input-modes.js';
 import { termWidth } from '../src/width.js';
 
-const taskBase = { purgeBulk: false, docMode: false, gitlink: false, restore: false, launchDigits: [] as string[] };
+const taskBase = { purgeBulk: false, gitlink: false, restore: false, launchDigits: [] as string[] };
 const fullBase = { ...taskBase, gitlink: true, restore: true, launchDigits: ['1', '2', '3'] };
-const docBase = { ...fullBase, docMode: true };
 
 const allVoices = (legend: DeckLegend) => [
   ...legend.general.voices,
@@ -38,7 +36,11 @@ test('deckLegend: task a sinistra, conversazioni a destra', () => {
     '⏎ detail',
     '^K/^P/^R spawn',
     'CANC elimina',
-    ...TASK_MODE_LEGEND,
+    'C nuova',
+    'E edit',
+    'S sort',
+    'F filtri',
+    'w salva',
   ]);
   assert.equal(right.title, 'conversazioni');
   assert.deepEqual(right.voices, [
@@ -92,27 +94,16 @@ test('deckLegend: le cifre coprono le voci launch in riga, pinnate comprese', ()
   assert.deepEqual(voices(['2', '7']), ['^L launch', '2,7 voci launch']);
 });
 
-test('deckLegend: in modo doc le colonne seguono i pane, e nessun tasto inerte resta annunciato', () => {
-  // Un tasto inerte che resta in legenda descrive un deck che non esiste.
-  const legend = deckLegend(docBase);
-  assert.equal(legend.left.title, 'albero doc');
-  assert.equal(legend.right.title, 'inbox');
-  assert.deepEqual(legend.left.voices, ['⏎ apri']);
-  assert.deepEqual(legend.right.voices, ['⏎ apri']);
-  const text = allVoices(legend).join(' · ');
-  for (const voce of TASK_MODE_LEGEND) {
-    assert.ok(!text.includes(voce), `voce del mondo task annunciata in modo doc: ${voce}`);
-  }
-  for (const key of ['CANC', '^K', 'f fork', 'p pin']) {
-    assert.ok(!text.includes(key), `${key} annunciato in modo doc: ${text}`);
-  }
-  // `^B` nomina il modo che monta: da qui riporta alle task.
-  assert.ok(text.includes('^B task'), `la via di ritorno non è annunciata: ${text}`);
-  assert.ok(deckLegend(taskBase).general.voices.includes('^B doc'));
+test('deckLegend: il deck non annuncia un modo doc', () => {
+  // T249 — il deck non ha più l'albero doc né il pane inbox, e `^B` non monta
+  // niente: una voce che lo annunciasse descriverebbe un deck che non esiste.
+  const text = allVoices(deckLegend(fullBase)).join(' · ');
+  assert.ok(!text.includes('^B'), text);
+  assert.ok(!/\bdoc\b|inbox/.test(text), text);
 });
 
 test('deckLegend: una voce per elemento, nessun separatore dentro una voce', () => {
-  for (const state of [taskBase, fullBase, docBase]) {
+  for (const state of [taskBase, fullBase]) {
     for (const voce of allVoices(deckLegend(state))) {
       assert.ok(!voce.includes(' · '), `due voci fuse in una: ${voce}`);
     }
@@ -168,7 +159,7 @@ test('comboRows: il taglio sta sul primo spazio, l\'etichetta tiene i successivi
 });
 
 test('comboRows: ogni voce ha tasto ed etichetta', () => {
-  for (const state of [taskBase, fullBase, docBase]) {
+  for (const state of [taskBase, fullBase]) {
     const voices = allVoices(deckLegend(state));
     const rows = comboRows(voices);
     assert.deepEqual(rows.map((r) => `${r.key} ${r.label}`), voices);
@@ -179,7 +170,7 @@ test('comboRows: ogni voce ha tasto ed etichetta', () => {
 // ── comboLines: la disposizione ──────────────────────────────────────────────
 
 test('comboLines: a ogni larghezza ogni voce sta intera su una riga, e nessuna riga sfora', () => {
-  for (const state of [taskBase, { ...fullBase, purgeBulk: true }, docBase]) {
+  for (const state of [taskBase, { ...fullBase, purgeBulk: true }]) {
     const legend = deckLegend(state);
     for (const width of [172, 92, 72, 40, 32, 24]) {
       const texts = comboLines(legend, width).map(lineText);

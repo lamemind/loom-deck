@@ -33,17 +33,10 @@ const MAX_DETAIL_LINES = 6;
 // a un pane va scalata qui, o il frame sfonda `rows` e Ink passa a
 // clearTerminal (frame-fantasma nello scrollback di VTE).
 const TASKS_PANE_CHROME = 6; // 2 bordi + header "Tasks (n)" + riga sort + 2 righe meta
-// T134/T160 — vale per TRE pane su quattro: conversazioni, inbox e albero
-// doc hanno la stessa cornice (2 bordi + header) e ne sono montati al massimo
-// due alla volta, quindi `Budget.sessionRows` è la capienza di ognuno di loro.
-// Solo il pane task ha una cornice propria (`TASKS_PANE_CHROME`), perché porta
-// la riga sort e le due righe meta.
-//
-// Il pane doc sta nello slot SINISTRO e paga comunque questa cornice, non quella
-// del pane task: il costo lo decide ciò che il pane disegna, non il lato in cui
-// sta. Se un giorno uno dei tre guadagnasse una riga fissa, questa costante deve
-// sdoppiarsi e il budget guadagnare un ramo — una riga fissa non contata è ciò
-// che fa sfondare `rows` e manda Ink nel ramo `clearTerminal`.
+// Il pane conversazioni ha una cornice più corta del pane task, che porta in più
+// la riga sort e le due righe meta (`TASKS_PANE_CHROME`). Una riga fissa
+// aggiunta al pane va scalata qui: una riga non contata è ciò che fa sfondare
+// `rows` e manda Ink nel ramo `clearTerminal`.
 const SESSIONS_PANE_CHROME = 3; // 2 bordi + header "Sessions · …"
 const PREVIEW_CHROME = 3; // marginTop + 2 bordi
 
@@ -54,19 +47,6 @@ const PREVIEW_CHROME = 3; // marginTop + 2 bordi
  *  il blocco sparisce con una riga di anticipo rispetto a prima di T148. */
 const SESSION_DETAIL_FIXED = 3;
 const MAX_SESSION_PREVIEW = 3;
-
-/** T134 — preview inbox: nome del file + riga meta (natura, marcatori, branch,
- *  cappello, cifre, età). Righe TUTTE fisse, nessuna variabile: il corpo del
- *  file sta nel detail fullscreen, e mostrarne qui le prime righe costerebbe una
- *  lettura di file a ogni movimento di selezione per un'anteprima che il detail
- *  dà per intero. */
-const INBOX_DETAIL_FIXED = 2;
-
-/** T160 — preview doc: nome intero del bersaglio + riga meta (cifre e nomi
- *  interi dei flag). Righe TUTTE fisse come per l'inbox, e per la stessa
- *  ragione: il corpo del file sta nel detail fullscreen, e mostrarne qui le
- *  prime righe costerebbe una lettura di file a ogni movimento di selezione. */
-const DOC_DETAIL_FIXED = 2;
 
 /** Altezza di ciascuna modale, marginTop incluso. In flusso, non in overlay:
  *  spingono giù i pane, quindi il loro costo va scalato dal budget. */
@@ -106,15 +86,6 @@ export const MODAL_HEIGHT = {
   // entra in un box sopra i pane. La sua altezza la distribuisce
   // `detailCapacity`.
   detail: 0,
-  // T134 — il detail di un file inbox: sesta sostitutiva. Un file di nozioni
-  // arriva a 28KB, cioè più lungo di ogni task file del progetto: la stessa
-  // ragione delle altre cinque. Altezza da `fileSheetCapacity`.
-  inbox: 0,
-  // T160 — il detail di un bersaglio doc, nona sostitutiva: stessa schermata
-  // dell'inbox (`useFileSheet`, due istanze) su un altro oggetto. Un modo
-  // proprio e non uno condiviso perché `esc` deve riportare al pane da cui si è
-  // entrati, e un modo solo obbligherebbe a ricordarselo altrove.
-  doc: 0,
   // T134 — la lista hard-wrap: settima sostitutiva. Sul cappello lo scan trova
   // 77 `WRAP` e 147 `misto`, cioè una lista che non entra in nessun box sopra i
   // pane. Altezza da `wrapListCapacity`.
@@ -150,7 +121,7 @@ export type Mode = keyof typeof MODAL_HEIGHT;
  * tutte`, `○ spot`) non c'è nessuna task da mostrare, e il blocco non esiste —
  * `none` è quindi uno stato pieno, non un fallback.
  */
-export type PreviewKind = 'none' | 'task' | 'session' | 'inbox' | 'doc';
+export type PreviewKind = 'none' | 'task' | 'session';
 
 export type Budget = {
   /** Task renderizzabili nella finestra scorrevole. */
@@ -279,18 +250,6 @@ export function layoutBudget(input: BudgetInput): Budget {
         sessionLastLines = Math.min(MAX_SESSION_PREVIEW, spare - sessionFirstLines);
       }
       previewCost = fixed + sessionFirstLines + sessionLastLines;
-    }
-  } else if (input.preview === 'inbox' || input.preview === 'doc') {
-    // Tutte righe fisse: o il blocco entra intero o non esiste. Non c'è una
-    // parte variabile da sacrificare per farlo stare, quindi non c'è nemmeno la
-    // domanda di quanto concedergli. I due blocchi costano uguale e non sono
-    // mai a schermo insieme (stanno nei due pane dello stesso modo, e il blocco
-    // preview è uno solo, scelto dal focus).
-    const fixed =
-      PREVIEW_CHROME + (input.preview === 'inbox' ? INBOX_DETAIL_FIXED : DOC_DETAIL_FIXED);
-    if (avail - floor - fixed >= 0) {
-      preview = true;
-      previewCost = fixed;
     }
   }
 
@@ -494,31 +453,6 @@ export function dlvListRows(rows: number, searching: boolean, total: number): nu
   const extra = searching ? DETAIL_SEARCH_CHROME : 0;
   const free = (rows || 24) - SLACK - DETAIL_BASE_CHROME - DLV_STATUS_ROWS - extra;
   return Math.max(0, Math.min(total, Math.floor(free / 2)));
-}
-
-// T134/T160 — cornice del detail di un FILE, condivisa dalle due istanze dello
-// sheet (file inbox e riga doc). Gemella di READER_CHROME più una riga: il
-// detail porta in fondo la riga che dice cosa fa `⏎` qui, cioè niente — chi
-// viene dal detail della task si aspetta un secondo `⏎` che apre una
-// conversazione.
-//   2  bordi del box esterno
-//   1  riga di testata (natura o tipo :: nome del bersaglio)
-//   1  riga meta (marcatori · cifre · posizione nel testo)
-//   1  riga hint
-//   1  marginTop del box corpo
-//   2  bordi del box corpo
-//   1  marginTop della riga azione
-//   1  riga azione
-//
-// Una costante sola per le due schermate perché è la stessa cornice, disegnata
-// dallo stesso schema: due numeri uguali con due nomi diversi divergerebbero al
-// primo ritocco di una delle due, e quella che resta indietro sfonda `rows`
-// senza che niente lo dica.
-const FILE_SHEET_CHROME = 10;
-
-/** Righe di testo che entrano nel terminale dentro uno sheet di file. */
-export function fileSheetCapacity(rows: number): number {
-  return Math.max(0, (rows || 24) - SLACK - FILE_SHEET_CHROME);
 }
 
 // T134 — cornice della lista hard-wrap.

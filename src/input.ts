@@ -31,21 +31,9 @@ import {
 } from './mouse.js';
 import { HEADER_ROW, HINT_ROW, LAUNCH_ROW } from './frame.js';
 import { moveSelection } from './session-list.js';
-import {
-  captures,
-  inertNote,
-  scrolls,
-  taskModeKey,
-  type CapturingMode,
-  type ScrollingMode,
-} from './input-modes.js';
-import { LEFT_PANE, META_ROWS, QUIT_WINDOW_MS, RIGHT_PANE, type Mode } from './model.js';
+import { captures, scrolls, type CapturingMode, type ScrollingMode } from './input-modes.js';
+import { META_ROWS, QUIT_WINDOW_MS, type Mode } from './model.js';
 import { TASK_VIEWS, taskView, type SessionViewId, type TaskViewId } from './pane-views.js';
-import type { InboxViewId } from './inbox-views.js';
-import type { DocViewId } from './doc-views.js';
-import { loadInboxText } from './inbox.js';
-import { dirListing, loadDocText } from './doc-tree.js';
-import { refuse } from './platform.js';
 import type { Frame } from './frame.js';
 import type { DeckLegend } from './combo-catalog.js';
 import type { DeckActions } from './actions.js';
@@ -55,9 +43,6 @@ import type { useComboOverlay } from './overlays/combo.js';
 import type { useFinderOverlay } from './overlays/finder.js';
 import { taskSheet, type useSheetOverlay } from './overlays/sheet.js';
 import type { useSearchOverlay } from './overlays/search.js';
-import type { useFileSheet } from './overlays/file-sheet.js';
-import type { InboxFile } from './inbox.js';
-import type { DocRow } from './doc-tree.js';
 import type { useWrapOverlay } from './overlays/wrap.js';
 import type { useSpawnPage } from './overlays/spawn.js';
 import type { useLaunchPage } from './overlays/launch.js';
@@ -100,10 +85,6 @@ export type DeckOverlays = {
   finder: ReturnType<typeof useFinderOverlay>;
   sheet: ReturnType<typeof useSheetOverlay>;
   search: ReturnType<typeof useSearchOverlay>;
-  /** T160 — le due istanze dello stesso hook, tipizzate sul proprio oggetto: è
-   *  ciò che tiene disgiunte le due schermate malgrado la meccanica condivisa. */
-  inbox: ReturnType<typeof useFileSheet<InboxFile>>;
-  doc: ReturnType<typeof useFileSheet<DocRow>>;
   wrap: ReturnType<typeof useWrapOverlay>;
   spawn: ReturnType<typeof useSpawnPage>;
   /** T168 — la pagina delle voci launch, e il motore che le lancia: le cifre
@@ -119,7 +100,6 @@ export type DeckOverlays = {
 };
 
 export function useDeckInput({
-  cwd,
   tasksDir,
   mode,
   setMode,
@@ -132,9 +112,6 @@ export function useDeckInput({
   indicatorRegions,
   comboLegend,
 }: {
-  /** Project root: serve a leggere un file inbox, che `doc-metrics` nomina
-   *  relativo alla radice del progetto e non alla docs-root. */
-  cwd: string;
   tasksDir: string;
   mode: Mode;
   setMode: (m: Mode) => void;
@@ -180,8 +157,6 @@ export function useDeckInput({
   // dimostrato che il solo `Record` non lo impedisce.
   const MODE_KEYS: Record<CapturingMode, (input: string, key: Key) => void> = {
     detail: overlays.sheet.onKey,
-    inbox: overlays.inbox.onKey,
-    doc: overlays.doc.onKey,
     wrap: overlays.wrap.onKey,
     spawn: overlays.spawn.onKey,
     launch: overlays.launch.onKey,
@@ -205,8 +180,6 @@ export function useDeckInput({
   // non compila. Il delta è in righe, col segno del verso.
   const MODE_WHEEL: Record<ScrollingMode, (delta: number) => void> = {
     detail: overlays.sheet.scroll,
-    inbox: overlays.inbox.scroll,
-    doc: overlays.doc.scroll,
     wrap: overlays.wrap.scroll,
     reader: overlays.search.scrollReader,
     combo: overlays.combo.scroll,
@@ -321,31 +294,7 @@ export function useDeckInput({
     if (hit.target === 'view') {
       model.setFocus(hit.pane);
       if (hit.pane === 'tasks') model.selectTaskView(hit.key as TaskViewId);
-      else if (hit.pane === 'inbox') model.selectInboxView(hit.key as InboxViewId);
-      else if (hit.pane === 'doctree') model.selectDocView(hit.key as DocViewId);
       else model.selectSessionView(hit.key as SessionViewId);
-      return;
-    }
-    if (hit.pane === 'doctree') {
-      const r = frame.windowDoc[hit.index];
-      if (!r) return;
-      if (model.focus === 'doctree' && r.path === model.selDocPath) {
-        onKey('', { ...NO_MODIFIERS, return: true });
-        return;
-      }
-      model.setFocus('doctree');
-      model.selectDocRow(frame.docWin.start + hit.index);
-      return;
-    }
-    if (hit.pane === 'inbox') {
-      const f = frame.windowInbox[hit.index];
-      if (!f) return;
-      if (model.focus === 'inbox' && f.path === model.selInboxPath) {
-        onKey('', { ...NO_MODIFIERS, return: true });
-        return;
-      }
-      model.setFocus('inbox');
-      model.selectInboxRow(frame.inboxWin.start + hit.index);
       return;
     }
     if (hit.pane === 'tasks') {
@@ -391,24 +340,6 @@ export function useDeckInput({
       return;
     }
 
-    // T160 — i tasti del mondo task sono INERTI in modo doc, e lo dicono
-    // (`input-modes.ts` §TASK_MODE_KEYS). Il gate sta QUI, sopra tutti i rami e
-    // sotto il dispatch dei modi: un tasto gated non deve raggiungere né il ramo
-    // `ctrl` né quello delle lettere nude, e dentro un modo capturing la
-    // domanda non si pone perché il modo ha già consumato l'input.
-    //
-    // Un ramo per tasto con la sua guardia avrebbe funzionato uguale e sarebbe
-    // stato il modo per farne dimenticare uno: il gate legge l'elenco, e un
-    // tasto aggiunto lì è gated e smette di essere annunciato senza toccare
-    // questo file.
-    if (model.deckMode === 'doc') {
-      const gated = taskModeKey(input, key.ctrl, key.delete);
-      if (gated) {
-        setNote(inertNote(gated));
-        return;
-      }
-    }
-
     // T52/D1 — il ramo CTRL sta PRIMA di quelli su lettera nuda e li chiude
     // tutti. `CTRL+F` e `f` nudo arrivano con lo STESSO `input` ('f'),
     // distinguibili solo da `key.ctrl`: senza questa precedenza `CTRL+F`
@@ -451,10 +382,9 @@ export function useDeckInput({
         // e l'unico gesto è l'azione. Nessuna conferma, perché il commit è
         // locale e reversibile (P6).
         //
-        // `^B` era la mnemonica migliore per «bump» ed è di T134 (scambia i due
-        // pane dello slot destro). `^U` svuota un campo dentro i modi capturing,
-        // ma quelli consumano l'input per intero e non vedono mai questo ramo —
-        // stesso doppio significato per contesto già in esercizio su `^F`.
+        // `^U` svuota un campo dentro i modi capturing, ma quelli consumano
+        // l'input per intero e non vedono mai questo ramo — stesso doppio
+        // significato per contesto già in esercizio su `^F`.
         overlays.gitlink.bump();
       } else if (input === 's') {
         // T161/P13 preflight — `^S` apre la pagina delle azioni di spawn. Le
@@ -480,18 +410,8 @@ export function useDeckInput({
       } else if (input === 't') {
         // T181/P4 preflight — `^T` riapre le conversazioni dell'ultimo insieme
         // vivo. La `t` nuda apre un terminale: stesso schema «una lettera, due
-        // bersagli» di `^F`/`f`, che il ramo `ctrl` anteposto rende sicuro. Non
-        // è un tasto del mondo task (`TASK_MODE_KEYS`): il bottone sta in
-        // testata, visibile in entrambi i modi del deck.
+        // bersagli» di `^F`/`f`, che il ramo `ctrl` anteposto rende sicuro.
         actions.restoreSessions();
-      } else if (input === 'b') {
-        // T160 — `^B` scambia il MODO del deck, cioè entrambi gli slot insieme.
-        // Erede del tasto di T134, che scambiava il solo pane destro: la
-        // mnemonica (box/bacheca) resta, il bersaglio è salito di un livello.
-        // Non è un modale né una schermata — i due riquadri della vista normale
-        // restano al loro posto, quindi `tab` continua a ciclare le viste DENTRO
-        // il pane a fuoco e `←→` a spostare il fuoco fra le colonne.
-        model.toggleDeckMode();
       }
       return;
     }
@@ -506,60 +426,21 @@ export function useDeckInput({
       // verso che un tasto singolo non esprime sta nel modificatore, e su cinque
       // voci risparmia quattro pressioni.
       model.cycleView(key.shift ? -1 : 1);
-    } else if (key.escape) {
-      // T160 — `esc` in vista normale torna al modo task. Resta inerte quando il
-      // modo task è già montato: `esc` dice «esci da dove sei», e da lì non c'è
-      // niente da cui uscire.
-      model.closeDocMode();
     } else if (key.leftArrow || key.rightArrow) {
       // Binding ASSOLUTO, non toggle: `←` porta sempre sul pane SINISTRO e `→`
       // sempre sul destro, quindi ripremere lo stesso tasto non riporta
       // indietro. È ciò che lo rende spaziale — la direzione indica una
       // destinazione, e con due colonne un toggle sarebbe indistinguibile solo
       // per caso.
-      // T160 — «sinistro» e «destro» sono posizioni, non contenuti: quale pane
-      // le occupi lo decide il modo, che è un'altra decisione (`^B`).
-      model.setFocus((key.leftArrow ? LEFT_PANE : RIGHT_PANE)[model.deckMode]);
+      model.setFocus(key.leftArrow ? 'tasks' : 'sessions');
     } else if (key.upArrow) {
       if (model.focus === 'tasks') model.moveTaskSel(-1);
-      else if (model.focus === 'inbox') model.moveInboxSel(-1);
-      else if (model.focus === 'doctree') model.moveDocSel(-1);
       else model.setSelSessionId((id) => moveSelection(model.sessionRows, id, -1));
     } else if (key.downArrow) {
       if (model.focus === 'tasks') model.moveTaskSel(1);
-      else if (model.focus === 'inbox') model.moveInboxSel(1);
-      else if (model.focus === 'doctree') model.moveDocSel(1);
       else model.setSelSessionId((id) => moveSelection(model.sessionRows, id, 1));
     } else if (key.return) {
-      // T175 — i due pane del modo doc li riempie uno script del plugin: dove non
-      // gira, `⏎` lo dice invece di rispondere «nessuna riga selezionata».
-      if (
-        (model.focus === 'doctree' || model.focus === 'inbox') &&
-        refuse('pluginScripts', '⏎', setNote, model.focus === 'inbox' ? 'pane inbox' : 'albero doc')
-      ) {
-        return;
-      }
-      if (model.focus === 'doctree') {
-        // T160 — `⏎` apre il DETAIL della riga, e nient'altro: nessuna
-        // conversazione parte dal pane doc. Il gesto è lo stesso su un file e su
-        // una cartella (P10) — cambia cosa si legge nel corpo, non cosa si
-        // preme: il testo del file, oppure l'elenco dei file della cartella.
-        const r = model.selDoc;
-        if (!r) {
-          setNote('nessuna riga doc selezionata');
-        } else {
-          overlays.doc.open({
-            item: r,
-            text: r.kind === 'dir' ? dirListing(model.docData, r.path) : loadDocText(cwd, r.path),
-          });
-        }
-      } else if (model.focus === 'inbox') {
-        // T134 — `⏎` apre il DETAIL del file, e nient'altro: nessuna skill
-        // consuma un file inbox, quindi nessuna conversazione parte da qui.
-        const f = model.selInbox;
-        if (!f) setNote('nessun file inbox selezionato');
-        else overlays.inbox.open({ item: f, text: loadInboxText(cwd, f.path) });
-      } else if (model.focus === 'tasks') {
+      if (model.focus === 'tasks') {
         // T66 — ⏎ apre il DETAIL, non più una sessione. Secondo rimappaggio in
         // due task (T56 lo spostò da recap a sessione a mani nude), e la
         // direzione è una sola: da azione singola a punto d'ingresso. Il tasto
@@ -640,8 +521,8 @@ export function useDeckInput({
     } else if (input === 'm') {
       // T148/T154 — bersaglio deciso dal focus E dalla selezione (P2): con
       // una riga sessioni selezionata (stale compresa, P3) scorre il modello
-      // di resume/fork di quella riga; altrove (focus task, focus inbox,
-      // pane sessioni senza selezione) scorre il modello della sessione nuda.
+      // di resume/fork di quella riga; altrove (focus task, pane sessioni
+      // senza selezione) scorre il modello della sessione nuda.
       if (model.focus === 'sessions' && model.selSessionId) {
         actions.cycleResumeModel();
       } else {
@@ -680,13 +561,12 @@ export function useDeckInput({
       // T169 — il finder delle task: trovarne una per numero o per titolo fra
       // TUTTE le righe di tasks.md, viste e filtri ignorati. MAIUSCOLA perché
       // apre una schermata (convenzione T39), `A` è il precedente esatto; `^T`
-      // è il restore delle conversazioni (T181). Vivo anche in modo doc (P6):
-      // non legge la selezione del pane task, come `^F`.
+      // è il restore delle conversazioni (T181). Non legge la selezione del
+      // pane task (P6), come `^F`.
       overlays.finder.open();
     } else if (input === 'H') {
       // T194 — il modale delle combo. MAIUSCOLA perché apre una schermata
-      // (convenzione T39). Vivo anche in modo doc: non agisce su una selezione, e
-      // le liste che mostra seguono già il modo.
+      // (convenzione T39), e non agisce su una selezione.
       overlays.combo.open(comboLegend);
     } else if (input === 't') {
       actions.openTerminal();

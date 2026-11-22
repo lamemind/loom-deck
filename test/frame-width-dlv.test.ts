@@ -1,6 +1,6 @@
 // T232 — gate di larghezza (vedi `frame-width.test.ts`): la lista DLV del detail
 // nei suoi stati, e il mandato in lista e nel detail, sul progetto sintetico di
-// `detail-fixture.ts`. Il contenuto si asserisce come per il modo doc: un gate
+// `detail-fixture.ts`. Il contenuto si asserisce insieme alla larghezza: un gate
 // di sola larghezza resterebbe verde anche sul modo sbagliato.
 
 import { test } from 'node:test';

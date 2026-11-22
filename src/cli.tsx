@@ -44,9 +44,6 @@ import { taskSheet, useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
 import { useComboOverlay } from './overlays/combo.js';
 import { useFinderOverlay } from './overlays/finder.js';
-import { useFileSheet } from './overlays/file-sheet.js';
-import type { InboxFile } from './inbox.js';
-import type { DocRow } from './doc-tree.js';
 import { useWrapOverlay } from './overlays/wrap.js';
 import { useSpawnPage } from './overlays/spawn.js';
 import { useLaunchPage } from './overlays/launch.js';
@@ -58,20 +55,16 @@ import { useTextModals, useViewModals } from './overlays/modals.js';
 import { useTerminalSize, useSpawnConfig, useLaunchConfig } from './hooks.js';
 import { DropModal, EditModal, FilterModal, PurgeModal, SortModal } from './ui/modals.js';
 import { SessionsPane, TasksPane } from './ui/panes.js';
-import { InboxPane } from './ui/inbox-pane.js';
-import { DocPane } from './ui/doc-pane.js';
 import { PreviewPane, detailMetaOf } from './ui/preview.js';
 import { CompactNotice, HintBar, TextBox, screenFor } from './ui/screens.js';
 import { VERSION } from './version.js';
 
 function Deck({
   cwd,
-  docsRoot,
   tasksPath,
   tasksDir,
 }: {
   cwd: string;
-  docsRoot: string;
   tasksPath: string;
   tasksDir: string;
 }) {
@@ -100,7 +93,6 @@ function Deck({
 
   const model = useDeckModel({
     cwd,
-    docsRoot,
     tasksPath,
     tasksDir,
     bareModel: bareDefault,
@@ -167,27 +159,6 @@ function Deck({
     // una non viva si riprende.
     onResume: (row) =>
       actions.openSession(row.session.sessionId, modelAlias(row.session.model) ?? MODEL_DEFAULT),
-  });
-
-  // T134/T160 — le DUE istanze dello sheet di file: il file inbox e la riga
-  // doc. Stesso hook (`useFileSheet`, P11), due modi distinti — `esc` da una
-  // torna al pane inbox, dall'altra al pane doc, e un modo condiviso
-  // obbligherebbe a ricordare altrove da dove si era entrati. Nessuna delle due
-  // lancia una conversazione: si legge e basta.
-  const inbox = useFileSheet<InboxFile>({
-    mode: 'inbox',
-    rows,
-    columns,
-    setMode,
-    setNote,
-  });
-
-  const docSheet = useFileSheet<DocRow>({
-    mode: 'doc',
-    rows,
-    columns,
-    setMode,
-    setNote,
   });
 
   // T134 — l'hard-wrap. Non è solo un overlay: i suoi numeri si leggono in
@@ -280,8 +251,6 @@ function Deck({
     finder,
     sheet,
     search,
-    inbox,
-    doc: docSheet,
     wrap,
     spawn,
     launch: launchPage,
@@ -304,17 +273,9 @@ function Deck({
       ? model.detail
         ? ('task' as const)
         : ('none' as const)
-      : model.focus === 'inbox'
-        ? model.selInbox
-          ? ('inbox' as const)
-          : ('none' as const)
-        : model.focus === 'doctree'
-          ? model.selDoc
-            ? ('doc' as const)
-            : ('none' as const)
-          : model.selSessionObj
-            ? ('session' as const)
-            : ('none' as const);
+      : model.selSessionObj
+        ? ('session' as const)
+        : ('none' as const);
   const detailParts = model.detail ? detailMetaOf(model.detail) : null;
 
   const launch = launchRow(model.launch, columns);
@@ -348,12 +309,6 @@ function Deck({
             available: gitlink.available,
           }
         : null,
-      inbox: {
-        counts: model.inboxCounts,
-        scanned: model.inboxScanned,
-        ok: model.inboxOk,
-        available: model.pluginScripts,
-      },
       wrap: {
         count: wrap.count,
         mtime: wrap.mtime,
@@ -384,28 +339,16 @@ function Deck({
     sessionViewId: model.sessionViewId,
     parentLabel: model.parentLabel,
     hasLoadError: Boolean(model.loadError),
-    deckMode: model.deckMode,
-    inboxFiles: model.inboxFiles,
-    selInboxPath: model.selInboxPath,
-    inboxCounts: model.inboxCounts,
-    inboxViewId: model.inboxViewId,
-    docRows: model.docRows,
-    selDocPath: model.selDocPath,
-    docCounts: model.docCounts,
-    docViewId: model.docViewId,
-    docHasDirs: model.docHasDirs,
     restoreCount: model.restorable.length,
   });
   const legend = deckLegend({
     purgeBulk: model.purgeBulk,
-    docMode: model.deckMode === 'doc',
     gitlink: gitlink.enabled,
     restore: frame.headerButton !== null,
     launchDigits: launchDigitsOf(model.launch),
   });
 
   useDeckInput({
-    cwd,
     tasksDir,
     mode,
     setMode,
@@ -439,8 +382,6 @@ function Deck({
       finder,
       sheet,
       search,
-      inbox,
-      doc: docSheet,
       wrap,
       spawn,
       launch: launchPage,
@@ -550,93 +491,49 @@ function Deck({
       ) : null}
       {mode === 'drop' && drop.draft ? <DropModal draft={drop.draft} columns={columns} /> : null}
       <Box flexDirection="row" marginTop={1}>
-        {/* T160 — lo slot SINISTRO: lista task in modo task, albero doc in modo
-            doc. Il pane doc porta la sua cornice (2 bordi + header) e non quella
-            del pane task, che ha in più la riga sort e le due righe meta — il
-            budget d'altezza lo sa (`SESSIONS_PANE_CHROME` in viewport.ts). */}
-        {model.deckMode === 'doc' ? (
-          <DocPane
-            rows={frame.windowDoc}
-            counts={model.docCounts}
-            activeView={model.docViewId}
-            paneCount={model.docRows.length}
-            selectedPath={model.selDocPath}
-            focused={model.focus === 'doctree'}
-            above={frame.docWin.start}
-            below={model.docRows.length - frame.docWin.end}
-            columns={columns}
-            ok={model.docOk}
-            scanned={model.docScanned}
-            scanning={model.docScanning}
-            hasDirs={model.docHasDirs}
-            available={model.pluginScripts}
-          />
-        ) : (
-          <TasksPane
-            tasks={frame.windowTasks}
-            counts={model.taskCounts}
-            activeView={model.taskViewId}
-            paneCount={model.paneTasks.length}
-            view={model.view}
-            selected={model.selIndex}
-            spotCount={model.spotCount}
-            allCount={model.sessions.length}
-            idW={model.taskCols.id}
-            tailW={model.taskCols.tail}
-            focused={model.focus === 'tasks'}
-            loadError={model.loadError}
-            windowStart={frame.taskWin.start}
-            above={frame.taskWin.start}
-            below={model.paneTasks.length - frame.taskWin.end}
-            columns={columns}
-            data={model.taskRowData}
-            blockMark={model.blockMark}
-          />
-        )}
-        {/* T160 — il MODO sceglie la coppia: lista task + conversazioni, oppure
-            albero doc + inbox. Con quattro pane distinti i tipi delle righe
-            restano disgiunti, e ogni azione continua a valere solo dove il suo
-            oggetto esiste. */}
-        {model.deckMode === 'doc' ? (
-          <InboxPane
-            files={frame.windowInbox}
-            counts={model.inboxCounts}
-            activeView={model.inboxViewId}
-            paneCount={model.inboxFiles.length}
-            selectedPath={model.selInboxPath}
-            focused={model.focus === 'inbox'}
-            above={frame.inboxWin.start}
-            below={model.inboxFiles.length - frame.inboxWin.end}
-            columns={columns}
-            ok={model.inboxOk}
-            scanned={model.inboxScanned}
-            available={model.pluginScripts}
-          />
-        ) : (
-          <SessionsPane
-            parentLabel={model.parentLabel}
-            isSpot={model.isSpot}
-            isAll={model.isAll}
-            bindings={model.bindings}
-            taskW={model.sessionCols.task}
-            ageW={model.sessionCols.age}
-            rows={frame.windowRows}
-            counts={model.sessionCounts}
-            activeView={model.sessionViewId}
-            paneCount={model.sessionRows.length}
-            selectedId={model.selSessionId ?? undefined}
-            focused={model.focus === 'sessions'}
-            above={frame.sessionWin.start}
-            below={model.sessionRows.length - frame.sessionWin.end}
-            columns={columns}
-            forkOf={model.forkOf}
-            sessionNotes={model.sessionNotes}
-            sessionPriority={model.sessionPriority}
-            projectCore={model.projectCore}
-            live={model.live}
-            headless={model.headless}
-          />
-        )}
+        <TasksPane
+          tasks={frame.windowTasks}
+          counts={model.taskCounts}
+          activeView={model.taskViewId}
+          paneCount={model.paneTasks.length}
+          view={model.view}
+          selected={model.selIndex}
+          spotCount={model.spotCount}
+          allCount={model.sessions.length}
+          idW={model.taskCols.id}
+          tailW={model.taskCols.tail}
+          focused={model.focus === 'tasks'}
+          loadError={model.loadError}
+          windowStart={frame.taskWin.start}
+          above={frame.taskWin.start}
+          below={model.paneTasks.length - frame.taskWin.end}
+          columns={columns}
+          data={model.taskRowData}
+          blockMark={model.blockMark}
+        />
+        <SessionsPane
+          parentLabel={model.parentLabel}
+          isSpot={model.isSpot}
+          isAll={model.isAll}
+          bindings={model.bindings}
+          taskW={model.sessionCols.task}
+          ageW={model.sessionCols.age}
+          rows={frame.windowRows}
+          counts={model.sessionCounts}
+          activeView={model.sessionViewId}
+          paneCount={model.sessionRows.length}
+          selectedId={model.selSessionId ?? undefined}
+          focused={model.focus === 'sessions'}
+          above={frame.sessionWin.start}
+          below={model.sessionRows.length - frame.sessionWin.end}
+          columns={columns}
+          forkOf={model.forkOf}
+          sessionNotes={model.sessionNotes}
+          sessionPriority={model.sessionPriority}
+          projectCore={model.projectCore}
+          live={model.live}
+          headless={model.headless}
+        />
       </Box>
       {/* T70 — blocco preview UNICO, a piena larghezza, sotto le due liste.
           Renderizzato solo con contenuto E spazio: `budget.preview` copre il
@@ -648,10 +545,6 @@ function Deck({
           maxLines={frame.budget.detailLines}
           columns={columns}
         />
-      ) : frame.budget.preview && previewKind === 'inbox' && model.selInbox ? (
-        <PreviewPane kind="inbox" file={model.selInbox} columns={columns} />
-      ) : frame.budget.preview && previewKind === 'doc' && model.selDoc ? (
-        <PreviewPane kind="doc" row={model.selDoc} columns={columns} />
       ) : frame.budget.preview && previewKind === 'session' && model.selSessionObj ? (
         <PreviewPane
           kind="session"
@@ -672,9 +565,9 @@ function Deck({
 }
 
 const cwd = process.cwd();
-// T175 — la docs-root si risolve QUI, una volta, e scende a tutti: i path di
-// `tasks.md` e dei task file e i due scan del modo doc devono vedere la stessa
-// cartella, e due risoluzioni potrebbero non vederla.
+// T175 — la docs-root si risolve QUI, una volta: i path di `tasks.md` e dei
+// task file devono nascere dalla stessa cartella, e due risoluzioni potrebbero
+// non vederla.
 const docsRoot = docsRootName(cwd);
 // T116 — `exitOnCtrlC: false` toglie a Ink l'uscita immediata su `^C`: senza,
 // il tasto non arriverebbe mai a `useInput` e il doppio colpo non sarebbe
@@ -691,7 +584,6 @@ enableMouse();
 render(
   <Deck
     cwd={cwd}
-    docsRoot={docsRoot}
     tasksPath={resolveTasksPath(cwd, docsRoot)}
     tasksDir={resolveTasksDir(cwd, docsRoot)}
   />,

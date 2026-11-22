@@ -1,14 +1,8 @@
 // La resa di un header di pane già tagliato: ogni parte col suo stile, l'attiva
 // in video inverso.
 //
-// T160 · D1 — esce da `ui/panes.tsx` insieme ai pane che ne uscivano, perché è
-// ciò che tutti e quattro condividono. Il vincolo di `coding-standards`
-// §Come si splitta un file ricresciuto è che nessun modulo estratto importi il
-// file da cui è stato estratto: lasciando `HeaderLine` in `panes.tsx`, il pane
-// inbox e il pane doc avrebbero dovuto importarlo da lì — cioè la dipendenza
-// circolare che il vincolo esiste per vietare. Sta quindi in un file proprio, e
-// la dipendenza va in un verso solo: i quattro pane importano questo, questo non
-// importa nessuno di loro.
+// Sta in un file proprio e non in `ui/panes.tsx`: i pane importano questo,
+// questo non importa nessuno di loro, e la dipendenza resta in un verso solo.
 //
 // Il video inverso e non un colore (T100/D5): costa 0 colonne e non entra in
 // gara con la semantica di colore già occupata dalle voci del catalogo.
