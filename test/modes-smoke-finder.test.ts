@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ESC, SKIP } from './pty-harness.js';
-import { capture, lastFrame } from './modes-kit.js';
+import { LIST_FRAME, capture, lastFrame } from './modes-kit.js';
 import { detailProject } from './detail-fixture.js';
 
 // ── T169 · il finder delle task ──────────────────────────────────────────
@@ -28,7 +28,7 @@ test('finder: esc chiude senza effetti, il deck torna alla lista', { skip: SKIP 
   const { proj, env } = finderProject();
   const frame = lastFrame(capture(`\`T2${ESC}`, proj, env));
   assert.doesNotMatch(frame, /trova task/i, `il finder è rimasto aperto: ${frame}`);
-  assert.match(frame, /PROJECT STATUS/, `il deck non è tornato alla lista: ${frame}`);
+  assert.match(frame, LIST_FRAME, `il deck non è tornato alla lista: ${frame}`);
   // Nessun salto: il pane resta sulla vista principale, sulla riga d'apertura.
   assert.doesNotMatch(frame, /→ T2/, `esc ha fatto il salto: ${frame}`);
 });
@@ -63,7 +63,7 @@ test('finder: → dal modo doc riporta il deck in modo task', { skip: SKIP }, ()
 test('combo: esc torna alla lista, col fuoco sul pane da cui si è entrati', { skip: SKIP }, () => {
   const closed = lastFrame(capture(`RH${ESC}`));
   assert.doesNotMatch(closed, /tutte le azioni/, `il modale è rimasto aperto: ${closed}`);
-  assert.match(closed, /PROJECT STATUS/, `il deck non è tornato alla lista: ${closed}`);
+  assert.match(closed, LIST_FRAME, `il deck non è tornato alla lista: ${closed}`);
   // Il modale è uguale da ogni pane, quindi il fuoco si legge da `N`: dal pane
   // conversazioni apre il campo del titolo (`✎`), dal pane task lo rifiuta con una
   // nota.

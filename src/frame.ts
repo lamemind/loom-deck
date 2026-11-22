@@ -36,9 +36,8 @@ import {
 } from './mouse.js';
 import { cellWidth, launchLegend, LAUNCH_SEP, type LaunchEntry } from './config.js';
 import { layoutBudget, windowRange, type Budget, type PreviewKind } from './viewport.js';
-import { sanitize, termWidth } from './width.js';
+import { cut, sanitize, termWidth } from './width.js';
 import { MODEL_SHORT_LIST, WARN } from './glyphs.js';
-import { STATUS_MISSING } from './project-status.js';
 import { META_ROWS, type DeckMode, type Mode } from './model.js';
 import type { SessionViewCounts, SessionViewId, TaskViewCounts, TaskViewId } from './pane-views.js';
 import type { InboxViewCounts, InboxViewId } from './inbox-views.js';
@@ -66,6 +65,14 @@ import { OFF_MARK } from './platform.js';
 // del blocco selettore della nuda (`BARE_LABEL` sotto), adiacente ai bottoni
 // col modello con cui apre invece che sull'estremo opposto della riga.
 export const SURFACE_SEGMENTS: readonly Segment[] = [{ key: 't', text: sanitize('t 💻') }];
+
+/**
+ * Il corpo di un indicatore di testata prima della sua prima misura: lo dicono
+ * il bottone del modo doc, l'hard-wrap e il gitlink. Una parola e non uno zero,
+ * perché `0` direbbe «ho misurato e non c'è niente» — cioè la cosa sbagliata
+ * (D2 di T134: `missing` e guasto sono stati distinti).
+ */
+export const STATUS_MISSING = 'missing';
 
 // T154/P9 — l'etichetta del blocco selettore della nuda: unico segmento
 // cliccabile del blocco (nessun tasto nomina un modello, `m` cicla e non
@@ -268,9 +275,9 @@ export function inboxButton(state: {
  * darebbe un numero che non si può portare a zero. Un contatore che non arriva
  * mai a zero smette di essere letto.
  *
- * Tre stati distinti, come per il project status: `missing` quando lo scan non
- * è mai stato eseguito (non parte all'avvio, D4), `scan…` mentre cammina
- * l'albero, il numero altrimenti. Il glifo di allerta si AGGIUNGE al numero
+ * Tre stati distinti: `missing` quando lo scan non è mai stato eseguito (non
+ * parte all'avvio, D4), `scan…` mentre cammina l'albero, il numero
+ * altrimenti. Il glifo di allerta si AGGIUNGE al numero
  * invece di sostituirlo — un tentativo fallito non riscrive la cache, quindi
  * l'esito dell'ultimo riuscito resta vero e ancora apribile.
  */
@@ -397,14 +404,14 @@ export function indicatorRow(
  * `mouse.ts`). La combo non sta nel testo del bottone (P5 preflight): la dice la
  * legenda, come per gli indicatori di T134.
  *
- * Tre forme, dalla più lunga, e vince la prima che lascia al project status a
- * sinistra almeno il pavimento di `headlineWidth`: il bottone entra nel budget
- * della testata, e una forma che non ci sta spingerebbe la riga oltre il bordo.
- * Nessuna delle tre ci sta → nessun bottone; `^T` resta valido, perché il
- * tasto non dipende da cosa entra a schermo.
+ * Tre forme, dalla più lunga, e vince la prima che lascia al nome del progetto
+ * a sinistra almeno il pavimento di `headlineWidth`: il bottone entra nel
+ * budget della testata, e una forma che non ci sta spingerebbe la riga oltre il
+ * bordo. Nessuna delle tre ci sta → nessun bottone; `^T` resta valido, perché
+ * il tasto non dipende da cosa entra a schermo.
  */
-/** Il pavimento del budget del project status: sotto, non resta niente di
- *  leggibile. Il bottone di restore lo rispetta (`restoreButton`). */
+/** Il pavimento del budget del nome del progetto in testata: sotto, non resta
+ *  niente di leggibile. Il bottone di restore lo rispetta (`restoreButton`). */
 const HEADLINE_MIN = 4;
 
 export const RESTORE_KEY = '^t';
@@ -492,7 +499,7 @@ export type Frame = {
   /** T181 — il bottone di restore, già nella forma che entra; `null` = assente. */
   headerButton: string | null;
   /** Tutto ciò che sta a destra nella testata, bottone e separatore compresi:
-   *  è la stringa da cui `headlineWidth` sottrae il budget del project status. */
+   *  è la stringa da cui `headlineWidth` sottrae il budget del nome del progetto. */
   headerBlock: string;
   /** Le colonne cliccabili della testata (`HEADER_ROW`). */
   headerRegions: Region[];
@@ -656,6 +663,20 @@ export function frameGeometry(input: FrameInput): Frame {
 /** Il budget della testata sinistra, per sottrazione dal blocco destro. */
 export function headlineWidth(columns: number, headerRight: string): number {
   return Math.max(HEADLINE_MIN, columns - 4 - termWidth(headerRight) - 1);
+}
+
+/**
+ * La testata sinistra: il nome del progetto, e nient'altro.
+ *
+ * `name` arriva dal file config, cioè da testo arbitrario: un glifo discorde
+ * allargherebbe la riga di una cella e manderebbe a capo la testata. Si
+ * sanifica QUI e non in `loadIdentity`, perché lo stesso valore serve intatto
+ * ai titoli delle tab, dove è la chiave di match di compass. Il taglio lo fa
+ * `cut` e non `wrap` di Ink (invariante ③ di `width.ts`), sul budget che
+ * `headlineWidth` lascia dopo il blocco di destra.
+ */
+export function headlineText(name: string, budget: number): string {
+  return cut(sanitize(name), Math.max(HEADLINE_MIN, budget));
 }
 
 /**

@@ -1,38 +1,16 @@
 // T232 — gate di larghezza (vedi `frame-width.test.ts`): le schermate che
-// leggono una cache o un sensore — il viewer del project status, la lista
-// hard-wrap, l'indicatore del gitlink, il bottone di restore in testata.
+// leggono una cache o un sensore — la lista hard-wrap, l'indicatore del
+// gitlink, il bottone di restore in testata.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { CTRL_G, CTRL_O, CTRL_W, SKIP } from './pty-harness.js';
+import { CTRL_W, SKIP } from './pty-harness.js';
 import { assertFrameFits, capture, lastFrame, mixedIdProject, strip } from './frame-kit.js';
 import { termWidth } from '../src/width.js';
 import { VERSION } from '../src/version.js';
-
-/** T121 — cache del recap a coordinata nota: senza, `^O` risponderebbe «nessun
- *  recap in cache» e lo scenario misurerebbe la lista invece del viewer. Le
- *  righe portano markdown reso e una riga più larga del box, che è ciò che il
- *  viewer deve tagliare. */
-function statusCacheFile(): string {
-  const path = join(mkdtempSync(join(tmpdir(), 'deck-status-')), 'recap.md');
-  writeFileSync(
-    path,
-    [
-      '# Stato del progetto',
-      '',
-      '## Task aperte',
-      '',
-      `- **T121** — ${'una riga di recap lunga abbastanza da eccedere il box '.repeat(4)}`,
-      '- `T109` — asfaltatura v2',
-      '',
-      'Chiusura con un paragrafo normale.',
-    ].join('\n'),
-  );
-  return path;
-}
 
 /**
  * T134 — cache dello scan hard-wrap, sintetica: il gate non deve dipendere da
@@ -94,27 +72,9 @@ function gitlinkCacheRoot(): string {
   return root;
 }
 
-// T121 — il viewer del project status e i due stati «rumorosi» della testata.
-// Vivono fuori da una tabella di scenari perché la cache va scritta prima, e un file
-// temporaneo creato al modulo sarebbe condiviso da scenari che non lo usano.
-for (const cols of [80, 100, 176]) {
-  test(`gate larghezza · viewer project status @ ${cols} colonne`, { skip: SKIP }, () => {
-    const raw = capture(cols, 38, CTRL_O, { LOOM_DECK_STATUS_FILE: statusCacheFile() });
-    assertFrameFits(raw, cols, `project status@${cols}`);
-  });
-
-  // La testata durante una generazione porta il glifo di liveness più il
-  // contatore: è la sua forma più larga, e su un terminale stretto compete con
-  // `v<VERSION>` ancorata a destra.
-  test(`gate larghezza · testata in building @ ${cols} colonne`, { skip: SKIP }, () => {
-    const raw = capture(cols, 38, CTRL_G, { LOOM_DECK_STATUS_FILE: statusCacheFile() });
-    assertFrameFits(raw, cols, `testata building@${cols}`);
-  });
-}
-
-// T134 — la lista hard-wrap. Fuori da una tabella per la stessa ragione del
-// project status: la cache va scritta prima, e un file temporaneo creato al
-// modulo sarebbe condiviso da scenari che non lo usano.
+// T134 — la lista hard-wrap. Fuori da una tabella perché la cache va scritta
+// prima, e un file temporaneo creato al modulo sarebbe condiviso da scenari che
+// non lo usano.
 for (const cols of [80, 100, 176]) {
   test(`gate larghezza · lista hard-wrap @ ${cols} colonne`, { skip: SKIP }, () => {
     const raw = capture(cols, 38, CTRL_W, { LOOM_DECK_WRAP_FILE: wrapCacheFileFixture() });
@@ -123,8 +83,8 @@ for (const cols of [80, 100, 176]) {
 }
 
 // T155 — l'indicatore del gitlink accanto agli altri due, nella sua forma più
-// larga. Fuori da una tabella per la stessa ragione del project status: la cache
-// finta va scritta prima, e un temporaneo creato al modulo sarebbe condiviso da
+// larga. Fuori da una tabella per la stessa ragione della lista hard-wrap: la
+// cache finta va scritta prima, e un temporaneo creato al modulo sarebbe condiviso da
 // scenari che non lo usano.
 //
 // `W` non batte nulla: fa passare 0,7s, il tempo perché lo spawn del sensore
@@ -151,9 +111,8 @@ for (const cols of [80, 100, 176]) {
  * vivo è vuoto per costruzione — il bottone compare, e nessun tick lo smarca.
  *
  * Il nome di progetto lungo della fixture è ciò che rende il caso un gate: il
- * project status a sinistra è l'unico pezzo elastico della testata, e se il
- * bottone non entrasse nel suo budget sarebbe lui a spingere la riga oltre il
- * bordo.
+ * nome a sinistra è l'unico pezzo elastico della testata, e se il bottone non
+ * entrasse nel suo budget sarebbe lui a spingere la riga oltre il bordo.
  */
 function restoreProject(): string {
   const proj = mixedIdProject();

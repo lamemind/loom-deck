@@ -300,9 +300,9 @@ export function fmtDateTimeOr(ts: number, absent = '-'): string {
   return ts > 0 ? fmtDateTime(ts) : absent;
 }
 
-// T121 — sola ora del giorno, per l'indicatore di project status in testata. Il
-// giorno non ci sta e non servirebbe: un recap del giorno prima è comunque
-// stale, e la cache muore col reboot.
+// T121 — sola ora del giorno: l'ora dell'ultimo scan hard-wrap e del giro di una
+// voce launch. Il giorno non ci sta, e su un dato che si rimisura in giornata
+// non servirebbe.
 export function fmtTime(ts: number): string {
   const d = new Date(ts);
   const p = (n: number) => String(n).padStart(2, '0');

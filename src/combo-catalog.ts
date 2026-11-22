@@ -66,10 +66,8 @@ export function deckLegend(state: {
     // del pane task (P6).
     'T trova',
     '^F cerca',
-    // T121 — le voci nominano il GESTO e non l'oggetto: «status» da solo sarebbe
-    // indistinguibile dal recap della task su `^K`, che è un'altra cosa.
-    '^G genera status',
-    '^O apri status',
+    // T134 — le voci nominano il GESTO e non l'oggetto: aprire la lista e
+    // misurare sono due tasti, e «hard-wrap» da solo non direbbe quale.
     '^W lista hard-wrap',
     '^E scan hard-wrap',
     // T155 — il GESTO, come sopra: «gitlink» da solo direbbe l'oggetto e non che
@@ -79,7 +77,7 @@ export function deckLegend(state: {
     // li scambia, e annunciare quello che si sta già guardando direbbe il
     // contrario di ciò che il tasto fa.
     state.docMode ? '^B task' : '^B doc',
-    // T161 — l'OGGETTO e non il gesto, al contrario di `^G`/`^O`/`^U`: lì il tasto
+    // T161 — l'OGGETTO e non il gesto, al contrario di `^W`/`^E`/`^U`: lì il tasto
     // fa qualcosa, qui apre una pagina e basta.
     '^S azioni',
     // T168 — l'OGGETTO, come `^S`: la pagina delle voci launch, con esito e

@@ -2,7 +2,7 @@
 //
 // Mostra le tre liste di `deckLegend` a prescindere dal pane a fuoco. Sola lettura
 // e nessuna selezione: la rotella e `↑↓` muovono una posizione di lettura, come nel
-// viewer del project status (D5 di T21).
+// reader (D5 di T21).
 //
 // Le liste arrivano come argomento di `open` e non si ricalcolano a modale aperto:
 // un tick del poll che togliesse il bottone di restore toglierebbe anche la sua voce,

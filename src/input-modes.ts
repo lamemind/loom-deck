@@ -26,7 +26,6 @@ import type { Mode } from './model.js';
  */
 export const CAPTURING_MODES = [
   'detail',
-  'status',
   'inbox',
   'doc',
   'wrap',
@@ -106,7 +105,7 @@ export const CTRL_DEROGATIONS: Partial<Record<CapturingMode, readonly string[]>>
  *  - `f`/`p`/`a`/`N`/`A` — agiscono sulla lista conversazioni e sono GIÀ inerti
  *    per focus (`focus !== 'sessions'`), con la propria nota. Aggiungerli qui
  *    darebbe due guardie per lo stesso tasto;
- *  - `^F`, `^G`/`^O`, `^W`/`^E`, `^U`, `^S`, `^B` — non dipendono dalla
+ *  - `^F`, `^W`/`^E`, `^U`, `^S`, `^B` — non dipendono dalla
  *    selezione task: cercano nelle conversazioni, misurano il progetto, aprono
  *    pagine. `^W` resta vivo mentre `w` è gated, e sono due tasti diversi;
  *  - `^T` — riapre le conversazioni dell'ultimo insieme vivo dal bottone in
@@ -195,7 +194,7 @@ export function inertNote(label: string): string {
  */
 // T168 — `launch` scorre solo col log aperto: sulla tabella la rotella è inerte,
 // perché lì c'è una selezione (D5 di T21).
-export const SCROLLING_MODES = ['detail', 'status', 'inbox', 'doc', 'wrap', 'reader', 'combo', 'launch'] as const;
+export const SCROLLING_MODES = ['detail', 'inbox', 'doc', 'wrap', 'reader', 'combo', 'launch'] as const;
 
 export type ScrollingMode = (typeof SCROLLING_MODES)[number];
 

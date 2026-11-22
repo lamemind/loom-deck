@@ -7,7 +7,7 @@ import { CTRL_B, SKIP } from './pty-harness.js';
 import { assertFrameFits, capture, docCacheRoot, lastFrame } from './frame-kit.js';
 
 // T160 — gli scenari del MODO DOC, tutti sulla stessa cache finta, scritta
-// per ogni scenario come per project status, hard-wrap e gitlink: la cache va
+// per ogni scenario come per hard-wrap e gitlink: la cache va
 // scritta prima, e un temporaneo creato al modulo sarebbe condiviso da
 // scenari che non la usano.
 //

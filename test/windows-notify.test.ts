@@ -28,8 +28,8 @@ import {
   TOAST_SCRIPT,
 } from '../src/windows-notify.js';
 
-const TITLE = 'loom-deck · project status';
-const BODY = "loom-works: recap pronto — l'apice, $env:PATH e \"virgolette\"";
+const TITLE = 'loom-deck · pull repos';
+const BODY = "loom-works: fallito (exit 2) — l'apice, $env:PATH e \"virgolette\"";
 
 /** L'argv che il tramite riceve nell'env. */
 function relayedArgv(env: Record<string, string | undefined> | undefined): string[] {

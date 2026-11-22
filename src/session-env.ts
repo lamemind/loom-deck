@@ -8,7 +8,7 @@
 //  - i turni `claude -p` di `loom-deck-headless` (`headlessEnv`), che di norma
 //    lancia una regia, cioè una conversazione;
 //  - il `claude -p` delle skill che il deck lancia da sé (`spawnSkill`):
-//    creazione di una task, pulizia delle task, project status.
+//    creazione di una task, pulizia delle task.
 //
 // Fino a T217 le liste erano due, una per le tab e una per i turni headless, e
 // divergevano: quella delle tab non toglieva `CLAUDE_AFK_TIMEOUT_MS` né

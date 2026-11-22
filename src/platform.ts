@@ -29,7 +29,7 @@ export type Feature =
   | 'hardWrap'
   /** Le voci `launch[]` del file di progetto: comandi Linux via `bash -lic`. */
   | 'launch'
-  /** La notifica di fine project status: `notify-send` su Linux, un toast
+  /** La notifica desktop di un esito (voce launch, spawn in coda): `notify-send` su Linux, un toast
    *  WinRT da Windows PowerShell su Windows (T180, `windows-notify.ts`). */
   | 'notify'
   /** T198 — il controllo della finestra prima di una tab chiesta da una

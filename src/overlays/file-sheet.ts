@@ -94,7 +94,7 @@ export function useFileSheet<T>(deps: FileSheetDeps) {
     } else if (key.pageDown) {
       scroll(pageStep(capacity));
     } else if (input === 'g') {
-      // `g`/`G` sugli estremi, come reader, detail e project status: anche
+      // `g`/`G` sugli estremi, come reader e detail: anche
       // questa schermata scorre testo, quindi eredita lo stesso alfabeto invece
       // di inventarne un secondo.
       setTop(0);

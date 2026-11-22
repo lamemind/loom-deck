@@ -64,8 +64,8 @@ export function wheelDir(button: number): -1 | 0 | 1 {
 }
 
 /**
- * Righe scorse per tacca di rotella nei contenuti lunghi (detail, project
- * status, reader). Tre è la convenzione dei terminali e dei browser: una tacca
+ * Righe scorse per tacca di rotella nei contenuti lunghi (detail, file,
+ * reader). Tre è la convenzione dei terminali e dei browser: una tacca
  * a riga singola costringe a girare la rotella quanto basta a stancare la mano,
  * una a pagina salta il testo che si stava leggendo.
  */
@@ -223,7 +223,7 @@ export function hitRegion(regions: Region[], col: number): string | null {
  * Riga del terminale (1-based) su cui vive la riga launch in modalità normale.
  *
  * Il frame è ancorato a riga 1 (`anchorFrame`) e le righe sopra la launch sono
- * fisse e sempre presenti: bordo superiore, testata (status + versione),
+ * fisse e sempre presenti: bordo superiore, testata (progetto + versione),
  * legenda tasti. Nessuna delle tre è condizionale in modalità normale — la
  * legenda tasti è una catena di ternari che rende SEMPRE esattamente un `Text`,
  * e la testata è una riga `space-between`. Tutto ciò che varia in altezza (i
@@ -244,7 +244,7 @@ export const LAUNCH_ROW = 4;
 export const HINT_ROW = LAUNCH_ROW - 1;
 
 /**
- * T181 — riga della TESTATA (project status a sinistra, risoluzione e versione
+ * T181 — riga della TESTATA (nome del progetto a sinistra, risoluzione e versione
  * a destra), subito sotto il bordo superiore. Entra nell'hit-test col bottone di
  * restore, che le sta a sinistra di risoluzione e versione; come le altre due
  * righe fisse è incondizionata in modalità normale, e il click rientra dalla

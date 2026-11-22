@@ -74,7 +74,7 @@ Regola unica, senza eccezioni — pensata per reggere l'aggiunta di nuove azioni
 | `⏎` | azione primaria del pane | Tasks → apre il **detail** della task selezionata · Sessions → riprende (`claude --resume`) la sessione selezionata |
 | **MAIUSCOLA** | **apre un modale** | cattura tutti i tasti; `esc` annulla, non esce |
 | minuscola | azione immediata, one-shot | |
-| `CTRL`+lettera | idiomi universali, toggle dentro i modali di testo, varianti di un'azione | `^F` = find, come ovunque · `^K`/`^P`/`^R` = spawn con un altro prompt · `^G`/`^O` = genera/apri il project status · `^U` = update del gitlink · `^S` = pagina delle azioni di spawn |
+| `CTRL`+lettera | idiomi universali, toggle dentro i modali di testo, varianti di un'azione | `^F` = find, come ovunque · `^K`/`^P`/`^R` = spawn con un altro prompt · `^U` = update del gitlink · `^S` = pagina delle azioni di spawn |
 | `1`…`9` | voce `launch` n-esima del progetto | da `.claude/loom-works.json` |
 | `esc` | chiude l'overlay aperto | in modalità normale è inerte: **nessuna lettera chiude il deck** |
 | `^C` `^C` | chiude il deck | la prima pressione avverte in riga di stato, la seconda entro **5 secondi** esce; passata la finestra si riparte dall'avviso. Da dentro un modale il primo `^C` riporta alla lista — l'avviso vive nella riga di stato, che le schermate a pieno frame non disegnano |
@@ -95,9 +95,7 @@ Assegnazioni correnti:
 | modale | `^F` | **ricerca full-text** nelle conversazioni del progetto |
 | modale | `⏎` | **detail** della task selezionata: task file scrollabile + area di compilazione a quattro righe |
 | modale | `CANC` | **elimina** — la task selezionata; su una riga meta della vista `archiviabili`, l'intero insieme |
-| modale | `^O` | apre il **project status** in cache (viewer fullscreen) |
 | modale | `^S` | **azioni di spawn**: la tabella di tutto ciò che il deck apre, con titolo/modello/prompt configurabili per progetto |
-| immediata | `^G` | **genera** il project status (skill headless, dura minuti) |
 | immediata | `^U` | **bumpa il gitlink** dei submodule idonei (solo su un progetto con `.gitmodules`) |
 | immediata | `^K` | spawna la task selezionata col prompt di **recap** |
 | immediata | `^P` | spawna la task selezionata sul **preflight** |
@@ -210,7 +208,7 @@ Due livelli: `↑↓` scorrono la tabella, `⏎` apre sotto di essa l'area di co
 
 Le celle portano il **template grezzo**, coi buchi ancora dentro — `📐 {slug}`, `📏 {path}` — e l'area mostra accanto l'esempio reso: un valore già interpolato si modificherebbe a partire da un esempio, e ogni modifica cancellerebbe il buco senza dirlo. Una riga con almeno un override si marca con `◆`.
 
-Non tutte le celle esistono per tutte le righe, e quelle che non esistono **dicono perché** invece di restare vuote: la sessione nuda non pinna un `sessionId` e quindi non ha un titolo, il project status gira headless e non apre nessuna tab. Resume e fork non hanno una riga affatto — il loro modello è ereditato dalla conversazione d'origine, non una preferenza.
+Non tutte le celle esistono per tutte le righe, e quelle che non esistono **dicono perché** invece di restare vuote: la sessione nuda non pinna un `sessionId` e quindi non ha un titolo. Resume e fork non hanno una riga affatto — il loro modello è ereditato dalla conversazione d'origine, non una preferenza.
 
 Un file assente, illeggibile o con una voce sbagliata non rompe niente: il deck parte sui default e lo dice in riga di stato, una voce alla volta.
 
@@ -315,32 +313,6 @@ torna alla lista senza perdere query, toggle e selezione. (Gli estremi stanno su
 I toggle e la query sono **volatili**: sopravvivono alla chiusura del modale, non al riavvio del deck — comporre una ricerca non tocca il disco.
 
 **Come fa a essere istantanea.** I corpi dei messaggi restano in RAM dentro la cache mtime-keyed che il deck usa già per la lista sessioni: quei file venivano comunque deserializzati per turni e titoli, e i corpi buttati. Trattenerli non aggiunge I/O, aggiunge memoria — e ne aggiunge poca, perché un JSONL è per l'85% overhead (misurato su un progetto reale: 57 MB su disco = 9,8 MB di testo cercabile). Cercarci dentro costa 1-9 ms; un prefiltro `grep` sugli stessi file ne costerebbe 26, perché rileggerebbe il volume pieno a ogni battuta.
-
-### `^G` / `^O` — il project status
-
-Il recap di progetto (`/loom-works:recap-status-project`) non è più solo una conversazione da aprire e perdere: il deck lo tiene come **artefatto**. La prima riga della cornice lo dice sempre.
-
-```
-loom-works :: PROJECT STATUS [ 09:42 ]        v0.49.0
-```
-
-Il campo fra parentesi ha tre stati e basta:
-
-| Stato | Significato |
-|---|---|
-| `missing` | nessun recap in cache: mai generato, o cache svuotata |
-| `◍ building 47...` | generazione in corso, coi secondi trascorsi dallo spawn |
-| `09:42` | ora dell'ultima generazione riuscita |
-
-Il glifo `◍` è lo stesso della colonna liveness delle sessioni: una generazione in corso **è** una conversazione che sta lavorando, non un simbolo nuovo da imparare. Dopo un tentativo fallito il campo porta un marker in coda (`[ 09:42 ⚠ ]`) e se lo tiene finché una generazione riuscita non lo azzera — la riga di stato sparisce al primo tasto premuto, e un fallimento non deve poter passare inosservato per una pressione di freccia. Il fallimento **non** cancella l'ora: la cache non è stata riscritta, quindi il recap di prima è ancora vero e ancora apribile.
-
-**Due tasti, non uno**: `^G` genera, `^O` apre. Aprire un recap vecchio costa una lettura di file, generarlo costa minuti di sessione Claude — legarli allo stesso tasto renderebbe il gesto economico un effetto collaterale di quello caro. `^G` con una generazione già in corso non ne fa partire una seconda; `^O` su cache assente lo dice nella riga di stato invece di aprire un viewer vuoto.
-
-Il recap vive in un file markdown sotto `/tmp/loom-deck-status-<uid>/`, col nome derivato dal path del progetto (non-alnum → `-`, la stessa trasformazione del transcript store di Claude Code). Da lì tre conseguenze volute: **sopravvive alla chiusura del deck** (riaperto, la testata mostra l'ora di prima), muore al reboot (un recap di ieri è comunque stale), e la coordinata resta una funzione pura del path invece di un registro da tenere allineato. L'ora mostrata è l'**mtime del file**, mai un campo scritto dentro il testo: un fatto scritto due volte diverge alla prima riscrittura parziale.
-
-`^O` apre un **viewer fullscreen** con lo stesso markdown reso del detail della task: `↑↓` riga, `PgUp`/`PgDn` pagina, `g`/`G` estremi, `esc` chiude. Aperto mentre una generazione gira, mostra la versione precedente e lo **dichiara** nella riga meta — il viewer è una fotografia e non si aggiorna da sé quando la generazione finisce.
-
-A generazione finita arriva una notifica desktop (`notify-send`): la generazione dura minuti e nel frattempo si guarda altrove, e la notifica di GNOME persiste nel cassetto — cosa che un suono non farebbe. Senza `notify-send` installato non succede **niente**: nessuna riga, nessun messaggio. L'assenza di un binario è una proprietà stabile della macchina, non un evento, e segnalarla a ogni generazione sarebbe rumore ripetuto su una funzione accessoria mentre il deliverable vero è arrivato comunque.
 
 ### `^B` — il modo doc
 
@@ -451,6 +423,7 @@ npx @lamemind/loom-deck
   fallisce (gestito: handler `error` → la TUI resta viva, mostra la nota). Senza una GUI
   GNOME con Ptyxis installato, il deck naviga i task ma **non apre sessioni**.
 - **[Claude Code](https://claude.com/claude-code)** nel `PATH` — la tab spawnata avvia `claude`.
+- **`notify-send`**, su Linux, facoltativo — porta in notifica l'esito di una voce `launch` con `capture` e lo spawn chiesto da una conversazione e messo in coda. Senza, non succede **niente**: nessuna riga, nessun messaggio. L'assenza di un binario è una proprietà stabile della macchina, e segnalarla a ogni esito sarebbe rumore ripetuto su una funzione accessoria.
 
 ### Su Windows
 

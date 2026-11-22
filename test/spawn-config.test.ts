@@ -311,13 +311,6 @@ test('la nuda non ha un titolo da risolvere', () => {
   assert.equal(r.model, 'opus');
 });
 
-test('project status: opus e la sua skill, senza titolo', () => {
-  const r = resolveSpawn(spawnAction('project-status')!, NONE, CATALOG, {});
-  assert.equal(r.model, 'opus');
-  assert.equal(r.prompt, '/loom-works:recap-status-project');
-  assert.equal(r.title, null);
-});
-
 test('col catalogo dati VERO le sette azioni su task restano quelle di prima', () => {
   // Il gate contro la regressione silenziosa del refactoring: prima di T161 il
   // modello di questi kind veniva da `modelFor` alla sede di chiamata, ora dal

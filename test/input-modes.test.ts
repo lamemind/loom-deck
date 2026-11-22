@@ -30,7 +30,6 @@ const ALL_MODES: Mode[] = [
   'detail',
   'purge',
   'drop',
-  'status',
   'inbox',
   'doc',
   'wrap',
@@ -84,7 +83,7 @@ test('i modi scorrevoli sono i viewer di testo', () => {
   // della pagina lo scroll dell'overlay è inerte.
   assert.deepEqual(
     [...SCROLLING_MODES].sort(),
-    ['combo', 'detail', 'doc', 'inbox', 'launch', 'reader', 'status', 'wrap'],
+    ['combo', 'detail', 'doc', 'inbox', 'launch', 'reader', 'wrap'],
   );
 });
 

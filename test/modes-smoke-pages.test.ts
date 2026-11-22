@@ -7,7 +7,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } fro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CANC, CAN_RUN, CTRL_L, CTRL_S, ESC, SKIP, TASKS } from './pty-harness.js';
-import { capture, configProject, lastFrame } from './modes-kit.js';
+import { LIST_FRAME, capture, configProject, lastFrame } from './modes-kit.js';
 import { MODELS, MODEL_DEFAULT, spawnAction } from '../src/spawn-catalog.js';
 
 // ── T161 · la pagina delle azioni di spawn ─────────────────────────────────
@@ -95,7 +95,7 @@ test('pagina launch: elenca le voci con cifra e attributi, esc chiude', { skip: 
   assert.match(open, /capture ✓/, `l'attributo capture non è disegnato: ${open}`);
   const closed = lastFrame(capture(`${CTRL_L}${ESC}`, proj));
   assert.doesNotMatch(closed, /voci launch ·/, `la pagina è rimasta aperta: ${closed}`);
-  assert.match(closed, /PROJECT STATUS/, `il deck non è tornato alla lista: ${closed}`);
+  assert.match(closed, LIST_FRAME, `il deck non è tornato alla lista: ${closed}`);
 });
 
 test('pagina launch: ⏎ lancia la voce selezionata, l su una voce senza esito lo dice', { skip: SKIP }, () => {

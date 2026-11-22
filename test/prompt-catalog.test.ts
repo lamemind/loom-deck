@@ -133,9 +133,9 @@ test('ogni riga del catalogo dati nomina un’azione, e viceversa', () => {
 });
 
 test('nessuna azione senza kind ha una riga nel catalogo dati', () => {
-  // Le chiavi qui sono i valori di `--prompt-kind`: la nuda, il drain, lo
-  // srotolamento e il project status non ne passano nessuno, quindi una riga
-  // per loro sarebbe irraggiungibile da ogni chiamante.
+  // Le chiavi qui sono i valori di `--prompt-kind`: la nuda e lo srotolamento
+  // non ne passano nessuno, quindi una riga per loro sarebbe irraggiungibile
+  // da ogni chiamante.
   const catalog = loadPromptCatalog();
   for (const a of SPAWN_ACTIONS) {
     if (a.kind === null) assert.equal(catalog.has(a.id), false, `${a.id} ha una riga di troppo`);

@@ -1,8 +1,8 @@
 // T155 — il sensore del gitlink: stato, gate di attivazione, cadenza.
 //
 // Non è un overlay come `sheet` o `search` — non apre nessuna schermata e non
-// entra in `MODE_KEYS`. Sta qui per la stessa ragione di `useProjectStatus` e
-// `useWrapOverlay`: tiene uno stato che si legge in vista normale e possiede
+// entra in `MODE_KEYS`. Sta qui per la stessa ragione di `useWrapOverlay`:
+// tiene uno stato che si legge in vista normale e possiede
 // l'azione che quello stato abilita, e `hooks.ts` è già a 487 righe (P3
 // preflight, D1/P12 — nessuno split dentro questa task).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -56,8 +56,7 @@ export function useGitlink(deps: GitlinkDeps) {
   const [bumping, setBumping] = useState(false);
   /** L'ultimo bump si è fermato prima di committare. STICKY: un giro di misura
    *  riuscito non lo azzera — dice com'è andata l'ultima AZIONE, che è un fatto
-   *  diverso da com'è andata l'ultima misura, e i due restano entrambi veri.
-   *  Stessa regola del `failed` del project status. */
+   *  diverso da com'è andata l'ultima misura, e i due restano entrambi veri. */
   const [failed, setFailed] = useState(false);
 
   // Il flag di corsa sta in un ref e non in stato, come in `useInboxScan`: due
@@ -117,7 +116,6 @@ export function useGitlink(deps: GitlinkDeps) {
    *
    * NESSUNA CONFERMA (P6 preflight): il commit è locale e si annulla con un
    * `git reset` che non tocca nessun remote, e lo script non pusha il cappello.
-   * È la stessa forma di `^G`, che genera senza chiedere.
    *
    * I quattro rifiuti dicono SEMPRE perché (AC: il tasto su zero disallineati
    * non spawna niente e lo dice). Un tasto che non facesse niente in silenzio

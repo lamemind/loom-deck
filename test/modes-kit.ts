@@ -60,20 +60,11 @@ export function lastFrame(captured: string): string {
 export const alive = (captured: string) => /<<PROC alive>>/.test(captured);
 
 /**
- * T121 — cache del project status a coordinata NOTA, così il viewer si apre
- * senza spendere una generazione vera (che dura minuti e passa da una sessione
- * Claude). L'env override è il canale previsto per questo: l'unica alternativa
- * sarebbe uno scenario che non prova nulla, perché su un deck appena avviato
- * `^O` risponde «nessun recap in cache».
+ * Il frame della LISTA: la testata porta a destra risoluzione e versione
+ * (`120×38 · v0.98.0`), e nessuna schermata sostitutiva la disegna. È ciò che
+ * dice «il deck ha disegnato il suo frame», o «è tornato alla lista».
  */
-const statusCache = join(mkdtempSync(join(tmpdir(), 'loom-deck-status-')), 'recap.md');
-if (CAN_RUN) {
-  writeFileSync(
-    statusCache,
-    '# Stato del progetto\n\nDue **task** aperte, una in `preflight`.\n',
-  );
-}
-export const STATUS_ENV = { LOOM_DECK_STATUS_FILE: statusCache };
+export const LIST_FRAME = /\d+×\d+ · v\d/;
 
 /**
  * T154 — progetto SINTETICO con una sola conversazione, di modello NOTO e

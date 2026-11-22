@@ -106,10 +106,6 @@ export const MODAL_HEIGHT = {
   // entra in un box sopra i pane. La sua altezza la distribuisce
   // `detailCapacity`.
   detail: 0,
-  // T121 — il viewer del project status: quinta sostitutiva. Un recap di
-  // progetto è un documento lungo quanto un task file, quindi vale la stessa
-  // ragione delle altre quattro. La sua altezza la distribuisce `statusCapacity`.
-  status: 0,
   // T134 — il detail di un file inbox: sesta sostitutiva. Un file di nozioni
   // arriva a 28KB, cioè più lungo di ogni task file del progetto: la stessa
   // ragione delle altre cinque. Altezza da `fileSheetCapacity`.
@@ -123,7 +119,7 @@ export const MODAL_HEIGHT = {
   // 77 `WRAP` e 147 `misto`, cioè una lista che non entra in nessun box sopra i
   // pane. Altezza da `wrapListCapacity`.
   wrap: 0,
-  // T161 — la pagina delle azioni di spawn: ottava sostitutiva. Undici righe di
+  // T161 — la pagina delle azioni di spawn: ottava sostitutiva. Dieci righe di
   // tabella più l'area di compilazione: in un box sopra i pane resterebbero due
   // colonne per il prompt. Altezza da `spawnListCapacity`.
   spawn: 0,
@@ -396,7 +392,7 @@ export function finderLayout(rows: number, noteLine: boolean): { list: number; p
   return { list: Math.max(0, avail), preview: 0 };
 }
 
-// T194 — cornice del modale delle combo: gemella di STATUS_CHROME senza la riga
+// T194 — cornice del modale delle combo: gemella di READER_CHROME senza la riga
 // meta, perché la posizione nella lista sta già nella riga di testata.
 //   2  bordi del box esterno
 //   1  riga di testata (nome · posizione nella lista)
@@ -500,24 +496,8 @@ export function dlvListRows(rows: number, searching: boolean, total: number): nu
   return Math.max(0, Math.min(total, Math.floor(free / 2)));
 }
 
-// T121 — cornice del viewer del project status. Gemella di READER_CHROME: il
-// viewer scorre testo e basta, senza l'area di compilazione che rende caro il
-// detail.
-//   2  bordi del box esterno
-//   1  riga di testata (progetto :: PROJECT STATUS)
-//   1  riga meta (ora della generazione · posizione nel testo)
-//   1  riga hint
-//   1  marginTop del box corpo
-//   2  bordi del box corpo
-const STATUS_CHROME = 8;
-
-/** Righe di recap che entrano nel terminale. */
-export function statusCapacity(rows: number): number {
-  return Math.max(0, (rows || 24) - SLACK - STATUS_CHROME);
-}
-
 // T134/T160 — cornice del detail di un FILE, condivisa dalle due istanze dello
-// sheet (file inbox e riga doc). Gemella di STATUS_CHROME più una riga: il
+// sheet (file inbox e riga doc). Gemella di READER_CHROME più una riga: il
 // detail porta in fondo la riga che dice cosa fa `⏎` qui, cioè niente — chi
 // viene dal detail della task si aspetta un secondo `⏎` che apre una
 // conversazione.
@@ -615,7 +595,7 @@ export function launchListCapacity(rows: number, noteLine = false): number {
   return Math.max(0, Math.floor(avail / LAUNCH_ROWS_PER_VOICE));
 }
 
-// T168 — cornice del log di una voce, gemella di STATUS_CHROME: scorre testo e
+// T168 — cornice del log di una voce, gemella di READER_CHROME: scorre testo e
 // basta.
 //   2  bordi del box esterno
 //   1  riga di testata (voce · esito)

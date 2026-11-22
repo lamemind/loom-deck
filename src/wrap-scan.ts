@@ -7,10 +7,10 @@
 // destinate a divergere in silenzio.
 //
 // A differenza dello scan degli inbox, questa misura è CARA: cammina l'albero del
-// progetto intero, submodule compresi. Da qui la forma già in casa per il
-// project status — generare e aprire su due tasti distinti, con una cache su
-// disco in mezzo — invece di uno scan all'avvio che rallenterebbe proprio il
-// momento in cui si vuole vedere qualcosa subito.
+// progetto intero, submodule compresi. Da qui la forma a due tasti — generare
+// e aprire distinti, con una cache su disco in mezzo — invece di uno scan
+// all'avvio che rallenterebbe proprio il momento in cui si vuole vedere
+// qualcosa subito.
 
 import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -127,9 +127,9 @@ export function wrapWords(path: string): string {
 }
 
 /**
- * Cartella della cache, una per utente e con `mode 0700` — stessa ragione del
- * project status: `/tmp` è condivisa, e un file a nome prevedibile può essere
- * preceduto dal symlink di un altro utente.
+ * Cartella della cache, una per utente e con `mode 0700`: `/tmp` è condivisa, e
+ * un file a nome prevedibile può essere preceduto dal symlink di un altro
+ * utente.
  */
 export function wrapCacheDir(): string {
   return join(tmpdir(), `loom-deck-wrap-${process.getuid?.() ?? 0}`);

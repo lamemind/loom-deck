@@ -95,14 +95,6 @@ export function isModelKind(v: unknown): v is ModelKind {
 // quando nessuna delle due sorgenti ha una voce.
 export const MODEL_DEFAULT: ModelKind = 'fable';
 
-// T152 — `recap-status-project` non è una chiave di `prompt-catalog` (le chiavi
-// lì sono i valori di `--prompt-kind`, e lo spawn headless non ne passa mai
-// uno): il suo default vive nella riga `project-status` di questo catalogo.
-// È l'unico recap che gira in headless (`-p`), senza nessuno che ne legga
-// l'esito mentre si forma e possa rilanciarlo — il testo prodotto è il
-// deliverable, e viene riletto da disco anche giorni dopo.
-export const PROJECT_STATUS_MODEL: ModelKind = 'opus';
-
 // T66 — le azioni del detail. Non sono un catalogo a parte: ognuna nomina una
 // riga di questo catalogo, per kind, e tutte passano dallo stesso `spawnForTask`
 // dei CTRL della lista — una superficie in più, zero percorsi di spawn in più.
@@ -180,11 +172,7 @@ export const ACTION_HOTKEYS: Readonly<Record<string, number>> = actionHotkeys(DE
  * kind → id sarebbe una mappa da tenere allineata a mano, e `specializeRecap`
  * non potrebbe più fare da ponte fra il detail e il catalogo.
  */
-export type SpawnActionId =
-  | PromptKind
-  | 'bare'
-  | 'unwrap'
-  | 'project-status';
+export type SpawnActionId = PromptKind | 'bare' | 'unwrap';
 
 /** Le tre celle configurabili di una riga. */
 export type SpawnField = 'title' | 'model' | 'prompt';
@@ -200,8 +188,8 @@ export interface SpawnAction {
   /**
    * La chiave con cui si legge `scripts/prompt-catalog`, o `null` per le azioni
    * che non hanno una riga lì (P2 preflight): il catalogo dati indicizza sui
-   * valori di `--prompt-kind`, e srotolamento, nuda e project status non ne
-   * passano nessuno — una riga lì sarebbe irraggiungibile da ogni chiamante.
+   * valori di `--prompt-kind`, e srotolamento e nuda non ne passano nessuno —
+   * una riga lì sarebbe irraggiungibile da ogni chiamante.
    */
   kind: PromptKind | null;
   /**
@@ -254,7 +242,7 @@ const UNWRAP_PROMPT =
   'puoi committare direttamente';
 
 /**
- * Le UNDICI azioni configurabili, nell'ordine in cui la pagina le elenca.
+ * Le DIECI azioni configurabili, nell'ordine in cui la pagina le elenca.
  *
  * Il perimetro è quello di D1: entra una riga se ha almeno una cella editabile.
  * Ne restano fuori resume e fork — lì il modello non è una preferenza ma
@@ -414,19 +402,6 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     holes: ['path'],
     fixed: {},
   },
-  {
-    // T121 — il recap di progetto, headless (`claude -p`): nessuna tab, quindi
-    // nessun titolo da configurare.
-    id: 'project-status',
-    label: 'project status',
-    surface: 'tasto ^G',
-    kind: null,
-    title: null,
-    model: PROJECT_STATUS_MODEL,
-    prompt: '/loom-works:recap-status-project',
-    holes: [],
-    fixed: { title: 'headless: nessuna tab' },
-  },
 ];
 
 /**
@@ -479,8 +454,8 @@ export function editableFields(action: SpawnAction): readonly SpawnField[] {
  * Cosa mostra una cella della tabella.
  *
  * Il perimetro di D1 fa entrare righe che non sono commensurabili — la nuda non
- * ha un titolo, il project status gira headless — quindi alcune celle non hanno
- * un valore da mostrare. La regola è che una cella senza valore **dice perché**, invece di
+ * ha un titolo né un prompt — quindi alcune celle non hanno un valore da
+ * mostrare. La regola è che una cella senza valore **dice perché**, invece di
  * restare vuota: una cella muta si legge come un dato mancante, cioè come un
  * difetto, e manda a cercare un guasto che non c'è.
  *

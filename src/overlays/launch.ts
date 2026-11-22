@@ -1,7 +1,7 @@
 // T168 — la PAGINA DELLE VOCI LAUNCH (`^L`) e il motore che le lancia:
 // startup, scadenza, esito, guardia, notifica.
 //
-// Come il project status e l'hard-wrap non è solo un overlay: lo stato che
+// Come l'hard-wrap non è solo un overlay: lo stato che
 // tiene — quale voce gira, com'è finita l'ultima — si legge in testata a
 // schermata chiusa (🔄 / 🚨, P23), e la pagina è una delle sue superfici. Qui
 // vivono anche startup e scadenza, perché è l'unico posto che conosce i record
@@ -317,8 +317,7 @@ export function useLaunchPage(deps: LaunchPageDeps) {
     setLogTop(0);
   }
 
-  // Cornici da scalare, come il viewer del project status: box esterno + box
-  // testo = 8 colonne.
+  // Cornici da scalare, come il reader: box esterno + box testo = 8 colonne.
   const logWidth = Math.max(20, (columns || 80) - 8);
   const logLines = useMemo(() => (log ? wrapWithOffsets(log.text, logWidth) : []), [log, logWidth]);
   const logCapacity = launchLogCapacity(rows);

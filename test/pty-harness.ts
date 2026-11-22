@@ -104,9 +104,6 @@ export const CTRL_A = '\x01';
 export const CTRL_B = '\x02';
 export const CTRL_C = '\x03';
 export const CTRL_F = '\x06';
-/** T121 — le due attivazioni del project status: genera e apri. */
-export const CTRL_G = '\x07';
-export const CTRL_O = '\x0f';
 /** T168 — `^L` apre la pagina delle voci launch. */
 export const CTRL_L = '\x0c';
 export const CTRL_R = '\x12';

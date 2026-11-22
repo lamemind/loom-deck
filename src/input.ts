@@ -55,7 +55,6 @@ import type { useComboOverlay } from './overlays/combo.js';
 import type { useFinderOverlay } from './overlays/finder.js';
 import { taskSheet, type useSheetOverlay } from './overlays/sheet.js';
 import type { useSearchOverlay } from './overlays/search.js';
-import type { useProjectStatus } from './overlays/status.js';
 import type { useFileSheet } from './overlays/file-sheet.js';
 import type { InboxFile } from './inbox.js';
 import type { DocRow } from './doc-tree.js';
@@ -101,7 +100,6 @@ export type DeckOverlays = {
   finder: ReturnType<typeof useFinderOverlay>;
   sheet: ReturnType<typeof useSheetOverlay>;
   search: ReturnType<typeof useSearchOverlay>;
-  status: ReturnType<typeof useProjectStatus>;
   /** T160 — le due istanze dello stesso hook, tipizzate sul proprio oggetto: è
    *  ciò che tiene disgiunte le due schermate malgrado la meccanica condivisa. */
   inbox: ReturnType<typeof useFileSheet<InboxFile>>;
@@ -182,7 +180,6 @@ export function useDeckInput({
   // dimostrato che il solo `Record` non lo impedisce.
   const MODE_KEYS: Record<CapturingMode, (input: string, key: Key) => void> = {
     detail: overlays.sheet.onKey,
-    status: overlays.status.onKey,
     inbox: overlays.inbox.onKey,
     doc: overlays.doc.onKey,
     wrap: overlays.wrap.onKey,
@@ -208,7 +205,6 @@ export function useDeckInput({
   // non compila. Il delta è in righe, col segno del verso.
   const MODE_WHEEL: Record<ScrollingMode, (delta: number) => void> = {
     detail: overlays.sheet.scroll,
-    status: overlays.status.scroll,
     inbox: overlays.inbox.scroll,
     doc: overlays.doc.scroll,
     wrap: overlays.wrap.scroll,
@@ -431,22 +427,12 @@ export function useDeckInput({
         actions.spawnTaskSession('preflight', '^P');
       } else if (input === 'r') {
         actions.spawnTaskSession('run', '^R');
-      } else if (input === 'g') {
-        // T121 — GENERA e APRI su due tasti distinti (D2): aprire un recap
-        // vecchio deve costare zero, e generare non deve essere un effetto
-        // collaterale del guardare. Nessuno dei due è preso né bruciato da Ink,
-        // e `^S`/`^Q` sono evitati perché il terminale li intercetta come flow
-        // control.
-        overlays.status.generate();
-      } else if (input === 'o') {
-        overlays.status.open();
       } else if (input === 'w') {
         // T134/D8 preflight — `^W` APRE la lista, `^E` ESEGUE lo scan: generare
-        // e aprire restano due tasti distinti per la stessa ragione di `^G`/`^O`
-        // — aprire un dato vecchio deve costare zero, e generare non deve essere
-        // un effetto collaterale del guardare. Qui la posta è più alta che sul
-        // project status: lo scan cammina l'albero del progetto intero,
-        // submodule compresi.
+        // e aprire restano due tasti distinti — aprire un dato vecchio deve
+        // costare zero, e generare non deve essere un effetto collaterale del
+        // guardare. Lo scan cammina l'albero del progetto intero, submodule
+        // compresi.
         //
         // `^S` sarebbe la mnemonica migliore per «scan» ed è scartata di
         // proposito: nel repo esistono due commenti in contraddizione sul suo
@@ -460,7 +446,7 @@ export function useDeckInput({
         overlays.wrap.scan();
       } else if (input === 'u') {
         // T155/P5 preflight — `^U` (update del gitlink) bumpa i submodule
-        // idonei. Non è la coppia genera/apri di `^G`/`^O` e `^W`/`^E`: qui non
+        // idonei. Non è la coppia genera/apri di `^W`/`^E`: qui non
         // c'è nessuna schermata da aprire, la misura gira da sé ogni 30 secondi
         // e l'unico gesto è l'azione. Nessuna conferma, perché il commit è
         // locale e reversibile (P6).

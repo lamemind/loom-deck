@@ -246,7 +246,7 @@ test('restoreButton: la forma lunga quando c’è spazio, al singolare con una s
 test('restoreButton: su un terminale stretto cede alla forma corta, poi sparisce', () => {
   const right = '40×24 · v1.0.0';
   const forms = restoreButtonForms(12);
-  // La prima forma che lascia almeno 4 colonne al project status.
+  // La prima forma che lascia almeno 4 colonne al nome del progetto.
   const fits = (form: string, cols: number) =>
     cols - 4 - termWidth(form) - termWidth(HEADER_BUTTON_SEP) - termWidth(right) - 1 >= 4;
   for (let cols = 10; cols <= 80; cols++) {

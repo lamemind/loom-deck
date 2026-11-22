@@ -28,6 +28,7 @@ import {
   BARE_LABEL,
   HEADER_BUTTON_SEP,
   frameGeometry,
+  headlineText,
   headlineWidth,
   indicatorRow,
   launchRow,
@@ -43,7 +44,6 @@ import { taskSheet, useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
 import { useComboOverlay } from './overlays/combo.js';
 import { useFinderOverlay } from './overlays/finder.js';
-import { useProjectStatus } from './overlays/status.js';
 import { useFileSheet } from './overlays/file-sheet.js';
 import type { InboxFile } from './inbox.js';
 import type { DocRow } from './doc-tree.js';
@@ -57,7 +57,6 @@ import { useDropOverlay } from './overlays/drop.js';
 import { useTextModals, useViewModals } from './overlays/modals.js';
 import { useTerminalSize, useSpawnConfig, useLaunchConfig } from './hooks.js';
 import { DropModal, EditModal, FilterModal, PurgeModal, SortModal } from './ui/modals.js';
-import { StatusHeadline } from './ui/status-screen.js';
 import { SessionsPane, TasksPane } from './ui/panes.js';
 import { InboxPane } from './ui/inbox-pane.js';
 import { DocPane } from './ui/doc-pane.js';
@@ -170,24 +169,6 @@ function Deck({
       actions.openSession(row.session.sessionId, modelAlias(row.session.model) ?? MODEL_DEFAULT),
   });
 
-  // T121 — il project status. Non è solo un overlay come i tre sopra: il suo
-  // stato si legge in TESTATA a schermata chiusa, e il viewer è una delle sue
-  // superfici invece che il suo contenuto.
-  // Il nome è quello del file config quando c'è, la cartella altrimenti: la
-  // testata deve dire di quale progetto parla anche su un checkout non ancora
-  // registrato.
-  const statusDefaults = actions.spawnDefaults('project-status');
-  const status = useProjectStatus({
-    cwd,
-    name: model.projectCore ?? model.projectName,
-    rows,
-    columns,
-    model: statusDefaults.model,
-    prompt: statusDefaults.prompt ?? '',
-    setMode,
-    setNote,
-  });
-
   // T134/T160 — le DUE istanze dello sheet di file: il file inbox e la riga
   // doc. Stesso hook (`useFileSheet`, P11), due modi distinti — `esc` da una
   // torna al pane inbox, dall'altra al pane doc, e un modo condiviso
@@ -209,9 +190,9 @@ function Deck({
     setNote,
   });
 
-  // T134 — l'hard-wrap. Come il project status non è solo un overlay: i suoi
-  // numeri si leggono in testata a schermata chiusa, e la lista è una delle sue
-  // superfici invece che il suo contenuto.
+  // T134 — l'hard-wrap. Non è solo un overlay: i suoi numeri si leggono in
+  // testata a schermata chiusa, e la lista è una delle sue superfici invece che
+  // il suo contenuto.
   const wrap = useWrapOverlay({
     cwd,
     rows,
@@ -220,10 +201,9 @@ function Deck({
     onApply: actions.unwrapPath,
   });
 
-  // T155 — il gitlink dei submodule. Terzo sensore con lo stato in vista
-  // normale, dopo il project status e l'hard-wrap: qui però non c'è nessuna
-  // schermata da aprire — l'unica superficie è l'indicatore, e l'unica azione
-  // committa.
+  // T155 — il gitlink dei submodule. Secondo sensore con lo stato in vista
+  // normale, dopo l'hard-wrap: qui però non c'è nessuna schermata da aprire —
+  // l'unica superficie è l'indicatore, e l'unica azione committa.
   const gitlink = useGitlink({ cwd, setNote });
   // T196 — l'endpoint locale: le conversazioni del progetto chiedono qui gli
   // spawn (`loom-deck-spawn`), che partono dallo stesso `spawnForTask` del tasto.
@@ -244,7 +224,7 @@ function Deck({
   });
 
   // T168 — la pagina delle voci launch e il motore che le lancia (startup,
-  // scadenza, esito). Come il project status il suo stato si legge in testata a
+  // scadenza, esito). Come l'hard-wrap il suo stato si legge in testata a
   // schermata chiusa: 🔄 mentre una voce gira, 🚨 su un exit non-zero.
   const launchPage = useLaunchPage({
     cwd,
@@ -300,7 +280,6 @@ function Deck({
     finder,
     sheet,
     search,
-    status,
     inbox,
     doc: docSheet,
     wrap,
@@ -452,7 +431,6 @@ function Deck({
     pinned: model.pinned,
     sessionNotes: model.sessionNotes,
     projectCore: model.projectCore,
-    projectName: model.projectName,
     taskRowData: model.taskRowData,
     hiddenTasks: model.hiddenTasks,
     overlays: {
@@ -461,7 +439,6 @@ function Deck({
       finder,
       sheet,
       search,
-      status,
       inbox,
       doc: docSheet,
       wrap,
@@ -489,23 +466,21 @@ function Deck({
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
-      {/* Riga di testata: project status a sinistra, versione ancorata a
+      {/* Riga di testata: nome del progetto a sinistra, versione ancorata a
           destra. È una riga full-width come la riga dei pane — `space-between`
           la riempie fino al bordo, quindi il gate di `frame-width*.test.ts`
           continua a misurare esattamente `columns`.
-          T121/D1 — il nome del programma esce dalla cornice: resta nel fallback
-          compatto e nel titolo della tab Ptyxis, che sono i due posti dove
-          serve davvero a identificare cosa si sta guardando. Il blocco status
+          Il nome è quello del file config quando c'è, la cartella altrimenti:
+          la testata deve dire di quale progetto parla anche su un checkout non
+          ancora registrato. Il nome del programma resta fuori dalla cornice:
+          sta nel fallback compatto e nel titolo della tab Ptyxis, che sono i
+          due posti dove serve a identificare cosa si sta guardando. Il nome
           riceve il budget già scalato del segmento destro (risoluzione +
           versione), o `space-between` lo lascerebbe crescere fin dentro. */}
       <Box flexDirection="row" justifyContent="space-between">
-        <StatusHeadline
-          name={model.projectCore ?? model.projectName}
-          label={status.label}
-          building={status.building}
-          failed={status.failed}
-          cols={headlineWidth(columns, frame.headerBlock)}
-        />
+        <Text bold color="cyan" wrap="truncate-end">
+          {headlineText(model.projectCore ?? model.projectName, headlineWidth(columns, frame.headerBlock))}
+        </Text>
         {/* T181 — il bottone di restore sta nello stesso blocco di destra,
             prima di risoluzione e versione: un `Box` coi due `Text` fratelli e
             non un `Text` che li annida, perché un `Text` di `Text` non si

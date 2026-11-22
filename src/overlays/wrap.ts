@@ -34,8 +34,8 @@ export interface WrapOverlayDeps {
 export function useWrapOverlay(deps: WrapOverlayDeps) {
   const { cwd, rows, setMode, setNote, onApply } = deps;
 
-  // Lo stato dello scan vive QUI e non nel modello, sul precedente di
-  // `useProjectStatus`: non è solo il contenuto di una schermata — i suoi
+  // Lo stato dello scan vive QUI e non nel modello: non è solo il contenuto di
+  // una schermata — i suoi
   // numeri si leggono in testata a schermata chiusa, e la lista è una delle sue
   // superfici invece che il suo contenuto. Tenerli in due posti significherebbe
   // che l'indicatore e la lista possono dire cose diverse dello stesso scan.
@@ -46,7 +46,7 @@ export function useWrapOverlay(deps: WrapOverlayDeps) {
 
   /** Le righe FOTOGRAFATE all'apertura: uno scan che finisse mentre la lista è
    *  a schermo la riscriverebbe sotto gli occhi, e la posizione di scroll non
-   *  avrebbe più un riferimento. Stessa regola del viewer del project status. */
+   *  avrebbe più un riferimento. */
   const [files, setFiles] = useState<WrapFile[] | null>(null);
   const [top, setTop] = useState(0);
   const [path, setPath] = useState(WRAP_DEFAULT_PATH);
@@ -61,7 +61,7 @@ export function useWrapOverlay(deps: WrapOverlayDeps) {
    * Rifiuta di aprirsi su una lista vuota, e i due modi di esserlo si dicono
    * distinti: «non ho ancora misurato» e «ho misurato e non c'è niente» sono
    * due stati del progetto diversi, e una schermata vuota li confonderebbe in
-   * uno solo. È la stessa forma di `^O` senza cache.
+   * uno solo.
    */
   function open() {
     if (refuse('hardWrap', '^W', setNote, 'lista hard-wrap')) return;

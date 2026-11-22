@@ -526,8 +526,8 @@ export function useInboxScan(projectRoot: string, docsRoot: string, enabled = tr
       if (!alive.current) return;
       // Un tentativo fallito NON butta via l'esito dell'ultimo riuscito: la
       // lista precedente resta vera e ancora apribile, e il guasto si dice
-      // col glifo di allerta accanto ai contatori. È la stessa regola già
-      // scritta per il project status (`finish` non riscrive la cache).
+      // col glifo di allerta accanto ai contatori. È la stessa regola dello
+      // scan hard-wrap e del gitlink.
       setState((prev) =>
         res.ok ? { files: res.files, ok: true, scanned: true } : { ...prev, ok: false, scanned: true },
       );

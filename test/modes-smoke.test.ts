@@ -18,18 +18,15 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CANC, CTRL_F, CTRL_L, CTRL_O, CTRL_S, ESC, PROJECT, SKIP } from './pty-harness.js';
-import { STATUS_ENV, capture, lastFrame } from './modes-kit.js';
+import { CANC, CTRL_F, CTRL_L, CTRL_S, ESC, PROJECT, SKIP } from './pty-harness.js';
+import { LIST_FRAME, capture, lastFrame } from './modes-kit.js';
 
 // Ogni voce: i tasti da battere e un frammento che DEVE comparire nel frame
 // finale. Il frammento è scelto fra ciò che solo quel modo disegna.
 const MODES: Array<{ name: string; keys: string; expect: RegExp; env?: NodeJS.ProcessEnv }> = [
-  // T121/D1 — `loom-deck` non è più nella cornice: la testata porta il project
-  // status, e questo è ciò che dice «il deck ha disegnato il suo frame».
-  { name: 'normal', keys: '', expect: /PROJECT STATUS/ },
-  // Il viewer del recap: la sua riga hint è l'unica che nomina insieme pagina ed
-  // estremi.
-  { name: 'status', keys: CTRL_O, expect: /g\/G estremi/i, env: STATUS_ENV },
+  // La testata porta risoluzione e versione: è ciò che dice «il deck ha
+  // disegnato il suo frame».
+  { name: 'normal', keys: '', expect: LIST_FRAME },
   { name: 'create', keys: 'C', expect: /nuova task|create/i },
   { name: 'sort', keys: 'S', expect: /sort|ordina/i },
   { name: 'filter', keys: 'F', expect: /filtr/i },

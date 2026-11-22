@@ -13,7 +13,7 @@ test('un binario di notifica assente non abbatte il processo', async () => {
   process.env.LOOM_DECK_NOTIFY_CMD = '/non/esiste/notify-send-finto';
   const { notifyDone } = await import('../src/spawn.js');
 
-  const child = notifyDone('loom-deck · project status', 'recap pronto');
+  const child = notifyDone('loom-deck · pull repos', 'loom-works: ok');
 
   // ENOENT non arriva come throw: è un evento `error` ASINCRONO, e in Node un
   // evento `error` senza listener diventa un'eccezione non catturata — cioè la

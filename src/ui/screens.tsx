@@ -1,8 +1,8 @@
 // Le SCHERMATE SOSTITUTIVE del deck e i due frammenti che le accompagnano.
 //
 // Una schermata sostitutiva prende il frame intero invece di stare in un box
-// sopra i due pane: assegnazione, detail della task, project status, detail di
-// un file inbox, ricerca e reader. Il criterio è la taglia del contenuto — una
+// sopra i due pane: assegnazione, detail della task, detail di un file inbox
+// o di una riga doc, ricerca e reader. Il criterio è la taglia del contenuto — una
 // lista di occorrenze, un task file o un file di nozioni non entrano in quattro
 // righe — e la conseguenza è che il budget d'altezza dei pane non viene nemmeno
 // calcolato, perché il render esce prima.
@@ -35,7 +35,6 @@ import type { Mode, PurgeDraft } from '../model.js';
 import type { Session } from '../sessions.js';
 import { AssignScreen } from './assign-screen.js';
 import { DetailScreen } from './detail-screen.js';
-import { StatusScreen } from './status-screen.js';
 import { FileSheetScreen, docSheetHead, inboxSheetHead } from './file-sheet-screen.js';
 import { WrapScreen } from './wrap-screen.js';
 import { SpawnScreen } from './spawn-screen.js';
@@ -48,7 +47,6 @@ import type { useComboOverlay } from '../overlays/combo.js';
 import type { useFinderOverlay } from '../overlays/finder.js';
 import type { useSheetOverlay } from '../overlays/sheet.js';
 import type { useSearchOverlay } from '../overlays/search.js';
-import type { useProjectStatus } from '../overlays/status.js';
 import type { useFileSheet } from '../overlays/file-sheet.js';
 import type { InboxFile } from '../inbox.js';
 import type { DocRow } from '../doc-tree.js';
@@ -61,7 +59,6 @@ type ComboOverlay = ReturnType<typeof useComboOverlay>;
 type FinderOverlay = ReturnType<typeof useFinderOverlay>;
 type SheetOverlay = ReturnType<typeof useSheetOverlay>;
 type SearchOverlay = ReturnType<typeof useSearchOverlay>;
-type StatusOverlay = ReturnType<typeof useProjectStatus>;
 type InboxOverlay = ReturnType<typeof useFileSheet<InboxFile>>;
 type DocOverlay = ReturnType<typeof useFileSheet<DocRow>>;
 type WrapOverlay = ReturnType<typeof useWrapOverlay>;
@@ -228,7 +225,6 @@ export type ScreensInput = {
   pinned: Map<string, number>;
   sessionNotes: Map<string, string>;
   projectCore: string | null;
-  projectName: string;
   taskRowData: TaskRowData;
   hiddenTasks: number;
   overlays: {
@@ -237,7 +233,6 @@ export type ScreensInput = {
     finder: FinderOverlay;
     sheet: SheetOverlay;
     search: SearchOverlay;
-    status: StatusOverlay;
     inbox: InboxOverlay;
     doc: DocOverlay;
     wrap: WrapOverlay;
@@ -250,14 +245,14 @@ export type ScreensInput = {
  * Sceglie la schermata sostitutiva attiva, o `null` per restare sulla lista.
  *
  * L'ordine dei rami è quello che avevano in `cli.tsx` e non è indifferente: i
- * modi si escludono a vicenda, ma `detail`, `status` e `inbox` chiedono anche
- * che il proprio contenuto esista (`sheet.sheet`, `status.view`, `inbox.sheet`)
+ * modi si escludono a vicenda, ma `detail`, `inbox` e `doc` chiedono anche
+ * che il proprio contenuto esista (`sheet.sheet`, `inbox.sheet`, `doc.sheet`)
  * — un modo dichiarato senza contenuto deve cadere alla lista, non a una
  * schermata vuota.
  */
 export function screenFor(input: ScreensInput) {
   const { mode, rows, columns, note, overlays } = input;
-  const { assign, combo, finder, sheet, search, status, inbox, doc, wrap, spawn, launch } = overlays;
+  const { assign, combo, finder, sheet, search, inbox, doc, wrap, spawn, launch } = overlays;
 
   // ── T57 · schermata di assegnazione ─────────────────────────────────────
   // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
@@ -382,35 +377,6 @@ export function screenFor(input: ScreensInput) {
         occCur={sheet.occCur}
         dlv={sheet.dlv}
         dlvRows={sheet.dlvRows}
-      />
-    );
-  }
-
-  // ── T121 · viewer del project status ────────────────────────────────────
-  // Quinta schermata sostitutiva, stessa ragione delle altre quattro: un recap
-  // di progetto è lungo quanto un task file e non entra in un box sopra i pane.
-  if (mode === 'status' && status.view) {
-    if (isCompact(status.capacity)) {
-      return (
-        <CompactNotice what="project status" esc="chiude" rows={rows} columns={columns} />
-      );
-    }
-    // Il clamp serve anche qui: un resize può accorciare il testo sotto uno
-    // scroll già dato.
-    const start = Math.min(status.top, status.maxTop);
-    return (
-      <StatusScreen
-        name={input.projectCore ?? input.projectName}
-        label={status.label}
-        building={status.building}
-        failed={status.failed}
-        view={status.view}
-        lines={status.lines.slice(start, start + status.capacity)}
-        spans={status.doc?.spans ?? []}
-        top={start}
-        total={status.lines.length}
-        capacity={status.capacity}
-        columns={columns}
       />
     );
   }

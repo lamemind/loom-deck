@@ -25,11 +25,11 @@ import {
   specializeRecap,
 } from '../src/spawn-catalog.js';
 
-test('drain e rebalance non sono id del catalogo: nessuna skill doc parte dal deck', () => {
-  // Le due righe lanciavano skill che il plugin non distribuisce più: un id che
+test('drain, rebalance e project-status non sono id del catalogo', () => {
+  // Le tre righe lanciavano skill che il plugin non distribuisce più: un id che
   // il catalogo non conosce è ciò che fa cadere all'avvio un override di
   // progetto scritto su di loro, col suo avviso.
-  for (const id of ['drain', 'rebalance']) {
+  for (const id of ['drain', 'rebalance', 'project-status']) {
     assert.equal(isSpawnActionId(id), false, `${id} è ancora un id del catalogo`);
     assert.equal(spawnAction(id), undefined);
   }
@@ -40,8 +40,8 @@ test('gli id sono unici: un duplicato renderebbe irraggiungibile la seconda riga
   assert.deepEqual([...new Set(ids)], ids);
 });
 
-test('undici righe: il perimetro di D1, cioè le azioni con almeno una cella editabile', () => {
-  assert.equal(SPAWN_ACTIONS.length, 11);
+test('dieci righe: il perimetro di D1, cioè le azioni con almeno una cella editabile', () => {
+  assert.equal(SPAWN_ACTIONS.length, 10);
   for (const a of SPAWN_ACTIONS) {
     assert.ok(
       editableFields(a).length > 0,
@@ -154,9 +154,8 @@ test('un titolo esiste se e solo se non è dichiarato fisso', () => {
 // ── T161/DLV2 · il contratto di cella ──────────────────────────────────────
 
 test('nessuna cella della tabella resta muta', () => {
-  // Il perimetro fa entrare righe non commensurabili: la nuda non ha un titolo,
-  // il project status gira headless. Una cella vuota si leggerebbe come un dato
-  // mancante.
+  // Il perimetro fa entrare righe non commensurabili: la nuda non ha un titolo
+  // né un prompt. Una cella vuota si leggerebbe come un dato mancante.
   for (const a of SPAWN_ACTIONS) {
     for (const f of SPAWN_FIELDS) {
       const cell = spawnCell(a, f, null, false);

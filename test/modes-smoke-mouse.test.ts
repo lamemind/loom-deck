@@ -3,10 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { CTRL_O, PROJECT, SKIP } from './pty-harness.js';
+import { PROJECT, SKIP } from './pty-harness.js';
 import { alive, capture, lastFrame } from './modes-kit.js';
 import { detailProject } from './detail-fixture.js';
 import { loadLaunch } from '../src/config.js';
@@ -106,24 +103,6 @@ function linesAt(frame: string): number {
   return Number(m[1]);
 }
 
-test('la rotella scorre il project status di tre righe per tacca', { skip: SKIP }, () => {
-  // Cache più alta del terminale, come per `↑↓`: con un recap corto la
-  // posizione non si muove e lo scenario passerebbe senza provare niente.
-  const long = join(mkdtempSync(join(tmpdir(), 'loom-deck-wheel-')), 'lungo.md');
-  writeFileSync(
-    long,
-    Array.from({ length: 200 }, (_, i) => `riga numero ${i} del recap`).join('\n'),
-  );
-  const env = { LOOM_DECK_STATUS_FILE: long };
-  const down = linesAt(lastFrame(capture(`${CTRL_O}${WHEEL_DOWN}`, PROJECT, env)));
-  assert.equal(down, 4, 'una tacca giù non ha scorso tre righe');
-  // Due giù e una su: la rotella torna indietro, e non è un `PgUp` travestito.
-  const back = linesAt(
-    lastFrame(capture(`${CTRL_O}${WHEEL_DOWN}${WHEEL_DOWN}${WHEEL_UP}`, PROJECT, env)),
-  );
-  assert.equal(back, 4, 'una tacca su non ha riavvolto tre righe');
-});
-
 test('nel detail la rotella scorre il testo, non il fuoco fra i campi', { skip: SKIP }, () => {
   // T117: `↑↓` nel detail muovono il fuoco fra le quattro righe dell'area di
   // compilazione. Una rotella che sintetizzasse `↓` sposterebbe il fuoco e
@@ -132,6 +111,10 @@ test('nel detail la rotella scorre il testo, non il fuoco fra i campi', { skip: 
   const after = lastFrame(capture(`DD\r${WHEEL_DOWN}`));
   assert.equal(linesAt(start), 1);
   assert.equal(linesAt(after), 4, `il testo del detail non è scorso: ${after}`);
+  // Una giù e una su: la rotella torna indietro di tre righe, e non è un
+  // `PgUp` travestito.
+  const back = lastFrame(capture(`DD\r${WHEEL_DOWN}${WHEEL_UP}`));
+  assert.equal(linesAt(back), 1, `una tacca su non ha riavvolto tre righe: ${back}`);
   // Il fuoco è ancora sulla riga `azione`, che porta il caret; `↓` l'avrebbe
   // spostato sulla riga del prompt.
   assert.match(after, /▸ azione/, `il fuoco ha lasciato la riga azione: ${after}`);

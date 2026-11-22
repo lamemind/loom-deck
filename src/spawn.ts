@@ -9,7 +9,7 @@ import type { IgnoredMode } from './purge.js';
 // T161 — i cataloghi (kind, modelli, azioni) stanno in `spawn-catalog.ts`, che
 // è DATO PURO e non importa questo file: la dipendenza va in un verso solo.
 // Qui restano i soli effetti verso l'esterno — comporre un argv e lanciarlo.
-import { MODEL_DEFAULT, PROJECT_STATUS_MODEL, type ModelKind } from './spawn-catalog.js';
+import { MODEL_DEFAULT, type ModelKind } from './spawn-catalog.js';
 import { isAvailable } from './platform.js';
 import { claudeLauncher } from './claude-cmd.js';
 import { claudeEnv, gitBash } from './git-bash.js';
@@ -671,39 +671,6 @@ export function spawnCleanTasks(
   return spawnSkill(cleanTasksPrompt(ids, ignored), cwd, sessionId, onResult);
 }
 
-// T121 — recap di progetto in headless. Qui il `detail` del result event NON è
-// un messaggio d'errore da troncare come per `create-task`/`clean-tasks`: è il
-// DELIVERABLE, cioè il testo intero della skill, e chi chiama lo scrive su
-// disco. Una skill read-only invocata in `-p` è una funzione che ritorna testo.
-//
-// `--permission-mode auto` e nessun token `yolo` (D4): le due cautele coprono
-// cause di stallo diverse e non sono intercambiabili. `yolo` toglie le domande
-// che la skill pone da sé, e `recap-status-project` non ne ha; il modo
-// permissivo toglie le richieste di permesso che il CLI pone su un tool, e
-// quelle in `-p` non hanno nessuno che risponda — il processo resterebbe appeso
-// senza emettere niente, cioè con l'indicatore che conta all'infinito.
-//
-// T161 — modello e prompt arrivano dal CHIAMANTE, risolti sul catalogo delle
-// azioni: erano gli ultimi due valori che questa funzione sceglieva da sé
-// (`PROJECT_STATUS_MODEL` e la stringa della skill), e con l'override di
-// progetto il default deve stare in un posto solo insieme a quello delle altre
-// dieci azioni. Il `--permission-mode auto` invece resta qui: non è una
-// preferenza ma la condizione perché un `-p` non resti appeso.
-export function spawnProjectStatus(
-  cwd: string,
-  sessionId: string,
-  onResult: (ok: boolean, detail: string) => void,
-  model: ModelKind = PROJECT_STATUS_MODEL,
-  prompt = '/loom-works:recap-status-project',
-) {
-  return spawnSkill(prompt, cwd, sessionId, onResult, [
-    '--permission-mode',
-    'auto',
-    '--model',
-    model,
-  ]);
-}
-
 // Binario della notifica desktop. L'override esiste per il collaudo del ramo
 // «binario assente»: su una macchina dove `notify-send` c'è, quel ramo non è
 // altrimenti raggiungibile — e non provarlo significherebbe scoprire su una
@@ -728,20 +695,20 @@ export function notifyCommand(
   return { cmd: NOTIFY_CMD_OVERRIDE ?? 'notify-send', args: ['--app-name=loom-deck', title, body] };
 }
 
-// T121 — notifica desktop di fine generazione. La generazione dura minuti e chi
-// l'ha chiesta nel frattempo guarda altrove; la notifica di GNOME persiste nel
-// cassetto, quindi raggiunge anche chi torna dieci minuti dopo — cosa che un
-// suono non fa.
+// T121 — notifica desktop di un esito che arriva mentre si guarda altrove:
+// l'esito di una voce launch con `capture`, lo spawn in coda dell'endpoint. La
+// notifica di GNOME persiste nel cassetto, quindi raggiunge anche chi torna
+// dieci minuti dopo — cosa che un suono non fa.
 //
 // Il listener su `error` è OBBLIGATORIO e non difensivo: un `error` non
 // agganciato su un `ChildProcess` diventa un'eccezione non catturata e abbatte
 // il deck, quindi senza di lui l'assenza di `notify-send` ucciderebbe la TUI.
 // Agganciato, la degradazione è MUTA (D6): un binario assente è una proprietà
-// stabile della macchina, e dirlo a ogni generazione sarebbe lo stesso messaggio
-// a ogni giro su una funzione che non è il deliverable.
+// stabile della macchina, e dirlo a ogni esito sarebbe lo stesso messaggio a
+// ogni giro su una funzione accessoria.
 //
 // T175 — dove le notifiche non ci sono, nessuno spawn e nessun avviso: non
-// hanno un tasto né un pane, e l'esito del project status è già nella riga di
+// hanno un tasto né un pane, e ogni esito notificato ha già la sua riga di
 // stato. Il `null` dice al chiamante che niente è partito.
 //
 // T180 — `detached` su ogni piattaforma: la notifica deve arrivare anche se il

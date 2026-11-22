@@ -8,8 +8,8 @@
 //
 // ── Il file di esito (P7/P8 preflight) ─────────────────────────────────────
 // Per voce, in `.claude/loom/launch/` — la sede macchina-locale per progetto
-// che tiene già `session-tasks.jsonl` e `deck-view.json`, non il tmpdir del
-// project status: l'ora dell'ultimo giro deve sopravvivere al riavvio, o un
+// che tiene già `session-tasks.jsonl` e `deck-view.json`, non il tmpdir della
+// cache hard-wrap: l'ora dell'ultimo giro deve sopravvivere al riavvio, o un
 // deck riaperto non sa se la scadenza è passata.
 //
 //   <slug>.json  pid, ora d'inizio, exit e ora di fine dell'ultimo giro
