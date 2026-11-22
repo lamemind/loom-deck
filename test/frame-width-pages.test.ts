@@ -16,9 +16,8 @@ const SCENARIOS: Array<[string, string, number[], NodeJS.ProcessEnv?]> = [
   // bordo.
   ['pagina azioni di spawn', CTRL_S, [80, 100, 176]],
   // L'area di compilazione aperta: tre righe in più, di cui una col campo di
-  // testo più lungo del deck (il prompt cablato dello srotolamento sfiora le 180
-  // colonne): la riga `unwrap`.
-  ['pagina azioni · area aperta', `${CTRL_S}${toSpawnRow('unwrap')}\r`, [80, 100, 176]],
+  // testo più lungo del catalogo (il prompt della regia): la riga `regia`.
+  ['pagina azioni · area aperta', `${CTRL_S}${toSpawnRow('regia')}\r`, [80, 100, 176]],
   // La riga `bare`, dove due celle su tre non si modificano: l'area disegna
   // comunque le loro righe, con la ragione al posto del campo.
   ['pagina azioni · celle fisse', `${CTRL_S}${toSpawnRow('bare')}\r`, [80, 100, 176]],

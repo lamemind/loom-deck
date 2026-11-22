@@ -206,7 +206,7 @@ Una pagina fullscreen con **una riga per ogni cosa che il deck sa aprire** e qua
 
 Due livelli: `↑↓` scorrono la tabella, `⏎` apre sotto di essa l'area di compilazione della riga selezionata (la stessa grammatica del detail), `⏎` conferma in memoria, `esc` annulla. `CANC` toglie l'override di una riga e la riporta al default; comporre non tocca il disco finché non si preme `w`.
 
-Le celle portano il **template grezzo**, coi buchi ancora dentro — `📐 {slug}`, `📏 {path}` — e l'area mostra accanto l'esempio reso: un valore già interpolato si modificherebbe a partire da un esempio, e ogni modifica cancellerebbe il buco senza dirlo. Una riga con almeno un override si marca con `◆`.
+Le celle portano il **template grezzo**, coi buchi ancora dentro — `📐 {slug}` — e l'area mostra accanto l'esempio reso: un valore già interpolato si modificherebbe a partire da un esempio, e ogni modifica cancellerebbe il buco senza dirlo. Una riga con almeno un override si marca con `◆`.
 
 Non tutte le celle esistono per tutte le righe, e quelle che non esistono **dicono perché** invece di restare vuote: la sessione nuda non pinna un `sessionId` e quindi non ha un titolo. Resume e fork non hanno una riga affatto — il loro modello è ereditato dalla conversazione d'origine, non una preferenza.
 
@@ -318,10 +318,10 @@ I toggle e la query sono **volatili**: sopravvivono alla chiusura del modale, no
 
 Su un progetto **cappello** (un repo che aggrega altri repo come submodule) ogni membro è pinnato a un commit fisso. Quando il membro avanza — un commit nel deck, nel plugin — quel puntatore resta indietro finché qualcuno non lo bumpa, e il gesto vive nella memoria di chi committa. Il deck lo mette sotto gli occhi e lo rende un tasto.
 
-L'indicatore sta in coda alla riga della legenda, accanto a quello dell'hard-wrap:
+L'indicatore sta in coda alla riga della legenda:
 
 ```
-gitlink 2   wrap 77
+gitlink 2
 ```
 
 | Corpo | Significato |
@@ -337,7 +337,7 @@ Nel numero entrano solo i membri che un bump può sistemare. Un submodule non in
 
 **`^U` bumpa**, senza conferma: il commit è locale e si annulla con un `git reset` che non tocca nessun remote. Il deck non pusha il cappello — quel gesto resta al flusso normale, perché un gitlink pushato per sbaglio è già nella copia di chiunque abbia pullato.
 
-Il deck **non classifica da sé**: spawna `bump-gitlink.sh` del plugin (in `--dry-run` per la misura, nudo per il bump) e mostra il TSV che ne esce. Nessuna sessione Claude in mezzo — è un `execFile` con esito sincrono, come lo scan hard-wrap. Lo stesso script si lancia a mano da shell, ed è lì che vivono le due guardie che rendono il bump sicuro:
+Il deck **non classifica da sé**: spawna `bump-gitlink.sh` del plugin (in `--dry-run` per la misura, nudo per il bump) e mostra il TSV che ne esce. Nessuna sessione Claude in mezzo — è un `execFile` con esito sincrono. Lo stesso script si lancia a mano da shell, ed è lì che vivono le due guardie che rendono il bump sicuro:
 
 - **il verso** — `git submodule status` marca con `+` un checkout diverso dal gitlink **in entrambi i versi**, senza distinguerli. Un cappello pullato senza `git submodule update` ha il checkout più vecchio del gitlink e porta lo stesso `+`: bumparlo pinnerebbe il cappello a un commit precedente. Quel membro si salta, e la riga di stato nomina `git submodule update`.
 - **il remote** — il cappello può pinnare solo commit già raggiungibili dal remote del membro. Un gitlink verso un commit locale produce un cappello che si clona ma non si ricostruisce, e il difetto è invisibile a chi lo introduce: nella sua copia quel commit esiste. Quel membro si salta, e la riga di stato nomina `git -C <membro> push`.

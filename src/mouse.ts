@@ -234,7 +234,7 @@ export const LAUNCH_ROW = 4;
 
 /**
  * T134 — riga della legenda tasti, che ospita anche gli INDICATORI ancorati a
- * destra (gitlink, contatore hard-wrap). Sta subito sopra la riga launch,
+ * destra (gitlink, esito delle voci launch). Sta subito sopra la riga launch,
  * e come lei è incondizionata: bordo superiore, testata, legenda.
  *
  * Gli indicatori sono cliccabili, quindi questa riga entra nell'hit-test come la

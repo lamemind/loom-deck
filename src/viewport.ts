@@ -86,11 +86,7 @@ export const MODAL_HEIGHT = {
   // entra in un box sopra i pane. La sua altezza la distribuisce
   // `detailCapacity`.
   detail: 0,
-  // T134 — la lista hard-wrap: settima sostitutiva. Sul cappello lo scan trova
-  // 77 `WRAP` e 147 `misto`, cioè una lista che non entra in nessun box sopra i
-  // pane. Altezza da `wrapListCapacity`.
-  wrap: 0,
-  // T161 — la pagina delle azioni di spawn: ottava sostitutiva. Dieci righe di
+  // T161 — la pagina delle azioni di spawn: ottava sostitutiva. Nove righe di
   // tabella più l'area di compilazione: in un box sopra i pane resterebbero due
   // colonne per il prompt. Altezza da `spawnListCapacity`.
   spawn: 0,
@@ -453,22 +449,6 @@ export function dlvListRows(rows: number, searching: boolean, total: number): nu
   const extra = searching ? DETAIL_SEARCH_CHROME : 0;
   const free = (rows || 24) - SLACK - DETAIL_BASE_CHROME - DLV_STATUS_ROWS - extra;
   return Math.max(0, Math.min(total, Math.floor(free / 2)));
-}
-
-// T134 — cornice della lista hard-wrap.
-//   2  bordi del box esterno
-//   1  riga di testata (conteggi + ora dell'ultimo scan)
-//   1  riga hint
-//   1  marginTop del box lista
-//   2  bordi del box lista
-//   1  marginTop del box path
-//   2  bordi del box path
-//   1  riga del campo path
-const WRAP_CHROME = 12;
-
-/** Righe di lista che entrano nel terminale. */
-export function wrapListCapacity(rows: number): number {
-  return Math.max(0, (rows || 24) - SLACK - WRAP_CHROME);
 }
 
 // T161 — cornice della pagina delle azioni di spawn.

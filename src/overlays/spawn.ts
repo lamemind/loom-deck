@@ -1,6 +1,6 @@
 // T161 — la PAGINA DELLE AZIONI DI SPAWN: ottava schermata sostitutiva.
 //
-// Una tabella di undici righe — una per azione che il deck sa aprire — con le
+// Una tabella di nove righe — una per azione che il deck sa aprire — con le
 // quattro colonne funzione, titolo, modello, prompt. Le ultime tre si modificano
 // e il salvataggio scrive il blocco `spawn` di `.claude/loom-works.json`.
 //
@@ -130,7 +130,7 @@ export function useSpawnPage(deps: SpawnPageDeps) {
     const next = Math.max(0, Math.min(SPAWN_ACTIONS.length - 1, sel + delta));
     setSel(next);
     // La finestra INSEGUE la selezione invece di centrarla: la tabella è di
-    // undici righe e su un terminale normale ci sta intera, quindi centrare
+    // nove righe e su un terminale normale ci sta intera, quindi centrare
     // farebbe saltare la lista sotto il caret per niente.
     setTop(Math.max(0, Math.min(next, Math.max(Math.min(top, maxTop), next - capacity + 1))));
   }

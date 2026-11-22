@@ -18,10 +18,10 @@ import {
   UNAVAILABLE,
   type Feature,
 } from '../src/platform.js';
-import { gitlinkIndicator, wrapIndicator } from '../src/frame.js';
+import { gitlinkIndicator } from '../src/frame.js';
 import { sessionView } from '../src/pane-views.js';
 
-const ALL: Feature[] = ['spawn', 'liveSessions', 'pluginScripts', 'hardWrap', 'launch', 'notify', 'windowCheck'];
+const ALL: Feature[] = ['spawn', 'liveSessions', 'pluginScripts', 'launch', 'notify', 'windowCheck'];
 
 /** Esegue `fn` con la piattaforma delle funzioni forzata, poi la rimette. */
 function onPlatform<T>(p: NodeJS.Platform, fn: () => T): T {
@@ -42,11 +42,11 @@ test('su Linux nessuna funzione è spenta', () => {
 // T176 — `spawn` è la prima funzione riaccesa: tab di Windows Terminal al
 // posto di Ptyxis. T177 — la seconda è `liveSessions`: liveness senza `/proc`.
 // T180 — la terza è `notify`: toast WinRT al posto di `notify-send`.
-// Le altre tre restano alle loro figlie di fase 2.
+// Le altre due restano alle loro figlie di fase 2.
 const WIN_ON: Feature[] = ['spawn', 'liveSessions', 'notify'];
 const WIN_OFF: Feature[] = ALL.filter((f) => !WIN_ON.includes(f));
 
-test('su Windows sono spente le tre funzioni ancora senza figlia chiusa e il controllo della finestra (T199), spawn, liveSessions e notify sono accese', () => {
+test('su Windows sono spente le due funzioni ancora senza figlia chiusa e il controllo della finestra (T199), spawn, liveSessions e notify sono accese', () => {
   for (const f of WIN_OFF) assert.equal(isAvailable(f, 'win32'), false, f);
   for (const f of WIN_ON) assert.equal(isAvailable(f, 'win32'), true, f);
   // La mappa è il punto che una figlia tocca per riaccendere: nessuna voce
@@ -96,7 +96,6 @@ test('refuse: su una funzione accesa non scrive niente e lascia passare', () => 
 });
 
 test('gli indicatori di una funzione spenta tengono l\'etichetta e mostrano n/d', () => {
-  assert.equal(wrapIndicator({ count: 4, mtime: 1, ok: true, scanning: false, available: false }), `wrap ${OFF_MARK}`);
   assert.equal(
     gitlinkIndicator({ count: 2, attention: 1, scanned: true, ok: true, failed: true, available: false }),
     `gitlink ${OFF_MARK}`,
@@ -104,7 +103,6 @@ test('gli indicatori di una funzione spenta tengono l\'etichetta e mostrano n/d'
 });
 
 test('gli indicatori senza il campo `available` restano quelli di prima', () => {
-  assert.equal(wrapIndicator({ count: 4, mtime: 1, ok: true, scanning: false }), 'wrap 4');
   assert.equal(gitlinkIndicator({ count: 0, attention: 0, scanned: true, ok: true, failed: false }), 'gitlink ok');
 });
 

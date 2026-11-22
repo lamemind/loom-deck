@@ -57,7 +57,7 @@ test('deckLegend: task a sinistra, conversazioni a destra', () => {
 
 test('deckLegend: le azioni finora mai annunciate stanno fra le generali', () => {
   const { general } = deckLegend(taskBase);
-  for (const voce of ['tab vista', '←→ pane', '^W lista hard-wrap', '^E scan hard-wrap', 't terminale', 'c claude']) {
+  for (const voce of ['tab vista', '←→ pane', 't terminale', 'c claude']) {
     assert.ok(general.voices.includes(voce), `voce assente: ${voce}`);
   }
 });

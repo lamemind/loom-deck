@@ -376,8 +376,7 @@ export function spawnClaudeEmpty(cwd: string, model: ModelKind): Spawned {
  * T134 — sessione NUDA con un prompt letterale: `deck-run --no-task --prompt
  * <testo> --model <alias>`.
  *
- * Il lavoro che apre — srotolare l'hard-wrap di un path — sta sulla DOC, non su
- * una task (D10 preflight). Legarlo a una task esporterebbe `LOOM_TASK`,
+ * Il lavoro che apre non sta su una task (D10 preflight). Legarlo a una task esporterebbe `LOOM_TASK`,
  * farebbe scattare l'hook `SessionStart` che inietta in contesto un task file
  * che col lavoro non c'entra, e metterebbe `· T<n>` nel titolo della tab.
  *
@@ -399,9 +398,8 @@ export function spawnClaudeEmpty(cwd: string, model: ModelKind): Spawned {
  * `--no-task` non ne ha uno, ma un NOME ce l'ha.
  *
  * Il titolo sta in TESTA all'argv, prima del prompt: la riga di stato del deck
- * taglia il comando al mezzo, e il prompt (specialmente quello cablato dello
- * srotolamento) è l'argomento più lungo — in coda al titolo lo spingerebbe
- * fuori vista. Stessa ragione dell'ordine di `resumeArgs`.
+ * taglia il comando al mezzo, e il prompt è l'argomento più lungo — in coda al
+ * titolo lo spingerebbe fuori vista. Stessa ragione dell'ordine di `resumeArgs`.
  */
 export function bareArgs(
   prompt: string,

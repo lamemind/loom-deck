@@ -6,8 +6,7 @@
 //
 // Le liste arrivano come argomento di `open` e non si ricalcolano a modale aperto:
 // un tick del poll che togliesse il bottone di restore toglierebbe anche la sua voce,
-// e lo scroll non avrebbe più un riferimento. È la stessa regola della lista
-// hard-wrap. Le RIGHE invece si ricompongono a ogni render, perché dipendono dalla
+// e lo scroll non avrebbe più un riferimento. Le RIGHE invece si ricompongono a ogni render, perché dipendono dalla
 // larghezza e un resize deve poter rifare gli a capo.
 import { useState } from 'react';
 import type { Key } from 'ink';

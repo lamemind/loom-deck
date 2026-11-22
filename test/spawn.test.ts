@@ -205,9 +205,8 @@ test('bareArgs: senza titolo resta la forma minima, col titolo arriva anche il s
 });
 
 test('bareArgs: il titolo sta PRIMA del prompt', () => {
-  // Il prompt è l'argomento più lungo (quello cablato dello srotolamento supera
-  // le cento colonne) e la riga di stato taglia il comando al mezzo: in coda al
-  // titolo lo spingerebbe fuori vista.
+  // Il prompt è l'argomento più lungo e la riga di stato taglia il comando al
+  // mezzo: in coda al titolo lo spingerebbe fuori vista.
   const args = bareArgs('x'.repeat(200), 'sonnet', 'sid-9', '📏 runtime reference');
   assert.ok(args.indexOf('--title-note') < args.indexOf('--prompt'));
 });

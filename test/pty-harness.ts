@@ -109,8 +109,6 @@ export const CTRL_R = '\x12';
  *  flow-control: che arrivi al deck invece di essere mangiato dal terminale è
  *  ciò che i gate misurano. */
 export const CTRL_S = '\x13';
-/** T134 — `^W` apre la lista hard-wrap. */
-export const CTRL_W = '\x17';
 /** T112 — `CANC` nella mappa di `pty-frame.py`: la sequenza è di 4 byte e
  *  scritta nuda arriverebbe come quattro tasti separati. */
 export const CANC = 'K';

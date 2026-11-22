@@ -113,8 +113,8 @@ export function parseGitlinkTsv(stdout: string): GitlinkMember[] {
  * `non-inizializzato` e `conflitto` restano FUORI per decisione: nessun bump li
  * sistema — il primo vuole un `git submodule update --init`, il secondo la
  * risoluzione di un merge — e sommarli darebbe un numero che il tasto non può
- * portare a zero. Un contatore che non arriva mai a zero smette di essere letto
- * (stessa regola di `misto` nell'indicatore hard-wrap). Si dicono comunque, col
+ * portare a zero. Un contatore che non arriva mai a zero smette di essere letto.
+ * Si dicono comunque, col
  * glifo di allerta accanto al numero.
  */
 const DISALIGNED = new Set<GitlinkState>([

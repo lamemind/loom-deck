@@ -43,7 +43,6 @@ import type { useComboOverlay } from './overlays/combo.js';
 import type { useFinderOverlay } from './overlays/finder.js';
 import { taskSheet, type useSheetOverlay } from './overlays/sheet.js';
 import type { useSearchOverlay } from './overlays/search.js';
-import type { useWrapOverlay } from './overlays/wrap.js';
 import type { useSpawnPage } from './overlays/spawn.js';
 import type { useLaunchPage } from './overlays/launch.js';
 import type { useGitlink } from './overlays/gitlink.js';
@@ -85,7 +84,6 @@ export type DeckOverlays = {
   finder: ReturnType<typeof useFinderOverlay>;
   sheet: ReturnType<typeof useSheetOverlay>;
   search: ReturnType<typeof useSearchOverlay>;
-  wrap: ReturnType<typeof useWrapOverlay>;
   spawn: ReturnType<typeof useSpawnPage>;
   /** T168 — la pagina delle voci launch, e il motore che le lancia: le cifre
    *  della riga launch passano da qui, non dall'attuatore. */
@@ -157,7 +155,6 @@ export function useDeckInput({
   // dimostrato che il solo `Record` non lo impedisce.
   const MODE_KEYS: Record<CapturingMode, (input: string, key: Key) => void> = {
     detail: overlays.sheet.onKey,
-    wrap: overlays.wrap.onKey,
     spawn: overlays.spawn.onKey,
     launch: overlays.launch.onKey,
     reader: overlays.search.onReaderKey,
@@ -180,7 +177,6 @@ export function useDeckInput({
   // non compila. Il delta è in righe, col segno del verso.
   const MODE_WHEEL: Record<ScrollingMode, (delta: number) => void> = {
     detail: overlays.sheet.scroll,
-    wrap: overlays.wrap.scroll,
     reader: overlays.search.scrollReader,
     combo: overlays.combo.scroll,
     launch: overlays.launch.scroll,
@@ -358,28 +354,10 @@ export function useDeckInput({
         actions.spawnTaskSession('preflight', '^P');
       } else if (input === 'r') {
         actions.spawnTaskSession('run', '^R');
-      } else if (input === 'w') {
-        // T134/D8 preflight — `^W` APRE la lista, `^E` ESEGUE lo scan: generare
-        // e aprire restano due tasti distinti — aprire un dato vecchio deve
-        // costare zero, e generare non deve essere un effetto collaterale del
-        // guardare. Lo scan cammina l'albero del progetto intero, submodule
-        // compresi.
-        //
-        // `^S` sarebbe la mnemonica migliore per «scan» ed è scartata di
-        // proposito: nel repo esistono due commenti in contraddizione sul suo
-        // conto (`model.ts` dice che il raw mode di Ink disattiva il
-        // flow-control XON/XOFF e quindi passa pulito, `cli.tsx` dice che è
-        // stato evitato proprio perché il terminale lo intercetta). Finché la
-        // contraddizione non è risolta con una misura, un tasto nuovo non ci si
-        // appoggia.
-        overlays.wrap.open();
-      } else if (input === 'e') {
-        overlays.wrap.scan();
       } else if (input === 'u') {
         // T155/P5 preflight — `^U` (update del gitlink) bumpa i submodule
-        // idonei. Non è la coppia genera/apri di `^W`/`^E`: qui non
-        // c'è nessuna schermata da aprire, la misura gira da sé ogni 30 secondi
-        // e l'unico gesto è l'azione. Nessuna conferma, perché il commit è
+        // idonei. Non c'è nessuna schermata da aprire: la misura gira da sé ogni
+        // 30 secondi e l'unico gesto è l'azione. Nessuna conferma, perché il commit è
         // locale e reversibile (P6).
         //
         // `^U` svuota un campo dentro i modi capturing, ma quelli consumano

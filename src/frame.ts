@@ -57,8 +57,8 @@ import { OFF_MARK } from './platform.js';
 export const SURFACE_SEGMENTS: readonly Segment[] = [{ key: 't', text: sanitize('t 💻') }];
 
 /**
- * Il corpo di un indicatore di testata prima della sua prima misura: lo dicono
- * l'hard-wrap e il gitlink. Una parola e non uno zero,
+ * Il corpo di un indicatore di testata prima della sua prima misura: lo dice
+ * il gitlink. Una parola e non uno zero,
  * perché `0` direbbe «ho misurato e non c'è niente» — cioè la cosa sbagliata
  * (D2 di T134: `missing` e guasto sono stati distinti).
  */
@@ -204,55 +204,14 @@ export type IndicatorRow = {
 };
 
 /**
- * L'indicatore hard-wrap: `wrap 77`.
- *
- * Etichetta a PAROLA e non un glifo, dopo una misura sotto pty: `〰` (U+3030)
- * passa il controllo di concordanza di `width.ts` — `string-width` e la nostra
- * tabella EAW dicono entrambe 2 — ma dentro il frame Ink emette una colonna in
- * meno di quante ne conta, e la riga esce larga `columns - 1` col bordo
- * mangiato. È un terzo caso oltre alle due invarianti note: `agrees()` confronta
- * due LIBRERIE, e un glifo può ingannarle entrambe insieme. Chi volesse
- * rimettere un simbolo qui lo misuri sul frame vero, non su `agrees`.
- *
- * Conta i soli `WRAP` (D4). `misto` compare in lista con un marker proprio ma
- * resta fuori: è la classe che ospita il falso allarme noto — i file di note
- * scritte una riga per pensiero, che nessuno vuole srotolare — e sommarlo
- * darebbe un numero che non si può portare a zero. Un contatore che non arriva
- * mai a zero smette di essere letto.
- *
- * Tre stati distinti: `missing` quando lo scan non è mai stato eseguito (non
- * parte all'avvio, D4), `scan…` mentre cammina l'albero, il numero
- * altrimenti. Il glifo di allerta si AGGIUNGE al numero
- * invece di sostituirlo — un tentativo fallito non riscrive la cache, quindi
- * l'esito dell'ultimo riuscito resta vero e ancora apribile.
- */
-export function wrapIndicator(state: {
-  count: number;
-  mtime: number | null;
-  ok: boolean;
-  scanning: boolean;
-  /** T175 — `false` = scan spento su questa piattaforma. */
-  available?: boolean;
-}): string {
-  if (state.available === false) return `wrap ${OFF_MARK}`;
-  const body = state.scanning
-    ? 'scan…'
-    : state.mtime === null
-      ? STATUS_MISSING
-      : String(state.count);
-  return sanitize(`wrap ${body}${state.ok ? '' : ` ${WARN}`}`);
-}
-
-/**
  * T155 — l'indicatore del gitlink: `gitlink 2`.
  *
  * Conta i membri il cui checkout NON coincide col gitlink registrato, in
  * entrambi i versi (`disalignedCount` in `gitlink.ts`). Fuori dal numero restano
  * i membri che nessun bump sistema — non inizializzati, in conflitto — perché un
- * contatore che il tasto non può portare a zero smette di essere letto: è la
- * stessa regola per cui `misto` non entra nel contatore dell'hard-wrap.
+ * contatore che il tasto non può portare a zero smette di essere letto.
  *
- * Quattro corpi distinti, come per gli altri due indicatori: `missing` finché la
+ * Quattro corpi distinti: `missing` finché la
  * prima misura non è tornata, `?` quando lo script non è raggiungibile (plugin
  * non installato su questa macchina, o uscito male), il numero quando c'è
  * qualcosa da bumpare, `ok` quando tutti i membri coincidono.
@@ -311,7 +270,6 @@ export function indicatorRow(
     /** T155 — `null` = il progetto non ha `.gitmodules`: nessun segmento, non
      *  uno che dice «0». La riga legenda riceve indietro quelle colonne. */
     gitlink: Parameters<typeof gitlinkIndicator>[0] | null;
-    wrap: Parameters<typeof wrapIndicator>[0];
   },
   columns: number,
 ): IndicatorRow {
@@ -323,7 +281,6 @@ export function indicatorRow(
   const segments: Segment[] = [
     ...(state.launch ? [{ key: '^l', text: launchIndicator(state.launch) }] : []),
     ...(state.gitlink ? [{ key: '^u', text: gitlinkIndicator(state.gitlink) }] : []),
-    { key: '^w', text: wrapIndicator(state.wrap) },
   ];
   const text = segments.map((s) => s.text).join(INDICATOR_SEP);
   const width = termWidth(text);

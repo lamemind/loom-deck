@@ -172,7 +172,7 @@ export const ACTION_HOTKEYS: Readonly<Record<string, number>> = actionHotkeys(DE
  * kind → id sarebbe una mappa da tenere allineata a mano, e `specializeRecap`
  * non potrebbe più fare da ponte fra il detail e il catalogo.
  */
-export type SpawnActionId = PromptKind | 'bare' | 'unwrap';
+export type SpawnActionId = PromptKind | 'bare';
 
 /** Le tre celle configurabili di una riga. */
 export type SpawnField = 'title' | 'model' | 'prompt';
@@ -188,8 +188,8 @@ export interface SpawnAction {
   /**
    * La chiave con cui si legge `scripts/prompt-catalog`, o `null` per le azioni
    * che non hanno una riga lì (P2 preflight): il catalogo dati indicizza sui
-   * valori di `--prompt-kind`, e srotolamento e nuda non ne passano nessuno —
-   * una riga lì sarebbe irraggiungibile da ogni chiamante.
+   * valori di `--prompt-kind`, e la nuda non ne passa nessuno — una riga lì
+   * sarebbe irraggiungibile da ogni chiamante.
    */
   kind: PromptKind | null;
   /**
@@ -224,25 +224,7 @@ export interface SpawnAction {
 }
 
 /**
- * Il prompt cablato della sessione che srotola l'hard-wrap di un path.
- *
- * Le tre cose che dice sono le tre che rendono l'operazione reversibile e
- * verificabile — backup fuori dal repo, rapporto, commit solo se il diff è
- * chiaramente innocuo. Era cablato in `wrap-scan.ts` e da T161 è il DEFAULT di
- * una riga del catalogo: resta la stessa frase, ma ora è sovrascrivibile dal
- * progetto invece che dal solo sorgente.
- *
- * Nessun apice singolo, come i template di `prompt-catalog`: il testo finisce
- * dentro `'…'` nel comando passato a `bash -lc`, e `deck-run` lo quota, ma un
- * apice qui sarebbe comunque una scrittura da rileggere due volte.
- */
-const UNWRAP_PROMPT =
-  'lancia md-wrap modo apply su {path} e backup in cartella tmp dedicata. ' +
-  'verifica risultato e fai rapporto. se le modifiche sono tutte chiaramente safe, ' +
-  'puoi committare direttamente';
-
-/**
- * Le DIECI azioni configurabili, nell'ordine in cui la pagina le elenca.
+ * Le NOVE azioni configurabili, nell'ordine in cui la pagina le elenca.
  *
  * Il perimetro è quello di D1: entra una riga se ha almeno una cella editabile.
  * Ne restano fuori resume e fork — lì il modello non è una preferenza ma
@@ -258,8 +240,8 @@ const UNWRAP_PROMPT =
  * presentazione testo divergono sempre. Ognuna sta anche nella whitelist di
  * `saneNote` (`src/sane-note.ts`), la riduzione del titolo: un'emoji cambiata
  * qui e non là sparisce fra la tabella e la tab, senza errore. La whitelist ne
- * tiene due in più (`🧹`, `🧭`), dei titoli di due righe uscite dal catalogo:
- * restano lecite in una nota scritta a mano.
+ * tiene tre in più (`🧹`, `🧭`, `📏`), dei titoli di tre righe uscite dal
+ * catalogo: restano lecite in una nota scritta a mano.
  */
 export const SPAWN_ACTIONS: readonly SpawnAction[] = [
   {
@@ -386,22 +368,6 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
       prompt: 'la renderebbe non nuda',
     },
   },
-  {
-    // T134 — lo srotolamento dell'hard-wrap. `sonnet` e non il default: è una
-    // passata meccanica con un verificatore deterministico dietro (`md-wrap
-    // --apply` confronta le due versioni normalizzate e rimette indietro il
-    // file se differiscono), quindi il giudizio chiesto al modello è leggere un
-    // diff e decidere se committarlo — non progettare niente.
-    id: 'unwrap',
-    label: 'srotolamento hard-wrap',
-    surface: 'lista ^W ⏎',
-    kind: null,
-    title: '📏 {path}',
-    model: 'sonnet',
-    prompt: UNWRAP_PROMPT,
-    holes: ['path'],
-    fixed: {},
-  },
 ];
 
 /**
@@ -419,14 +385,12 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
 export const EXAMPLE_HOLES: Readonly<Record<string, string>> = {
   TASK: 'T42',
   slug: 'esempio di task',
-  path: 'runtime reference',
 };
 
 /**
  * I valori sono quelli che i FORNITORI dei buchi producono davvero, non testo
  * grezzo: lo slug arriva dal nome del task file coi trattini già sciolti in
- * spazi, il path già reso in parole. Un
- * esempio con dentro un `/` o un `.` mostrerebbe l'effetto della riduzione — le
+ * spazi. Un esempio con dentro un `/` o un `.` mostrerebbe l'effetto della riduzione — le
  * parole saldate — su un caso che allo spawn non si presenta mai, e chi lo
  * legge correggerebbe un titolo che non è rotto.
  */

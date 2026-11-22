@@ -3,9 +3,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ESC, SKIP } from './pty-harness.js';
+import { ESC, PROJECT, SKIP } from './pty-harness.js';
 import { LIST_FRAME, capture, lastFrame } from './modes-kit.js';
 import { detailProject } from './detail-fixture.js';
 
@@ -67,7 +68,7 @@ test('combo: esc torna alla lista, col fuoco sul pane da cui si è entrati', { s
 test('combo: le tre liste stanno insieme, qualunque sia il pane a fuoco', { skip: SKIP }, () => {
   const onTask = lastFrame(capture('DDH'));
   const lists: Array<[string, RegExp[]]> = [
-    ['generali', [/tab\s+vista/, /←→\s+pane/, /T\s+trova/, /\^F\s+cerca/, /\^W\s+lista hard-wrap/, /\^E\s+scan hard-wrap/, /t\s+terminale/, /c\s+claude/]],
+    ['generali', [/tab\s+vista/, /←→\s+pane/, /T\s+trova/, /\^F\s+cerca/, /t\s+terminale/, /c\s+claude/]],
     ['task', [/⏎\s+detail/, /\^K\/\^P\/\^R\s+spawn/, /C\s+nuova/, /E\s+edit/, /S\s+sort/, /F\s+filtri/, /w\s+salva/]],
     ['conversazioni', [/⏎\s+resume/, /f\s+fork/, /m\s+modello/, /p\s+pin/, /a\s+priorità/, /N\s+titolo/, /A\s+assegna/]],
   ];
@@ -91,16 +92,33 @@ test('combo: il deck non ha un modo doc, e `^B` non monta niente', { skip: SKIP 
 test('riga due: resta la voce del modale, la legenda intera non c\'è più', { skip: SKIP }, () => {
   const line = lastFrame(capture('')).split('\n')[2] ?? '';
   assert.match(line, /H combo/, `voce del modale assente: ${line}`);
-  assert.match(line, /wrap/, `indicatori assenti: ${line}`);
-  assert.doesNotMatch(line, /\[ Doc/, `bottone del modo doc ancora in riga due: ${line}`);
+  // Il cappello ha submodule: l'indicatore del gitlink c'è, e nessun altro.
+  assert.match(line, /gitlink/, `indicatore del gitlink assente: ${line}`);
+  assert.doesNotMatch(line, /\[ Doc|wrap/, `indicatori tolti ancora in riga due: ${line}`);
   assert.doesNotMatch(line, /genera status|T trova|\^B doc/, `legenda ancora in riga due: ${line}`);
 });
 
+/** Una cache del plugin FINTA il cui `bump-gitlink.sh` dà ogni membro allineato:
+ *  il contatore è a zero, e `^U` rifiuta il bump senza spawnare niente. */
+function alignedGitlinkCache(): string {
+  const root = mkdtempSync(join(tmpdir(), 'deck-gitlink-ok-'));
+  const dir = join(root, '99.0.0', 'scripts', 'utils');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, 'bump-gitlink.sh'),
+    ['#!/bin/bash', "printf 'loom-deck\\tallineato\\t-\\n'", ''].join('\n'),
+    { mode: 0o755 },
+  );
+  return root;
+}
+
 test('riga due: il click su un indicatore rientra dalla sua combo', { skip: SKIP }, () => {
-  // L'indicatore hard-wrap finisce sull'ultima colonna di testo: bordo destro meno
-  // bordo e padding. Colonna 116 di 120 cade dentro `wrap N` con qualunque
-  // contatore, e il click preme `^W`, che apre la lista. La schermata ha box
-  // annidati, e `lastFrame` ne prenderebbe il più interno: si legge la cattura.
-  const frame = capture('@116,3;');
-  assert.match(frame, /hard-wrap\s+\d+ WRAP/, `il click non ha aperto la lista hard-wrap: ${frame}`);
+  // L'indicatore del gitlink finisce sull'ultima colonna di testo: bordo destro
+  // meno bordo e padding. Colonna 116 di 120 cade dentro `gitlink ok`, e il
+  // click preme `^U`. Lo script è uno stub coi membri allineati: il bump rifiuta
+  // e lo dice, e nessun commit tocca il cappello. `WW` aspetta la prima misura.
+  const frame = lastFrame(
+    capture('WW@116,3;', PROJECT, { LOOM_DECK_PLUGIN_CACHE_ROOT: alignedGitlinkCache() }),
+  );
+  assert.match(frame, /\^U → gitlink già allineato/, `il click non ha premuto ^U: ${frame}`);
 });

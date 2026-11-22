@@ -42,7 +42,7 @@ const OUT_OF_ALPHABET = /[^A-Za-z0-9 _àèéìòùÀÈÉÌÒÙ📐🚀📊🏁�
  *  parte del titolo che compass matcha. */
 export const SANE_CAP = 60;
 
-/** Un buco di template: `{TASK}`, `{slug}`, `{file}`, `{path}`. La cattura nel
+/** Un buco di template: `{TASK}`, `{slug}`. La cattura nel
  *  gruppo è ciò che fa comparire i buchi nei dispari di `split`. */
 const HOLE = /(\{[A-Za-z]+\})/;
 

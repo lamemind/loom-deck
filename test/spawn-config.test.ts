@@ -80,6 +80,7 @@ test('un override su una riga uscita dal catalogo cade con l’avviso, il resto 
     [SPAWN_BLOCK]: {
       drain: { model: 'opus' },
       rebalance: { title: 'x' },
+      unwrap: { model: 'haiku' },
       run: { model: 'sonnet' },
     },
   });
@@ -88,6 +89,7 @@ test('un override su una riga uscita dal catalogo cade con l’avviso, il resto 
   assert.deepEqual(r.warnings, [
     `${SPAWN_BLOCK}.drain: azione fuori catalogo, voce scartata`,
     `${SPAWN_BLOCK}.rebalance: azione fuori catalogo, voce scartata`,
+    `${SPAWN_BLOCK}.unwrap: azione fuori catalogo, voce scartata`,
   ]);
 });
 
@@ -134,8 +136,8 @@ test('file illeggibile come JSON → default CON avviso', () => {
 });
 
 test('load legge il blocco del file vero', () => {
-  const root = project({ id: 'p', name: 'p', [SPAWN_BLOCK]: { unwrap: { model: 'haiku' } } });
-  assert.deepEqual(loadSpawnOverrides(root).entries.get('unwrap'), { model: 'haiku' });
+  const root = project({ id: 'p', name: 'p', [SPAWN_BLOCK]: { bare: { model: 'haiku' } } });
+  assert.deepEqual(loadSpawnOverrides(root).entries.get('bare'), { model: 'haiku' });
 });
 
 // ── serialize ──────────────────────────────────────────────────────────────
@@ -150,12 +152,12 @@ test('le voci si scrivono nell’ordine del catalogo, non in quello di modifica'
   // ogni salvataggio è rumore su cui poi si fa merge.
   const block = serializeSpawnBlock(
     entries([
-      ['unwrap', { model: 'opus' }],
+      ['bare', { model: 'opus' }],
       ['none', { title: 'x' }],
       ['run', { model: 'haiku' }],
     ]),
   );
-  assert.deepEqual(Object.keys(block!), ['none', 'run', 'unwrap']);
+  assert.deepEqual(Object.keys(block!), ['none', 'run', 'bare']);
 });
 
 // ── save ───────────────────────────────────────────────────────────────────
@@ -225,14 +227,6 @@ const CATALOG = new Map<string, CatalogEntry>([
 
 const NONE = new Map();
 
-test('senza override: i valori cablati nella riga sono i default', () => {
-  const r = resolveSpawn(spawnAction('unwrap')!, NONE, CATALOG, { path: 'runtime reference' });
-  assert.equal(r.model, 'sonnet');
-  assert.match(r.prompt!, /^lancia md-wrap modo apply su runtime reference /);
-  assert.equal(r.title, '📏 runtime reference');
-  assert.equal(r.overridden.size, 0);
-});
-
 test('senza override: un’azione con un kind prende modello e prompt dal catalogo dati', () => {
   const r = resolveSpawn(spawnAction('run')!, NONE, CATALOG, { TASK: 'T42', slug: 'la mia task' });
   assert.equal(r.model, 'opus');
@@ -300,8 +294,8 @@ test('un buco senza valore spegne il titolo invece di lasciare il solo prefisso'
 });
 
 test('il titolo si riduce DOPO l’interpolazione: i buchi portano dentro l’alfabeto sporco', () => {
-  const r = resolveSpawn(spawnAction('unwrap')!, NONE, CATALOG, { path: 'runtime/reference.md' });
-  assert.equal(r.title, '📏 runtimereferencemd');
+  const r = resolveSpawn(spawnAction('run')!, NONE, CATALOG, { TASK: 'T42', slug: 'runtime/reference.md' });
+  assert.equal(r.title, '🚀 runtimereferencemd');
 });
 
 test('la nuda non ha un titolo da risolvere', () => {

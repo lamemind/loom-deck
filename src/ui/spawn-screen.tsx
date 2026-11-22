@@ -36,11 +36,11 @@ const MARK_W = 2;
 const MODEL_W = 7;
 
 /** Tetto della colonna funzione: la label più lunga del catalogo
- *  (`srotolamento hard-wrap`) sta esattamente dentro. Un tetto più alto le
+ *  (`regia di un perimetro`) sta esattamente dentro. Un tetto più alto le
  *  celle le toglierebbe al prompt, che è l'unico dei quattro valori senza una
  *  forma breve; più basso troncherebbe le label più lunghe già a piena
  *  larghezza. */
-const FUNC_MAX = 22;
+const FUNC_MAX = 21;
 
 /** Le etichette delle righe dell'area, in italiano come ogni altra etichetta a
  *  schermo: la chiave del campo è un nome del codice e finisce nel file di

@@ -196,12 +196,11 @@ test('--prompt e --prompt-kind sono mutuamente esclusivi', () => {
 
 // T134/D9 — il divieto è caduto, e l'asimmetria col kind è il punto: i sette
 // template del catalogo interpolano tutti `{TASK}`, un testo già composto no.
-// Il caso vivo è il deck che offre lo srotolamento dei `.md` di un path: un
-// lavoro sulla doc, che non appartiene a nessuna task e non deve ereditarne una.
+// Un lavoro che non appartiene a nessuna task non deve ereditarne una.
 test('--prompt con --no-task: ammesso, e il prompt arriva alla sessione', () => {
-  const cmd = inTabCmd(['--no-task', '--prompt', 'lancia md-wrap su runtime/reference']);
+  const cmd = inTabCmd(['--no-task', '--prompt', 'riordina runtime/reference']);
   assert.ok(
-    cmd.endsWith("'lancia md-wrap su runtime/reference'"),
+    cmd.endsWith("'riordina runtime/reference'"),
     `il prompt non è arrivato nella sessione nuda: ${cmd}`,
   );
   // Nuda resta nuda: nessun LOOM_TASK, nessun suffisso di task nel titolo.
@@ -319,7 +318,7 @@ test('titolo tab senza task: solo la label, nessun suffisso', () => {
 });
 
 test('una sessione nuda può avere titolo e sessionId insieme al prompt', () => {
-  // La forma che il deck compone per lo srotolamento (`bareArgs`): nessuna
+  // La forma di `bareArgs`: nessuna
   // guardia rifiuta `--title-note` né `--session-id` per l'assenza di una task —
   // il binding manca, il NOME no.
   const cmd = inTabCmd(
@@ -330,7 +329,7 @@ test('una sessione nuda può avere titolo e sessionId insieme al prompt', () => 
       '--session-id',
       SID,
       '--prompt',
-      'lancia md-wrap su runtime/reference',
+      'riordina runtime/reference',
     ],
     { LOOM_DECK_WORKDIR: labeledWd },
   );
@@ -379,9 +378,9 @@ test('--title-note: nota tutta scartata → nessun suffisso a vuoto', () => {
 // slug mentre la lista del deck, che riceve la nota grezza dal sidecar,
 // mostrava il prefisso — due titoli per la stessa conversazione, senza nessun
 // errore a segnalarlo.
-// Le tre in coda non vengono da `ACTION_EMOJI`: `📏` nomina il path che si
-// srotola (`wrapTitle`), `🧹` e `🧭` vengono dai titoli di due righe uscite dal
-// catalogo e restano lecite in una nota scritta a mano. Stessa whitelist, stessa
+// Le tre in coda non vengono da `ACTION_EMOJI`: `🧹`, `🧭` e `📏` vengono dai
+// titoli di tre righe uscite dal catalogo e restano lecite in una nota scritta a
+// mano. Stessa whitelist, stessa
 // divergenza se cade.
 for (const [kind, emoji] of [
   ['preflight', '📐'],
@@ -389,9 +388,9 @@ for (const [kind, emoji] of [
   ['recap', '📊'],
   ['checkpoint', '🏁'],
   ['regia', '🎬'],
-  ['unwrap', '📏'],
   ['nota a mano', '🧹'],
   ['nota a mano', '🧭'],
+  ['nota a mano', '📏'],
 ] as const) {
   test(`--title-note: il prefisso di fallback \`${emoji}\` (${kind}) sopravvive alla riduzione`, () => {
     const cmd = inTabCmd(['T64', '--resume', SID, '--title-note', `${emoji} prova`], {

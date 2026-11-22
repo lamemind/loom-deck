@@ -46,7 +46,6 @@ import {
   onInTabCommand,
   spawnClaudeEmpty,
   spawnCleanTasks,
-  spawnBare,
   spawnCreateTask,
   spawnDeck,
   spawnDeckFork,
@@ -61,7 +60,6 @@ import { MODEL_DEFAULT, type ModelKind, type PromptKind, type SpawnActionId } fr
 import { modelAlias } from './glyphs.js';
 import { resolveSpawnId, taskHoles as taskHolesOf, type ResolvedSpawn, type SpawnOverrides } from './spawn-config.js';
 import { useTaskOps } from './task-ops.js';
-import { wrapWords } from './wrap-scan.js';
 import { enterSession, focusSession } from './focus-session.js';
 import { refuse } from './platform.js';
 import type { DeckModel } from './deck-model.js';
@@ -149,8 +147,8 @@ export function useDeckActions({
    * buchi già riempiti.
    *
    * Un punto solo. Prima di T161 ogni sede di chiamata sceglieva da sé il
-   * proprio modello — `'sonnet'` dentro `unwrapPath`, `modelFor(catalog, kind)`
-   * dentro `spawnTaskSession` — e nessuna poteva essere indirizzata da una
+   * proprio modello — `modelFor(catalog, kind)` dentro `spawnTaskSession` — e
+   * nessuna poteva essere indirizzata da una
    * configurazione, perché non esisteva un nome con cui nominarla.
    */
   function spawnDefaults(
@@ -687,31 +685,6 @@ export function useDeckActions({
     setNote(`t → terminale su ${model.projectName}`);
   }
 
-  /**
-   * T134 — apre la sessione che SROTOLA l'hard-wrap di un path.
-   *
-   * Terna intera dalla riga `unwrap` del catalogo (T161): il modello, il titolo
-   * e anche il PROMPT, che fino a T134 era cablato in `wrap-scan.ts`: un
-   * template unico basta, e l'unico buco è il `{path}`.
-   *
-   * Il default resta `sonnet` e non il modello di default del deck (D9): lo
-   * srotolamento è una passata meccanica con un verificatore deterministico
-   * dietro (`md-wrap --apply` confronta le due versioni normalizzate
-   * `\s+ → spazio` e rimette indietro il file se differiscono), quindi il
-   * giudizio richiesto al modello è leggere un diff e decidere se committarlo —
-   * non progettare niente.
-   */
-  function unwrapPath(path: string) {
-    if (refuse('spawn', '⏎', setNote)) return;
-    const sid = randomUUID();
-    const d = spawnDefaults('unwrap', { path: wrapWords(path) });
-    const title = d.title ?? '';
-    if (title) appendNote(cwd, sid, title);
-    const spawned = spawnBare(cwd, d.prompt ?? '', d.model, sid, title);
-    spawned.child.on('error', () => setNote(`⚠ srotolamento ${path} fallito (${DECK_RUN})`));
-    noteSpawn(spawned);
-  }
-
   /** `c` — sessione claude a mani nude, senza task e senza prompt. T154 — il
    *  modello è quello del selettore proprio della nuda (`model.bareModel`),
    *  passato SEMPRE nell'argv anche sul default. */
@@ -764,7 +737,6 @@ export function useDeckActions({
     togglePriority,
     dropDraftFor,
     dropSession,
-    unwrapPath,
     openTerminal,
     openClaude,
     saveCurrentView,

@@ -44,7 +44,6 @@ import { taskSheet, useSheetOverlay } from './overlays/sheet.js';
 import { useAssignOverlay } from './overlays/assign.js';
 import { useComboOverlay } from './overlays/combo.js';
 import { useFinderOverlay } from './overlays/finder.js';
-import { useWrapOverlay } from './overlays/wrap.js';
 import { useSpawnPage } from './overlays/spawn.js';
 import { useLaunchPage } from './overlays/launch.js';
 import { useGitlink } from './overlays/gitlink.js';
@@ -161,27 +160,16 @@ function Deck({
       actions.openSession(row.session.sessionId, modelAlias(row.session.model) ?? MODEL_DEFAULT),
   });
 
-  // T134 — l'hard-wrap. Non è solo un overlay: i suoi numeri si leggono in
-  // testata a schermata chiusa, e la lista è una delle sue superfici invece che
-  // il suo contenuto.
-  const wrap = useWrapOverlay({
-    cwd,
-    rows,
-    setMode,
-    setNote,
-    onApply: actions.unwrapPath,
-  });
-
-  // T155 — il gitlink dei submodule. Secondo sensore con lo stato in vista
-  // normale, dopo l'hard-wrap: qui però non c'è nessuna schermata da aprire —
-  // l'unica superficie è l'indicatore, e l'unica azione committa.
+  // T155 — il gitlink dei submodule. Un sensore con lo stato in vista normale:
+  // non c'è nessuna schermata da aprire — l'unica superficie è l'indicatore, e
+  // l'unica azione committa.
   const gitlink = useGitlink({ cwd, setNote });
   // T196 — l'endpoint locale: le conversazioni del progetto chiedono qui gli
   // spawn (`loom-deck-spawn`), che partono dallo stesso `spawnForTask` del tasto.
   useSpawnEndpoint({ cwd, tasksPath, tasksDir, actions, setNote });
 
-  // T161 — la pagina delle azioni di spawn. Come il detail e la lista hard-wrap
-  // non esce dal deck da sé: qui riceve il saver degli override, e lo spawn che
+  // T161 — la pagina delle azioni di spawn. Come il detail non esce dal deck da
+  // sé: qui riceve il saver degli override, e lo spawn che
   // quegli override governano parte da tutt'altra parte.
   const spawn = useSpawnPage({
     cwd,
@@ -195,8 +183,8 @@ function Deck({
   });
 
   // T168 — la pagina delle voci launch e il motore che le lancia (startup,
-  // scadenza, esito). Come l'hard-wrap il suo stato si legge in testata a
-  // schermata chiusa: 🔄 mentre una voce gira, 🚨 su un exit non-zero.
+  // scadenza, esito). Il suo stato si legge in testata a schermata chiusa: 🔄
+  // mentre una voce gira, 🚨 su un exit non-zero.
   const launchPage = useLaunchPage({
     cwd,
     name: model.projectCore ?? model.projectName,
@@ -251,7 +239,6 @@ function Deck({
     finder,
     sheet,
     search,
-    wrap,
     spawn,
     launch: launchPage,
     gitlink,
@@ -309,13 +296,6 @@ function Deck({
             available: gitlink.available,
           }
         : null,
-      wrap: {
-        count: wrap.count,
-        mtime: wrap.mtime,
-        ok: wrap.ok,
-        scanning: wrap.scanning,
-        available: wrap.available,
-      },
     },
     columns,
   );
@@ -382,7 +362,6 @@ function Deck({
       finder,
       sheet,
       search,
-      wrap,
       spawn,
       launch: launchPage,
     },

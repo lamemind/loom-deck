@@ -1,41 +1,16 @@
 // T232 — gate di larghezza (vedi `frame-width.test.ts`): le schermate che
-// leggono una cache o un sensore — la lista hard-wrap, l'indicatore del
-// gitlink, il bottone di restore in testata.
+// leggono un sensore — l'indicatore del gitlink, il bottone di restore in
+// testata.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { CTRL_W, SKIP } from './pty-harness.js';
+import { SKIP } from './pty-harness.js';
 import { assertFrameFits, capture, lastFrame, mixedIdProject, strip } from './frame-kit.js';
 import { termWidth } from '../src/width.js';
 import { VERSION } from '../src/version.js';
-
-/**
- * T134 — cache dello scan hard-wrap, sintetica: il gate non deve dipendere da
- * uno scan reale (cammina l'albero del progetto intero e dura minuti) né dal
- * fatto che chi lancia i test ne abbia già fatto uno.
- *
- * I path sono lunghi di proposito: la cella del path è l'unica elastica della
- * riga, quindi è l'unica che può sfondare il box, e su un terminale a 80
- * colonne un path da 120 caratteri è il caso vero — le task folder rientrano nel
- * perimetro dello scan (D3 preflight) e producono esattamente questi.
- */
-function wrapCacheFileFixture(): string {
-  const path = join(mkdtempSync(join(tmpdir(), 'deck-wrap-')), 'scan.tsv');
-  const lungo = `.26-08-11-review/${'sotto-cartella-lunga/'.repeat(5)}turno.md`;
-  writeFileSync(
-    path,
-    [
-      `WRAP\t${lungo}\tcol=93\tratio=0.82\tbreaks=41\tprose=50`,
-      'WRAP\truntime/reference/doc-system/doc-system-topology.md\tcol=80\tratio=0.7\tbreaks=9\tprose=13',
-      'misto\truntime/inbox/T134-note-una-riga-per-pensiero.md\tcol=\tratio=0.3\tbreaks=2\tprose=7',
-      '',
-    ].join('\n'),
-  );
-  return path;
-}
 
 /**
  * T155 — una cache del plugin FINTA con uno stub di `bump-gitlink.sh`.
@@ -72,20 +47,9 @@ function gitlinkCacheRoot(): string {
   return root;
 }
 
-// T134 — la lista hard-wrap. Fuori da una tabella perché la cache va scritta
-// prima, e un file temporaneo creato al modulo sarebbe condiviso da scenari che
-// non lo usano.
-for (const cols of [80, 100, 176]) {
-  test(`gate larghezza · lista hard-wrap @ ${cols} colonne`, { skip: SKIP }, () => {
-    const raw = capture(cols, 38, CTRL_W, { LOOM_DECK_WRAP_FILE: wrapCacheFileFixture() });
-    assertFrameFits(raw, cols, `lista hard-wrap@${cols}`);
-  });
-}
-
-// T155 — l'indicatore del gitlink accanto agli altri due, nella sua forma più
-// larga. Fuori da una tabella per la stessa ragione della lista hard-wrap: la
-// cache finta va scritta prima, e un temporaneo creato al modulo sarebbe condiviso da
-// scenari che non lo usano.
+// T155 — l'indicatore del gitlink, nella sua forma più larga. Fuori da una
+// tabella perché la cache finta va scritta prima, e un temporaneo creato al
+// modulo sarebbe condiviso da scenari che non lo usano.
 //
 // `W` non batte nulla: fa passare 0,7s, il tempo perché lo spawn del sensore
 // torni e il frame si ridisegni col numero al posto di `missing`.

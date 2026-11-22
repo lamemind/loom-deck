@@ -25,8 +25,6 @@ export type Feature =
   | 'liveSessions'
   /** Gli script `.sh` del plugin: il gitlink. */
   | 'pluginScripts'
-  /** Lo scan hard-wrap: `md-wrap.py` via `python3`. */
-  | 'hardWrap'
   /** Le voci `launch[]` del file di progetto: comandi Linux via `bash -lic`. */
   | 'launch'
   /** La notifica desktop di un esito (voce launch, spawn in coda): `notify-send` su Linux, un toast
@@ -47,7 +45,6 @@ export type Feature =
 export const UNAVAILABLE: Partial<Record<NodeJS.Platform, readonly Feature[]>> = {
   win32: [
     'pluginScripts', // T178 — .sh del plugin via Git Bash
-    'hardWrap', // T178 — python del wrap-scan
     'launch', // T179 — comando per piattaforma nelle voci launch[]
     // T199 — Windows Terminal apre una tab in una finestra per nome, e compass
     // lì non c'è: il controllo ha un'altra forma. Spento e non lasciato al ramo
@@ -62,7 +59,6 @@ const FEATURE_LABEL: Record<Feature, string> = {
   spawn: 'apertura di tab e conversazioni',
   liveSessions: 'sessioni vive',
   pluginScripts: 'script del plugin',
-  hardWrap: 'scan hard-wrap',
   launch: 'voci launch',
   notify: 'notifiche',
   windowCheck: 'verifica della finestra del progetto',

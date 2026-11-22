@@ -62,15 +62,11 @@ export function deckLegend(state: {
     // comprese. Non legge la selezione del pane task (P6), come `^F`.
     'T trova',
     '^F cerca',
-    // T134 — le voci nominano il GESTO e non l'oggetto: aprire la lista e
-    // misurare sono due tasti, e «hard-wrap» da solo non direbbe quale.
-    '^W lista hard-wrap',
-    '^E scan hard-wrap',
-    // T155 — il GESTO, come sopra: «gitlink» da solo direbbe l'oggetto e non che
-    // il tasto lo allinea con un commit.
+    // T155 — la voce nomina il GESTO e non l'oggetto: «gitlink» da solo direbbe
+    // l'oggetto e non che il tasto lo allinea con un commit.
     ...(state.gitlink ? ['^U bumpa gitlink'] : []),
-    // T161 — l'OGGETTO e non il gesto, al contrario di `^W`/`^E`/`^U`: lì il tasto
-    // fa qualcosa, qui apre una pagina e basta.
+    // T161 — l'OGGETTO e non il gesto, al contrario di `^U`: lì il tasto fa
+    // qualcosa, qui apre una pagina e basta.
     '^S azioni',
     // T168 — l'OGGETTO, come `^S`: la pagina delle voci launch, con esito e
     // attributi. Sempre annunciata, anche senza voci: la pagina si apre comunque

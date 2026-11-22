@@ -34,7 +34,6 @@ import type { Mode, PurgeDraft } from '../model.js';
 import type { Session } from '../sessions.js';
 import { AssignScreen } from './assign-screen.js';
 import { DetailScreen } from './detail-screen.js';
-import { WrapScreen } from './wrap-screen.js';
 import { SpawnScreen } from './spawn-screen.js';
 import { LaunchLogScreen, LaunchScreen } from './launch-screen.js';
 import { ReaderScreen, SearchScreen } from './search-screen.js';
@@ -45,7 +44,6 @@ import type { useComboOverlay } from '../overlays/combo.js';
 import type { useFinderOverlay } from '../overlays/finder.js';
 import type { useSheetOverlay } from '../overlays/sheet.js';
 import type { useSearchOverlay } from '../overlays/search.js';
-import type { useWrapOverlay } from '../overlays/wrap.js';
 import type { useSpawnPage } from '../overlays/spawn.js';
 import type { useLaunchPage } from '../overlays/launch.js';
 
@@ -54,7 +52,6 @@ type ComboOverlay = ReturnType<typeof useComboOverlay>;
 type FinderOverlay = ReturnType<typeof useFinderOverlay>;
 type SheetOverlay = ReturnType<typeof useSheetOverlay>;
 type SearchOverlay = ReturnType<typeof useSearchOverlay>;
-type WrapOverlay = ReturnType<typeof useWrapOverlay>;
 type SpawnPage = ReturnType<typeof useSpawnPage>;
 type LaunchPage = ReturnType<typeof useLaunchPage>;
 
@@ -226,7 +223,6 @@ export type ScreensInput = {
     finder: FinderOverlay;
     sheet: SheetOverlay;
     search: SearchOverlay;
-    wrap: WrapOverlay;
     spawn: SpawnPage;
     launch: LaunchPage;
   };
@@ -242,7 +238,7 @@ export type ScreensInput = {
  */
 export function screenFor(input: ScreensInput) {
   const { mode, rows, columns, note, overlays } = input;
-  const { assign, combo, finder, sheet, search, wrap, spawn, launch } = overlays;
+  const { assign, combo, finder, sheet, search, spawn, launch } = overlays;
 
   // ── T57 · schermata di assegnazione ─────────────────────────────────────
   // Sostitutiva come ricerca e reader (D3): la lista task non entra in un box
@@ -371,31 +367,8 @@ export function screenFor(input: ScreensInput) {
     );
   }
 
-  // ── T134 · lista hard-wrap ──────────────────────────────────────────────
-  // Settima schermata sostitutiva: sul cappello lo scan trova 77 `WRAP` e 147
-  // `misto`, cioè una lista che in un box sopra i pane non entrerebbe.
-  if (mode === 'wrap' && wrap.files) {
-    if (isCompact(wrap.capacity)) {
-      return <CompactNotice what="hard-wrap" esc="chiude" rows={rows} columns={columns} />;
-    }
-    const start = Math.min(wrap.top, wrap.maxTop);
-    return (
-      <WrapScreen
-        files={wrap.files.slice(start, start + wrap.capacity)}
-        count={wrap.count}
-        mixed={wrap.mixed}
-        mtime={wrap.mtime}
-        top={start}
-        capacity={wrap.capacity}
-        path={wrap.path}
-        caret={wrap.caret}
-        columns={columns}
-      />
-    );
-  }
-
   // ── T161 · pagina delle azioni di spawn ─────────────────────────────────
-  // Ottava schermata sostitutiva: undici righe per quattro colonne, più l'area
+  // Ottava schermata sostitutiva: nove righe per quattro colonne, più l'area
   // di compilazione. In un box sopra i due pane al prompt resterebbero due
   // colonne.
   if (mode === 'spawn' && spawn.open) {

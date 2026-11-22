@@ -1,7 +1,7 @@
 // T168 — la PAGINA DELLE VOCI LAUNCH (`^L`) e il motore che le lancia:
 // startup, scadenza, esito, guardia, notifica.
 //
-// Come l'hard-wrap non è solo un overlay: lo stato che
+// Non è solo un overlay: lo stato che
 // tiene — quale voce gira, com'è finita l'ultima — si legge in testata a
 // schermata chiusa (🔄 / 🚨, P23), e la pagina è una delle sue superfici. Qui
 // vivono anche startup e scadenza, perché è l'unico posto che conosce i record

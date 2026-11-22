@@ -5,10 +5,9 @@
 // spawnato da Ptyxis. Le prime due volte (età delle task archiviabili in
 // `archivable.ts`, gate `--ignored-files` in `purge.ts`) hanno RIPLICATO un
 // criterio di poche righe. Qui si risolve invece di duplicare, perché la
-// superficie da replicare sarebbe troppo grande — la grammatica del marker
-// inbox da un lato, le tre euristiche tarate dello scanner di wrap dall'altro —
-// e una divergenza fra le due copie non si vedrebbe finché non conta i file
-// sbagliati.
+// superficie da replicare sarebbe troppo grande — le due guardie di
+// `bump-gitlink.sh`, sul verso e sul remote — e una divergenza fra le due copie
+// non si vedrebbe finché non pinna il cappello su un commit sbagliato.
 //
 // L'allow `Read(~/.claude/plugins/cache/…/**)` che `init` scrive in
 // `.claude/settings.json` non c'entra: è un permesso per gli agent di Claude

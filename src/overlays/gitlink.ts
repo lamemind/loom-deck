@@ -1,8 +1,8 @@
 // T155 — il sensore del gitlink: stato, gate di attivazione, cadenza.
 //
 // Non è un overlay come `sheet` o `search` — non apre nessuna schermata e non
-// entra in `MODE_KEYS`. Sta qui per la stessa ragione di `useWrapOverlay`:
-// tiene uno stato che si legge in vista normale e possiede
+// entra in `MODE_KEYS`. Sta qui perché, come `useLaunchPage`, tiene uno stato
+// che si legge in vista normale e possiede
 // l'azione che quello stato abilita, e `hooks.ts` è già a 487 righe (P3
 // preflight, D1/P12 — nessuno split dentro questa task).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';

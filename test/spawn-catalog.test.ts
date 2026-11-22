@@ -25,11 +25,12 @@ import {
   specializeRecap,
 } from '../src/spawn-catalog.js';
 
-test('drain, rebalance e project-status non sono id del catalogo', () => {
-  // Le tre righe lanciavano skill che il plugin non distribuisce più: un id che
-  // il catalogo non conosce è ciò che fa cadere all'avvio un override di
-  // progetto scritto su di loro, col suo avviso.
-  for (const id of ['drain', 'rebalance', 'project-status']) {
+test('drain, rebalance, project-status e unwrap non sono id del catalogo', () => {
+  // Le tre prime righe lanciavano skill che il plugin non distribuisce più, la
+  // quarta srotolava l'hard-wrap che il deck non misura più: un id che il
+  // catalogo non conosce è ciò che fa cadere all'avvio un override di progetto
+  // scritto su di loro, col suo avviso.
+  for (const id of ['drain', 'rebalance', 'project-status', 'unwrap']) {
     assert.equal(isSpawnActionId(id), false, `${id} è ancora un id del catalogo`);
     assert.equal(spawnAction(id), undefined);
   }
@@ -40,8 +41,8 @@ test('gli id sono unici: un duplicato renderebbe irraggiungibile la seconda riga
   assert.deepEqual([...new Set(ids)], ids);
 });
 
-test('dieci righe: il perimetro di D1, cioè le azioni con almeno una cella editabile', () => {
-  assert.equal(SPAWN_ACTIONS.length, 10);
+test('nove righe: il perimetro di D1, cioè le azioni con almeno una cella editabile', () => {
+  assert.equal(SPAWN_ACTIONS.length, 9);
   for (const a of SPAWN_ACTIONS) {
     assert.ok(
       editableFields(a).length > 0,
