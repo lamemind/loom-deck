@@ -214,7 +214,7 @@ Un file assente, illeggibile o con una voce sbagliata non rompe niente: il deck 
 
 ### `loom-deck-spawn` — uno spawn chiesto da una conversazione
 
-Il deck acceso ascolta un **endpoint locale**, uno per progetto: una named pipe su Windows (`\\.\pipe\loom-deck-<id>-<hash>`), un socket Unix su Linux (`$XDG_RUNTIME_DIR/loom-deck/loom-deck-<id>-<hash>.sock`). L'hash è quello del path reale della root, quindi il worktree di una lane, che porta lo stesso `id`, ha un indirizzo suo. Una conversazione Claude Code chiede uno spawn col secondo comando del pacchetto, dalla cartella del progetto:
+Il deck acceso ascolta un **endpoint locale**, uno per progetto: una named pipe su Windows (`\\.\pipe\loom-deck-<id>-<hash>`), un socket Unix su Linux (`$XDG_RUNTIME_DIR/loom-deck/loom-deck-<id>-<hash>.sock`). L'hash è quello del path reale della root, quindi un secondo worktree git dello stesso repo, che porta lo stesso `id`, ha un indirizzo suo. Una conversazione Claude Code chiede uno spawn col secondo comando del pacchetto, dalla cartella del progetto:
 
 ```bash
 loom-deck-spawn T12 preflight

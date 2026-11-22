@@ -348,7 +348,7 @@ function procArgv(pid: number): string[] | null {
  *
  * Nessun filtro per `cwd`, al contrario di `discoverLiveSessions`: chi cerca la
  * tab per titolo la cerca in tutte le finestre Ptyxis, quindi una conversazione
- * dello stesso progetto aperta da un worktree di lane (altro `cwd`, stesso
+ * dello stesso progetto aperta da un secondo worktree git (altro `cwd`, stesso
  * titolo) è un gemello a tutti gli effetti. Il titolo porta già la label del
  * progetto, e il confronto per uguaglianza intera non scambia un progetto con
  * un altro.

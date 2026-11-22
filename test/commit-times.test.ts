@@ -169,16 +169,16 @@ test('gate T191: HEAD cambiato → la mappa si aggiorna alla chiamata dopo, senz
   });
 });
 
-test('gate T191: worktree di lane — `.git` è un file, il ref sta nella cartella comune', async () => {
+test('gate T191: worktree git secondario — `.git` è un file, il ref sta nella cartella comune', async () => {
   await withRealRepo(async (repoRoot) => {
-    const wt = `${repoRoot}-lane`;
+    const wt = `${repoRoot}-wt`;
     try {
-      git(repoRoot, 'worktree', 'add', '-q', '-b', 'feat/lane', wt);
+      git(repoRoot, 'worktree', 'add', '-q', '-b', 'feat/wt', wt);
       const wtTasks = join(wt, 'tasks');
       assert.equal(await headShaFromFs(wt), revParse(wt));
       const heads = headSpawnCount();
       const first = await commitTimes(wtTasks, wt);
-      commitTask(wt, wtTasks, 'T3-lane.md');
+      commitTask(wt, wtTasks, 'T3-wt.md');
       assert.equal(await headShaFromFs(wt), revParse(wt), 'commit nel worktree: lo sha nuovo si legge');
       assert.notEqual(revParse(wt), revParse(repoRoot), 'il worktree ha il suo HEAD, non quello del principale');
       const next = await commitTimes(wtTasks, wt);

@@ -48,8 +48,8 @@ export const SOCKET_PATH_MAX = 107;
  *  `loom-deck-<id>-<8 caratteri di hash del path reale della root>`.
  *
  *  L'`id` da solo non basta (P1 preflight): `.claude/loom-works.json` è
- *  committato, quindi il worktree di una lane porta lo stesso `id` del progetto
- *  principale. Con l'indirizzo dal solo `id` il deck del worktree troverebbe il
+ *  committato, quindi un secondo worktree git dello stesso repo porta lo stesso
+ *  `id` del progetto principale. Con l'indirizzo dal solo `id` il deck del worktree troverebbe il
  *  nome occupato, e una conversazione del worktree farebbe aprire la tab al deck
  *  principale, nella sua cartella. L'`id` resta nel nome per chi lo legge in un
  *  `ls` o in un messaggio d'errore; a distinguere è l'hash.

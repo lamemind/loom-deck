@@ -31,7 +31,7 @@ test('nome: id del file più 8 caratteri di hash, stabile sulla stessa root', ()
   assert.equal(endpointName(root), name);
 });
 
-test('stesso id, root diverse (il worktree di una lane): nomi diversi', () => {
+test('stesso id, root diverse (un secondo worktree git): nomi diversi', () => {
   // P1 preflight — il file di progetto è committato, quindi il worktree porta
   // lo stesso `id`: a distinguere i due deck è l'hash del path.
   const a = endpointName(project('loom-works'));

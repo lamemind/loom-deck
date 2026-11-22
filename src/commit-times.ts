@@ -68,8 +68,8 @@ async function readTrimmed(path: string): Promise<string | null> {
 }
 
 /** Il gitdir del repo che contiene `start`, risalendo come fa git: `.git`
- *  cartella, oppure `.git` file con `gitdir: <path>` (worktree di lane,
- *  submodule), relativo alla cartella del file. */
+ *  cartella, oppure `.git` file con `gitdir: <path>` (worktree git
+ *  secondario, submodule), relativo alla cartella del file. */
 async function findGitDir(start: string): Promise<string | null> {
   let dir = start;
   for (;;) {
