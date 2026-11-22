@@ -134,6 +134,11 @@ export function liveCell(
  * dice «non ancora chiuso» senza promettere altro, e la colonna natura accanto
  * continua a nominarlo.
  *
+ * `released` è `📦`, un pacco chiuso: il rilascio della task è chiuso e il
+ * file non aspetta più niente. Un glifo d'attesa (`⏳`) direbbe il contrario. È
+ * astrale e a presentazione emoji di default, quindi largo 2 senza VS16, come
+ * `🔒` accanto.
+ *
  * Nessun glifo è riusato dalla lista sessioni con un significato spostato: là
  * `●`/`◍` dicono la liveness di un processo e `📌`/`🔗`/`○` l'appartenenza,
  * qui si parla dello stato di un file. Un falso amico costa più di un simbolo
@@ -143,7 +148,7 @@ export const INBOX_MARK: Record<'broken' | 'branched' | 'wip' | 'released', stri
   broken: WARN,
   branched: sanitize('🔒'),
   wip: '',
-  released: sanitize('⏳'),
+  released: sanitize('📦'),
 };
 
 /** Larghezza della cella marker della riga inbox, gemella dei 2 della lista

@@ -319,7 +319,7 @@ I toggle e la query sono **volatili**: sopravvivono alla chiusura del modale, no
 `^B` scambia i due pane: al posto di task e conversazioni, l'albero della doc a sinistra e i file inbox a destra. Il modo doc si legge e basta — nessuna conversazione parte da qui.
 
 - **albero doc** — la docs-root intera, cartelle prima dei file, con una vista sola (`Tutti`). La colonna in testa porta i flag che `doc-metrics.sh` emette, tutti descrittivi: `ONL` (file @-importato da `CLAUDE.md`), `INB` (file della cartella inbox), `GEN` (l'indice generato). `⏎` apre il testo del file, o l'elenco dei file di una cartella.
-- **inbox** — i file di `inbox/`, con una vista per natura (nozioni, derivazione, sweep) oltre a `Tutti`. Il glifo di riga dice lo stato: `⏳` rilascio chiuso (`drainable`), nessun glifo in lavorazione (la task che lo scrive è aperta), `🔒` congelato su un branch finché `pull-repos` non lo trova su main, `⚠` marker illeggibile, da riparare a mano. `⏎` apre il testo del file.
+- **inbox** — i file di `inbox/`, con una vista per natura (nozioni, derivazione, sweep) oltre a `Tutti`. Il glifo di riga dice lo stato: `📦` rilascio chiuso (`drainable`), nessun glifo in lavorazione (la task che lo scrive è aperta), `🔒` congelato su un branch finché `pull-repos` non lo trova su main, `⚠` marker illeggibile, da riparare a mano. `⏎` apre il testo del file.
 
 Il bottone in testata, `[ Doc 📄 3/1/2 ]`, monta il modo e conta per natura i file a rilascio chiuso: `drainable` e nessun `branch:`.
 
