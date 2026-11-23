@@ -4,10 +4,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CAN_RUN, SKIP, TASKS } from './pty-harness.js';
+import { SKIP } from './pty-harness.js';
 import { capture, lastFrame, singleSessionProject } from './modes-kit.js';
 import { detailProject } from './detail-fixture.js';
 
@@ -28,21 +28,62 @@ import { detailProject } from './detail-fixture.js';
 // La coda del comando sopravvive al taglio anche su un terminale stretto
 // (`cutMiddle` sacrifica il mezzo): è ciò che rende queste asserzioni stabili
 // nonostante il path assoluto di `deck-run` in testa.
-const spawnProject = mkdtempSync(join(tmpdir(), 'loom-deck-smoke-'));
-if (CAN_RUN) {
-  mkdirSync(join(spawnProject, 'runtime', 'tasks'), { recursive: true });
-  copyFileSync(TASKS, join(spawnProject, 'runtime', 'tasks.md'));
+//
+// T252 — ogni scenario gira su un progetto SINTETICO, nessuno sul cappello
+// vero né su una copia del suo `tasks.md`: la lista del cappello cambia a ogni
+// create-task e a ogni checkpoint, e con lei la task che il detail apre.
+
+/**
+ * Un progetto con UNA riga in `tasks.md` e NESSUN task file, `HOME` dirottato.
+ *
+ * Senza task file il detail si apre sull'area di compilazione (non c'è una
+ * checklist da leggere), e il buco `{slug}` del titolo di `open` resta senza
+ * valore: il campo titolo parte vuoto, e lo spawn di `open` non porta
+ * `--title-note`. È ciò che gli scenari sotto misurano — una cifra o una
+ * lettera che non finiscono nel titolo, un titolo vuoto che non diventa un
+ * flag — e su una task col suo file il titolo partirebbe già pieno del nome.
+ * Nessun blocco `spawn`, quindi `run` tiene modello e titolo del catalogo: la
+ * coda del comando resta corta, e `--prompt` sopravvive al taglio a metà.
+ */
+function rowOnlyProject(): { proj: string; env: NodeJS.ProcessEnv } {
+  const root = mkdtempSync(join(tmpdir(), 'loom-deck-smoke-'));
+  const proj = join(root, 'proj');
+  mkdirSync(join(proj, 'runtime', 'tasks'), { recursive: true });
+  mkdirSync(join(root, 'home'), { recursive: true });
+  writeFileSync(
+    join(proj, 'runtime', 'tasks.md'),
+    [
+      '# Tasks',
+      '',
+      '## Tasks Overview',
+      '',
+      '| ID | Pri | Prog | Task |',
+      '| --- | --- | --- | --- |',
+      '| T1 | ⚡ | 🔵 | task senza file |',
+    ].join('\n') + '\n',
+  );
+  return { proj, env: { HOME: join(root, 'home') } };
 }
 
-/** Il detail si apre sulla riga azione; `D` (↓) scende di una riga. */
-const DETAIL_TITLE_ROW = '\rDDD';
+/** Apre il detail della sola task di `rowOnlyProject`, sulla riga azione:
+ *  `DD` scende dalle due righe meta alla task. */
+const OPEN_DETAIL = 'DD\r';
+
+/** Dalla riga azione alla riga titolo: `D` (↓) scende di una riga. */
+const TO_TITLE_ROW = 'DDD';
+
+/** L'ultimo frame dopo i tasti, su un `rowOnlyProject` nuovo. */
+function captureRowOnly(keys: string): string {
+  const { proj, env } = rowOnlyProject();
+  return lastFrame(capture(keys, proj, env));
+}
 
 // ── T154 · il selettore della nuda e il tasto `m` bifronte ───────────────
 
 test('c senza toccare il selettore apre comunque su un modello esplicito (il default)', {
   skip: SKIP,
 }, () => {
-  const frame = lastFrame(capture('c', spawnProject));
+  const frame = captureRowOnly('c');
   assert.match(frame, /--no-task/, `c non ha spawnato la nuda: ${frame}`);
   assert.match(frame, /--model opus/, `il default non è stato passato esplicitamente: ${frame}`);
 });
@@ -51,7 +92,7 @@ test('m senza una riga sessione in fuoco cicla il modello della nuda: c la spawn
   skip: SKIP,
 }, () => {
   // Focus di apertura è `tasks` (D4): `m` deve cadere sul bersaglio nuda.
-  const frame = lastFrame(capture('mc', spawnProject));
+  const frame = captureRowOnly('mc');
   assert.match(frame, /--no-task/, `c non ha spawnato la nuda: ${frame}`);
   assert.match(frame, /--model sonnet/, `m fuori dal pane sessioni non ha cambiato la nuda: ${frame}`);
 });
@@ -90,7 +131,7 @@ test('i due selettori non si contaminano: il resume ciclato non muove la nuda', 
 });
 
 test('detail: la riga azione risponde alle lettere e riscrive il prompt', { skip: SKIP }, () => {
-  const frame = lastFrame(capture(`DD\rr\r`, spawnProject));
+  const frame = captureRowOnly(`${OPEN_DETAIL}r\r`);
   assert.match(frame, /--prompt .\/loom-works:run-task/, `r non ha selezionato run: ${frame}`);
 });
 
@@ -99,7 +140,7 @@ test('detail: una cifra sulla riga azione è inerte, non finisce in un campo', {
 }, () => {
   // Nessuna azione ha `2` per iniziale → il tasto non ha nulla da fare, e con il
   // fuoco su una riga a scelta non esiste un campo dove ricadere.
-  const frame = lastFrame(capture('DD\r2\r', spawnProject));
+  const frame = captureRowOnly(`${OPEN_DETAIL}2\r`);
   assert.doesNotMatch(frame, /--title-note/, `la cifra è finita nel titolo: ${frame}`);
   assert.match(frame, /--model opus/, `il modello è cambiato con una cifra: ${frame}`);
 });
@@ -109,7 +150,7 @@ test('detail: le lettere entrano nel campo solo quando la sua riga è in fuoco',
 }, () => {
   // `o` è l'iniziale di `open`: sulla riga azione seleziona, sulla riga titolo
   // dev'essere testo. È il caso che distingue il focus-gating da un catch-all.
-  const frame = lastFrame(capture(`DD${DETAIL_TITLE_ROW}oro\r`, spawnProject));
+  const frame = captureRowOnly(`${OPEN_DETAIL}${TO_TITLE_ROW}oro\r`);
   assert.match(frame, /--title-note oro/, `il testo non è finito nel titolo: ${frame}`);
 });
 
@@ -117,7 +158,7 @@ test('detail: il prompt modificato a mano è quello che parte', { skip: SKIP }, 
   // `r` sceglie run (prompt pre-riempito col template), poi si scende sul campo
   // e si scrive in coda: quello che parte dev'essere il testo MODIFICATO, che
   // nessun `--prompt-kind` saprebbe più descrivere.
-  const frame = lastFrame(capture('DD\rrDzz\r', spawnProject));
+  const frame = captureRowOnly(`${OPEN_DETAIL}rDzz\r`);
   assert.match(frame, /--prompt .\/loom-works:run-task T\d+zz./, `prompt non modificato: ${frame}`);
   assert.doesNotMatch(frame, /--prompt-kind/, `kind e prompt insieme: ${frame}`);
 });
@@ -126,7 +167,7 @@ test('detail: azione open → nessun prompt iniziale allo spawn', { skip: SKIP }
   // `open` è l'azione di default e il suo campo prompt è vuoto: lo spawn passa
   // `--prompt-kind none`, non un `--prompt ''` — deck-run cadrebbe altrimenti sul
   // proprio default `recap`, cioè su un prompt che nessuno ha chiesto.
-  const frame = lastFrame(capture('DD\r\r', spawnProject));
+  const frame = captureRowOnly(`${OPEN_DETAIL}\r`);
   assert.match(frame, /--prompt-kind none/, `open non ha spawnato a mani nude: ${frame}`);
   assert.doesNotMatch(frame, /--title-note/, `flag di titolo a vuoto: ${frame}`);
 });
@@ -136,7 +177,7 @@ test('detail: tab alterna i due modi senza toccare il modello', { skip: SKIP }, 
   // compilazione e lista DLV — ma il modello resta un dato dei campi: si cambia
   // con `←→` dalla sua riga, e `tab` non deve muoverlo di nascosto. Due `tab`
   // tornano ai campi, e `⏎` parte col modello dell'azione iniziale.
-  const frame = lastFrame(capture('DD\rTT\r', spawnProject));
+  const frame = captureRowOnly(`${OPEN_DETAIL}TT\r`);
   assert.match(frame, /--model opus/, `tab ha cambiato modello: ${frame}`);
 });
 
@@ -144,15 +185,14 @@ test('detail: la riga modello risponde a ←→ quando è in fuoco', { skip: SKI
   // Due `D` portano dalla riga azione a quella modello; `R` (→) avanza di una
   // voce nel giro di `MODELS`, cioè da `opus` (il modello dell'azione
   // iniziale `open`) a `sonnet`.
-  const frame = lastFrame(capture('DD\rDDR\r', spawnProject));
+  const frame = captureRowOnly(`${OPEN_DETAIL}DDR\r`);
   assert.match(frame, /--model sonnet/, `←→ non ha cambiato modello: ${frame}`);
 });
 
 test('detail: la riga hint non nomina i tasti standard', { skip: SKIP }, () => {
-  // T252 — sul progetto SINTETICO, su T4 (`DDDDD⏎`): senza DLV il detail si
-  // apre sull'area di compilazione, con la riga modello e la sua hint. Sul
-  // cappello vero si apriva la prima task di `tasks.md`, e sulla lista dei DLV
-  // quando quella task ne aveva di aperti.
+  // Sulla fixture del detail, su T4 (`DDDDD⏎`): una task col suo file ma senza
+  // DLV, che il detail apre sull'area di compilazione con la riga modello e la
+  // sua hint, e sotto il testo del task file.
   const { proj, env } = detailProject();
   const frame = lastFrame(capture('DDDDD\r', proj, env));
   assert.match(frame, /\[ opus \]/, `riga modello non renderizzata: ${frame}`);
