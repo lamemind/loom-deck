@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CAN_RUN, SKIP, TASKS } from './pty-harness.js';
 import { capture, lastFrame, singleSessionProject } from './modes-kit.js';
+import { detailProject } from './detail-fixture.js';
 
 // T117 — l'ALFABETO del detail dopo il passaggio all'area di compilazione a
 // righe. Cosa un tasto faccia dipende ora dalla RIGA IN FUOCO, ed è precisamente
@@ -148,7 +149,12 @@ test('detail: la riga modello risponde a ←→ quando è in fuoco', { skip: SKI
 });
 
 test('detail: la riga hint non nomina i tasti standard', { skip: SKIP }, () => {
-  const frame = lastFrame(capture('DD\r'));
+  // T252 — sul progetto SINTETICO, su T4 (`DDDDD⏎`): senza DLV il detail si
+  // apre sull'area di compilazione, con la riga modello e la sua hint. Sul
+  // cappello vero si apriva la prima task di `tasks.md`, e sulla lista dei DLV
+  // quando quella task ne aveva di aperti.
+  const { proj, env } = detailProject();
+  const frame = lastFrame(capture('DDDDD\r', proj, env));
   assert.match(frame, /\[ opus \]/, `riga modello non renderizzata: ${frame}`);
   // L'asserzione negativa vive sulla SOLA riga hint, non sul frame: sotto c'è il
   // testo del task file, che di quei glifi può parlare quanto vuole.

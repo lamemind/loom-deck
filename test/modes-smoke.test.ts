@@ -20,10 +20,25 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CANC, CTRL_F, CTRL_L, CTRL_S, ESC, PROJECT, SKIP } from './pty-harness.js';
 import { LIST_FRAME, capture, lastFrame } from './modes-kit.js';
+import { detailProject } from './detail-fixture.js';
+
+type Project = { proj: string; env: NodeJS.ProcessEnv };
+
+/** Il cappello vero: cwd del deck e nessun ambiente aggiunto. */
+const realProject = (): Project => ({ proj: PROJECT, env: {} });
 
 // Ogni voce: i tasti da battere e un frammento che DEVE comparire nel frame
-// finale. Il frammento è scelto fra ciò che solo quel modo disegna.
-const MODES: Array<{ name: string; keys: string; expect: RegExp; env?: NodeJS.ProcessEnv }> = [
+// finale. Il frammento è scelto fra ciò che solo quel modo disegna. `project`
+// assente = il cappello vero; `last` legge l'attesa sull'ultimo frame invece
+// che sull'intero buffer della cattura, per un frammento che anche la lista
+// disegnata prima dei tasti potrebbe portare.
+const MODES: Array<{
+  name: string;
+  keys: string;
+  expect: RegExp;
+  project?: () => Project;
+  last?: boolean;
+}> = [
   // La testata porta risoluzione e versione: è ciò che dice «il deck ha
   // disegnato il suo frame».
   { name: 'normal', keys: '', expect: LIST_FRAME },
@@ -31,7 +46,11 @@ const MODES: Array<{ name: string; keys: string; expect: RegExp; env?: NodeJS.Pr
   { name: 'sort', keys: 'S', expect: /sort|ordina/i },
   { name: 'filter', keys: 'F', expect: /filtr/i },
   { name: 'search', keys: CTRL_F, expect: /ricerca|hash/i },
-  { name: 'detail', keys: 'DD\r', expect: /preflight|checkpoint/i },
+  // T252 — sul progetto SINTETICO, su T4 (`DDDDD⏎`, nessun DLV → area di
+  // compilazione): sul cappello vero il modo di apertura dipende dalla prima
+  // task di `tasks.md`. L'attesa sta sull'ultimo frame, perché nella lista
+  // della fixture c'è il titolo «Size L senza preflight».
+  { name: 'detail', keys: 'DDDDD\r', expect: /preflight|checkpoint/i, project: detailProject, last: true },
   // T111 ha rinominato il concetto in «titolo della conversazione»: l'attesa
   // deve citare ciò che la barra disegna oggi, non il nome di prima.
   { name: 'note', keys: 'RN', expect: /titolo conversazione/i },
@@ -59,7 +78,9 @@ const MODES: Array<{ name: string; keys: string; expect: RegExp; env?: NodeJS.Pr
 
 for (const m of MODES) {
   test(`modo ${m.name}: si apre`, { skip: SKIP }, () => {
-    const frame = capture(m.keys, PROJECT, m.env);
+    const { proj, env } = (m.project ?? realProject)();
+    const captured = capture(m.keys, proj, env);
+    const frame = m.last ? lastFrame(captured) : captured;
     assert.match(frame, m.expect, `il modo ${m.name} non ha disegnato il proprio frame`);
   });
 }
@@ -81,10 +102,15 @@ test('esc dal reader torna alla ricerca, non al deck', { skip: SKIP }, () => {
   assert.match(frame, /ricerca|hash/i);
 });
 
+// T252 — i due scenari del detail girano sul progetto SINTETICO e aprono T4
+// (`DDDDD⏎`): una task senza DLV, che il detail apre sull'area di compilazione
+// con la riga azione. Sul cappello vero il detail si apriva sulla prima task di
+// `tasks.md`, e sulla lista dei DLV quando quella task ne aveva di aperti.
 test('^F dentro il detail apre la ricerca nel testo, non quella conversazioni', {
   skip: SKIP,
 }, () => {
-  const frame = lastFrame(capture(`DD\r${CTRL_F}`));
+  const { proj, env } = detailProject();
+  const frame = lastFrame(capture(`DDDDD\r${CTRL_F}`, proj, env));
   // La ricerca conversazioni ha il campo `hash`; quella del detail no — e la
   // barra azioni del detail resta a schermo sotto il campo.
   assert.match(frame, /preflight|checkpoint/i);
@@ -95,7 +121,8 @@ test('^F dentro il detail apre la ricerca nel testo, non quella conversazioni', 
 // dichiara. Con NO_SPAWN un `^K` che passasse non aprirebbe una tab, ma
 // scriverebbe comunque la sua nota di spawn nella riga di stato.
 test('^K dentro il detail non spawna', { skip: SKIP }, () => {
-  const frame = lastFrame(capture('DD\r\x0b'));
+  const { proj, env } = detailProject();
+  const frame = lastFrame(capture('DDDDD\r\x0b', proj, env));
   // La riga di stato di uno spawn è il COMANDO: `--prompt-kind` è la sua firma,
   // e non compare in nessun altro punto del frame.
   assert.doesNotMatch(frame, /--prompt-kind/);
@@ -105,7 +132,8 @@ test('^K dentro il detail non spawna', { skip: SKIP }, () => {
 // Chiusura: ogni modale torna alla lista con `esc`, e il deck resta vivo.
 for (const m of MODES.filter((x) => x.name !== 'normal')) {
   test(`modo ${m.name}: esc riporta alla lista`, { skip: SKIP }, () => {
-    const frame = lastFrame(capture(`${m.keys}${ESC}`, PROJECT, m.env));
+    const { proj, env } = (m.project ?? realProject)();
+    const frame = lastFrame(capture(`${m.keys}${ESC}`, proj, env));
     // La riga delle surface built-in esiste SOLO in modalità normale
     // (`launchLine`): è il marcatore che dice «siamo tornati alla lista».
     assert.match(frame, /t 💻/, `${m.name} non è tornato alla lista`);

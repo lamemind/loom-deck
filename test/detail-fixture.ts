@@ -16,6 +16,7 @@
 //   T2  ✔️ in tasks.md, DLV tutti fatti            → campi; lista spenta
 //   T3  Size L senza `### Preflight`               → lista DLV con l'avviso
 //   T4  nessun `## Deliverables Checklist`          → campi; lista vuota
+//       (la apre chi collauda l'area di compilazione: ^F, ^K, rotella, hint)
 //   T5  Size: Mandate, membri T1 T2 T3 T9 (T9 senza riga), con una checklist
 //       → coda `[1/3`, campi senza run, lista DLV spenta col motivo (T212)
 //   T6  Size: Epic senza figlie né DLV            → campi, con la regia (T203)

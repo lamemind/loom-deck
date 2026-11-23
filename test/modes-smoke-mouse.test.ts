@@ -107,13 +107,20 @@ test('nel detail la rotella scorre il testo, non il fuoco fra i campi', { skip: 
   // T117: `↑↓` nel detail muovono il fuoco fra le quattro righe dell'area di
   // compilazione. Una rotella che sintetizzasse `↓` sposterebbe il fuoco e
   // lascerebbe il testo fermo — il contrario di quello che la mano ha chiesto.
-  const start = lastFrame(capture('DD\r'));
-  const after = lastFrame(capture(`DD\r${WHEEL_DOWN}`));
+  //
+  // T252 — sul progetto SINTETICO, su T4 (`DDDDD⏎`): senza DLV il detail si
+  // apre sull'area di compilazione, col fuoco sulla riga azione. Sul cappello
+  // vero si apriva la prima task di `tasks.md`, e sulla lista dei DLV quando
+  // quella task ne aveva di aperti. Le tre catture leggono soltanto, quindi
+  // condividono il progetto.
+  const { proj, env } = detailProject();
+  const start = lastFrame(capture('DDDDD\r', proj, env));
+  const after = lastFrame(capture(`DDDDD\r${WHEEL_DOWN}`, proj, env));
   assert.equal(linesAt(start), 1);
   assert.equal(linesAt(after), 4, `il testo del detail non è scorso: ${after}`);
   // Una giù e una su: la rotella torna indietro di tre righe, e non è un
   // `PgUp` travestito.
-  const back = lastFrame(capture(`DD\r${WHEEL_DOWN}${WHEEL_UP}`));
+  const back = lastFrame(capture(`DDDDD\r${WHEEL_DOWN}${WHEEL_UP}`, proj, env));
   assert.equal(linesAt(back), 1, `una tacca su non ha riavvolto tre righe: ${back}`);
   // Il fuoco è ancora sulla riga `azione`, che porta il caret; `↓` l'avrebbe
   // spostato sulla riga del prompt.
