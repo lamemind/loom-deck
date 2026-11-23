@@ -14,7 +14,7 @@
 // Code. Il deck non passa dal motore dei permessi e non ha niente da farsi
 // autorizzare — gli manca soltanto di sapere quale versione eseguire.
 
-import { readdirSync } from 'node:fs';
+import { readdirSync, statSync, type Dirent } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -79,7 +79,7 @@ export function resolvePluginCache(): PluginCache | null {
   let names: string[];
   try {
     names = readdirSync(root, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
+      .filter((e) => isVersionDir(root, e))
       .map((e) => e.name);
   } catch {
     return null;
@@ -87,6 +87,25 @@ export function resolvePluginCache(): PluginCache | null {
   const version = pickLatestVersion(names);
   if (version === null) return null;
   return { root: join(root, version), version };
+}
+
+/**
+ * T248 — una cartella di versione può essere un symlink a una cartella.
+ *
+ * `isDirectory()` del dirent NON segue i symlink: da solo scarterebbe una cache
+ * finta per `LOOM_DECK_PLUGIN_CACHE_ROOT` costruita col symlink al sorgente del
+ * plugin, e il deck la tratterebbe come «plugin assente» mentre gli script ci
+ * sono e girano. Per un symlink decide quindi `statSync`, che lo segue: un
+ * link rotto (`statSync` lancia) o diretto a un file resta fuori, come un file.
+ */
+function isVersionDir(root: string, entry: Dirent): boolean {
+  if (entry.isDirectory()) return true;
+  if (!entry.isSymbolicLink()) return false;
+  try {
+    return statSync(join(root, entry.name)).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /**

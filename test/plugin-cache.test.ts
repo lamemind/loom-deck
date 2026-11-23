@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -16,6 +16,7 @@ import {
   pickLatestVersion,
   resolvePluginCache,
 } from '../src/plugin-cache.js';
+import { unixOnly } from './platform-gates.js';
 
 test('10.1.3 batte 7.9.1 — il caso che il sort lessicografico sbaglia', () => {
   assert.equal(compareSemver('10.1.3', '7.9.1'), 1);
@@ -98,3 +99,57 @@ test('un file semver-simile non è una cache: solo directory', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+/**
+ * T248 — una radice di cache vuota più una cartella FUORI dalla radice, verso
+ * cui puntano i symlink: un link che punta dentro la radice stessa sarebbe una
+ * versione in più, e il test misurerebbe anche quella.
+ */
+function withLinkedCacheRoot(fn: (root: string, outside: string) => void) {
+  const root = mkdtempSync(join(tmpdir(), 'deck-plugcache-'));
+  const outside = mkdtempSync(join(tmpdir(), 'deck-plugsrc-'));
+  const previous = process.env.LOOM_DECK_PLUGIN_CACHE_ROOT;
+  try {
+    process.env.LOOM_DECK_PLUGIN_CACHE_ROOT = root;
+    fn(root, outside);
+  } finally {
+    if (previous === undefined) delete process.env.LOOM_DECK_PLUGIN_CACHE_ROOT;
+    else process.env.LOOM_DECK_PLUGIN_CACHE_ROOT = previous;
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+}
+
+test(
+  'una cartella di versione in symlink a una cartella entra fra le candidate',
+  { skip: unixOnly('symlink di cartella') },
+  () => {
+    withLinkedCacheRoot((root, outside) => {
+      // La forma del collaudo contro un plugin non pubblicato: la versione più
+      // alta è il link al sorgente, accanto a una cache vera più vecchia.
+      mkdirSync(join(root, '1.0.0'));
+      symlinkSync(outside, join(root, '99.0.0'), 'dir');
+      const cache = resolvePluginCache();
+      assert.equal(cache?.version, '99.0.0');
+      assert.equal(cache?.root, join(root, '99.0.0'));
+    });
+  },
+);
+
+test(
+  'un symlink rotto o verso un file resta fuori, senza eccezioni',
+  { skip: unixOnly('symlink di cartella') },
+  () => {
+    withLinkedCacheRoot((root, outside) => {
+      const file = join(outside, 'non-una-cartella');
+      writeFileSync(file, 'sono un file');
+      symlinkSync(join(outside, 'inesistente'), join(root, '98.0.0'), 'dir');
+      symlinkSync(file, join(root, '99.0.0'), 'file');
+      // Solo link scartati: nessuna versione, e null invece di un throw.
+      assert.equal(resolvePluginCache(), null);
+      // Con una cache vera accanto, vince lei anche se è la più bassa.
+      mkdirSync(join(root, '1.0.0'));
+      assert.equal(resolvePluginCache()?.version, '1.0.0');
+    });
+  },
+);

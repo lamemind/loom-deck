@@ -21,8 +21,10 @@ import { VERSION } from '../src/version.js';
  * submodule del cappello in questo istante — cioè a due cose che cambiano da
  * sole, e con loro la larghezza dell'indicatore.
  *
- * La cartella di versione dev'essere una directory VERA: `resolvePluginCache`
- * filtra le entry con `isDirectory()`, che su un symlink a cartella è falso.
+ * La cartella di versione è una directory vera per scelta, non per obbligo:
+ * `resolvePluginCache` accetta anche un symlink a cartella (T248), ma una
+ * cartella vera tiene la fixture tutta dentro la sua radice temporanea, senza
+ * un secondo path da creare e da pulire.
  *
  * Il TSV porta tutti i casi insieme, che è la forma più larga dell'indicatore:
  * tre disallineati (il numero) più un membro che nessun bump sistema (il glifo
