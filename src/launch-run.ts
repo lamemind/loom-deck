@@ -283,6 +283,23 @@ function carriedOutcome(prev: LaunchRecord | null, noOutcome: readonly number[] 
   return { startedAt: truth.startedAt, endedAt: truth.endedAt ?? truth.startedAt, exit: truth.exit };
 }
 
+/**
+ * Il giro finito merita la notifica desktop. A tasto sempre (P14): l'ha
+ * chiesto l'utente, che aspetta di sapere com'è andata. Da startup e da
+ * scadenza solo quando l'exit è DIVERSO da quello dell'ultimo giro vero (T190
+ * P6): 0→1, 1→2, 2→0 notificano, 1→1 no. Il deck non sa cosa vogliono dire i
+ * codici di un comando — per uno 1 è «degrada» e 2 «rotto» —, quindi ogni
+ * cambio di codice è una notizia, non solo il passaggio fra verde e rosso. Al
+ * primo giro di sempre (`prev` nullo) vale come cambio il solo rosso: un verde
+ * dal nulla non è una notizia.
+ *
+ * Un giro senza esito non arriva qui: chi chiama lo scarta prima.
+ */
+export function launchNotifies(prev: number | null, exit: number, origin: LaunchOrigin): boolean {
+  if (origin === 'tasto') return true;
+  return prev === null ? exit !== 0 : prev !== exit;
+}
+
 /** Ciò che la testata mostra (P23): 🚨 vince su 🔄, e il verde non compare. */
 export interface LaunchIndicator {
   kind: 'running' | 'red';

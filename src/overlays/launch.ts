@@ -23,6 +23,7 @@ import {
   lastTrueRecord,
   launchDue,
   launchIndicatorOf,
+  launchNotifies,
   launchRunning,
   readLaunchLog,
   runCaptured,
@@ -88,8 +89,8 @@ export function useLaunchPage(deps: LaunchPageDeps) {
   // I figli di QUESTO deck, per l'evento `exit`; le corse degli altri deck si
   // vedono dal disco, al tick.
   const children = useRef(new Map<string, ChildProcess>());
-  // L'exit dell'ultimo giro VERO prima di questo, per la notifica al cambio
-  // (P14): un giro senza esito in mezzo non lo sposta (T190).
+  // L'exit dell'ultimo giro VERO prima di questo, per la notifica al cambio di
+  // codice (`launchNotifies`): un giro senza esito in mezzo non lo sposta (T190).
   const prevExit = useRef(new Map<string, number | null>());
   // Lo startup corre una volta per vita del deck, non a ogni ricarica delle
   // voci: dopo `w` l'effect riparte, e un secondo startup rilancerebbe il pull.
@@ -123,10 +124,7 @@ export function useLaunchPage(deps: LaunchPageDeps) {
   function notify(entry: LaunchEntry, rec: LaunchRecord, origin: LaunchOrigin) {
     const exit = rec.exit ?? 1;
     const prev = prevExit.current.get(entry.slug ?? '') ?? null;
-    // Al primo giro di sempre il solo rosso vale un cambio: un verde dal nulla
-    // non è una notizia.
-    const changed = prev === null ? exit !== 0 : prev === 0 !== (exit === 0);
-    if (origin !== 'tasto' && !changed) return;
+    if (!launchNotifies(prev, exit, origin)) return;
     notifyDone(`loom-deck · ${entry.label}`, `${name}: ${exit === 0 ? 'ok' : `fallito (exit ${exit})`}`);
   }
 

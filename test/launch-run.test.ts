@@ -21,6 +21,7 @@ import {
   lastTrueRecord,
   launchDue,
   launchIndicatorOf,
+  launchNotifies,
   launchExitPath,
   launchLogPath,
   launchRecordPath,
@@ -296,4 +297,34 @@ test('runCaptured: l\'ultimo giro vero sopravvive ai rilanci senza esito', { ski
   const fourth = await run('exit 0');
   assert.equal(fourth.settled.exit, 0);
   assert.equal(lastTrueRecord(fourth.settled, fourth.e.noOutcome), fourth.settled, 'un giro vero torna a essere il record');
+});
+
+// ── T190 · exit 1 contro 2 ──────────────────────────────────────────────────
+
+test('notifica: da scadenza e da startup a ogni cambio di codice, non quando si ripete', () => {
+  for (const origin of ['every', 'startup'] as const) {
+    assert.equal(launchNotifies(0, 1, origin), true, '0→1');
+    assert.equal(launchNotifies(1, 2, origin), true, '1→2: due rossi diversi sono una notizia');
+    assert.equal(launchNotifies(2, 0, origin), true, '2→0');
+    assert.equal(launchNotifies(1, 1, origin), false, '1→1');
+    assert.equal(launchNotifies(0, 0, origin), false, '0→0');
+    // Al primo giro di sempre vale il solo rosso.
+    assert.equal(launchNotifies(null, 0, origin), false);
+    assert.equal(launchNotifies(null, 2, origin), true);
+  }
+});
+
+test('notifica: a tasto sempre, anche quando il codice si ripete', () => {
+  assert.equal(launchNotifies(1, 1, 'tasto'), true);
+  assert.equal(launchNotifies(0, 0, 'tasto'), true);
+  assert.equal(launchNotifies(null, 0, 'tasto'), true);
+});
+
+test('exit 1 contro 2: stesso 🚨 in testata, il numero resta nella pagina ^L', () => {
+  const v = voce('custodia', { noOutcome: [3] });
+  for (const exit of [1, 2]) {
+    const records = new Map([[v.slug!, rec({ exit })]]);
+    assert.deepEqual(launchIndicatorOf([v], records), { kind: 'red', label: 'custodia', count: 1 });
+    assert.match(launchOutcome(v, rec({ exit })).text, new RegExp(`^exit ${exit} · `));
+  }
 });
