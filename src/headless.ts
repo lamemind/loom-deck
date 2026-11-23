@@ -269,6 +269,23 @@ async function launchTurn(
   return st;
 }
 
+/**
+ * T245 — il prompt del turno con il contesto di chi lancia in coda.
+ *
+ * Il prompt dell'azione è uno slash command (`/loom-works:preflight-task T9`):
+ * tutto ciò che segue il nome del comando, righe a capo comprese, arriva alla
+ * skill come argomenti, e la skill lo legge nelle sue «Note utente». Il
+ * contesto si accoda dopo una riga vuota, così resta un blocco a sé sotto l'id
+ * della task. È il canale per un'istruzione al passo: `--note` scrive nel
+ * titolo della conversazione, e il passo non la riceve mai.
+ *
+ * Un contesto vuoto o di soli spazi non cambia il prompt.
+ */
+export function withContext(prompt: string, context?: string): string {
+  const text = context?.trim();
+  return text ? `${prompt}\n\n${text}` : prompt;
+}
+
 function clip(text: string): string {
   const cps = [...text];
   return cps.length <= STATE_PROMPT_MAX ? text : `${cps.slice(0, STATE_PROMPT_MAX).join('')}…`;
@@ -284,8 +301,17 @@ function clip(text: string): string {
  * `manual` (D2 preflight) — un canale senza nessuno che guarda non allarga il
  * permesso che il progetto ha dichiarato, e in `manual` ogni comando di un run
  * sarebbe negato.
+ *
+ * T245 — `context` è il testo che chi lancia accoda al prompt dell'azione
+ * (`withContext`), solo qui e non sull'endpoint: il prompt della tab lo compone
+ * il deck dal catalogo, e una richiesta di spawn non porta testo libero.
  */
-export async function openHeadless(req: SpawnRequest, root: string, io: HeadlessIo): Promise<TurnReply> {
+export async function openHeadless(
+  req: SpawnRequest,
+  root: string,
+  io: HeadlessIo,
+  context?: string,
+): Promise<TurnReply> {
   if (req.kind === 'none') {
     return { ok: false, reason: 'kind none: un turno headless senza prompt non ha niente da eseguire' };
   }
@@ -308,6 +334,7 @@ export async function openHeadless(req: SpawnRequest, root: string, io: Headless
     };
   }
 
+  const prompt = withContext(plan.prompt, context);
   const sessionId = io.newId();
   const tab = compose(deckArgs(req.task, sessionId, plan.model, plan.note, '', plan.regia?.regia), ctx, io);
   warnings.push(...tab.warnings);
@@ -332,10 +359,10 @@ export async function openHeadless(req: SpawnRequest, root: string, io: Headless
       title: tab.title,
       permissionMode: mode,
       turn: 1,
-      prompt: clip(plan.prompt),
+      prompt: clip(prompt),
       ...regiaField(tab),
     },
-    headlessArgs(tab.claudeArgs, plan.prompt),
+    headlessArgs(tab.claudeArgs, prompt),
     headlessEnv(io.env, { task: req.task, regia: tab.sessionEnv.LOOM_REGIA ?? null }, io.platform),
   );
   if (state.launchError) return { ok: false, reason: state.launchError };

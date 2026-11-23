@@ -27,7 +27,7 @@ import { parseClientArgs } from './spawn-client.js';
 import { normalizeSession, requestKinds } from './spawn-endpoint.js';
 import { findProjectRoot } from './tab-launch.js';
 
-export const HEADLESS_USAGE = `uso: loom-deck-headless open <TaskID> <kind> [perimetro] [--model <alias>] [--note <testo>] [--regia <perimetro>] [--root <dir>]
+export const HEADLESS_USAGE = `uso: loom-deck-headless open <TaskID> <kind> [perimetro] [--model <alias>] [--note <testo>] [--context <testo | ->] [--regia <perimetro>] [--root <dir>]
      loom-deck-headless reply <sessionId> <messaggio… | -> [--model <alias>] [--regia <perimetro>] [--root <dir>]
      loom-deck-headless status <sessionId> [--wait <secondi>] [--json] [--root <dir>]
 
@@ -39,6 +39,9 @@ status. Nessuna tab, nessun cambio di finestra o di focus.
            modello e binding del tasto del deck (override di progetto compresi)
              <kind>       ${requestKinds('headless').filter((k) => k !== 'none').join(' | ')}
              [perimetro]  solo con run: DLV come in run-task, 1,3-5
+             --context    testo in coda al prompt dell'azione, dopo una riga
+                          vuota: il passo lo riceve fra le sue Note utente.
+                          - lo legge da stdin. --note invece va nel titolo
            su un progetto permissionMode manual rifiuta run e checkpoint
   reply    manda il messaggio a una conversazione ferma del progetto e ne avvia
            il turno dopo (--resume); - legge il messaggio da stdin. Rifiutata se
@@ -88,15 +91,50 @@ type Common = { root: string | null; model?: ModelKind; regia?: string };
 type Parsed =
   | { help: true }
   | { usage: string[] }
-  | { cmd: 'open'; args: string[] }
+  | { cmd: 'open'; args: string[]; context?: string }
   | ({ cmd: 'reply'; session: string; words: string[] } & Common)
   | { cmd: 'status'; session: string; wait: number; json: boolean; root: string | null };
 
-/** L'argv di `reply` e `status`. Quello di `open` lo legge `parseClientArgs`. */
+/** Le opzioni di `parseClientArgs` che prendono un valore: il valore passa
+ *  intatto anche quando è a sua volta una parola come `--context`. */
+const CLIENT_VALUE_OPTIONS = new Set(['--model', '--note', '--regia', '--root']);
+
+/**
+ * T245 — l'argv di `open`: `--context` qui, il resto a `parseClientArgs`.
+ *
+ * `--context` è di `loom-deck-headless` soltanto: `parseClientArgs` è anche il
+ * parser di `loom-deck-spawn`, dove il prompt lo compone il deck e un testo
+ * libero non ha dove andare. Il valore è il testo, o `-` per leggerlo da stdin.
+ */
+function parseOpenArgs(rest: readonly string[]): Parsed {
+  const args: string[] = [];
+  let context: string | undefined;
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]!;
+    if (CLIENT_VALUE_OPTIONS.has(a)) {
+      args.push(a);
+      if (i + 1 < rest.length) args.push(rest[++i]!);
+      continue;
+    }
+    if (a !== '--context') {
+      args.push(a);
+      continue;
+    }
+    const v = rest[i + 1];
+    if (v === undefined) return { usage: ['--context senza valore (il testo, o - per leggerlo da stdin)'] };
+    if (context !== undefined) return { usage: ['--context ripetuto: il contesto è uno solo'] };
+    context = v;
+    i++;
+  }
+  return { cmd: 'open', args, ...(context !== undefined ? { context } : {}) };
+}
+
+/** L'argv di `reply` e `status`. Quello di `open` lo legge `parseOpenArgs`,
+ *  poi `parseClientArgs`. */
 export function parseHeadlessArgs(argv: readonly string[]): Parsed {
   const [cmd, ...rest] = argv;
   if (cmd === undefined || cmd === '-h' || cmd === '--help') return { help: true };
-  if (cmd === 'open') return { cmd, args: rest };
+  if (cmd === 'open') return parseOpenArgs(rest);
   if (cmd !== 'reply' && cmd !== 'status') return { usage: [`sottocomando ignoto: '${cmd}' (usa open | reply | status)`] };
 
   const positional: string[] = [];
@@ -167,7 +205,15 @@ export async function runHeadlessClient(argv: readonly string[], io: HeadlessCli
       return 0;
     }
     if ('usage' in a) return usage(io, a.usage);
-    return reportStart(io, await openHeadless(a.request, rootOf(a.root, io), io.headless), 'open');
+    let context: string | undefined;
+    if (p.context !== undefined) {
+      context = p.context === '-' ? await io.readStdin() : p.context;
+      // Un contesto chiesto e vuoto è un guasto di chi compone la riga (un
+      // heredoc vuoto, una variabile non espansa): il passo partirebbe senza
+      // l'istruzione che chi lancia crede di avergli dato.
+      if (!context.trim()) return usage(io, ['--context: testo vuoto']);
+    }
+    return reportStart(io, await openHeadless(a.request, rootOf(a.root, io), io.headless, context), 'open');
   }
 
   const root = rootOf(p.root, io);

@@ -253,9 +253,12 @@ loom-deck-headless open T12 preflight          # stampa il sessionId e torna sub
 loom-deck-headless status 0a1b2c3d --wait 540  # aspetta la fine del turno, fino a 540 s
 loom-deck-headless reply 0a1b2c3d 'D1: A, D2: B'
 loom-deck-headless reply 0a1b2c3d -            # il messaggio da stdin
+loom-deck-headless open T12 preflight --context - <<'CONTESTO'
+Le decisioni da cui nasce T12 stanno in T7 §Decisions D18–D23.
+CONTESTO
 ```
 
-- **`open`** prende gli argomenti di `loom-deck-spawn` e apre la stessa conversazione che aprirebbe il tasto: stessa terna di catalogo con l'override di progetto, stesso titolo come `--name`, stesso permission mode, `LOOM_TASK` della task, binding e nota nel sidecar **prima** del processo — la conversazione compare nel deck sotto la sua task, e `⏎` la riprende in una tab. Rifiuta ciò che rifiuta l'endpoint (task assente, run su un mandato, DLV fuori range o già chiusi) e in più `run` e `checkpoint` su un progetto con `permissionMode` `manual`, dove nessuno approverebbe i comandi.
+- **`open`** prende gli argomenti di `loom-deck-spawn` e apre la stessa conversazione che aprirebbe il tasto: stessa terna di catalogo con l'override di progetto, stesso titolo come `--name`, stesso permission mode, `LOOM_TASK` della task, binding e nota nel sidecar **prima** del processo — la conversazione compare nel deck sotto la sua task, e `⏎` la riprende in una tab. Rifiuta ciò che rifiuta l'endpoint (task assente, run su un mandato, DLV fuori range o già chiusi) e in più `run` e `checkpoint` su un progetto con `permissionMode` `manual`, dove nessuno approverebbe i comandi. Con **`--context <testo>`**, o `--context -` per leggerlo da stdin, il testo entra in coda al prompt dell'azione dopo una riga vuota: il prompt è uno slash command, e la skill del passo lo riceve fra le sue Note utente. È il canale per un'istruzione al passo; `--note` resta la nota del titolo, che il passo non vede. Solo su `open`: `loom-deck-spawn` non lo accetta.
 - **`reply`** manda un messaggio a una conversazione **ferma** del progetto, nata headless o in una tab, con task, nota e modello che il deck userebbe per riprenderla. Rifiuta se la conversazione ha un processo vivo di qualunque forma — una tab aperta o un turno headless in corso: due processi sullo stesso transcript non devono esistere.
 - **`status`** dà l'esito dell'ultimo turno in quattro classi, col testo finale: `in corso` (uscita `3`), `turno chiuso` (`0`), `permesso negato` (`4`, con gli strumenti negati: si riprende la conversazione in una tab per approvarli), `errore` (`1`: errore dell'API, o processo finito senza esito, con la coda dello stderr). Se un turno chiuso sia una domanda o una fine lo dice il testo, non il comando.
 

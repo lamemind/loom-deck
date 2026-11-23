@@ -26,6 +26,7 @@ import {
   resolveSession,
   staleHeadless,
   turnOutcome,
+  withContext,
   type HeadlessIo,
   type LaunchOptions,
 } from '../src/headless.js';
@@ -44,6 +45,7 @@ import {
 } from '../src/headless-state.js';
 import { HEADLESS_USAGE, parseHeadlessArgs, runHeadlessClient, statusText } from '../src/headless-client.js';
 import { launchDetached } from '../src/headless-io.js';
+import { parseClientArgs } from '../src/spawn-client.js';
 import { parseLiveEntry, parseRegistryEntry, procRunning, procStartOf, sessionProcesses } from '../src/live-sessions.js';
 import { projectDirName } from '../src/sessions.js';
 import { loadSessionIndex, taskIndexPath } from '../src/task-index.js';
@@ -269,6 +271,35 @@ test('open: override di progetto sul modello, perimetro del run in coda al promp
   const a = io.launches[0]!.args;
   assert.equal(a[a.indexOf('--model') + 1], 'haiku');
   assert.equal(a.at(-1), '/loom-works:run-task T9 DLV 2');
+});
+
+// T245 — il contesto di chi lancia entra nel prompt del turno, dopo l'id della
+// task: è ciò che il passo legge nelle sue Note utente. La nota resta del
+// titolo, e il contesto non tocca né titolo né sidecar.
+test('withContext: in coda dopo una riga vuota, spazi tolti; vuoto non cambia niente', () => {
+  assert.equal(withContext('/loom-works:preflight-task T9', '  D18–D43 in T57\n'), '/loom-works:preflight-task T9\n\nD18–D43 in T57');
+  assert.equal(withContext('/loom-works:preflight-task T9', ' \n '), '/loom-works:preflight-task T9');
+  assert.equal(withContext('/loom-works:preflight-task T9'), '/loom-works:preflight-task T9');
+});
+
+test('open con contesto: il testo in coda al prompt del turno e nello stato, titolo e sidecar invariati', async () => {
+  const root = project();
+  const io = fakeIo();
+  const context = 'Decisioni con l\'utente:\n- «tienilo corto», sue parole\n--non è un flag';
+  const r = await openHeadless(req('T9', 'preflight', { note: 'nota' }), root, io, context);
+  assert.ok(r.ok, JSON.stringify(r));
+  const a = io.launches[0]!.args;
+  assert.deepEqual(a.slice(-2), ['--', `/loom-works:preflight-task T9\n\n${context}`]);
+  assert.match(a[a.indexOf('--name') + 1]!, /nota$/);
+  assert.doesNotMatch(io.launches[0]!.sidecar, /tienilo corto/);
+  assert.equal(readState(root, SID)!.prompt, `/loom-works:preflight-task T9\n\n${context}`);
+});
+
+test('open con contesto: col perimetro di un run, il contesto viene dopo i DLV', async () => {
+  const root = project();
+  const io = fakeIo();
+  await openHeadless(req('T9', 'run', { scope: [2] }), root, io, 'solo il ramo Linux');
+  assert.equal(io.launches[0]!.args.at(-1), '/loom-works:run-task T9 DLV 2\n\nsolo il ramo Linux');
 });
 
 test('open: recap si specializza come nel detail', async () => {
@@ -605,6 +636,43 @@ test('client: open stampa il sessionId, reply legge lo stdin, status mappa le us
   const g = clientIo(root, hio);
   assert.equal(await runHeadlessClient(['status', 'ffffffff'], g.io), 2);
   assert.match(g.out.stderr, /nessun turno headless di ffffffff/);
+});
+
+test('argomenti di open: --context estratto, il resto a parseClientArgs intatto', () => {
+  assert.deepEqual(parseHeadlessArgs(['open', 'T9', 'preflight', '--context', '-', '--root', '/p']), {
+    cmd: 'open',
+    args: ['T9', 'preflight', '--root', '/p'],
+    context: '-',
+  });
+  // il valore di un'altra opzione resta suo, anche quando si chiama --context
+  assert.deepEqual(parseHeadlessArgs(['open', 'T9', 'preflight', '--note', '--context']), {
+    cmd: 'open',
+    args: ['T9', 'preflight', '--note', '--context'],
+  });
+  assert.deepEqual(parseHeadlessArgs(['open', 'T9', 'preflight', '--context', 'testo libero']), {
+    cmd: 'open',
+    args: ['T9', 'preflight'],
+    context: 'testo libero',
+  });
+  assert.ok('usage' in parseHeadlessArgs(['open', 'T9', 'preflight', '--context']));
+  assert.ok('usage' in parseHeadlessArgs(['open', 'T9', 'preflight', '--context', 'a', '--context', 'b']));
+});
+
+test('client: open --context - legge lo stdin; un contesto vuoto è un errore d\'uso, senza turno', async () => {
+  const root = project();
+  const hio = fakeIo();
+  const a = clientIo(root, hio, { stdin: 'riga uno\nriga due\n' });
+  assert.equal(await runHeadlessClient(['open', 'T9', 'preflight', '--context', '-'], a.io), 0);
+  assert.equal(hio.launches.at(-1)!.args.at(-1), '/loom-works:preflight-task T9\n\nriga uno\nriga due');
+
+  const empty = fakeIo();
+  const b = clientIo(project(), empty, { stdin: '  \n' });
+  assert.equal(await runHeadlessClient(['open', 'T9', 'preflight', '--context', '-'], b.io), 2);
+  assert.match(b.out.stderr, /--context: testo vuoto/);
+  assert.equal(empty.launches.length, 0);
+
+  // `loom-deck-spawn` non conosce l'opzione: il suo parser la rifiuta
+  assert.deepEqual(parseClientArgs(['T9', 'preflight', '--context', 'x']), { usage: ['opzione ignota: --context'] });
 });
 
 test('client: --wait si ferma alla scadenza con uscita 3', async () => {
