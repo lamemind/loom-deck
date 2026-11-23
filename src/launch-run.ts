@@ -12,7 +12,8 @@
 // l'ora dell'ultimo giro deve sopravvivere al riavvio, o un deck riaperto non sa
 // se la scadenza è passata.
 //
-//   <slug>.json  pid, ora d'inizio, exit e ora di fine dell'ultimo giro
+//   <slug>.json  pid, ora d'inizio, exit e ora di fine dell'ultimo giro, più
+//                l'ultimo giro vero quando quello è senza esito (T190)
 //   <slug>.log   stdout e stderr del giro, riscritto a ogni lancio
 //   <slug>.exit  l'exit code, scritto dal FIGLIO a fine corsa
 //
@@ -76,6 +77,13 @@ export function launchExitPath(projectRoot: string, slug: string): string {
 /** Da dove è partito il giro: decide la notifica (P14) e la nota a schermo. */
 export type LaunchOrigin = 'tasto' | 'startup' | 'every';
 
+/** Un giro finito con un esito: ciò che resta dell'ultimo giro vero. */
+export interface LaunchRun {
+  startedAt: number;
+  endedAt: number;
+  exit: number;
+}
+
 export interface LaunchRecord {
   /** Il pid del wrapper; `null` quando lo spawn è inerte (test). */
   pid: number | null;
@@ -86,6 +94,15 @@ export interface LaunchRecord {
   endedAt: number | null;
   exit: number | null;
   origin: LaunchOrigin;
+  /**
+   * T190 — l'ultimo giro VERO prima di questo, portato avanti da `runCaptured`
+   * a ogni lancio. Il record riscritto al lancio cancellerebbe l'esito del giro
+   * prima; se questo giro esce con un codice `noOutcome`, testata, scadenza e
+   * pagina devono ancora sapere com'era finito l'ultimo che ha misurato
+   * qualcosa. Si consulta solo per un giro senza esito (`lastTrueRecord`):
+   * una voce senza `noOutcome` lo scrive e non lo legge mai.
+   */
+  lastOutcome: LaunchRun | null;
 }
 
 /**
@@ -106,6 +123,15 @@ function isRecord(v: unknown): v is LaunchRecord {
   );
 }
 
+/** `lastOutcome` come sta su disco; assente o fuori forma → `null`, come un
+ *  record scritto da un deck che non lo conosceva. */
+function readRun(v: unknown): LaunchRun | null {
+  if (!v || typeof v !== 'object') return null;
+  const r = v as Record<string, unknown>;
+  if (typeof r.startedAt !== 'number' || typeof r.endedAt !== 'number' || typeof r.exit !== 'number') return null;
+  return { startedAt: r.startedAt, endedAt: r.endedAt, exit: r.exit };
+}
+
 /** File assente o illeggibile → `null`: la voce non ha mai girato, che è uno
  *  stato e non un errore. */
 export function readLaunchRecord(projectRoot: string, slug: string): LaunchRecord | null {
@@ -119,6 +145,7 @@ export function readLaunchRecord(projectRoot: string, slug: string): LaunchRecor
       endedAt: raw.endedAt,
       exit: raw.exit,
       origin: raw.origin === 'startup' || raw.origin === 'every' ? raw.origin : 'tasto',
+      lastOutcome: readRun((raw as { lastOutcome?: unknown }).lastOutcome),
     };
   } catch {
     return null;
@@ -214,6 +241,82 @@ export function launchDue(rec: LaunchRecord | null, intervalMs: number, now: num
   return now - last >= intervalMs;
 }
 
+// ── I giri senza esito (T190) ──────────────────────────────────────────────
+// Un exit code elencato in `noOutcome` dice che il giro non ha fatto il suo
+// lavoro — il caso tipico è un comando col suo lock, che esce subito perché un
+// altro giro è in corso. Il deck lo tratta come non avvenuto: testata,
+// scadenza e notifica guardano l'ultimo giro VERO, e il tentativo si vede solo
+// nella pagina `^L`. Una voce senza `noOutcome` non passa mai di qui: il
+// record che guarda è quello di sempre.
+
+/** L'exit è uno di quelli che la voce dichiara «nessun esito». */
+export function isNoOutcome(exit: number | null, noOutcome: readonly number[] | null | undefined): boolean {
+  return exit !== null && Boolean(noOutcome?.includes(exit));
+}
+
+/**
+ * Il record su cui si misurano scadenza, glifo e notifica: quello su disco,
+ * tranne quando il suo giro è finito con un codice senza esito — allora è
+ * l'ultimo giro vero (`lastOutcome`), o `null` se un giro vero non c'è mai
+ * stato, che per la scadenza vuol dire «dovuta».
+ *
+ * Una corsa in piedi e un esito perso restano il record di sempre: il primo è
+ * ciò che 🔄 e la guardia devono vedere, il secondo non dice con che codice è
+ * finito, quindi non lo si sa scartare.
+ */
+export function lastTrueRecord(
+  rec: LaunchRecord | null,
+  noOutcome: readonly number[] | null | undefined,
+): LaunchRecord | null {
+  if (!rec || !isNoOutcome(rec.exit, noOutcome)) return rec;
+  const last = rec.lastOutcome;
+  if (!last) return null;
+  return { pid: null, procStart: null, ...last, origin: rec.origin, lastOutcome: null };
+}
+
+/** L'ultimo giro vero da portare nel record di un lancio nuovo. Un record
+ *  ancora aperto (esito perso) non lo è: si porta avanti il suo. */
+function carriedOutcome(prev: LaunchRecord | null, noOutcome: readonly number[] | null | undefined): LaunchRun | null {
+  const truth = lastTrueRecord(prev, noOutcome);
+  if (!truth) return null;
+  if (truth.exit === null) return truth.lastOutcome;
+  return { startedAt: truth.startedAt, endedAt: truth.endedAt ?? truth.startedAt, exit: truth.exit };
+}
+
+/** Ciò che la testata mostra (P23): 🚨 vince su 🔄, e il verde non compare. */
+export interface LaunchIndicator {
+  kind: 'running' | 'red';
+  label: string;
+  count: number;
+}
+
+/**
+ * Il glifo di testata delle voci con esito. Una voce in corso conta come 🔄;
+ * le altre contano come 🚨 quando il loro ultimo giro VERO è rosso — un giro
+ * senza esito dopo un rosso lascia 🚨 acceso, dopo un verde lascia la testata
+ * vuota (T190).
+ */
+export function launchIndicatorOf(
+  entries: readonly LaunchEntry[],
+  records: ReadonlyMap<string, LaunchRecord | null>,
+): LaunchIndicator | null {
+  const running: LaunchEntry[] = [];
+  const red: LaunchEntry[] = [];
+  for (const e of entries) {
+    if (!e.capture || !e.slug || e.enabled === false) continue;
+    const r = records.get(e.slug) ?? null;
+    if (launchRunning(r)) {
+      running.push(e);
+      continue;
+    }
+    const truth = lastTrueRecord(r, e.noOutcome);
+    if (truth && truth.exit !== null && truth.exit !== 0) red.push(e);
+  }
+  if (red.length > 0) return { kind: 'red', label: red[0]!.label, count: red.length };
+  if (running.length > 0) return { kind: 'running', label: running[0]!.label, count: running.length };
+  return null;
+}
+
 /**
  * Lancia la voce con l'esito su disco, e restituisce il figlio (il wrapper) e
  * il record appena scritto.
@@ -223,7 +326,11 @@ export function launchDue(rec: LaunchRecord | null, intervalMs: number, now: num
  * prima scrittura, misurato nel DLV1). Il padre lo chiude subito dopo lo spawn:
  * il figlio ne ha la sua copia.
  *
- * Con `LOOM_DECK_NO_SPAWN` niente tocca il disco: i gate pty girano sul
+ * Il record nuovo porta con sé l'ultimo giro vero (`lastOutcome`), letto dal
+ * record che sta per sostituire: chi lancia lo ha già fuso col suo `.exit`
+ * (`settleLaunchRecord` davanti alla guardia), quindi qui basta leggerlo.
+ *
+ * Con `LOOM_DECK_NO_SPAWN` niente si scrive sul disco: i gate pty girano sul
  * progetto vero, e un record scritto lì marcherebbe «in corso» una voce che non
  * è mai partita.
  */
@@ -234,7 +341,15 @@ export function runCaptured(
   now: number = Date.now(),
 ): { child: ChildProcess; record: LaunchRecord } {
   const slug = entry.slug ?? 'voce';
-  const record: LaunchRecord = { pid: null, procStart: null, startedAt: now, endedAt: null, exit: null, origin };
+  const record: LaunchRecord = {
+    pid: null,
+    procStart: null,
+    startedAt: now,
+    endedAt: null,
+    exit: null,
+    origin,
+    lastOutcome: carriedOutcome(readLaunchRecord(cwd, slug), entry.noOutcome),
+  };
   if (NO_SPAWN) {
     const fake = new EventEmitter() as ChildProcess;
     fake.unref = () => fake;

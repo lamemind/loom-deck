@@ -764,3 +764,19 @@ test('cellWidth: emoji largo 2, VS16 a larghezza 0, ascii 1', () => {
   assert.equal(cellWidth('📝'), 2);
   assert.equal(cellWidth('⚡️'), 2); // simbolo BMP + VS16 → 2, non 3
 });
+
+// ── T190 · noOutcome ─────────────────────────────────────────────────────────
+
+test('launch: noOutcome è una lista di exit code fra 1 e 255, il resto cade con avviso', () => {
+  const ok = parseLaunchConfig({ launch: [{ label: 'custodia', command: 'giro.sh', noOutcome: [3, 75] }] });
+  assert.deepEqual(ok.entries[0]!.noOutcome, [3, 75]);
+  assert.deepEqual(ok.warnings, []);
+  assert.equal(parseLaunchConfig({ launch: [{ label: 'a', command: 'a' }] }).entries[0]!.noOutcome, null);
+  for (const bad of [[], [0], [256], [1.5], ['3'], [3, 3], 3, '3', null]) {
+    const { entries, warnings } = parseLaunchConfig({ launch: [{ label: 'a', command: 'a', noOutcome: bad }] });
+    assert.equal(entries.length, 1, 'la voce resta: cade il solo attributo');
+    assert.equal(entries[0]!.noOutcome, null, JSON.stringify(bad));
+    assert.equal(warnings.length, 1, JSON.stringify(bad));
+    assert.match(warnings[0]!, /noOutcome/);
+  }
+});

@@ -19,11 +19,15 @@ import type { Key } from 'ink';
 import type { ChildProcess } from 'node:child_process';
 import { assignDigits, launchEnabled, parseEvery, type LaunchEntry } from '../config.js';
 import {
+  isNoOutcome,
+  lastTrueRecord,
   launchDue,
+  launchIndicatorOf,
   launchRunning,
   readLaunchLog,
   runCaptured,
   settleLaunchRecord,
+  type LaunchIndicator,
   type LaunchOrigin,
   type LaunchRecord,
 } from '../launch-run.js';
@@ -46,12 +50,7 @@ export const LAUNCH_TICK_MS = 30_000;
 export type LaunchField = 'header' | 'capture' | 'startup' | 'every';
 export const LAUNCH_FIELDS: readonly LaunchField[] = ['header', 'capture', 'startup', 'every'];
 
-/** Ciò che la testata mostra (P23): 🚨 vince su 🔄, e il verde non compare. */
-export interface LaunchIndicator {
-  kind: 'running' | 'red';
-  label: string;
-  count: number;
-}
+export type { LaunchIndicator };
 
 export interface LaunchPageDeps {
   cwd: string;
@@ -89,7 +88,8 @@ export function useLaunchPage(deps: LaunchPageDeps) {
   // I figli di QUESTO deck, per l'evento `exit`; le corse degli altri deck si
   // vedono dal disco, al tick.
   const children = useRef(new Map<string, ChildProcess>());
-  // L'exit PRIMA del giro, per la notifica al cambio (P14).
+  // L'exit dell'ultimo giro VERO prima di questo, per la notifica al cambio
+  // (P14): un giro senza esito in mezzo non lo sposta (T190).
   const prevExit = useRef(new Map<string, number | null>());
   // Lo startup corre una volta per vita del deck, non a ogni ricarica delle
   // voci: dopo `w` l'effect riparte, e un secondo startup rilancerebbe il pull.
@@ -155,7 +155,7 @@ export function useLaunchPage(deps: LaunchPageDeps) {
       }
       return;
     }
-    prevExit.current.set(slug, current?.exit ?? null);
+    prevExit.current.set(slug, lastTrueRecord(current, entry.noOutcome)?.exit ?? null);
     const { child, record } = runCaptured(entry, cwd, origin);
     children.current.set(slug, child);
     setRecords((m) => new Map(m).set(slug, record));
@@ -168,7 +168,14 @@ export function useLaunchPage(deps: LaunchPageDeps) {
       if (!alive.current) return;
       const settled = settleLaunchRecord(cwd, slug);
       setRecords((m) => new Map(m).set(slug, settled));
-      if (settled && entry.capture) notify(entry, settled, origin);
+      if (!settled) return;
+      // T190 — un giro senza esito non notifica mai, nemmeno a tasto: l'unica
+      // traccia è la pagina `^L`, più questa nota quando l'ha chiesto l'utente.
+      if (isNoOutcome(settled.exit, entry.noOutcome)) {
+        if (origin === 'tasto') setNote(`${entry.label}: exit ${settled.exit}, nessun esito · ^L`);
+        return;
+      }
+      if (entry.capture) notify(entry, settled, origin);
     });
     if (origin === 'tasto') {
       setNote(`${keyLabel} → ${entry.label} avviato${entry.capture ? ' · ^L per l\'esito' : ''}`);
@@ -197,7 +204,10 @@ export function useLaunchPage(deps: LaunchPageDeps) {
       const recs = refresh();
       for (const e of entries) {
         if (!launchEnabled(e) || !e.intervalMs || !e.slug) continue;
-        if (launchDue(recs.get(e.slug) ?? null, e.intervalMs, now)) launch(e, 'every', 'every');
+        // Un giro senza esito non sposta la scadenza (T190): si misura
+        // dall'ultimo giro vero, e una voce già dovuta riparte al tick dopo.
+        const truth = lastTrueRecord(recs.get(e.slug) ?? null, e.noOutcome);
+        if (launchDue(truth, e.intervalMs, now)) launch(e, 'every', 'every');
       }
     };
     // Una scadenza già passata al mount scatta adesso, non fra un tick: è il
@@ -209,19 +219,7 @@ export function useLaunchPage(deps: LaunchPageDeps) {
   }, [entries, available]);
 
   // ── La testata ────────────────────────────────────────────────────────────
-  const indicator = useMemo<LaunchIndicator | null>(() => {
-    const running: LaunchEntry[] = [];
-    const red: LaunchEntry[] = [];
-    for (const e of entries) {
-      if (!e.capture || !e.slug || !launchEnabled(e)) continue;
-      const r = records.get(e.slug) ?? null;
-      if (launchRunning(r)) running.push(e);
-      else if (r && r.exit !== null && r.exit !== 0) red.push(e);
-    }
-    if (red.length > 0) return { kind: 'red', label: red[0]!.label, count: red.length };
-    if (running.length > 0) return { kind: 'running', label: running[0]!.label, count: running.length };
-    return null;
-  }, [entries, records]);
+  const indicator = useMemo<LaunchIndicator | null>(() => launchIndicatorOf(entries, records), [entries, records]);
 
   // ── La pagina ─────────────────────────────────────────────────────────────
   const open = draft !== null;

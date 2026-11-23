@@ -34,6 +34,11 @@ export interface LaunchEntry {
   header?: boolean;
   /** Spenta (P17): né riga, né startup, né scadenza. Default `true`. */
   enabled?: boolean;
+  /** T190 — gli exit code che NON sono un esito (`[3]`: «un giro è già in
+   *  corso»), o `null`. Un giro che esce così vale come non avvenuto: niente
+   *  glifo, niente notifica desktop, la scadenza resta quella dell'ultimo giro
+   *  vero. Si scrive a mano nel file: la pagina `^L` non lo governa. */
+  noOutcome?: number[] | null;
   /** Lo slug dei file di esito, unico fra le voci del progetto. */
   slug?: string;
   /** La posizione nell'array `launch` del FILE: è la chiave con cui la pagina
@@ -56,6 +61,21 @@ export function parseEvery(raw: unknown): number | null {
   if (!Number.isFinite(n) || n <= 0) return null;
   const unit = m[2] === 'm' ? 60_000 : m[2] === 'h' ? 3_600_000 : 86_400_000;
   return n * unit;
+}
+
+/**
+ * T190 — `noOutcome`: lista non vuota di interi fra 1 e 255, senza doppioni;
+ * `null` se la forma non è quella. Lo 0 non entra: è il verde, e un verde
+ * dichiarato «senza esito» spegnerebbe la sonda in silenzio.
+ */
+export function parseNoOutcome(raw: unknown): number[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const codes = new Set<number>();
+  for (const v of raw) {
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 255 || codes.has(v)) return null;
+    codes.add(v);
+  }
+  return [...codes];
 }
 
 /**
@@ -125,6 +145,15 @@ export function parseLaunchConfig(raw: unknown): ParsedLaunch {
       if (typeof src.key === 'string' && /^[0-9]$/.test(src.key)) key = src.key;
       else warnings.push(`launch[${index}].key: '${String(src.key)}' non è una cifra, ignorato`);
     }
+    let noOutcome: number[] | null = null;
+    if (src.noOutcome !== undefined) {
+      noOutcome = parseNoOutcome(src.noOutcome);
+      if (noOutcome === null) {
+        warnings.push(
+          `launch[${index}].noOutcome: '${JSON.stringify(src.noOutcome)}' non è una lista di exit code fra 1 e 255, ignorato`,
+        );
+      }
+    }
     // Slug unico: la seconda omonima prende un suffisso con la posizione.
     let slug = launchSlug(shown);
     if (slugs.has(slug)) slug = `${slug}-${index}`;
@@ -143,6 +172,7 @@ export function parseLaunchConfig(raw: unknown): ParsedLaunch {
       key,
       header: flag('header', true),
       enabled: flag('enabled', true),
+      noOutcome,
       slug,
       index,
     });

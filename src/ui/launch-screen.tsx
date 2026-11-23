@@ -4,7 +4,7 @@ import { Box, Text } from 'ink';
 import { cut, pad, sanitize, termWidth, type WrappedLine } from '../width.js';
 import { CARET, CARET_OFF, fmtTime } from '../glyphs.js';
 import { launchEnabled, launchShown, type LaunchEntry, type LaunchSlot } from '../config.js';
-import { launchRunning, type LaunchRecord } from '../launch-run.js';
+import { isNoOutcome, lastTrueRecord, launchRunning, type LaunchRecord } from '../launch-run.js';
 import type { LaunchField } from '../overlays/launch.js';
 
 /** Le spunte: concordi nelle due contabilità di larghezza (`agrees`), quindi
@@ -19,15 +19,31 @@ const NAME_MAX = 24;
 /** Larghezza della cella `every`: `180m` è la forma più lunga sensata. */
 const EVERY_W = 5;
 
-/** L'esito di una voce, in una riga: `mai`, in corso, o exit e ora. */
-export function launchOutcome(
-  e: LaunchEntry,
-  rec: LaunchRecord | null,
-): { text: string; color?: string; dim: boolean } {
+export interface LaunchOutcomeText {
+  text: string;
+  color?: string;
+  dim: boolean;
+  /** T190 — l'ultimo tentativo senza esito, accanto all'esito vero, in grigio:
+   *  è l'unica traccia di un comando che esce sempre con un codice `noOutcome`. */
+  aside?: string;
+}
+
+/** L'esito di una voce, in una riga: `mai`, in corso, o exit e ora. Un giro
+ *  senza esito non prende il posto dell'ultimo giro vero: gli si affianca. */
+export function launchOutcome(e: LaunchEntry, rec: LaunchRecord | null): LaunchOutcomeText {
   if (!e.capture) return { text: '', dim: true };
   if (!rec) return { text: 'mai', dim: true };
   if (launchRunning(rec)) return { text: `in corso da ${fmtTime(rec.startedAt)}`, color: 'yellow', dim: false };
   if (rec.exit === null) return { text: `avviata ${fmtTime(rec.startedAt)}, esito perso`, color: 'yellow', dim: false };
+  if (isNoOutcome(rec.exit, e.noOutcome)) {
+    const aside = `senza esito: exit ${rec.exit} · ${fmtTime(rec.endedAt ?? rec.startedAt)}`;
+    const truth = lastTrueRecord(rec, e.noOutcome);
+    return truth ? { ...exitText(truth), aside } : { text: 'mai', dim: true, aside };
+  }
+  return exitText(rec);
+}
+
+function exitText(rec: LaunchRecord): LaunchOutcomeText {
   return {
     text: `exit ${rec.exit} · ${fmtTime(rec.endedAt ?? rec.startedAt)}`,
     color: rec.exit === 0 ? 'green' : 'red',
@@ -141,9 +157,12 @@ export function LaunchScreen({
                 {off ? (
                   <Text color="yellow">spenta</Text>
                 ) : (
-                  <Text color={outcome.color} dimColor={outcome.dim}>
-                    {outcome.text}
-                  </Text>
+                  <>
+                    <Text color={outcome.color} dimColor={outcome.dim}>
+                      {outcome.text}
+                    </Text>
+                    {outcome.aside ? <Text dimColor> · {outcome.aside}</Text> : null}
+                  </>
                 )}
               </Text>
             </Box>
@@ -183,6 +202,7 @@ export function LaunchLogScreen({
         <Text color={outcome.color} dimColor={outcome.dim}>
           [ {outcome.text || 'nessun esito'} ]
         </Text>
+        {outcome.aside ? <Text dimColor> {outcome.aside}</Text> : null}
       </Text>
       <Text dimColor wrap="truncate-end">
         {sanitize(cut(entry.command, 80))} · righe {total === 0 ? 0 : top + 1}-{last} di {total}

@@ -15,7 +15,9 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { configFilePath, type LaunchEntry } from './config.js';
 
-/** Le chiavi che la pagina governa, nell'ordine in cui si scrivono. */
+/** Le chiavi che la pagina governa, nell'ordine in cui si scrivono. Le altre
+ *  chiavi della voce restano dove sono: `noOutcome` (T190) si scrive a mano, e
+ *  `w` non lo tocca perché non è in questa lista. */
 const ATTRS = ['capture', 'startup', 'every', 'key', 'header', 'enabled'] as const;
 
 /**
