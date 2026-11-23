@@ -364,6 +364,12 @@ p  priorità     s  stato     i  id
 Partendo da catena vuota, digitare `ppi` produce `[pri ↓, id ↑]`. Il ciclo parte
 sempre **dallo stato corrente**, che il modale mostra dal vivo mentre digiti.
 
+La catena ordina **solo la vista `Tasks`**, la prima dell'header, ed è l'unica
+vista che raggruppa un cappello con le sue figlie. `nascoste` e `archiviabili`
+sono liste piatte per **id discendente** (`T250` prima di `T249`), qualunque sia
+la catena: servono a vedere cosa un filtro nasconde o cosa si può archiviare, e
+lì l'ordine per id basta.
+
 Sull'**id** il confronto è numerico (`T9` prima di `T10`, non lessicografico) e i due prefissi sono blocchi distinti — le `D` in coda alle `T`: i counter `T` e `D` sono separati nel contratto loom, quindi `T01` e `D01` non sono confrontabili come numeri soli. A parità su tutte le chiavi decide sempre l'`id` (confronto **numerico**: `T9`
 prima di `T10`) → l'ordine è deterministico, mai instabile fra un refresh e l'altro.
 
@@ -398,6 +404,7 @@ Sessions · tutte (317) · ●2 vive · 📌4 · +213 più vecchie · ↑7 · �
   terminale, cioè una posizione, non un insieme. Restano in coda, non selezionabili.
 - **Due assi ortogonali**: il pane task sceglie il *parent* delle conversazioni (`≡ tutte` / `○ spot` / una task), l'header sceglie *quale sottoinsieme* di quel parent. Cambiare parent non azzera la vista, che si ricalcola dentro il nuovo.
 - **`F` è inerte fuori dalla vista `Tasks`** e lo dice con una nota: su `nascoste` riapplicare i filtri non ha senso, `archiviabili` è cieca per scelta.
+- **`S` è inerte fuori dalla vista `Tasks`** e lo dice con una nota, come `F`: `nascoste` e `archiviabili` ordinano per id↓ e ignorano la catena, quindi editarla da lì sposterebbe righe che non stai guardando. Sulle due viste la riga `sort:` mostra `id↓`, l'ordine che è a schermo.
 - **La vista è volatile**: non entra in `deck-view.json`, il deck riapre sempre sulla voce 1. Un filtro salvato lo si è scelto; una vista non-default riaperta a freddo si leggerebbe come la lista intera.
 - **Cambiare vista riporta la selezione in cima**, righe meta comprese: nessuna regola di mantenimento, nessun tentativo di ritrovare l'elemento precedente.
 - Su un terminale stretto **la voce attiva è servita per prima** dal budget di larghezza: sparisce un contatore, mai la voce che dice dove sei.

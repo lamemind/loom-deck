@@ -23,7 +23,15 @@
 
 import type { Task } from './tasks.js';
 import type { AssembledList, SessionRow } from './session-list.js';
-import { isVisible, groupHierarchy, type BlockMark, type ViewState } from './view.js';
+import {
+  compareTasks,
+  isVisible,
+  groupHierarchy,
+  type BlockMark,
+  type SortCtx,
+  type SortEntry,
+  type ViewState,
+} from './view.js';
 import { isAvailable, offText, OFF_MARK } from './platform.js';
 
 export type TaskViewId = 'tasks' | 'hidden' | 'archivable';
@@ -106,21 +114,43 @@ export interface SelectedTasks {
   blockMark: ReadonlyMap<string, BlockMark>;
 }
 
+/** T251 — l'ordine delle viste dopo la prima: id discendente, la task più
+ *  recente in cima. Non dipende dalla chain configurata. */
+export const FIXED_TASK_SORT: readonly SortEntry[] = [{ key: 'id', dir: 'desc' }];
+
 /**
- * Le task della vista `id`, filtrate col predicato e raggruppate con la STESSA
- * chain e lo stesso livello gerarchico di `applyView` (`groupHierarchy`): un
- * sito solo per il sort, o una vista raggrupperebbe e l'altra no (T67). Vale
- * per ogni vista, non solo la principale — una lista ordinata in un modo e
- * l'altra in un altro sarebbe un secondo asse che si muove da solo.
+ * T251 — la vista principale è la PRIMA voce del catalogo, riconosciuta per
+ * posizione e non per un campo della voce: un campo seguirebbe la voce se il
+ * catalogo si riordina, e permetterebbe due viste con la chain configurabile.
+ */
+export function isPrimaryTaskView(id: TaskViewId): boolean {
+  return id === TASK_VIEWS[0]!.id;
+}
+
+/** L'ordine con cui la vista `id` dispone DAVVERO le righe: la chain
+ *  configurata sulla prima vista, `FIXED_TASK_SORT` sulle altre. La riga
+ *  `sort:` del pane legge da qui, così mostra l'ordine che è a schermo. */
+export function taskViewSort(id: TaskViewId, view: ViewState): readonly SortEntry[] {
+  return isPrimaryTaskView(id) ? view.sort : FIXED_TASK_SORT;
+}
+
+/**
+ * Le task della vista `id`, filtrate col predicato del catalogo.
+ *
+ * T251 — l'ordinamento dipende dalla vista. La prima vista ordina con la chain
+ * configurabile e raggruppa cappello+figlie (`groupHierarchy`), come
+ * `applyView`. Le altre (`nascoste`, `archiviabili`) sono liste PIATTE per id
+ * discendente, qualunque sia la chain: servono a vedere cosa un filtro nasconde
+ * o cosa è archiviabile, e lì l'ordine per id basta. Il grouping è parte
+ * dell'ordinamento, quindi resta solo dove resta la chain.
  */
 export function selectTasks(tasks: Task[], id: TaskViewId, ctx: TaskViewCtx): SelectedTasks {
   const entry = taskView(id);
   const picked = tasks.filter((t) => entry.has(t, ctx));
-  return groupHierarchy(picked, ctx.view.sort, {
-    commitAt: ctx.commitAt,
-    epicOf: ctx.epicOf,
-    epics: ctx.epics,
-  });
+  const sortCtx: SortCtx = { commitAt: ctx.commitAt, epicOf: ctx.epicOf, epics: ctx.epics };
+  if (isPrimaryTaskView(id)) return groupHierarchy(picked, ctx.view.sort, sortCtx);
+  const flat = [...picked].sort((a, b) => compareTasks(a, b, FIXED_TASK_SORT, sortCtx));
+  return { tasks: flat, blockMark: new Map() };
 }
 
 // ── pane sessioni ──────────────────────────────────────────────────────────

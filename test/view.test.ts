@@ -380,7 +380,7 @@ test('applyView: figlia nascosta dal filtro, mamma visibile → resta capo-blocc
   const shown = applyView(tasks, view, ctx);
   assert.deepEqual(shown.visible.map((x) => x.id), ['T1']);
   assert.equal(shown.blockMark.size, 0, 'T1 senza T2 in vista non ha nessun blocco da disegnare');
-  // Come farebbe `selectTasks('hidden', …)`: solo i task esclusi dal filtro.
+  // La sola figlia, senza la mamma: la lista che il filtro esclude.
   const { blockMark } = groupHierarchy(
     tasks.filter((x) => x.id === 'T2'),
     view.sort,

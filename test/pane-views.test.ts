@@ -12,17 +12,20 @@ import assert from 'node:assert/strict';
 import {
   cycleSessionView,
   cycleTaskView,
+  FIXED_TASK_SORT,
+  isPrimaryTaskView,
   selectSessionRows,
   selectTasks,
   sessionView,
   taskView,
+  taskViewSort,
   SESSION_VIEWS,
   TASK_VIEWS,
   type SessionViewCounts,
   type TaskViewCounts,
 } from '../src/pane-views.js';
 import { assembleSessionList, firstSelectableId, rowIndexOf } from '../src/session-list.js';
-import { DEFAULT_VIEW } from '../src/view.js';
+import { DEFAULT_VIEW, describeSort } from '../src/view.js';
 import type { Task } from '../src/tasks.js';
 import type { Session } from '../src/sessions.js';
 
@@ -163,17 +166,58 @@ test('`archiviabili` è CIECA ai filtri: li ignora, non li applica al contrario'
   );
 });
 
-test('ogni vista eredita la chain di ordinamento: un solo asse di sort', () => {
+// T251 — la chain configurabile vale solo per la prima vista. La fixture è
+// scelta perché `pri↓` e `id↓` diano un ordine diverso su ognuna delle tre
+// viste: un test in cui i due ordini coincidono passerebbe anche col codice di
+// prima.
+test('la chain ordina solo la prima vista: nascoste e archiviabili stanno per id discendente', () => {
+  const tasks = [task('T249', '🔥'), task('T250', '🔹'), task('T248', '⚡'), task('T247', '🔥', '✔️')];
   const ctx = {
-    view: { ...DEFAULT_VIEW, sort: [{ key: 'id' as const, dir: 'desc' as const }] },
-    archivable: new Set(['T1', 'T4']),
+    view: { ...DEFAULT_VIEW, sort: [{ key: 'pri' as const, dir: 'desc' as const }], hiddenPri: ['high' as const] },
+    archivable: new Set(['T247', 'T248', 'T250']),
     commitAt: new Map<string, number>(),
     ...NO_EPICS,
   };
-  assert.deepEqual(
-    selectTasks(TASKS, 'archivable', ctx).tasks.map((t) => t.id),
-    ['T4', 'T1'],
-  );
+  const order = (id: Parameters<typeof selectTasks>[1]) => selectTasks(tasks, id, ctx).tasks.map((t) => t.id);
+  assert.deepEqual(order('tasks'), ['T248', 'T250'], 'prima vista: pri↓, ⚡ prima di 🔹');
+  assert.deepEqual(order('hidden'), ['T249', 'T247'], 'nascoste: id↓, non il fallback id↑ della chain');
+  assert.deepEqual(order('archivable'), ['T250', 'T248', 'T247'], 'archiviabili: id↓, non pri↓');
+});
+
+test('nascoste e archiviabili sono piatte: il grouping cappello+figlie resta sulla prima vista', () => {
+  // T10 è un cappello con due figlie. Con `id↓` la prima vista porta le figlie
+  // sotto la mamma; le altre due le mettono al loro posto per id, senza spina.
+  const tasks = [task('T5'), task('T10'), task('T11'), task('T12')];
+  const epics = { epicOf: new Map([['T11', 'T10'], ['T12', 'T10']]), epics: new Set(['T10']) };
+  const base = {
+    view: { ...DEFAULT_VIEW, sort: [{ key: 'id' as const, dir: 'desc' as const }] },
+    archivable: new Set(['T5', 'T10', 'T11', 'T12']),
+    commitAt: new Map<string, number>(),
+    ...epics,
+  };
+  const main = selectTasks(tasks, 'tasks', base);
+  assert.deepEqual(main.tasks.map((t) => t.id), ['T10', 'T12', 'T11', 'T5']);
+  assert.equal(main.blockMark.get('T10'), '┌');
+  assert.equal(main.blockMark.get('T11'), '└');
+
+  const archivable = selectTasks(tasks, 'archivable', base);
+  assert.deepEqual(archivable.tasks.map((t) => t.id), ['T12', 'T11', 'T10', 'T5']);
+  assert.equal(archivable.blockMark.size, 0, 'nessuna spina su archiviabili');
+
+  const hidden = selectTasks(tasks, 'hidden', { ...base, view: { ...base.view, hiddenPri: ['med' as const] } });
+  assert.deepEqual(hidden.tasks.map((t) => t.id), ['T12', 'T11', 'T10', 'T5']);
+  assert.equal(hidden.blockMark.size, 0, 'nessuna spina su nascoste');
+});
+
+test('taskViewSort: la riga `sort:` dice la chain sulla prima vista, id↓ sulle altre', () => {
+  const view = { ...DEFAULT_VIEW, sort: [{ key: 'pri' as const, dir: 'desc' as const }] };
+  assert.equal(isPrimaryTaskView(TASK_VIEWS[0]!.id), true);
+  assert.equal(describeSort(taskViewSort('tasks', view)), 'pri↓');
+  for (const id of TASK_VIEWS.slice(1).map((v) => v.id)) {
+    assert.equal(isPrimaryTaskView(id), false, id);
+    assert.equal(taskViewSort(id, view), FIXED_TASK_SORT, id);
+    assert.equal(describeSort(taskViewSort(id, view)), 'id↓', id);
+  }
 });
 
 // ── viste del pane sessioni ────────────────────────────────────────────────

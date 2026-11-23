@@ -26,6 +26,7 @@ import { rowLabel, sessionTitle, type SessionRow } from '../session-list.js';
 import {
   sessionView,
   taskView,
+  taskViewSort,
   type SessionViewCounts,
   type SessionViewId,
   type TaskViewCounts,
@@ -182,11 +183,16 @@ export function TasksPane({
           filtri elencano i glifi di priorità e stato (`−🔥 −⚡`), larghi 2, cioè
           la stessa condizione che sull'header delle sessioni faceva sparire il
           bordo. Si sanifica PRIMA di misurare (invariante ①: `✔` largo 1 diventa
-          `✅` largo 2, e chi taglia deve contare le colonne disegnate). */}
+          `✅` largo 2, e chi taglia deve contare le colonne disegnate).
+
+          T251 — il sort mostrato è quello della vista attiva, non la chain
+          configurata: su `nascoste` e `archiviabili` le righe stanno per id↓, e
+          scrivere la chain sopra una lista che la ignora direbbe un ordine che a
+          schermo non c'è. */}
       <Text dimColor wrap="truncate-end">
         {cut(
           sanitize(
-            `sort: ${describeSort(view.sort)}` +
+            `sort: ${describeSort(taskViewSort(activeView, view))}` +
               (view.hiddenPri.length + view.hiddenProg.length > 0
                 ? ' · filtri: ' +
                   [

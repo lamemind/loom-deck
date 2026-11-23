@@ -233,7 +233,7 @@ function rankOf(task: Task, key: SortKey, ctx: SortCtx): number {
  * SEMPRE deterministico (mai instabile fra re-render). Se `id` è già una chiave
  * esplicita della chain il fallback non serve: l'id è unico, la parità è totale.
  */
-export function compareTasks(a: Task, b: Task, sort: SortEntry[], ctx: SortCtx): number {
+export function compareTasks(a: Task, b: Task, sort: readonly SortEntry[], ctx: SortCtx): number {
   for (const entry of sort) {
     const diff = rankOf(a, entry.key, ctx) - rankOf(b, entry.key, ctx);
     if (diff !== 0) return entry.dir === 'asc' ? diff : -diff;
@@ -448,7 +448,7 @@ export const PROG_ENTRIES = PROG_TABLE.map((e) => ({ name: e.name, glyph: e.glyp
 const SORT_LABEL: Record<SortKey, string> = { pri: 'pri', prog: 'stato', id: 'id', commit: 'commit' };
 
 /** Riassunto della chain per l'header ("pri↓ id↑"); vuota → "—". */
-export function describeSort(sort: SortEntry[]): string {
+export function describeSort(sort: readonly SortEntry[]): string {
   if (sort.length === 0) return '—';
   return sort.map((e) => `${SORT_LABEL[e.key]}${e.dir === 'asc' ? '↑' : '↓'}`).join(' ');
 }

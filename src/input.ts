@@ -33,7 +33,15 @@ import { HEADER_ROW, HINT_ROW, LAUNCH_ROW } from './frame.js';
 import { moveSelection } from './session-list.js';
 import { captures, scrolls, type CapturingMode, type ScrollingMode } from './input-modes.js';
 import { META_ROWS, QUIT_WINDOW_MS, type Mode } from './model.js';
-import { TASK_VIEWS, taskView, type SessionViewId, type TaskViewId } from './pane-views.js';
+import {
+  FIXED_TASK_SORT,
+  isPrimaryTaskView,
+  TASK_VIEWS,
+  taskView,
+  type SessionViewId,
+  type TaskViewId,
+} from './pane-views.js';
+import { describeSort } from './view.js';
 import type { Frame } from './frame.js';
 import type { DeckLegend } from './combo-catalog.js';
 import type { DeckActions } from './actions.js';
@@ -466,7 +474,18 @@ export function useDeckInput({
       if (!model.selTask) setNote('E → nessuna task selezionata');
       else overlays.text.openEdit(model.selTask);
     } else if (input === 'S') {
-      overlays.view.openSort();
+      // T251 — la chain configurabile ordina solo la prima vista: le altre
+      // stanno per id↓ e la ignorano. Editarla da lì sposterebbe righe che non
+      // si stanno guardando, quindi `S` è inerte come `F` e lo DICE.
+      if (!isPrimaryTaskView(model.taskViewId)) {
+        setNote(
+          `S → sort: solo sulla vista ${TASK_VIEWS[0]!.label(model.taskCounts)} (ora: ${taskView(
+            model.taskViewId,
+          ).label(model.taskCounts)}, ${describeSort(FIXED_TASK_SORT)})`,
+        );
+      } else {
+        overlays.view.openSort();
+      }
     } else if (input === 'F') {
       // T100/D3 — i filtri valgono SOLO sulla vista principale: su `nascoste`
       // riapplicarli non ha senso (quella vista È il loro complemento), su

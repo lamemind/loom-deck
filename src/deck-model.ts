@@ -331,8 +331,8 @@ export function useDeckModel({
   };
   // T67 — la vista `tasks` riusa `viewTasks`/`viewBlockMark` già calcolati
   // sopra (nessun ricalcolo sul cammino di default); le altre due passano da
-  // `selectTasks`, che raggruppa con lo STESSO livello gerarchico (un sito
-  // solo per il sort, come già per la sola chain prima di T67).
+  // `selectTasks`, che le dà piatte per id↓ (T251): chain e grouping valgono
+  // solo sulla prima vista.
   const { paneTasks, paneBlockMark } = useMemo(() => {
     if (taskViewId === 'tasks') return { paneTasks: viewTasks, paneBlockMark: viewBlockMark };
     const selected = selectTasks(tasks, taskViewId, {
