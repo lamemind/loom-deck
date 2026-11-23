@@ -460,9 +460,9 @@ export const CLAUDE_CMD = process.env.LOOM_DECK_CLAUDE_CMD || 'claude';
  *
  *  - le variabili di sessione (`INHERITED_SESSION_ENV`): il deck nasce di norma
  *    fuori da ogni conversazione, ma un deck avviato da una shell aperta dentro
- *    Claude Code le porta tutte, e la skill girerebbe senza transcript
- *    (`CLAUDE_CODE_CHILD_SESSION`) e, su Windows, con l'inspector di Bun sulla
- *    porta della conversazione (`BUN_INSPECT`);
+ *    Claude Code le porta tutte, e la skill si crederebbe parte di quella
+ *    conversazione: su Windows aprirebbe l'inspector di Bun sulla porta già
+ *    tenuta dalla conversazione (`BUN_INSPECT`);
  *  - `PTYXIS_PROFILE`: il deck lo porta, perché la sua tab lo porta. Con il
  *    profilo gli hook di stato del turno cambiano lo stato del PROGETTO in
  *    compass — `done` accende badge e suono, `end` lo riporta a `idle`

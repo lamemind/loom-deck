@@ -46,11 +46,13 @@ export function bindSession(
  *
  * Un `claude` che le eredita si crede parte della conversazione che lo ha
  * lanciato:
- *  - con `CLAUDE_CODE_CHILD_SESSION` non salva il transcript («Transcript saving
- *    is off — inherited CLAUDE_CODE_CHILD_SESSION marker») e non compare nello
- *    storico del deck;
+ *  - con `CLAUDE_CODE_CHILD_SESSION` un `claude` interattivo, quello di una tab,
+ *    non salva il transcript («Transcript saving is off — inherited
+ *    CLAUDE_CODE_CHILD_SESSION marker») e non compare nello storico del deck; un
+ *    `claude -p` che la eredita il transcript lo salva comunque;
  *  - con `CLAUDE_EFFORT` gira con l'effort di chi lancia, e vede il suo canale
- *    dei messaggi e il suo Remote Control;
+ *    dei messaggi e il suo Remote Control; un `claude -p` che eredita
+ *    `CLAUDE_EFFORT=low` chiede invece all'API l'`effortLevel` dei settings dell'utente;
  *  - con `BUN_INSPECT` (su Windows `ws://127.0.0.1:9222/`) prova ad aprire
  *    l'inspector di Bun sulla porta già tenuta da chi lancia, e muore con
  *    `EADDRINUSE` prima di scrivere il transcript.
@@ -65,6 +67,14 @@ export function bindSession(
  * sessione aggiunge per gli strumenti che lancia senza descrivere nessuna
  * conversazione (`AI_AGENT`, `GIT_EDITOR`, `COREPACK_ENABLE_AUTO_PIN`): l'effetto
  * di ereditarle su un `claude` figlio non è misurato.
+ *
+ * La lista ha una copia nel plugin: `SESSION_ENV_DROP` in
+ * `loom-works-plugin/scripts/task/triage-altrove.sh`, che porta questi nomi più
+ * `PTYXIS_PROFILE`, `LOOM_TASK` e `PROJECT_ROOT` — cioè `HEADLESS_DROP_ENV` di
+ * `headless.ts` — e li toglie al `claude -p` che esegue un'uscita di triage in un
+ * altro progetto. Il plugin non importa un modulo del deck: le due liste le
+ * confronta il banco del cappello, `plugin-tests/triage/run.sh`, e un nome
+ * aggiunto qui va aggiunto anche lì.
  */
 export const INHERITED_SESSION_ENV: readonly string[] = [
   'CLAUDECODE',
