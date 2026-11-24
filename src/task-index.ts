@@ -82,20 +82,20 @@ import { sanitize } from './width.js';
 // deck resta chiudibile, una passata da un `/clear` (stesso processo,
 // `sessionId` nuovo) o un fork no.
 //
-// T221 — `origin` prende un secondo valore, `regia`: la regia che passa le
-// consegne a una regia nuova. La scrive il deck dentro lo spawn della
-// successora, sul `sessionId` di chi lo chiede (`from` della richiesta), e mai
+// T221 — `origin` prende un secondo valore, `orchestrator`: l'orchestrator che passa le
+// consegne a un orchestrator nuovo. La scrive il deck dentro lo spawn del
+// successore, sul `sessionId` di chi lo chiede (`from` della richiesta), e mai
 // altrove: una conversazione aperta a mano diventa chiudibile da un'altra solo
-// se è una regia che ha passato le consegne davvero — il consenso l'utente lo
+// se è un orchestrator che ha passato le consegne davvero — il consenso l'utente lo
 // ha dato lanciandola —, e una conversazione può marcare solo sé stessa.
 //
-// T220 — `regia` e `regiaSession` dicono quale regia ha aperto la
+// T220 — `orchestrator` e `orchestratorSession` dicono quale orchestrator ha aperto la
 // conversazione: il perimetro (`T197`) e il `sessionId` della conversazione che
-// faceva da regia. Scritti in un record solo, allo spawn chiesto da una regia
-// (`--regia`), e mai riscritti. Sono PROVENIENZA, non sorgente (P2 preflight):
-// nessuno li rilegge per decidere l'ambiente di un processo — `LOOM_REGIA` segue
+// faceva da orchestrator. Scritti in un record solo, allo spawn chiesto da un orchestrator
+// (`--orchestrator`), e mai riscritti. Sono PROVENIENZA, non sorgente (P2 preflight):
+// nessuno li rilegge per decidere l'ambiente di un processo — `LOOM_ORCHESTRATOR` segue
 // la richiesta, quindi una conversazione ripresa dall'utente nasce senza, anche
-// se il sidecar dice che l'ha aperta una regia.
+// se il sidecar dice che l'ha aperta un orchestrator.
 
 export interface SessionRecord {
   sessionId: string;
@@ -128,22 +128,22 @@ export interface SessionRecord {
   live?: boolean;
   /** T204 — da dove è nata la conversazione: `endpoint` = da una richiesta
    *  `spawn` sull'endpoint del deck. Scritto una volta, allo spawn.
-   *  T221 — `regia` = una regia che ha passato le consegne: scritto sulla
-   *  regia vecchia allo spawn della successora. */
+   *  T221 — `orchestrator` = un orchestrator che ha passato le consegne: scritto
+   *  sull'orchestrator vecchio allo spawn del successore. */
   origin?: string;
-  /** T220 — il perimetro della regia che ha aperto la conversazione. Scritto
-   *  una volta, allo spawn, insieme a `regiaSession`. */
-  regia?: string;
-  /** T220 — il `sessionId` della regia che ha chiesto lo spawn; assente se il
+  /** T220 — il perimetro dell'orchestrator che ha aperto la conversazione. Scritto
+   *  una volta, allo spawn, insieme a `orchestratorSession`. */
+  orchestrator?: string;
+  /** T220 — il `sessionId` dell'orchestrator che ha chiesto lo spawn; assente se il
    *  client non lo conosceva. */
-  regiaSession?: string;
+  orchestratorSession?: string;
 }
 
 /** T204 — il valore di `origin` di una conversazione aperta dall'endpoint. */
 export const ORIGIN_ENDPOINT = 'endpoint';
 
-/** T221 — il valore di `origin` di una regia che ha passato le consegne. */
-export const ORIGIN_REGIA = 'regia';
+/** T221 — il valore di `origin` di un orchestrator che ha passato le consegne. */
+export const ORIGIN_ORCHESTRATOR = 'orchestrator';
 
 export function taskIndexPath(projectRoot: string): string {
   return join(projectRoot, '.claude', 'loom', 'session-tasks.jsonl');
@@ -236,14 +236,14 @@ export function appendOrigin(projectRoot: string, sessionId: string, origin: str
 }
 
 /**
- * T220 — la regia che ha aperto la conversazione: perimetro e, se noto, il
- * `sessionId` della regia, in UN record (`appendSessionMeta` spiega perché due
+ * T220 — l'orchestrator che ha aperto la conversazione: perimetro e, se noto, il
+ * `sessionId` dell'orchestrator, in UN record (`appendSessionMeta` spiega perché due
  * campi scritti insieme non vanno in due righe). Allo spawn si appende accanto
  * al binding della task, prima della tab. I nomi dei campi sono un contratto di
  * formato come `origin`.
  */
-export function appendRegia(projectRoot: string, sessionId: string, regia: string, regiaSession?: string): void {
-  appendSessionRecord(projectRoot, { sessionId, regia, ...(regiaSession ? { regiaSession } : {}) });
+export function appendOrchestrator(projectRoot: string, sessionId: string, orchestrator: string, orchestratorSession?: string): void {
+  appendSessionRecord(projectRoot, { sessionId, orchestrator, ...(orchestratorSession ? { orchestratorSession } : {}) });
 }
 
 export interface SessionIndex {
@@ -282,9 +282,9 @@ export interface SessionIndex {
   /** T204 — le conversazioni nate da una richiesta `spawn` sull'endpoint del
    *  deck (`origin: endpoint`, last-wins): le sole che il verbo `close` chiude. */
   endpointBorn: Set<string>;
-  /** T221 — le regie che hanno passato le consegne (`origin: regia`,
+  /** T221 — gli orchestrator che hanno passato le consegne (`origin: orchestrator`,
    *  last-wins): chiudibili dal verbo `close` come le nate dall'endpoint. */
-  regiaHanded: Set<string>;
+  orchestratorHanded: Set<string>;
 }
 
 // Una sola lettura del JSONL per entrambe le mappe: il deck poll-a l'indice a
@@ -302,12 +302,12 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
   const models = new Map<string, string>();
   const liveMarks = new Map<string, number>();
   const endpointBorn = new Set<string>();
-  const regiaHanded = new Set<string>();
+  const orchestratorHanded = new Set<string>();
   let content: string;
   try {
     content = readFileSync(taskIndexPath(projectRoot), 'utf8');
   } catch {
-    return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks, endpointBorn, regiaHanded };
+    return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks, endpointBorn, orchestratorHanded };
   }
   let order = 0; // posizione crescente dei record pinned → rango di pin (D2)
   let liveOrder = 0; // T181 — idem per i record live:true → rango di entrata
@@ -391,18 +391,18 @@ export function loadSessionIndex(projectRoot: string): SessionIndex {
       }
       // T204 — last-wins come gli altri campi: un `origin` diverso da
       // `endpoint` scritto dopo toglie la marca.
-      // T221 — `origin` è un valore solo: la successora nata dall'endpoint che
+      // T221 — `origin` è un valore solo: il successore nato dall'endpoint che
       // a sua volta passa le consegne esce da `endpointBorn` ed entra in
-      // `regiaHanded`, e resta chiudibile.
+      // `orchestratorHanded`, e resta chiudibile.
       if (typeof d.origin === 'string') {
         if (d.origin === ORIGIN_ENDPOINT) endpointBorn.add(d.sessionId);
         else endpointBorn.delete(d.sessionId);
-        if (d.origin === ORIGIN_REGIA) regiaHanded.add(d.sessionId);
-        else regiaHanded.delete(d.sessionId);
+        if (d.origin === ORIGIN_ORCHESTRATOR) orchestratorHanded.add(d.sessionId);
+        else orchestratorHanded.delete(d.sessionId);
       }
     } catch {
       // riga corrotta → skip
     }
   }
-  return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks, endpointBorn, regiaHanded };
+  return { bindings, forkOf, pinned, notes, priority, titles, models, liveMarks, endpointBorn, orchestratorHanded };
 }

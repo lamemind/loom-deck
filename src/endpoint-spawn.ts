@@ -25,7 +25,7 @@ import {
   type SpawnReply,
   type SpawnRequest,
 } from './spawn-endpoint.js';
-import { memberRegia } from './tab-args.js';
+import { memberOrchestrator } from './tab-args.js';
 import { taskIsMandate, taskIsPerimeter } from './tasks.js';
 import type { QueueCause } from './spawn-queue.js';
 import type { WindowCheck } from './window-check.js';
@@ -51,7 +51,7 @@ export interface SpawnRequestDeps extends SpawnPlanDeps {
   /** Il motivo per cui lo spawn è spento su questa piattaforma, o `null`. */
   spawnOff: () => string | null;
   /** Lo spawn del tasto: sidecar, poi `deck-run`. `null` se rifiutato.
-   *  T220 — `regia` è la regia che chiede, già verificata, o `null`.
+   *  T220 — `orchestrator` è l'orchestrator che chiede, già verificata, o `null`.
    *  T229 — `sessionId` è quello già annunciato da una richiesta in coda;
    *  assente = lo sceglie lo spawn. */
   spawn: (
@@ -59,7 +59,7 @@ export interface SpawnRequestDeps extends SpawnPlanDeps {
     model: ModelKind,
     note: string,
     prompt: string,
-    regia: RegiaOrigin | null,
+    orchestrator: OrchestratorOrigin | null,
     sessionId?: string,
   ) => { sessionId: string; spawned: Spawned } | null;
   /** T198 — la finestra in focus è del progetto? Assente = nessun controllo,
@@ -67,8 +67,8 @@ export interface SpawnRequestDeps extends SpawnPlanDeps {
    *  dopo le verifiche della richiesta e prima dello spawn: un `no` non apre
    *  la tab e non scrive il binding nel sidecar, che scrive `spawn`. */
   windowCheck?: () => Promise<WindowCheck>;
-  /** T221 — scrive la marca `origin: regia` sulla regia che passa le consegne,
-   *  dopo lo spawn vero della successora. Assente = nessuna marca. */
+  /** T221 — scrive la marca `origin: orchestrator` sull'orchestrator che passa le consegne,
+   *  dopo lo spawn vero del successore. Assente = nessuna marca. */
   markHandoff?: (sessionId: string) => void;
   /** T229 — la coda degli spawn (`spawn-queue.ts`): sul `no` del controllo la
    *  richiesta va in coda invece di essere rifiutata. Assente = rifiuto, come
@@ -77,16 +77,16 @@ export interface SpawnRequestDeps extends SpawnPlanDeps {
   announceTimeoutMs?: number;
 }
 
-/** T220 — la regia che chiede uno spawn: il perimetro, che diventa
- *  `LOOM_REGIA`, e il `sessionId` della regia quando il client lo conosce. I
- *  due finiscono nel sidecar (`appendRegia`) come provenienza. */
-export interface RegiaOrigin {
-  regia: string;
+/** T220 — l'orchestrator che chiede uno spawn: il perimetro, che diventa
+ *  `LOOM_ORCHESTRATOR`, e il `sessionId` dell'orchestrator quando il client lo conosce. I
+ *  due finiscono nel sidecar (`appendOrchestrator`) come provenienza. */
+export interface OrchestratorOrigin {
+  orchestrator: string;
   session?: string;
 }
 
 /** Una richiesta risolta: il kind effettivo, la terna e il prompt col
- *  perimetro, la regia da impostare, o il rifiuto col suo motivo. */
+ *  perimetro, l'orchestrator da impostare, o il rifiuto col suo motivo. */
 export type SpawnPlan =
   | {
       ok: true;
@@ -94,9 +94,9 @@ export type SpawnPlan =
       model: ModelKind;
       note: string;
       prompt: string;
-      regia: RegiaOrigin | null;
-      /** T221 — la regia che passa le consegne, da marcare `origin: regia`
-       *  allo spawn della successora; solo col kind `regia`. */
+      orchestrator: OrchestratorOrigin | null;
+      /** T221 — l'orchestrator che passa le consegne, da marcare `origin: orchestrator`
+       *  allo spawn del successore; solo col kind `orchestrator`. */
       handoff?: string;
     }
   | { ok: false; reason: string };
@@ -145,16 +145,16 @@ export async function spawnPlanned(
   warning: string | null = null,
   sessionId?: string,
 ): Promise<SpawnReply> {
-  const { kind, model, note, prompt, regia, handoff } = plan;
-  const out = deps.spawn(req.task, model, note, prompt, regia, sessionId);
+  const { kind, model, note, prompt, orchestrator, handoff } = plan;
+  const out = deps.spawn(req.task, model, note, prompt, orchestrator, sessionId);
   if (!out) return { ok: false, reason: 'spawn rifiutato dal deck' };
   const announced = await awaitAnnounce(out.spawned.child, deps.announceTimeoutMs ?? ANNOUNCE_TIMEOUT_MS);
   if ('error' in announced) return { ok: false, reason: announced.error };
-  // T221 — la marca sulla regia che passa le consegne, a successora annunciata:
+  // T221 — la marca sull'orchestrator che passa le consegne, a successore annunciato:
   // esiste solo se un passaggio è partito davvero. Da una richiesta in coda si
   // scrive qui, allo spawn vero, come il binding.
   if (handoff && deps.markHandoff) deps.markHandoff(handoff);
-  // T220/P4 — `regia` sempre nella risposta, anche `null`: è ciò che separa un
+  // T220/P4 — `orchestrator` sempre nella risposta, anche `null`: è ciò che separa un
   // deck che la conosce da uno più vecchio, che la ignorerebbe in silenzio.
   const base = {
     ok: true as const,
@@ -163,7 +163,7 @@ export async function spawnPlanned(
     kind,
     model,
     prompt,
-    regia: regia?.regia ?? null,
+    orchestrator: orchestrator?.orchestrator ?? null,
     ...(handoff && deps.markHandoff ? { handoff } : {}),
     ...(warning ? { warning } : {}),
   };
@@ -172,7 +172,7 @@ export async function spawnPlanned(
 }
 
 /**
- * La richiesta contro il progetto: il kind non è la regia, la task esiste, un
+ * La richiesta contro il progetto: il kind non è l'orchestrator, la task esiste, un
  * run non cade su un mandato, il perimetro è fatto di DLV aperti; poi l'azione di catalogo, la sua
  * terna e il prompt col perimetro in coda.
  *
@@ -183,8 +183,8 @@ export async function spawnPlanned(
  *
  * `refusals` è la tabella dei kind rifiutati per canale, `CHANNEL_REFUSALS` per
  * ogni chiamante del deck. Un parametro e non solo la costante perché un test
- * deve poter arrivare alle regole che stanno dietro un rifiuto — la regia
- * scartata sul kind `regia` (T220/P3) — senza dipendere dalla tabella del
+ * deve poter arrivare alle regole che stanno dietro un rifiuto — l'orchestrator
+ * scartata sul kind `orchestrator` (T220/P3) — senza dipendere dalla tabella del
  * momento.
  */
 export function planSpawnRequest(
@@ -193,7 +193,7 @@ export function planSpawnRequest(
   channel: RequestChannel,
   refusals: ChannelRefusals = CHANNEL_REFUSALS,
 ): SpawnPlan {
-  // T203/P3 — un kind che il canale non accetta (la regia, sul turno headless):
+  // T203/P3 — un kind che il canale non accetta (l'orchestrator, sul turno headless):
   // `PROMPT_KINDS` è la lista di `deck-run`, e la richiesta valida sulla stessa
   // lista. La regola sta in `kindRefusal`, che fa anche l'elenco dell'help dei
   // client. Prima della task: il motivo non dipende dalla task chiesta.
@@ -201,10 +201,10 @@ export function planSpawnRequest(
   if (refused) return { ok: false, reason: refused };
   if (!deps.taskExists(req.task)) return { ok: false, reason: `${req.task} non è nella lista task del progetto` };
   const text = deps.taskText(req.task);
-  // T220/P1 — prima del resto della task chiesta: una regia che non è un
+  // T220/P1 — prima del resto della task chiesta: un orchestrator che non è un
   // perimetro è un errore di chi chiama, qualunque sia il membro.
-  if (req.regia) {
-    const bad = regiaRefusal(req.regia, deps);
+  if (req.orchestrator) {
+    const bad = orchestratorRefusal(req.orchestrator, deps);
     if (bad) return { ok: false, reason: bad };
   }
 
@@ -216,16 +216,16 @@ export function planSpawnRequest(
     return { ok: false, reason: `${req.task} è un mandato: il lavoro sta nei membri, niente run` };
   }
 
-  // T221 — la regia che una richiesta apre è la successora di un passaggio di
+  // T221 — l'orchestrator che una richiesta apre è il successore di un passaggio di
   // consegne: un perimetro, come dal detail, e la richiesta porta chi passa le
-  // consegne. Senza `from` la regia vecchia resterebbe non chiudibile dalla
+  // consegne. Senza `from` l'orchestrator vecchio resterebbe non chiudibile dalla
   // nuova, e il passaggio a metà.
-  if (req.kind === 'regia') {
-    if (!taskIsPerimeter(req.task, text)) return { ok: false, reason: `regia ${req.task}: non è un'epica né un mandato` };
+  if (req.kind === 'orchestrator') {
+    if (!taskIsPerimeter(req.task, text)) return { ok: false, reason: `orchestrator ${req.task}: non è un'epica né un mandato` };
     if (channel === 'endpoint' && !req.from) {
       return {
         ok: false,
-        reason: 'regia: la richiesta non porta il sessionId di chi passa le consegne (from), serve loom-deck-spawn dalla conversazione della regia',
+        reason: 'orchestrator: la richiesta non porta il sessionId di chi passa le consegne (from), serve loom-deck-spawn dalla conversazione dell’orchestrator',
       };
     }
   }
@@ -246,31 +246,31 @@ export function planSpawnRequest(
   const prompt = req.scope ? dlvPrompt(d.prompt, req.scope) : (d.prompt ?? '');
   const model = req.model ?? d.model;
   const note = req.note ?? d.title ?? '';
-  // T220/P3 — una conversazione che è a sua volta una regia non riceve la
-  // regia che la chiede. Qui e non solo in `composeTab`: dal deck il prompt
+  // T220/P3 — una conversazione che è a sua volta un orchestrator non riceve
+  // l'orchestrator che la chiede. Qui e non solo in `composeTab`: dal deck il prompt
   // arriva a `deck-run` come testo letterale, e la composizione non vede il
   // kind. Vale sull'endpoint dal passaggio di consegne (T221).
-  const regiaId = req.regia ? memberRegia(kind, req.regia) : '';
-  const regia: RegiaOrigin | null = regiaId
-    ? { regia: regiaId, ...(req.regiaSession ? { session: req.regiaSession } : {}) }
+  const orchestratorId = req.orchestrator ? memberOrchestrator(kind, req.orchestrator) : '';
+  const orchestrator: OrchestratorOrigin | null = orchestratorId
+    ? { orchestrator: orchestratorId, ...(req.orchestratorSession ? { session: req.orchestratorSession } : {}) }
     : null;
-  return { ok: true, kind, model, note, prompt, regia, ...(kind === 'regia' && req.from ? { handoff: req.from } : {}) };
+  return { ok: true, kind, model, note, prompt, orchestrator, ...(kind === 'orchestrator' && req.from ? { handoff: req.from } : {}) };
 }
 
 /**
- * T220/P1 — il motivo per cui `regia` non può dichiararsi regia di una
- * conversazione del progetto, o `null`. Una regia è un perimetro: un'epica o un
+ * T220/P1 — il motivo per cui `orchestrator` non può dichiararsi orchestrator di una
+ * conversazione del progetto, o `null`. Un orchestrator è un perimetro: un'epica o un
  * mandato con la sua riga in `tasks.md`. Una dichiarazione sbagliata darebbe
- * alla conversazione una riga dell'organigramma che nomina una regia che non
+ * alla conversazione una riga dell'organigramma che nomina un orchestrator che non
  * c'è, e le negherebbe `AskUserQuestion` per niente.
  *
  * La usano l'apertura di una conversazione (`planSpawnRequest`, tab e
- * headless) e la risposta a una headless (`replyHeadless`), che dichiara la
- * regia a ogni turno.
+ * headless) e la risposta a una headless (`replyHeadless`), che dichiara
+ * l'orchestrator a ogni turno.
  */
-export function regiaRefusal(regia: string, deps: Pick<SpawnPlanDeps, 'taskExists' | 'taskText'>): string | null {
-  if (!deps.taskExists(regia)) return `regia ${regia}: non è nella lista task del progetto`;
-  if (!taskIsPerimeter(regia, deps.taskText(regia))) return `regia ${regia}: non è un'epica né un mandato`;
+export function orchestratorRefusal(orchestrator: string, deps: Pick<SpawnPlanDeps, 'taskExists' | 'taskText'>): string | null {
+  if (!deps.taskExists(orchestrator)) return `orchestrator ${orchestrator}: non è nella lista task del progetto`;
+  if (!taskIsPerimeter(orchestrator, deps.taskText(orchestrator))) return `orchestrator ${orchestrator}: non è un'epica né un mandato`;
   return null;
 }
 

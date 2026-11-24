@@ -32,7 +32,7 @@ export type PromptKind =
   | 'preflight'
   | 'run'
   | 'checkpoint'
-  | 'regia';
+  | 'orchestrator';
 
 /**
  * `recap` → la sotto-skill giusta, quando chi spawna SA se la task è un cappello.
@@ -108,9 +108,9 @@ export interface DetailAction {
 }
 
 //
-// T203 — `direct` è la regia, e sta in coda: nessun bottone esistente si sposta
-// sotto le dita. L'etichetta nomina l'intenzione («fare la regia») e non il
-// kind, e la sua iniziale `d` è libera: `regia` darebbe `r`, che è di `run`.
+// T203 — `direct` è l'orchestrator, e sta in coda: nessun bottone esistente si sposta
+// sotto le dita. L'etichetta nomina l'intenzione («fare l'orchestrator») e non il
+// kind, e la sua iniziale `d` è libera: `orchestrator` darebbe `o`, che è di `open`.
 // Sta qui e non solo nella lista di un perimetro perché questo è il catalogo
 // intero, cioè la lista su cui `ACTION_HOTKEYS` presidia l'unicità delle
 // lettere; `detailActions` la toglie dove non vale.
@@ -120,7 +120,7 @@ export const DETAIL_ACTIONS: ReadonlyArray<DetailAction> = [
   { kind: 'run', label: 'run' },
   { kind: 'recap', label: 'status' },
   { kind: 'checkpoint', label: 'checkpoint' },
-  { kind: 'regia', label: 'direct' },
+  { kind: 'orchestrator', label: 'direct' },
 ];
 
 /**
@@ -133,7 +133,7 @@ export const DETAIL_ACTIONS: ReadonlyArray<DetailAction> = [
  * il suo `run`: con DLV propri resta lanciabile (T189 D2), e il rifiuto
  * eventuale è della skill.
  *
- * T203 — la regia (`direct`) c'è sui soli perimetri, epica o mandato: la skill
+ * T203 — l'orchestrator (`direct`) c'è sui soli perimetri, epica o mandato: la skill
  * `orchestrate-mandate` segue i membri di un perimetro, e una task semplice non
  * ne ha. Voce assente per la stessa ragione del `run` sul mandato.
  *
@@ -142,7 +142,7 @@ export const DETAIL_ACTIONS: ReadonlyArray<DetailAction> = [
  * di `DETAIL_ACTIONS`, così una voce tolta non sposta le altre sotto le dita.
  */
 export function detailActions(shape: TaskShape): ReadonlyArray<DetailAction> {
-  if (shape === 'task') return DETAIL_ACTIONS.filter((a) => a.kind !== 'regia');
+  if (shape === 'task') return DETAIL_ACTIONS.filter((a) => a.kind !== 'orchestrator');
   if (shape === 'mandate') return DETAIL_ACTIONS.filter((a) => a.kind !== 'run');
   return DETAIL_ACTIONS;
 }
@@ -329,21 +329,21 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     fixed: {},
   },
   {
-    // T203 — la regia di un perimetro, epica o mandato: la conversazione lancia
+    // T203 — l'orchestrator di un perimetro, epica o mandato: la conversazione lancia
     // `orchestrate-mandate`, che segue i membri per ore su un monitor. Il
-    // modello (opus) e il prompt vengono dalla riga `regia` di
+    // modello (opus) e il prompt vengono dalla riga `orchestrator` di
     // `scripts/prompt-catalog`, come per gli altri kind.
     //
-    // 🎬 è il glifo che lo stato della regia su disco (T219) usa già: la tab e
-    // il quadro della regia si riconoscono a colpo d'occhio.
+    // 🎬 è il glifo che lo stato dell'orchestrator su disco (T219) usa già: la tab e
+    // il quadro dell'orchestrator si riconoscono a colpo d'occhio.
     //
     // Vale dal detail e da `deck-run` a mano, non da un turno headless:
     // `planSpawnRequest` lo rifiuta lì (P3 preflight T203). Dall'endpoint vale
-    // da T221, per la successora di un passaggio di consegne.
-    id: 'regia',
-    label: 'regia di un perimetro',
+    // da T221, per il successore di un passaggio di consegne.
+    id: 'orchestrator',
+    label: 'orchestra un perimetro',
     surface: 'detail d · perimetro',
-    kind: 'regia',
+    kind: 'orchestrator',
     title: '🎬 {slug}',
     model: null,
     prompt: null,

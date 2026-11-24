@@ -110,9 +110,9 @@ test('rifiuti prima di toccare un processo, col motivo', async () => {
     [req('dddddddd'), {}, /dddddddd: nessuna conversazione viva di questo progetto/],
     [req('aaaaaaaa'), {}, /prefisso ambiguo aaaaaaaa: 2 vive \(aaaaaaaa, aaaaaaaa\)/],
     [req(ME, ME), {}, /è la conversazione che chiede la chiusura/],
-    [req(A), { sidecar: () => ({ endpointBorn: new Set(), bindings: new Map() }) }, /non è nata da una richiesta spawn sull'endpoint del deck né è una regia che ha passato le consegne, la chiude solo l'utente/],
-    // T221 — una regia marcata è un'altra conversazione: la marca non apre la guardia 4 su A.
-    [req(A), { sidecar: () => ({ endpointBorn: new Set(), regiaHanded: new Set([A2]), bindings: new Map() }) }, /la chiude solo l'utente/],
+    [req(A), { sidecar: () => ({ endpointBorn: new Set(), bindings: new Map() }) }, /non è nata da una richiesta spawn sull'endpoint del deck né è un orchestrator che ha passato le consegne, la chiude solo l'utente/],
+    // T221 — un orchestrator marcato è un'altra conversazione: la marca non apre la guardia 4 su A.
+    [req(A), { sidecar: () => ({ endpointBorn: new Set(), orchestratorHanded: new Set([A2]), bindings: new Map() }) }, /la chiude solo l'utente/],
     [req(B), {}, /bbbbbbbb: sta lavorando \(busy\)/],
   ];
   for (const [r, over, re] of cases) {
@@ -146,14 +146,14 @@ test('turno headless in corso: rifiuto col motivo vero e il pid, nessun processo
   assert.deepEqual(retired, []);
 });
 
-// T221 — la regia che ha passato le consegne, aperta a mano: la marca
-// `origin: regia` la rende chiudibile dalla successora, come una nata
+// T221 — l'orchestrator che ha passato le consegne, aperto a mano: la marca
+// `origin: orchestrator` la rende chiudibile dal successore, come una nata
 // dall'endpoint.
-test('regia che ha passato le consegne: chiusa anche se aperta a mano', async () => {
+test('orchestrator che ha passato le consegne: chiuso anche se aperto a mano', async () => {
   const { term, calls } = fakeTerm(1);
   const { d, retired } = deps({
     term,
-    sidecar: () => ({ endpointBorn: new Set(), regiaHanded: new Set([A]), bindings: new Map([[A, 'T197']]) }),
+    sidecar: () => ({ endpointBorn: new Set(), orchestratorHanded: new Set([A]), bindings: new Map([[A, 'T197']]) }),
   });
   const r = await handleCloseRequest(req(A, ME), d);
   assert.equal(r.ok, true, JSON.stringify(r));
@@ -161,7 +161,7 @@ test('regia che ha passato le consegne: chiusa anche se aperta a mano', async ()
   assert.deepEqual(calls.terminated, [101]);
   assert.deepEqual(retired, [A]);
   const gone = 'eeeeeeee-5555-4555-8555-555555555221';
-  const { d: d2 } = deps({ sidecar: () => ({ endpointBorn: new Set(), regiaHanded: new Set([gone]), bindings: new Map() }) });
+  const { d: d2 } = deps({ sidecar: () => ({ endpointBorn: new Set(), orchestratorHanded: new Set([gone]), bindings: new Map() }) });
   const again = await handleCloseRequest(req(gone), d2);
   assert.match((again as { reason: string }).reason, /non è viva \(già chiusa\)/);
 });

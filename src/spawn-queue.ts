@@ -2,7 +2,7 @@
 // focus non è del progetto.
 //
 // Prima di T229 il `no` di `ProjectFocused` era un rifiuto (T198): chi aveva
-// chiesto lo spawn — spesso una regia — restava fermo finché l'utente non
+// chiesto lo spawn — spesso un orchestrator — restava fermo finché l'utente non
 // portava davanti la finestra e non chiedeva di nuovo. Ora la richiesta resta
 // qui, compass mostra una notifica col bottone «Vai», e la tab nasce quando una
 // finestra del progetto torna in focus. Il focus lo porta l'utente, mai il
@@ -527,7 +527,7 @@ function queuedReply(item: Item, reason: string): SpawnReply {
       kind: plan.kind,
       model: plan.model,
       prompt: plan.prompt,
-      regia: plan.regia?.regia ?? null,
+      orchestrator: plan.orchestrator?.orchestrator ?? null,
       expiresAt: new Date(item.expiresAtMs).toISOString(),
     },
   };

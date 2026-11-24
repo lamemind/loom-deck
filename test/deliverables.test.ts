@@ -272,5 +272,5 @@ test('mandato: modo DLV spento col motivo, checklist o no, aperto o chiuso', () 
   assert.deepEqual(gate(taskFile('Mandate', ['- [ ] uno'])), { kind: 'off', reason: DLV_REASON.mandate });
   assert.deepEqual(gate(taskFile('Mandate', [])), { kind: 'off', reason: DLV_REASON.mandate });
   assert.deepEqual(gate(taskFile('Mandate', ['- [ ] uno']), true), { kind: 'off', reason: DLV_REASON.mandate });
-  assert.equal(dlvLaunchable(gate(taskFile('mandate (regia)', ['- [ ] uno']))), false);
+  assert.equal(dlvLaunchable(gate(taskFile('mandate (orchestrator)', ['- [ ] uno']))), false);
 });

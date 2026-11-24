@@ -61,7 +61,7 @@ test('resume, fork e le due skill headless restano fuori', () => {
 });
 
 test('i kind sono anche id: nessuna mappa kind → id da tenere allineata', () => {
-  for (const kind of ['none', 'recap', 'recap-task', 'recap-epic', 'preflight', 'run', 'checkpoint', 'regia']) {
+  for (const kind of ['none', 'recap', 'recap-task', 'recap-epic', 'preflight', 'run', 'checkpoint', 'orchestrator']) {
     assert.ok(isSpawnActionId(kind), `il kind ${kind} non ha una riga di catalogo`);
   }
   // Il ponte fra detail e catalogo: specializzare un kind sceglie già la riga.
@@ -212,7 +212,7 @@ test('detailActions: sul mandato il run non c è, l ordine delle altre resta', (
   );
 });
 
-test('detailActions: sull epica la regia sta in coda, su una task non c è', () => {
+test('detailActions: sull epica l’orchestrator sta in coda, su una task non c è', () => {
   assert.deepEqual(
     detailActions('epic').map((a) => a.label),
     ['open', 'preflight', 'run', 'status', 'checkpoint', 'direct'],
@@ -227,13 +227,13 @@ test('detailActions: l epica tiene il catalogo intero, run compreso', () => {
   assert.deepEqual(detailActions('epic'), DETAIL_ACTIONS, 'un epica con DLV propri resta lanciabile (T189 D2)');
 });
 
-test('detailActions: la regia (direct, d) c è sui soli perimetri, e nomina la riga regia', () => {
+test('detailActions: l’orchestrator (direct, d) c è sui soli perimetri, e nomina la riga orchestrator', () => {
   for (const shape of ['epic', 'mandate'] as const) {
     const list = detailActions(shape);
     const keys = actionHotkeys(list);
-    assert.equal(list[keys['d']!]!.kind, 'regia', `${shape}: d non seleziona la regia`);
-    assert.equal(keys['d'], list.length - 1, `${shape}: la regia non è in coda`);
-    assert.ok(spawnAction(specializeRecap('regia', true)), 'la regia non ha una riga di catalogo');
+    assert.equal(list[keys['d']!]!.kind, 'orchestrator', `${shape}: d non seleziona l'orchestrator`);
+    assert.equal(keys['d'], list.length - 1, `${shape}: l'orchestrator non è in coda`);
+    assert.ok(spawnAction(specializeRecap('orchestrator', true)), 'l’orchestrator non ha una riga di catalogo');
   }
   assert.equal(actionHotkeys(detailActions('task'))['d'], undefined, 'su una task d non seleziona niente');
 });

@@ -107,8 +107,8 @@ function hasKey(env: Readonly<Record<string, string | undefined>>, key: string):
  *
  * `binding.task` = `null` per le tab senza task (`--no-task`, il tasto `t`): una
  * `LOOM_TASK` ereditata legherebbe a una task una sessione che non ne ha, e
- * l'hook `SessionStart` ne inietterebbe il task file. T220 — `binding.regia`
- * c'è solo quando la richiesta dichiara la regia: `LOOM_REGIA` sta nella lista
+ * l'hook `SessionStart` ne inietterebbe il task file. T220 — `binding.orchestrator`
+ * c'è solo quando la richiesta dichiara l'orchestrator: `LOOM_ORCHESTRATOR` sta nella lista
  * delle variabili tolte, quindi una tab non la eredita mai dal deck che la apre.
  * `CLAUDE_CODE_GIT_BASH_PATH`
  * entra quando manca e il bash si trova: la tab eredita anche il `PATH`, e col

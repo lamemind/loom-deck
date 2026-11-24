@@ -6,7 +6,7 @@
 //  - le tab Ptyxis su Linux (`ptyxisEnv`, T228): la tab eredita l'env del
 //    processo `ptyxis` solo quando nessuna istanza è aperta e lui lo diventa;
 //  - i turni `claude -p` di `loom-deck-headless` (`headlessEnv`), che di norma
-//    lancia una regia, cioè una conversazione;
+//    lancia un orchestrator, cioè una conversazione;
 //  - il `claude -p` delle skill che il deck lancia da sé (`spawnSkill`):
 //    creazione di una task, pulizia delle task.
 //
@@ -18,14 +18,14 @@
 
 /**
  * T220 — le variabili che LEGANO una conversazione aperta dal deck: la task
- * (`LOOM_TASK`) e la regia che l'ha chiesta (`LOOM_REGIA`). Le scrivono dopo il
+ * (`LOOM_TASK`) e l'orchestrator che l'ha chiesta (`LOOM_ORCHESTRATOR`). Le scrivono dopo il
  * filtro i due punti che compongono l'env di un `claude` invece di passarlo in
  * una riga di comando: le tab di Windows Terminal (`windowsTabEnv`) e i turni
  * headless (`headlessEnv`). `null` = nessuna, e la variabile manca.
  */
 export interface SessionBinding {
   task: string | null;
-  regia?: string | null;
+  orchestrator?: string | null;
 }
 
 /** `out` con le variabili del binding scritte sopra: dopo il filtro, così una
@@ -35,7 +35,7 @@ export function bindSession(
   binding: SessionBinding,
 ): Record<string, string | undefined> {
   if (binding.task) out.LOOM_TASK = binding.task;
-  if (binding.regia) out.LOOM_REGIA = binding.regia;
+  if (binding.orchestrator) out.LOOM_ORCHESTRATOR = binding.orchestrator;
   return out;
 }
 
@@ -92,11 +92,11 @@ export const INHERITED_SESSION_ENV: readonly string[] = [
   'CLAUDE_CODE_CHILD_NOTES_DIR',
   'CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP',
   'BUN_INSPECT',
-  // T220 — la regia che ha aperto la conversazione che lancia. Un figlio che la
+  // T220 — l'orchestrator che ha aperto la conversazione che lancia. Un figlio che la
   // ereditasse si vedrebbe negare `AskUserQuestion` e leggerebbe una riga
-  // dell'organigramma che non lo riguarda: `LOOM_REGIA` la mette solo il deck,
-  // a uno spawn chiesto da una regia (`--regia`), e mai per eredità.
-  'LOOM_REGIA',
+  // dell'organigramma che non lo riguarda: `LOOM_ORCHESTRATOR` la mette solo il deck,
+  // a uno spawn chiesto da un orchestrator (`--orchestrator`), e mai per eredità.
+  'LOOM_ORCHESTRATOR',
 ];
 
 /**

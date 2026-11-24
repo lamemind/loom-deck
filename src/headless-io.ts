@@ -15,7 +15,7 @@ import { procRunning, procStartOf, sessionProcesses } from './live-sessions.js';
  * tenga vivo chi lancia (`unref`).
  *
  * Staccato perché il turno deve sopravvivere a chi lo lancia (misura 6 della
- * sonda): la regia che chiude la propria tab manda SIGHUP alla sessione del suo
+ * sonda): l'orchestrator che chiude la propria tab manda SIGHUP alla sessione del suo
  * terminale, e un processo in un'altra sessione non lo riceve. Lo stdin chiuso
  * evita i tre secondi che `claude -p` aspetta un input mai arrivato (misura
  * 12). I file si aprono qui e si chiudono subito dopo lo spawn: il figlio ha

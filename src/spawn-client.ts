@@ -19,7 +19,7 @@
 //      tab nasce quando una finestra del progetto torna in focus. Lo stdout
 //      porta già il `sessionId` della conversazione e l'ora di scadenza, non
 //      il titolo, che `deck-run` compone allo spawn. Non `0` (P8 preflight):
-//      `spawn-task` e la regia leggono `0` come «tab aperta, riga `titolo:`
+//      `spawn-task` e l'orchestrator leggono `0` come «tab aperta, riga `titolo:`
 //      presente». `4` è il primo codice libero: `0`–`3` li condivide
 //      `loom-deck-close`
 //
@@ -41,22 +41,23 @@ import {
 import { PROMPT_KINDS } from './tab-args.js';
 import { findProjectRoot } from './tab-launch.js';
 
-export const CLIENT_USAGE = `uso: loom-deck-spawn <TaskID> <kind> [perimetro] [--model <alias>] [--note <testo>] [--regia <perimetro>] [--root <dir>]
+export const CLIENT_USAGE = `uso: loom-deck-spawn <TaskID> <kind> [perimetro] [--model <alias>] [--note <testo>] [--orchestrator <perimetro>] [--root <dir>]
 
 Chiede al deck acceso sul progetto di aprire una conversazione sulla task, come
 il tasto del deck: stesso binding, titolo e modello (override di progetto
 compreso).
 
   <kind>       ${requestKinds('endpoint').join(' | ')}
-               regia: la successora di una regia che passa le consegne, chiesta
-               dalla conversazione della regia — il deck marca chi chiede
-               (CLAUDE_CODE_SESSION_ID) chiudibile dalla successora
+               orchestrator: il successore di un orchestrator che passa le consegne, chiesto
+               dalla conversazione dell'orchestrator — il deck marca chi chiede
+               (CLAUDE_CODE_SESSION_ID) chiudibile dal successore
   [perimetro]  solo con run: DLV come in run-task, 1,3-5 (assente = tutti gli aperti)
   --model      ${MODELS.join(' | ')} (assente = il modello dell'azione nel deck)
   --note       nota del titolo della tab (assente = il titolo dell'azione)
-  --regia      la regia che chiede, col suo perimetro (T<numero>, epica o
-               mandato): la conversazione nasce con LOOM_REGIA, e il sidecar
-               registra perimetro e sessione della regia
+  --orchestrator
+               l'orchestrator che chiede, col suo perimetro (T<numero>, epica o
+               mandato): la conversazione nasce con LOOM_ORCHESTRATOR, e il sidecar
+               registra perimetro e sessione dell'orchestrator
   --root       root del progetto (assente = risalita dalla cartella corrente
                fino a .claude/loom-works.json)
 
@@ -71,7 +72,7 @@ export type ClientArgs = { request: SpawnRequest; root: string | null } | { usag
 /**
  * L'argv del client, validato. Puro: nessun disco, nessuna rete.
  *
- * T220 — `env` serve solo con `--regia`: il `sessionId` della regia il client lo
+ * T220 — `env` serve solo con `--orchestrator`: il `sessionId` dell'orchestrator il client lo
  * legge da sé (`CLAUDE_CODE_SESSION_ID`, l'ambiente del tool Bash della
  * conversazione che chiama), invece di chiederlo come argomento che il modello
  * dovrebbe ricopiare a ogni comando (P1 preflight). Assente o malformato = il
@@ -84,18 +85,18 @@ export function parseClientArgs(
   const positional: string[] = [];
   let model: string | undefined;
   let note: string | undefined;
-  let regia: string | undefined;
+  let orchestrator: string | undefined;
   let root: string | null = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '-h' || a === '--help') return { help: true };
-    if (a === '--model' || a === '--note' || a === '--regia' || a === '--root') {
+    if (a === '--model' || a === '--note' || a === '--orchestrator' || a === '--root') {
       const v = argv[i + 1];
       if (v === undefined) return { usage: [`${a} senza valore`] };
       i++;
       if (a === '--model') model = v;
       else if (a === '--note') note = v;
-      else if (a === '--regia') regia = v;
+      else if (a === '--orchestrator') orchestrator = v;
       else root = v;
       continue;
     }
@@ -124,18 +125,18 @@ export function parseClientArgs(
     if (/[\r\n]/.test(note)) return { usage: ['--note: una riga sola'] };
     request.note = note;
   }
-  if (regia !== undefined) {
-    if (!/^T\d+$/.test(regia)) return { usage: [`--regia: perimetro non valido: '${regia}' (forma T<numero>)`] };
-    request.regia = regia;
-    const session = regiaSessionOf(env);
-    if (session) request.regiaSession = session;
+  if (orchestrator !== undefined) {
+    if (!/^T\d+$/.test(orchestrator)) return { usage: [`--orchestrator: perimetro non valido: '${orchestrator}' (forma T<numero>)`] };
+    request.orchestrator = orchestrator;
+    const session = orchestratorSessionOf(env);
+    if (session) request.orchestratorSession = session;
   }
-  // T221 — la regia che passa le consegne è la conversazione che chiede: il
+  // T221 — l'orchestrator che passa le consegne è la conversazione che chiede: il
   // suo sessionId viene dall'ambiente, mai da un argomento, così una
   // conversazione marca solo sé stessa. Senza, il deck rifiuterebbe.
-  if (kind === 'regia') {
-    const from = regiaSessionOf(env);
-    if (!from) return { usage: ['kind regia: serve CLAUDE_CODE_SESSION_ID, il sessionId della regia che passa le consegne'] };
+  if (kind === 'orchestrator') {
+    const from = orchestratorSessionOf(env);
+    if (!from) return { usage: ['kind orchestrator: serve CLAUDE_CODE_SESSION_ID, il sessionId dell’orchestrator che passa le consegne'] };
     request.from = from;
   }
   return { request, root };
@@ -143,19 +144,19 @@ export function parseClientArgs(
 
 /** T220 — il `sessionId` della conversazione che chiama, se l'ambiente ne
  *  porta uno intero e ben formato; altrimenti `null`. */
-export function regiaSessionOf(env: Readonly<Record<string, string | undefined>>): string | null {
+export function orchestratorSessionOf(env: Readonly<Record<string, string | undefined>>): string | null {
   const sid = normalizeSession(env.CLAUDE_CODE_SESSION_ID);
   return sid !== null && sid.length === 36 ? sid : null;
 }
 
-/** T220/P4 — l'avviso quando la richiesta dichiarava la regia e la risposta non
- *  la riporta: il deck acceso è più vecchio e l'ha ignorata, la tab è aperta
- *  senza `LOOM_REGIA`. `null` se non c'è niente da dire. Una risposta con
- *  `regia: null` viene da un deck che la conosce e l'ha scartata di proposito
- *  (kind `regia`, P3): nessun avviso. */
-export function regiaWarning(request: SpawnRequest, reply: Record<string, unknown>): string | null {
-  if (!request.regia || 'regia' in reply) return null;
-  return '⚠ LOOM_REGIA non impostata: il deck acceso è più vecchio, riavvialo';
+/** T220/P4 — l'avviso quando la richiesta dichiarava l'orchestrator e la risposta non
+ *  lo riporta: il deck acceso è più vecchio e l'ha ignorato, la tab è aperta
+ *  senza `LOOM_ORCHESTRATOR`. `null` se non c'è niente da dire. Una risposta con
+ *  `orchestrator: null` viene da un deck che lo conosce e l'ha scartato di proposito
+ *  (kind `orchestrator`, P3): nessun avviso. */
+export function orchestratorWarning(request: SpawnRequest, reply: Record<string, unknown>): string | null {
+  if (!request.orchestrator || 'orchestrator' in reply) return null;
+  return '⚠ LOOM_ORCHESTRATOR non impostata: il deck acceso è più vecchio, riavvialo';
 }
 
 export async function runClient(argv: readonly string[], io: ClientIo): Promise<number> {
@@ -201,14 +202,14 @@ export async function runClient(argv: readonly string[], io: ClientIo): Promise<
     // progetto: la conversazione lo deve poter dire all'utente.
     ...(r.warning ? [`⚠ ${r.warning}`] : []),
     // T220/P4 — uscita 0 lo stesso: la tab a questo punto esiste già.
-    ...nonNull(regiaWarning(args.request, r)),
+    ...nonNull(orchestratorWarning(args.request, r)),
     `sessionId: ${r.sessionId}`,
     `task:      ${r.task} · ${r.kind} · ${r.model}`,
     `prompt:    ${r.prompt || '(nessuno)'}`,
   ];
-  if (r.regia) lines.push(`regia:     ${r.regia} (LOOM_REGIA)`);
-  // T221 — la marca è scritta: la successora potrà chiudere chi ha chiesto.
-  if (r.handoff) lines.push(`consegne:  ${r.handoff} marcata origin regia, chiudibile dalla successora`);
+  if (r.orchestrator) lines.push(`orchestrator:     ${r.orchestrator} (LOOM_ORCHESTRATOR)`);
+  // T221 — la marca è scritta: il successore potrà chiudere chi ha chiesto.
+  if (r.handoff) lines.push(`consegne:  ${r.handoff} marcata origin orchestrator, chiudibile dal successore`);
   if (r.title !== null) lines.push(`titolo:    ${r.title}`);
   if (r.inTab !== null) lines.push(`in-tab:    ${r.inTab}`);
   io.stdout(`${lines.join('\n')}\n`);
@@ -231,7 +232,7 @@ function nonNull(line: string | null): string[] {
  * quella che si cerca.
  *
  * L'ora di scadenza in ISO 8601 con lo scarto del fuso locale, più i minuti
- * che mancano: chi ha chiesto — una regia — la confronta con l'ora di adesso,
+ * che mancano: chi ha chiesto — un orchestrator — la confronta con l'ora di adesso,
  * e passata quell'ora senza l'evento `🆕 nuova sessione` dà la richiesta per
  * morta. Nessun evento arriva alla scadenza, perché il client è già uscito.
  */
@@ -244,7 +245,7 @@ export function queuedLines(q: QueuedSpawn, root: string, nowMs: number, reason:
     `task:      ${q.task} · ${q.kind} · ${q.model}`,
     `prompt:    ${q.prompt || '(nessuno)'}`,
   ];
-  if (q.regia) lines.push(`regia:     ${q.regia} (LOOM_REGIA)`);
+  if (q.orchestrator) lines.push(`orchestrator:     ${q.orchestrator} (LOOM_ORCHESTRATOR)`);
   lines.push(`scade:     ${localIso(at)} (fra ${minutes} min)`);
   return lines;
 }

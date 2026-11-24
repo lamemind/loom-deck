@@ -9,13 +9,13 @@ import {
   appendOrigin,
   appendPin,
   appendPriority,
-  appendRegia,
+  appendOrchestrator,
   appendSessionMeta,
   appendSessionRecord,
   appendTaskBinding,
   loadSessionIndex,
   ORIGIN_ENDPOINT,
-  ORIGIN_REGIA,
+  ORIGIN_ORCHESTRATOR,
   taskIndexPath,
 } from '../src/task-index.js';
 
@@ -490,42 +490,42 @@ test('origin last-wins: un valore diverso da endpoint toglie la marca; un record
 
 test('origin: file assente → insieme vuoto', () => {
   assert.equal(loadSessionIndex(root()).endpointBorn.size, 0);
-  assert.equal(loadSessionIndex(root()).regiaHanded.size, 0);
+  assert.equal(loadSessionIndex(root()).orchestratorHanded.size, 0);
 });
 
-// T221 — la regia che passa le consegne: un insieme suo, e `origin` resta un
-// valore solo, last-wins. Una successora nata dall'endpoint che a sua volta
+// T221 — l'orchestrator che passa le consegne: un insieme suo, e `origin` resta un
+// valore solo, last-wins. Un successore nato dall'endpoint che a sua volta
 // passa le consegne cambia insieme, e resta chiudibile.
-test('origin: regia → fra le regie che hanno passato le consegne, last-wins con endpoint', () => {
+test('origin: orchestrator → fra gli orchestrator che hanno passato le consegne, last-wins con endpoint', () => {
   const r = root();
   appendTaskBinding(r, 'vecchia', 'T197');
-  appendOrigin(r, 'vecchia', ORIGIN_REGIA);
+  appendOrigin(r, 'vecchia', ORIGIN_ORCHESTRATOR);
   appendOrigin(r, 'nuova', ORIGIN_ENDPOINT);
   let idx = loadSessionIndex(r);
-  assert.deepEqual([...idx.regiaHanded], ['vecchia']);
+  assert.deepEqual([...idx.orchestratorHanded], ['vecchia']);
   assert.deepEqual([...idx.endpointBorn], ['nuova']);
   assert.equal(idx.bindings.get('vecchia'), 'T197');
-  appendOrigin(r, 'nuova', ORIGIN_REGIA);
+  appendOrigin(r, 'nuova', ORIGIN_ORCHESTRATOR);
   idx = loadSessionIndex(r);
-  assert.deepEqual([...idx.regiaHanded].sort(), ['nuova', 'vecchia']);
+  assert.deepEqual([...idx.orchestratorHanded].sort(), ['nuova', 'vecchia']);
   assert.equal(idx.endpointBorn.has('nuova'), false);
   appendOrigin(r, 'vecchia', 'key');
-  assert.equal(loadSessionIndex(r).regiaHanded.has('vecchia'), false);
+  assert.equal(loadSessionIndex(r).orchestratorHanded.has('vecchia'), false);
 });
 
-// T220 — la regia che ha aperto la conversazione: un record solo, perimetro e
+// T220 — l'orchestrator che ha aperto la conversazione: un record solo, perimetro e
 // sessione insieme; la sessione manca se il client non la conosceva.
-test('appendRegia: un record con perimetro e sessione, la sessione solo se c\'è', () => {
+test('appendOrchestrator: un record con perimetro e sessione, la sessione solo se c\'è', () => {
   const r = root();
-  appendRegia(r, 'sid-a', 'T197', '0a1b2c3d-1111-2222-3333-444455556666');
-  appendRegia(r, 'sid-b', 'T197');
+  appendOrchestrator(r, 'sid-a', 'T197', '0a1b2c3d-1111-2222-3333-444455556666');
+  appendOrchestrator(r, 'sid-b', 'T197');
   const recs = readFileSync(taskIndexPath(r), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   assert.equal(recs.length, 2);
   assert.deepEqual(
     recs.map(({ ts: _ts, ...rest }) => rest),
     [
-      { sessionId: 'sid-a', regia: 'T197', regiaSession: '0a1b2c3d-1111-2222-3333-444455556666' },
-      { sessionId: 'sid-b', regia: 'T197' },
+      { sessionId: 'sid-a', orchestrator: 'T197', orchestratorSession: '0a1b2c3d-1111-2222-3333-444455556666' },
+      { sessionId: 'sid-b', orchestrator: 'T197' },
     ],
   );
   // Provenienza: non tocca nessun campo che il deck legge.

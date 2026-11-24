@@ -282,7 +282,7 @@ test('parseTaskDetail legge i bullet header', () => {
 
 // ── T212 · il mandato ────────────────────────────────────────────────────────
 
-const MANDATE_MD = `# Task: Mandato: convention e regia insieme
+const MANDATE_MD = `# Task: Mandato: convention e orchestrator insieme
 
 - **ID**: T230
 - **Size**: Mandate
@@ -297,7 +297,7 @@ Un perimetro che nomina \`Size: Epic\` in prosa senza esserlo.
 
 - T52 (lettore unico delle convention)
 - **T61** — gate del deck sulle convention
-- \`T64\` regia headless
+- \`T64\` orchestrator headless
   - T70 riga indentata: prosa della voce sopra
 - nessun id su questa riga
 Testo fuori dalla lista con T71 dentro.

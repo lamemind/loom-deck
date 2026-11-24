@@ -92,13 +92,13 @@ test('env: LOOM_TASK è la task della conversazione, e sparisce senza task', () 
   assert.equal(windowsTabEnv(PARENT, { task: null }, null).LOOM_TASK, undefined);
 });
 
-// T220 — `LOOM_REGIA` sta nella lista tolta: la tab la riceve solo dal binding,
-// cioè da una richiesta che dichiara la regia, mai dal deck che la apre.
-test('env: LOOM_REGIA solo dal binding, mai ereditata dal deck', () => {
-  const parent = { ...PARENT, LOOM_REGIA: 'T1' };
-  assert.equal(windowsTabEnv(parent, { task: 'T9' }, null).LOOM_REGIA, undefined);
-  assert.equal(windowsTabEnv(parent, { task: 'T9', regia: null }, null).LOOM_REGIA, undefined);
-  assert.equal(windowsTabEnv(parent, { task: 'T9', regia: 'T197' }, null).LOOM_REGIA, 'T197');
+// T220 — `LOOM_ORCHESTRATOR` sta nella lista tolta: la tab la riceve solo dal binding,
+// cioè da una richiesta che dichiara l'orchestrator, mai dal deck che la apre.
+test('env: LOOM_ORCHESTRATOR solo dal binding, mai ereditata dal deck', () => {
+  const parent = { ...PARENT, LOOM_ORCHESTRATOR: 'T1' };
+  assert.equal(windowsTabEnv(parent, { task: 'T9' }, null).LOOM_ORCHESTRATOR, undefined);
+  assert.equal(windowsTabEnv(parent, { task: 'T9', orchestrator: null }, null).LOOM_ORCHESTRATOR, undefined);
+  assert.equal(windowsTabEnv(parent, { task: 'T9', orchestrator: 'T197' }, null).LOOM_ORCHESTRATOR, 'T197');
 });
 
 test('env: il bash di Git entra solo se manca', () => {
@@ -170,28 +170,28 @@ test('Windows: la conversazione è una tab di wt col wrapper, e l’argv di clau
   assert.equal(r.out[2], '<launch>');
 });
 
-// T220 — la regia arriva nell'env della tab di wt per lo stesso canale di
-// LOOM_TASK, e una LOOM_REGIA del deck non passa mai.
-test('Windows: --regia mette LOOM_REGIA nell’env della tab, una ereditata sparisce', async () => {
-  const env = { LOOM_REGIA: 'T1', LOOM_DECK_PROMPT_CATALOG: '/non/esiste' };
-  const withRegia = await fakeRun(['T5', '--prompt-kind', 'none', '--regia', 'T197'], { env });
-  assert.equal(withRegia.launches[0]!.env?.LOOM_REGIA, 'T197');
-  assert.equal(withRegia.launches[0]!.env?.LOOM_TASK, 'T5');
-  assert.match(withRegia.out[1]!, /^LOOM_DECK_INTAB LOOM_TASK=T5 LOOM_REGIA=T197 claude /);
+// T220 — l'orchestrator arriva nell'env della tab di wt per lo stesso canale di
+// LOOM_TASK, e una LOOM_ORCHESTRATOR del deck non passa mai.
+test('Windows: --orchestrator mette LOOM_ORCHESTRATOR nell’env della tab, una ereditata sparisce', async () => {
+  const env = { LOOM_ORCHESTRATOR: 'T1', LOOM_DECK_PROMPT_CATALOG: '/non/esiste' };
+  const withOrchestrator = await fakeRun(['T5', '--prompt-kind', 'none', '--orchestrator', 'T197'], { env });
+  assert.equal(withOrchestrator.launches[0]!.env?.LOOM_ORCHESTRATOR, 'T197');
+  assert.equal(withOrchestrator.launches[0]!.env?.LOOM_TASK, 'T5');
+  assert.match(withOrchestrator.out[1]!, /^LOOM_DECK_INTAB LOOM_TASK=T5 LOOM_ORCHESTRATOR=T197 claude /);
   const without = await fakeRun(['T5', '--prompt-kind', 'none'], { env });
-  assert.equal(without.launches[0]!.env?.LOOM_REGIA, undefined);
-  const regiaKind = await fakeRun(['T197', '--prompt-kind', 'regia', '--regia', 'T197'], { env });
-  assert.equal(regiaKind.launches[0]!.env?.LOOM_REGIA, undefined, 'una regia non è un membro (P3)');
+  assert.equal(without.launches[0]!.env?.LOOM_ORCHESTRATOR, undefined);
+  const orchestratorKind = await fakeRun(['T197', '--prompt-kind', 'orchestrator', '--orchestrator', 'T197'], { env });
+  assert.equal(orchestratorKind.launches[0]!.env?.LOOM_ORCHESTRATOR, undefined, 'un orchestrator non è un membro (P3)');
 });
 
-test('Linux: --regia entra nella riga in-tab, prima di claude', async () => {
-  const r = await fakeRun(['T5', '--prompt-kind', 'none', '--regia', 'T197'], {
+test('Linux: --orchestrator entra nella riga in-tab, prima di claude', async () => {
+  const r = await fakeRun(['T5', '--prompt-kind', 'none', '--orchestrator', 'T197'], {
     platform: 'linux',
     env: { LOOM_DECK_PROMPT_CATALOG: '/non/esiste', LOOM_DECK_STATE_PROFILE: '' },
   });
   const l = r.launches[0]!;
   assert.equal(l.cmd, 'ptyxis');
-  assert.match(l.args.at(-1)!, /^LOOM_TASK=T5 LOOM_REGIA=T197 claude /);
+  assert.match(l.args.at(-1)!, /^LOOM_TASK=T5 LOOM_ORCHESTRATOR=T197 claude /);
 });
 
 test('Windows: --no-task toglie LOOM_TASK ereditata, --new-window apre una finestra', async () => {

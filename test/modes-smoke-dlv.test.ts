@@ -1,5 +1,5 @@
 // T232 — gate dei modi (vedi `modes-smoke.test.ts`): il modo DLV del detail, il
-// mandato e la regia, sul progetto sintetico di `detail-fixture.ts`.
+// mandato e l'orchestrator, sul progetto sintetico di `detail-fixture.ts`.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -102,27 +102,27 @@ test('mandato: `s` nel detail apre il recap del perimetro', { skip: SKIP }, () =
   assert.match(frame, /recap-status-epic T5/, `non è il recap del mandato: ${frame}`);
 });
 
-// ── T203 · la regia ──────────────────────────────────────────────────────
+// ── T203 · l'orchestrator ──────────────────────────────────────────────────────
 //
 // `d` seleziona `direct` sui soli perimetri: T6 (epica, `DDDDDDD`) e T5
 // (mandato, `DDDDDD`). Il prompt, il modello e il titolo sono quelli della riga
-// `regia` del catalogo, senza override nella fixture. Su T4 (task semplice,
+// `orchestrator` del catalogo, senza override nella fixture. Su T4 (task semplice,
 // aperta sui campi) la voce non c'è: `d` non seleziona niente e `⏎` resta su
 // open.
 
-test('epica: `d` nel detail apre la regia, opus, titolo 🎬', { skip: SKIP }, () => {
+test('epica: `d` nel detail apre l’orchestrator, opus, titolo 🎬', { skip: SKIP }, () => {
   const frame = captureDetail('DDDDDDD\rd\r');
   assert.ok(
     frame.includes(`'/loom-works:orchestrate-mandate T6' --model opus --title-note '🎬 epica'`),
-    `non è la regia dell'epica: ${frame}`,
+    `non è l'orchestrator dell'epica: ${frame}`,
   );
 });
 
-test('mandato: `d` nel detail apre la regia, opus, titolo 🎬', { skip: SKIP }, () => {
+test('mandato: `d` nel detail apre l’orchestrator, opus, titolo 🎬', { skip: SKIP }, () => {
   const frame = captureDetail('DDDDDD\rd\r');
   assert.ok(
     frame.includes(`'/loom-works:orchestrate-mandate T5' --model opus --title-note '🎬 mandato'`),
-    `non è la regia del mandato: ${frame}`,
+    `non è l'orchestrator del mandato: ${frame}`,
   );
 });
 
@@ -130,8 +130,8 @@ test('task semplice: `d` nel detail non seleziona niente, ⏎ resta su open', { 
   const fields = captureDetail('DDDDD\r');
   const row = fields.split('\n').find((l) => l.includes('[ open ]'));
   assert.ok(row, `riga azioni non renderizzata: ${fields}`);
-  assert.ok(!row.includes('direct'), `la regia su una task semplice: ${row}`);
+  assert.ok(!row.includes('direct'), `l'orchestrator su una task semplice: ${row}`);
   const frame = captureDetail('DDDDD\rd\r');
   assert.match(frame, /--prompt-kind none/, `d ha selezionato un'azione: ${frame}`);
-  assert.doesNotMatch(frame, /orchestrate-mandate/, `la regia è partita: ${frame}`);
+  assert.doesNotMatch(frame, /orchestrate-mandate/, `l'orchestrator è partito: ${frame}`);
 });

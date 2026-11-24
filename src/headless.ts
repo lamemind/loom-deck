@@ -22,7 +22,7 @@
 // su cartelle temporanee.
 import { readFileSync } from 'node:fs';
 import { configFilePath, docsRootName } from './config.js';
-import { planSpawnRequest, regiaRefusal } from './endpoint-spawn.js';
+import { planSpawnRequest, orchestratorRefusal } from './endpoint-spawn.js';
 import { claudeEnv } from './git-bash.js';
 import { modelAlias } from './glyphs.js';
 import {
@@ -50,7 +50,7 @@ import { deckArgs, resumeArgs } from './spawn.js';
 import { bindSession, dropEnv, INHERITED_SESSION_ENV, type SessionBinding } from './session-env.js';
 import { isHelpRequest, isUsageError, parseTabArgs } from './tab-args.js';
 import { composeTab, permissionMode, type TabPlan } from './tab-compose.js';
-import { appendNote, appendRegia, appendSessionMeta, appendTaskBinding, loadSessionIndex } from './task-index.js';
+import { appendNote, appendOrchestrator, appendSessionMeta, appendTaskBinding, loadSessionIndex } from './task-index.js';
 import { loadTaskFileText, loadTasks, resolveTasksDir, resolveTasksPath } from './tasks.js';
 
 /**
@@ -58,7 +58,7 @@ import { loadTaskFileText, loadTasks, resolveTasksDir, resolveTasksPath } from '
  *
  *  - le variabili della conversazione che lancia (`INHERITED_SESSION_ENV`, la
  *    lista che il deck toglie a ogni `claude` che lancia): una headless la
- *    lancia di norma una regia, cioè una conversazione;
+ *    lancia di norma un orchestrator, cioè una conversazione;
  *  - `PTYXIS_PROFILE`: con il profilo, gli hook di stato del turno cambiano lo
  *    stato del PROGETTO in compass — `done` accende badge e suono, `end` lo
  *    riporta a `idle` cancellando l'`ask` di una tab vera (misura 10). Una
@@ -77,8 +77,8 @@ export const HEADLESS_DROP_ENV: readonly string[] = [
 ];
 
 /** L'ambiente del turno: quello di chi lancia, meno `HEADLESS_DROP_ENV`, più
- *  `LOOM_TASK` sul ramo bound e `LOOM_REGIA` quando il comando dichiara la
- *  regia (T220). Su Windows anche il bash di Git (`claudeEnv`), come ogni
+ *  `LOOM_TASK` sul ramo bound e `LOOM_ORCHESTRATOR` quando il comando dichiara
+ *  l'orchestrator (T220). Su Windows anche il bash di Git (`claudeEnv`), come ogni
  *  `claude` che il deck lancia. */
 export function headlessEnv(
   env: Readonly<Record<string, string | undefined>>,
@@ -145,7 +145,7 @@ export const HEADLESS_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
  * transcript non c'è. Un turno che fallisce prima del primo record (un CLI che
  * rifiuta gli argomenti) non lascia nessun transcript, e il suo esito è proprio
  * lo stderr da leggere con `status`: senza margine, l'`open` di un altro turno
- * lanciato subito dopo lo cancellerebbe prima che la regia lo legga.
+ * lanciato subito dopo lo cancellerebbe prima che l'orchestrator lo legga.
  */
 export const HEADLESS_ORPHAN_GRACE_MS = 10 * 60 * 1000;
 
@@ -179,7 +179,7 @@ export function staleHeadless(
 /**
  * T206/P1 — toglie i file di stato dei turni finiti (`staleHeadless`); gli id
  * puliti. La chiama `openHeadless`: pulisce chi scrive, quindi funziona anche a
- * deck spento, e la regia che lancia turni la tiene in moto da sola. Un errore
+ * deck spento, e l'orchestrator che lancia turni la tiene in moto da solo. Un errore
  * qui non ferma mai l'apertura del turno: i file restano al giro dopo.
  */
 export function pruneHeadless(root: string, io: Pick<HeadlessIo, 'running' | 'now'>): string[] {
@@ -297,7 +297,7 @@ function clip(text: string): string {
  *
  * I rifiuti, in ordine: un'azione senza prompt (`none`, o un override che lo
  * svuota) non ha un turno da eseguire; i rifiuti di `planSpawnRequest` (la
- * regia, task assente, run su un mandato, perimetro); `run` e `checkpoint` su un progetto
+ * orchestrator, task assente, run su un mandato, perimetro); `run` e `checkpoint` su un progetto
  * `manual` (D2 preflight) — un canale senza nessuno che guarda non allarga il
  * permesso che il progetto ha dichiarato, e in `manual` ogni comando di un run
  * sarebbe negato.
@@ -336,15 +336,15 @@ export async function openHeadless(
 
   const prompt = withContext(plan.prompt, context);
   const sessionId = io.newId();
-  const tab = compose(deckArgs(req.task, sessionId, plan.model, plan.note, '', plan.regia?.regia), ctx, io);
+  const tab = compose(deckArgs(req.task, sessionId, plan.model, plan.note, '', plan.orchestrator?.orchestrator), ctx, io);
   warnings.push(...tab.warnings);
 
   // P7 — il binding prima del processo, con gli stessi campi del tasto del deck
   // (`spawnForTask`), più l'alias del modello: una risposta lo ritrova anche
-  // prima che il transcript ne nomini uno. T220 — e la regia che apre il turno,
+  // prima che il transcript ne nomini uno. T220 — e l'orchestrator che apre il turno,
   // come uno spawn dall'endpoint.
   appendTaskBinding(root, sessionId, req.task);
-  if (plan.regia) appendRegia(root, sessionId, plan.regia.regia, plan.regia.session);
+  if (plan.orchestrator) appendOrchestrator(root, sessionId, plan.orchestrator.orchestrator, plan.orchestrator.session);
   if (plan.note) appendNote(root, sessionId, plan.note);
   appendSessionMeta(root, sessionId, { model: plan.model });
 
@@ -360,16 +360,16 @@ export async function openHeadless(
       permissionMode: mode,
       turn: 1,
       prompt: clip(prompt),
-      ...regiaField(tab),
+      ...orchestratorField(tab),
     },
     headlessArgs(tab.claudeArgs, prompt),
-    headlessEnv(io.env, { task: req.task, regia: tab.sessionEnv.LOOM_REGIA ?? null }, io.platform),
+    headlessEnv(io.env, { task: req.task, orchestrator: tab.sessionEnv.LOOM_ORCHESTRATOR ?? null }, io.platform),
   );
   if (state.launchError) return { ok: false, reason: state.launchError };
   return { ok: true, state, warnings };
 }
 
-/** Le due letture della lista task che servono a un piano e a una regia
+/** Le due letture della lista task che servono a un piano e a un orchestrator
  *  dichiarata: la riga in `tasks.md` e il task file. */
 function taskLookup(ctx: ProjectContext) {
   return {
@@ -384,10 +384,10 @@ function taskLookup(ctx: ProjectContext) {
   };
 }
 
-/** T220 — la regia del turno nello stato su disco, come `LOOM_REGIA` l'ha
- *  ricevuta dalla composizione: assente se il turno non ne ha. */
-function regiaField(tab: TabPlan): { regia?: string } {
-  return tab.sessionEnv.LOOM_REGIA ? { regia: tab.sessionEnv.LOOM_REGIA } : {};
+/** T220 — l'orchestrator del turno nello stato su disco, come `LOOM_ORCHESTRATOR` l'ha
+ *  ricevuto dalla composizione: assente se il turno non ne ha. */
+function orchestratorField(tab: TabPlan): { orchestrator?: string } {
+  return tab.sessionEnv.LOOM_ORCHESTRATOR ? { orchestrator: tab.sessionEnv.LOOM_ORCHESTRATOR } : {};
 }
 
 /** Un `sessionId` intero o un suo prefisso fra i candidati; il motivo del
@@ -419,9 +419,9 @@ function describeProcess(p: SessionProcess): string {
  * una tab: il binding e la nota dal sidecar, il modello dal transcript (T148),
  * poi dal sidecar, poi il default.
  *
- * T220 — `regia` è la regia che risponde, dichiarata a ogni turno
- * (`reply --regia`): ogni turno è un processo nuovo, `SessionStart` scatta a
- * ogni `--resume`, e senza la regia il turno nascerebbe senza `LOOM_REGIA` —
+ * T220 — `orchestrator` è l'orchestrator che risponde, dichiarato a ogni turno
+ * (`reply --orchestrator`): ogni turno è un processo nuovo, `SessionStart` scatta a
+ * ogni `--resume`, e senza l'orchestrator il turno nascerebbe senza `LOOM_ORCHESTRATOR` —
  * senza la riga dell'organigramma (P2 preflight). Non si rilegge dal sidecar,
  * e non si scrive nel sidecar: la provenienza è dello spawn.
  */
@@ -431,7 +431,7 @@ export async function replyHeadless(
   root: string,
   io: HeadlessIo,
   modelOverride?: ModelKind,
-  regia?: string,
+  orchestrator?: string,
 ): Promise<TurnReply> {
   if (!message.trim()) return { ok: false, reason: 'messaggio vuoto' };
   const prefix = normalizeSession(ref) ?? '';
@@ -454,16 +454,16 @@ export async function replyHeadless(
   }
 
   const ctx = projectContext(root, io);
-  if (regia) {
-    const bad = regiaRefusal(regia, taskLookup(ctx));
+  if (orchestrator) {
+    const bad = orchestratorRefusal(orchestrator, taskLookup(ctx));
     if (bad) return { ok: false, reason: bad };
   }
   const index = loadSessionIndex(root);
   const task = index.bindings.get(sessionId) || null;
-  // `--regia` vuole una task (`parseTabArgs`): una conversazione spot non è un
+  // `--orchestrator` vuole una task (`parseTabArgs`): una conversazione spot non è un
   // membro di nessun perimetro, e il rifiuto qui dice perché invece del guasto
   // della composizione.
-  if (regia && !task) return { ok: false, reason: `${short} non è legata a una task: --regia vale solo su un membro` };
+  if (orchestrator && !task) return { ok: false, reason: `${short} non è legata a una task: --orchestrator vale solo su un membro` };
   const note = index.notes.get(sessionId);
   const sidecarModel = index.models.get(sessionId);
   const model: ModelKind =
@@ -473,7 +473,7 @@ export async function replyHeadless(
     prev?.model ??
     MODEL_DEFAULT;
 
-  const tab = compose(resumeArgs(task, sessionId, model, note, regia), ctx, io);
+  const tab = compose(resumeArgs(task, sessionId, model, note, orchestrator), ctx, io);
   const state = await launchTurn(
     root,
     io,
@@ -486,10 +486,10 @@ export async function replyHeadless(
       permissionMode: permissionMode({ env: io.env, config: ctx.config }, []),
       turn: (prev?.turn ?? 0) + 1,
       prompt: clip(message),
-      ...regiaField(tab),
+      ...orchestratorField(tab),
     },
     headlessArgs(tab.claudeArgs, message),
-    headlessEnv(io.env, { task, regia: tab.sessionEnv.LOOM_REGIA ?? null }, io.platform),
+    headlessEnv(io.env, { task, orchestrator: tab.sessionEnv.LOOM_ORCHESTRATOR ?? null }, io.platform),
   );
   if (state.launchError) return { ok: false, reason: state.launchError };
   return { ok: true, state, warnings: tab.warnings };

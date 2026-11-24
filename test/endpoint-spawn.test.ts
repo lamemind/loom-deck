@@ -87,82 +87,82 @@ test('preflight: la terna del catalogo, e la risposta porta titolo e comando in-
     kind: 'preflight',
     model: 'sonnet',
     prompt: '/loom-works:preflight T9',
-    regia: null,
+    orchestrator: null,
     title: '🧵 demo · T9',
     inTab: 'claude …',
   });
   assert.deepEqual(calls.spawned, [{ id: 'T9', model: 'sonnet', note: 'preflight-titolo', prompt: '/loom-works:preflight T9' }]);
 });
 
-// T220 — la regia che chiede: verificata contro il progetto, passata allo spawn
+// T220 — l'orchestrator che chiede: verificato contro il progetto, passato allo spawn
 // con la sua sessione, riportata nella risposta.
 const EPIC_TEXT = '# Task: cappello\n\n- **Size**: Epic\n';
-const REGIA_SID = '0a1b2c3d-1111-2222-3333-444455556666';
+const ORCHESTRATOR_SID = '0a1b2c3d-1111-2222-3333-444455556666';
 
-function regiaDeps(spawnedRegia: unknown[], over: Partial<SpawnRequestDeps> = {}): SpawnRequestDeps {
+function orchestratorDeps(spawnedOrchestrator: unknown[], over: Partial<SpawnRequestDeps> = {}): SpawnRequestDeps {
   const base = deps();
   return {
     ...base,
     taskExists: (id) => id === 'T9' || id === 'T197' || id === 'T8',
     taskText: (id) => (id === 'T197' ? EPIC_TEXT : TASK_TEXT),
-    spawn: (id, model, note, prompt, regia) => {
-      spawnedRegia.push(regia);
-      return base.spawn(id, model, note, prompt, regia);
+    spawn: (id, model, note, prompt, orchestrator) => {
+      spawnedOrchestrator.push(orchestrator);
+      return base.spawn(id, model, note, prompt, orchestrator);
     },
     ...over,
   };
 }
 
-test('regia: un’epica del progetto passa allo spawn con la sessione, e torna nella risposta', async () => {
+test('orchestrator: un’epica del progetto passa allo spawn con la sessione, e torna nella risposta', async () => {
   const seen: unknown[] = [];
   const sid = '0a1b2c3d-1111-2222-3333-444455556666';
-  const r = await handleSpawnRequest(req({ regia: 'T197', regiaSession: sid }), regiaDeps(seen));
+  const r = await handleSpawnRequest(req({ orchestrator: 'T197', orchestratorSession: sid }), orchestratorDeps(seen));
   assert.equal(r.ok, true);
-  assert.equal(r.ok && r.regia, 'T197');
-  assert.deepEqual(seen, [{ regia: 'T197', session: sid }]);
-  // Senza la sessione: la regia passa da sola.
-  await handleSpawnRequest(req({ regia: 'T197' }), regiaDeps(seen));
-  assert.deepEqual(seen[1], { regia: 'T197' });
-  // Senza regia: `null` allo spawn e nella risposta.
-  const plain = await handleSpawnRequest(req({}), regiaDeps(seen));
+  assert.equal(r.ok && r.orchestrator, 'T197');
+  assert.deepEqual(seen, [{ orchestrator: 'T197', session: sid }]);
+  // Senza la sessione: l'orchestrator passa da solo.
+  await handleSpawnRequest(req({ orchestrator: 'T197' }), orchestratorDeps(seen));
+  assert.deepEqual(seen[1], { orchestrator: 'T197' });
+  // Senza orchestrator: `null` allo spawn e nella risposta.
+  const plain = await handleSpawnRequest(req({}), orchestratorDeps(seen));
   assert.deepEqual(seen[2], null);
-  assert.equal(plain.ok && plain.regia, null);
+  assert.equal(plain.ok && plain.orchestrator, null);
 });
 
-test('regia: una task che non è un perimetro, o che non c’è, è un rifiuto senza tab', async () => {
+test('orchestrator: una task che non è un perimetro, o che non c’è, è un rifiuto senza tab', async () => {
   const seen: unknown[] = [];
-  const notPerimeter = await handleSpawnRequest(req({ regia: 'T8' }), regiaDeps(seen));
-  assert.deepEqual(notPerimeter, { ok: false, reason: "regia T8: non è un'epica né un mandato" });
-  const missing = await handleSpawnRequest(req({ regia: 'T404' }), regiaDeps(seen));
-  assert.deepEqual(missing, { ok: false, reason: 'regia T404: non è nella lista task del progetto' });
+  const notPerimeter = await handleSpawnRequest(req({ orchestrator: 'T8' }), orchestratorDeps(seen));
+  assert.deepEqual(notPerimeter, { ok: false, reason: "orchestrator T8: non è un'epica né un mandato" });
+  const missing = await handleSpawnRequest(req({ orchestrator: 'T404' }), orchestratorDeps(seen));
+  assert.deepEqual(missing, { ok: false, reason: 'orchestrator T404: non è nella lista task del progetto' });
   assert.deepEqual(seen, [], 'nessuno spawn');
   // Un mandato è un perimetro come un'epica.
   const mandate = planSpawnRequest(
-    req({ regia: 'T197' }),
-    { ...regiaDeps(seen), taskText: (id) => (id === 'T197' ? '- **Size**: Mandate\n' : TASK_TEXT) },
+    req({ orchestrator: 'T197' }),
+    { ...orchestratorDeps(seen), taskText: (id) => (id === 'T197' ? '- **Size**: Mandate\n' : TASK_TEXT) },
     'endpoint',
   );
-  assert.equal(mandate.ok && mandate.regia?.regia, 'T197');
+  assert.equal(mandate.ok && mandate.orchestrator?.orchestrator, 'T197');
 });
 
-// T220/P3 — la regia dichiarata si scarta quando la conversazione aperta è a sua
-// volta una regia. T221 — il kind `regia` passa dall'endpoint (passaggio di
+// T220/P3 — l'orchestrator dichiarato si scarta quando la conversazione aperta è a sua
+// volta un orchestrator. T221 — il kind `orchestrator` passa dall'endpoint (passaggio di
 // consegne): la regola vale con la tabella vera.
-test('regia: con il kind regia sull’endpoint, la regia dichiarata si scarta senza rifiuto', () => {
-  const d = regiaDeps([]);
-  assert.equal(kindRefusal('regia', 'endpoint'), null);
-  assert.notEqual(kindRefusal('regia', 'headless'), null);
-  const asRegia = planSpawnRequest(
-    req({ task: 'T197', kind: 'regia', regia: 'T197', regiaSession: REGIA_SID, from: REGIA_SID }),
+test('orchestrator: con il kind orchestrator sull’endpoint, l’orchestrator dichiarato si scarta senza rifiuto', () => {
+  const d = orchestratorDeps([]);
+  assert.equal(kindRefusal('orchestrator', 'endpoint'), null);
+  assert.notEqual(kindRefusal('orchestrator', 'headless'), null);
+  const asOrchestrator = planSpawnRequest(
+    req({ task: 'T197', kind: 'orchestrator', orchestrator: 'T197', orchestratorSession: ORCHESTRATOR_SID, from: ORCHESTRATOR_SID }),
     d,
     'endpoint',
   );
-  assert.equal(asRegia.ok, true, JSON.stringify(asRegia));
-  assert.equal(asRegia.ok && asRegia.kind, 'regia');
-  assert.equal(asRegia.ok && asRegia.regia, null, 'una regia non è un membro: nessuna LOOM_REGIA');
-  // Kind di un membro: la regia resta, sessione compresa.
-  const asMember = planSpawnRequest(req({ kind: 'run', regia: 'T197', regiaSession: REGIA_SID }), d, 'endpoint');
-  assert.deepEqual(asMember.ok && asMember.regia, { regia: 'T197', session: REGIA_SID });
+  assert.equal(asOrchestrator.ok, true, JSON.stringify(asOrchestrator));
+  assert.equal(asOrchestrator.ok && asOrchestrator.kind, 'orchestrator');
+  assert.equal(asOrchestrator.ok && asOrchestrator.orchestrator, null, 'un orchestrator non è un membro: nessuna LOOM_ORCHESTRATOR');
+  // Kind di un membro: l'orchestrator resta, sessione compresa.
+  const asMember = planSpawnRequest(req({ kind: 'run', orchestrator: 'T197', orchestratorSession: ORCHESTRATOR_SID }), d, 'endpoint');
+  assert.deepEqual(asMember.ok && asMember.orchestrator, { orchestrator: 'T197', session: ORCHESTRATOR_SID });
 });
 
 test('run col perimetro: DLV in coda al prompt di run già risolto, come il modo DLV', async () => {
@@ -218,52 +218,52 @@ test('mandato: run rifiutato prima della tab, recap del perimetro, il resto part
   assert.equal(preflight.ok, true);
 });
 
-// T221 — la regia si apre da una richiesta solo come successora di un passaggio
+// T221 — l'orchestrator si apre da una richiesta solo come successore di un passaggio
 // di consegne: su un perimetro, con chi passa le consegne (`from`), che il deck
-// marca `origin: regia` dopo l'annuncio della successora.
-const OLD_REGIA = '9f8e7d6c-1111-2222-3333-444455556666';
+// marca `origin: orchestrator` dopo l'annuncio del successore.
+const OLD_ORCHESTRATOR = '9f8e7d6c-1111-2222-3333-444455556666';
 
-test('regia: successora su un’epica e su un mandato, la marca su chi passa le consegne', async () => {
+test('orchestrator: successore su un’epica e su un mandato, la marca su chi passa le consegne', async () => {
   for (const text of ['- **Size**: Epic\n', MANDATE_TEXT]) {
     const calls: Calls = { spawned: [], defaults: [] };
     const marked: string[] = [];
     const out = await handleSpawnRequest(
-      req({ kind: 'regia', from: OLD_REGIA }),
+      req({ kind: 'orchestrator', from: OLD_ORCHESTRATOR }),
       deps({ taskText: () => text, markHandoff: (sid) => marked.push(sid) }, calls),
     );
     assert.equal(out.ok, true, JSON.stringify(out));
-    assert.equal(out.ok && out.handoff, OLD_REGIA);
-    assert.equal(out.ok && out.regia, null);
-    assert.deepEqual(marked, [OLD_REGIA]);
-    assert.deepEqual(calls.defaults, ['regia']);
+    assert.equal(out.ok && out.handoff, OLD_ORCHESTRATOR);
+    assert.equal(out.ok && out.orchestrator, null);
+    assert.deepEqual(marked, [OLD_ORCHESTRATOR]);
+    assert.deepEqual(calls.defaults, ['orchestrator']);
     assert.equal(calls.spawned.length, 1);
   }
 });
 
-test('regia: senza chi passa le consegne, o su una task che non è un perimetro, nessuna tab', async () => {
+test('orchestrator: senza chi passa le consegne, o su una task che non è un perimetro, nessuna tab', async () => {
   const calls: Calls = { spawned: [], defaults: [] };
   const marked: string[] = [];
   const noFrom = await handleSpawnRequest(
-    req({ kind: 'regia' }),
+    req({ kind: 'orchestrator' }),
     deps({ taskText: () => '- **Size**: Epic\n', markHandoff: (sid) => marked.push(sid) }, calls),
   );
   assert.equal(noFrom.ok, false);
   assert.match((noFrom as { reason: string }).reason, /non porta il sessionId di chi passa le consegne \(from\)/);
   const notPerimeter = await handleSpawnRequest(
-    req({ kind: 'regia', from: OLD_REGIA }),
+    req({ kind: 'orchestrator', from: OLD_ORCHESTRATOR }),
     deps({ markHandoff: (sid) => marked.push(sid) }, calls),
   );
-  assert.deepEqual(notPerimeter, { ok: false, reason: "regia T9: non è un'epica né un mandato" });
+  assert.deepEqual(notPerimeter, { ok: false, reason: "orchestrator T9: non è un'epica né un mandato" });
   assert.equal(calls.spawned.length, 0);
-  assert.deepEqual(marked, [], 'nessuna marca senza successora');
+  assert.deepEqual(marked, [], 'nessuna marca senza successore');
 });
 
-test('regia: la marca solo a successora annunciata, anche quando esce dalla coda', async () => {
-  const plan = planSpawnRequest(req({ kind: 'regia', from: OLD_REGIA }), deps({ taskText: () => MANDATE_TEXT }), 'endpoint');
+test('orchestrator: la marca solo a successore annunciato, anche quando esce dalla coda', async () => {
+  const plan = planSpawnRequest(req({ kind: 'orchestrator', from: OLD_ORCHESTRATOR }), deps({ taskText: () => MANDATE_TEXT }), 'endpoint');
   assert.ok(plan.ok);
   const marked: string[] = [];
-  // deck-run esce senza annunciare: la tab non c'è, la regia vecchia resta com'è.
-  const failed = await spawnPlanned(req({ kind: 'regia', from: OLD_REGIA }), plan, {
+  // deck-run esce senza annunciare: la tab non c'è, l'orchestrator vecchio resta com'è.
+  const failed = await spawnPlanned(req({ kind: 'orchestrator', from: OLD_ORCHESTRATOR }), plan, {
     spawn: () => ({ sessionId: 'sid-x', spawned: { child: fakeChild(null, 2), cmd: 'deck-run' } }),
     markHandoff: (sid) => marked.push(sid),
   });
@@ -272,7 +272,7 @@ test('regia: la marca solo a successora annunciata, anche quando esce dalla coda
   // Dalla coda: il sessionId annunciato, e la marca allo spawn vero.
   const seen: Array<string | undefined> = [];
   const queued = await spawnPlanned(
-    req({ kind: 'regia', from: OLD_REGIA }),
+    req({ kind: 'orchestrator', from: OLD_ORCHESTRATOR }),
     plan,
     {
       spawn: (_id, _m, _n, _p, _r, sid) => {
@@ -286,15 +286,15 @@ test('regia: la marca solo a successora annunciata, anche quando esce dalla coda
   );
   assert.equal(queued.ok && queued.sessionId, 'sid-coda');
   assert.deepEqual(seen, ['sid-coda']);
-  assert.deepEqual(marked, [OLD_REGIA]);
+  assert.deepEqual(marked, [OLD_ORCHESTRATOR]);
 });
 
 // T203 S1 — l'help dei client elenca i kind che il canale accetta, e nasce
 // dalla stessa regola del rifiuto: un kind fuori dall'elenco è un kind che
 // `planSpawnRequest` rifiuta su quel canale, e viceversa.
-test('requestKinds: la regia sull’endpoint e non sul turno headless, gli altri kind dentro', () => {
-  assert.ok(requestKinds('endpoint').includes('regia'), "endpoint: la regia manca dall'elenco");
-  assert.ok(!requestKinds('headless').includes('regia'), "headless: la regia è nell'elenco");
+test('requestKinds: l’orchestrator sull’endpoint e non sul turno headless, gli altri kind dentro', () => {
+  assert.ok(requestKinds('endpoint').includes('orchestrator'), "endpoint: l’orchestrator manca dall'elenco");
+  assert.ok(!requestKinds('headless').includes('orchestrator'), "headless: l'orchestrator è nell'elenco");
   for (const channel of ['endpoint', 'headless'] as const) {
     const kinds = requestKinds(channel);
     for (const k of ['recap', 'preflight', 'run', 'checkpoint'] as const) {
@@ -304,7 +304,7 @@ test('requestKinds: la regia sull’endpoint e non sul turno headless, gli altri
 });
 
 test('requestKinds e il rifiuto di planSpawnRequest sono la stessa regola', () => {
-  // La regia vuole un perimetro e chi passa le consegne: il resto della task
+  // L'orchestrator vuole un perimetro e chi passa le consegne: il resto della task
   // non deve decidere qui, la regola sotto misura il solo canale.
   const allow = {
     taskExists: () => true,
@@ -313,7 +313,7 @@ test('requestKinds e il rifiuto di planSpawnRequest sono la stessa regola', () =
   };
   for (const channel of ['endpoint', 'headless'] as RequestChannel[]) {
     for (const kind of PROMPT_KINDS) {
-      const r = kind === 'regia' ? req({ task: 'T1', kind, from: OLD_REGIA }) : req({ kind });
+      const r = kind === 'orchestrator' ? req({ task: 'T1', kind, from: OLD_ORCHESTRATOR }) : req({ kind });
       const plan = planSpawnRequest(r, allow, channel);
       const listed = requestKinds(channel).includes(kind);
       assert.equal(plan.ok, listed, `${channel}/${kind}: elenco e rifiuto divergono`);
@@ -322,16 +322,16 @@ test('requestKinds e il rifiuto di planSpawnRequest sono la stessa regola', () =
   }
 });
 
-test('l help di loom-deck-spawn promette la regia, quello di loom-deck-headless no', () => {
+test('l help di loom-deck-spawn promette l’orchestrator, quello di loom-deck-headless no', () => {
   const kindLine = (usage: string) => usage.split('\n').find((l) => l.trim().startsWith('<kind>'))!;
-  for (const [usage, regia] of [
+  for (const [usage, orchestrator] of [
     [CLIENT_USAGE, true],
     [HEADLESS_USAGE, false],
   ] as const) {
     const line = kindLine(usage);
     assert.ok(line, `riga <kind> assente: ${usage}`);
-    if (regia) assert.match(line, /\| regia\b/, `la regia manca dall'help: ${line}`);
-    else assert.doesNotMatch(line, /regia/, `la regia è nell'help: ${line}`);
+    if (orchestrator) assert.match(line, /\| orchestrator\b/, `l'orchestrator manca dall'help: ${line}`);
+    else assert.doesNotMatch(line, /orchestrator/, `l'orchestrator è nell'help: ${line}`);
     assert.match(line, /checkpoint/, `l'elenco non è quello dei kind: ${line}`);
   }
 });
@@ -415,7 +415,7 @@ test('finestra del progetto non in focus con la coda: la richiesta pianificata v
       kind: 'preflight' as const,
       model: 'sonnet' as const,
       prompt: '/loom-works:preflight T9',
-      regia: null,
+      orchestrator: null,
       expiresAt: '2026-11-20T17:30:00.000Z',
     },
   };
@@ -458,7 +458,7 @@ test('spawnPlanned: il sessionId della coda arriva allo spawn, e la risposta è 
   const seen: Array<string | undefined> = [];
   const r = await spawnPlanned(
     req({}),
-    { ok: true, kind: 'preflight', model: 'opus', note: 'n', prompt: 'p', regia: null },
+    { ok: true, kind: 'preflight', model: 'opus', note: 'n', prompt: 'p', orchestrator: null },
     {
       spawn: (_id, _m, _n, _p, _r, sessionId) => {
         seen.push(sessionId);
@@ -532,7 +532,7 @@ test('spawn inerte (figlio senza stdout): ok e inert, senza aspettare', async ()
     kind: 'preflight',
     model: 'sonnet',
     prompt: '/loom-works:preflight T9',
-    regia: null,
+    orchestrator: null,
     title: null,
     inTab: null,
     inert: true,

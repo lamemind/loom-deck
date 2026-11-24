@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { listenEndpoint, type RequestHandler } from '../src/endpoint-server.js';
-import { parseClientArgs, queuedLines, regiaSessionOf, runClient } from '../src/spawn-client.js';
+import { parseClientArgs, queuedLines, orchestratorSessionOf, runClient } from '../src/spawn-client.js';
 import { endpointFor, type SpawnReply, type SpawnRequest } from '../src/spawn-endpoint.js';
 
 /** Un progetto con file di progetto e una cartella runtime propria per i
@@ -69,46 +69,46 @@ test('argomenti: kind, perimetro solo con run, modello e nota', () => {
   for (const argv of bad) assert.ok('usage' in parseClientArgs(argv), argv.join(' '));
 });
 
-// T220 — la regia dichiarata con --regia; la sua sessione il client la legge
+// T220 — l'orchestrator dichiarato con --orchestrator; la sua sessione il client la legge
 // dal proprio ambiente, e solo se è un sessionId intero.
-const REGIA_SID = '0a1b2c3d-1111-2222-3333-444455556666';
+const ORCHESTRATOR_SID = '0a1b2c3d-1111-2222-3333-444455556666';
 
-test('argomenti: --regia, con la sessione della regia letta dall’ambiente', () => {
-  assert.deepEqual(parseClientArgs(['T5', 'run', '--regia', 'T197'], { CLAUDE_CODE_SESSION_ID: REGIA_SID }), {
-    request: { verb: 'spawn', task: 'T5', kind: 'run', regia: 'T197', regiaSession: REGIA_SID },
+test('argomenti: --orchestrator, con la sessione dell’orchestrator letta dall’ambiente', () => {
+  assert.deepEqual(parseClientArgs(['T5', 'run', '--orchestrator', 'T197'], { CLAUDE_CODE_SESSION_ID: ORCHESTRATOR_SID }), {
+    request: { verb: 'spawn', task: 'T5', kind: 'run', orchestrator: 'T197', orchestratorSession: ORCHESTRATOR_SID },
     root: null,
   });
-  assert.deepEqual(parseClientArgs(['T5', 'run', '--regia', 'T197']), {
-    request: { verb: 'spawn', task: 'T5', kind: 'run', regia: 'T197' },
+  assert.deepEqual(parseClientArgs(['T5', 'run', '--orchestrator', 'T197']), {
+    request: { verb: 'spawn', task: 'T5', kind: 'run', orchestrator: 'T197' },
     root: null,
   });
-  // La sessione senza --regia non parte: chi non si dichiara regia non lo è.
-  assert.deepEqual(parseClientArgs(['T5', 'run'], { CLAUDE_CODE_SESSION_ID: REGIA_SID }), {
+  // La sessione senza --orchestrator non parte: chi non si dichiara orchestrator non lo è.
+  assert.deepEqual(parseClientArgs(['T5', 'run'], { CLAUDE_CODE_SESSION_ID: ORCHESTRATOR_SID }), {
     request: { verb: 'spawn', task: 'T5', kind: 'run' },
     root: null,
   });
-  assert.ok('usage' in parseClientArgs(['T5', 'run', '--regia', 'epica']));
-  assert.ok('usage' in parseClientArgs(['T5', 'run', '--regia']));
-  assert.equal(regiaSessionOf({ CLAUDE_CODE_SESSION_ID: '0a1b2c3d' }), null, 'un prefisso non è una sessione');
-  assert.equal(regiaSessionOf({}), null);
+  assert.ok('usage' in parseClientArgs(['T5', 'run', '--orchestrator', 'epica']));
+  assert.ok('usage' in parseClientArgs(['T5', 'run', '--orchestrator']));
+  assert.equal(orchestratorSessionOf({ CLAUDE_CODE_SESSION_ID: '0a1b2c3d' }), null, 'un prefisso non è una sessione');
+  assert.equal(orchestratorSessionOf({}), null);
 });
 
-// T221 — il kind regia: la successora di un passaggio di consegne, chiesta
-// dalla regia stessa, che il client nomina dal proprio ambiente.
-test('argomenti: kind regia porta chi passa le consegne, e senza la sessione è un errore d’uso', () => {
-  assert.deepEqual(parseClientArgs(['T197', 'regia'], { CLAUDE_CODE_SESSION_ID: REGIA_SID }), {
-    request: { verb: 'spawn', task: 'T197', kind: 'regia', from: REGIA_SID },
+// T221 — il kind orchestrator: il successore di un passaggio di consegne, chiesto
+// dall'orchestrator stesso, che il client nomina dal proprio ambiente.
+test('argomenti: kind orchestrator porta chi passa le consegne, e senza la sessione è un errore d’uso', () => {
+  assert.deepEqual(parseClientArgs(['T197', 'orchestrator'], { CLAUDE_CODE_SESSION_ID: ORCHESTRATOR_SID }), {
+    request: { verb: 'spawn', task: 'T197', kind: 'orchestrator', from: ORCHESTRATOR_SID },
     root: null,
   });
-  const missing = parseClientArgs(['T197', 'regia']);
+  const missing = parseClientArgs(['T197', 'orchestrator']);
   assert.ok('usage' in missing);
-  assert.match(missing.usage[0]!, /kind regia: serve CLAUDE_CODE_SESSION_ID/);
+  assert.match(missing.usage[0]!, /kind orchestrator: serve CLAUDE_CODE_SESSION_ID/);
 });
 
-test('regia: la marca sulla regia che passa le consegne nella riga consegne', async () => {
+test('orchestrator: la marca sull’orchestrator che passa le consegne nella riga consegne', async () => {
   const p = project();
   let seen: SpawnRequest | null = null;
-  const env = { ...p.env, CLAUDE_CODE_SESSION_ID: REGIA_SID };
+  const env = { ...p.env, CLAUDE_CODE_SESSION_ID: ORCHESTRATOR_SID };
   const r = await withDeck(
     p,
     async (req) => {
@@ -122,20 +122,20 @@ test('regia: la marca sulla regia che passa le consegne nella riga consegne', as
         prompt: '/loom-works:orchestrate-mandate T197',
         title: 't',
         inTab: 'c',
-        regia: null,
-        handoff: REGIA_SID,
+        orchestrator: null,
+        handoff: ORCHESTRATOR_SID,
       };
     },
-    () => client(['T197', 'regia'], { root: p.root, env }),
+    () => client(['T197', 'orchestrator'], { root: p.root, env }),
   );
   assert.equal(r.code, 0, r.err);
-  assert.deepEqual(seen, { verb: 'spawn', task: 'T197', kind: 'regia', from: REGIA_SID });
-  assert.match(r.out, new RegExp(`^consegne: +${REGIA_SID} marcata origin regia, chiudibile dalla successora$`, 'm'));
+  assert.deepEqual(seen, { verb: 'spawn', task: 'T197', kind: 'orchestrator', from: ORCHESTRATOR_SID });
+  assert.match(r.out, new RegExp(`^consegne: +${ORCHESTRATOR_SID} marcata origin orchestrator, chiudibile dal successore$`, 'm'));
 });
 
-test('regia: riportata dal deck nella sua riga; un deck vecchio che la ignora dà l’avviso, uscita 0', async () => {
+test('orchestrator: riportato dal deck nella sua riga; un deck vecchio che lo ignora dà l’avviso, uscita 0', async () => {
   const p = project();
-  const reply = (req: SpawnRequest, regia?: string | null) => ({
+  const reply = (req: SpawnRequest, orchestrator?: string | null) => ({
     ok: true as const,
     sessionId: 's',
     task: req.task,
@@ -144,32 +144,32 @@ test('regia: riportata dal deck nella sua riga; un deck vecchio che la ignora d�
     prompt: '',
     title: 't',
     inTab: 'c',
-    ...(regia === undefined ? {} : { regia }),
+    ...(orchestrator === undefined ? {} : { orchestrator }),
   });
   let seen: SpawnRequest | null = null;
-  const env = { ...p.env, CLAUDE_CODE_SESSION_ID: REGIA_SID };
+  const env = { ...p.env, CLAUDE_CODE_SESSION_ID: ORCHESTRATOR_SID };
   const known = await withDeck(
     p,
     async (req) => {
       seen = req;
       return reply(req, 'T197');
     },
-    () => client(['T5', 'none', '--regia', 'T197'], { root: p.root, env }),
+    () => client(['T5', 'none', '--orchestrator', 'T197'], { root: p.root, env }),
   );
   assert.equal(known.code, 0, known.err);
-  assert.deepEqual(seen, { verb: 'spawn', task: 'T5', kind: 'none', regia: 'T197', regiaSession: REGIA_SID });
-  assert.match(known.out, /^regia: +T197 \(LOOM_REGIA\)$/m);
+  assert.deepEqual(seen, { verb: 'spawn', task: 'T5', kind: 'none', orchestrator: 'T197', orchestratorSession: ORCHESTRATOR_SID });
+  assert.match(known.out, /^orchestrator: +T197 \(LOOM_ORCHESTRATOR\)$/m);
   assert.doesNotMatch(known.out, /⚠/);
 
-  const old = await withDeck(p, async (req) => reply(req), () => client(['T5', 'none', '--regia', 'T197'], p));
+  const old = await withDeck(p, async (req) => reply(req), () => client(['T5', 'none', '--orchestrator', 'T197'], p));
   assert.equal(old.code, 0, 'la tab esiste già');
-  assert.match(old.out, /^⚠ LOOM_REGIA non impostata: il deck acceso è più vecchio, riavvialo$/m);
-  assert.doesNotMatch(old.out, /^regia:/m);
+  assert.match(old.out, /^⚠ LOOM_ORCHESTRATOR non impostata: il deck acceso è più vecchio, riavvialo$/m);
+  assert.doesNotMatch(old.out, /^orchestrator:/m);
 
-  // Scartata di proposito (kind regia, P3): `regia: null`, nessun avviso.
-  const dropped = await withDeck(p, async (req) => reply(req, null), () => client(['T5', 'none', '--regia', 'T197'], p));
-  assert.doesNotMatch(dropped.out, /⚠|^regia:/m);
-  // Nessuna regia chiesta, nessun avviso anche da un deck vecchio.
+  // Scartata di proposito (kind orchestrator, P3): `orchestrator: null`, nessun avviso.
+  const dropped = await withDeck(p, async (req) => reply(req, null), () => client(['T5', 'none', '--orchestrator', 'T197'], p));
+  assert.doesNotMatch(dropped.out, /⚠|^orchestrator:/m);
+  // Nessun orchestrator chiesto, nessun avviso anche da un deck vecchio.
   const plain = await withDeck(p, async (req) => reply(req), () => client(['T5', 'none'], p));
   assert.doesNotMatch(plain.out, /⚠/);
 });
@@ -309,7 +309,7 @@ test('finestra del progetto: rifiuto con l’istruzione, o tab aperta con l’av
 
 // T229 — la richiesta in coda: uscita 4, sessionId e scadenza su stdout, niente
 // titolo; il motivo «in coda» resta per i client più vecchi, che escono 1.
-test('richiesta in coda: uscita 4, sessionId, task, prompt, regia e scadenza su stdout', async () => {
+test('richiesta in coda: uscita 4, sessionId, task, prompt, orchestrator e scadenza su stdout', async () => {
   const p = project();
   const expires = new Date(Date.UTC(2026, 10, 20, 17, 30, 0));
   const queuedReply = (req: SpawnRequest): SpawnReply => ({
@@ -321,14 +321,14 @@ test('richiesta in coda: uscita 4, sessionId, task, prompt, regia e scadenza su 
       kind: req.kind,
       model: 'opus',
       prompt: '/loom-works:preflight-task T5',
-      regia: 'T197',
+      orchestrator: 'T197',
       expiresAt: expires.toISOString(),
     },
   });
   let out = '';
   let err = '';
   const code = await withDeck(p, async (req) => queuedReply(req as SpawnRequest), () =>
-    runClient(['T5', 'preflight', '--regia', 'T197'], {
+    runClient(['T5', 'preflight', '--orchestrator', 'T197'], {
       cwd: p.root,
       env: p.env,
       platform: process.platform,
@@ -346,7 +346,7 @@ test('richiesta in coda: uscita 4, sessionId, task, prompt, regia e scadenza su 
     'sessionId: 0a1b2c3d-1111-2222-3333-444455556666',
     'task:      T5 · preflight · opus',
     'prompt:    /loom-works:preflight-task T5',
-    'regia:     T197 (LOOM_REGIA)',
+    'orchestrator:     T197 (LOOM_ORCHESTRATOR)',
   ]);
   assert.match(lines[5]!, /^scade: {5}\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d \(fra 30 min\)$/);
   assert.equal(new Date(lines[5]!.slice(11, 36)).getTime(), expires.getTime(), 'l’ora locale è la stessa scadenza');
@@ -387,7 +387,7 @@ test('richiesta in coda a schermo bloccato: la prima riga dice lo sblocco, il re
       kind: 'run',
       model: 'opus',
       prompt: '/loom-works:run-task T5',
-      regia: null,
+      orchestrator: null,
       expiresAt: expires.toISOString(),
     },
     '/progetti/demo',

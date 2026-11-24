@@ -76,13 +76,13 @@ test('deckArgs porta la nota nel titolo solo quando c\'è', () => {
   assert.ok(!deckArgs('T111', 'sid-1').includes('--title-note'));
 });
 
-// T220 — la regia in coda, solo quando c'è: ogni spawn da tasto non la passa.
-// Su una ripresa la passa solo `loom-deck-headless reply --regia`.
-test('deckArgs e resumeArgs portano --regia solo quando la regia c\'è', () => {
-  assert.deepEqual(deckArgs('T5', 'sid-1', 'opus', '', 'p', 'T197').slice(-2), ['--regia', 'T197']);
-  assert.ok(!deckArgs('T5', 'sid-1', 'opus', '', 'p').includes('--regia'));
-  assert.deepEqual(resumeArgs('T5', 'sid-1', 'opus', undefined, 'T197').slice(-2), ['--regia', 'T197']);
-  assert.ok(!resumeArgs('T5', 'sid-1', 'opus').includes('--regia'));
+// T220 — l'orchestrator in coda, solo quando c'è: ogni spawn da tasto non la passa.
+// Su una ripresa la passa solo `loom-deck-headless reply --orchestrator`.
+test('deckArgs e resumeArgs portano --orchestrator solo quando l’orchestrator c\'è', () => {
+  assert.deepEqual(deckArgs('T5', 'sid-1', 'opus', '', 'p', 'T197').slice(-2), ['--orchestrator', 'T197']);
+  assert.ok(!deckArgs('T5', 'sid-1', 'opus', '', 'p').includes('--orchestrator'));
+  assert.deepEqual(resumeArgs('T5', 'sid-1', 'opus', undefined, 'T197').slice(-2), ['--orchestrator', 'T197']);
+  assert.ok(!resumeArgs('T5', 'sid-1', 'opus').includes('--orchestrator'));
 });
 
 // T117/T161 — il prompt è un TESTO e non un simbolo, su OGNI percorso: dal
@@ -287,7 +287,7 @@ test('nessuno spawn su bersaglio vuoto', () => {
 
 test('ogni azione del detail è un prompt-kind valido', () => {
   const kinds = DETAIL_ACTIONS.map((a) => a.kind);
-  assert.deepEqual(kinds, ['none', 'preflight', 'run', 'recap', 'checkpoint', 'regia']);
+  assert.deepEqual(kinds, ['none', 'preflight', 'run', 'recap', 'checkpoint', 'orchestrator']);
   // Le etichette non ripetono i kind: dove differiscono, il kind nomina il
   // MECCANISMO e l'etichetta l'INTENZIONE.
   assert.equal(DETAIL_ACTIONS[0]!.label, 'open');
@@ -300,7 +300,7 @@ test('specializeRecap: solo `recap` si sdoppia, gli altri kind passano intatti',
   assert.equal(specializeRecap('recap', true), 'recap-epic');
   // Il flag epic non deve poter deviare un kind che non lo riguarda: un `run` su
   // un cappello resta un `run` (che poi run-task rifiuta, ed è un altro strato).
-  for (const k of ['none', 'preflight', 'run', 'checkpoint', 'regia'] as const) {
+  for (const k of ['none', 'preflight', 'run', 'checkpoint', 'orchestrator'] as const) {
     assert.equal(specializeRecap(k, true), k);
     assert.equal(specializeRecap(k, false), k);
   }

@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { isHelpRequest, isUsageError, memberRegia, parseTabArgs, USAGE, type TabRequest } from '../src/tab-args.js';
+import { isHelpRequest, isUsageError, memberOrchestrator, parseTabArgs, USAGE, type TabRequest } from '../src/tab-args.js';
 import { composeTab, posixQuote, projectLabel, ptyxisArgv, ptyxisEnv, type ComposeContext } from '../src/tab-compose.js';
 import { INHERITED_SESSION_ENV } from '../src/session-env.js';
 import type { CatalogEntry } from '../src/prompt-catalog.js';
@@ -63,7 +63,7 @@ test('gli errori d’uso, nell’ordine e con le parole dello script', () => {
   ]);
   assert.equal(
     usage(['T1', '--prompt-kind', 'bogus'])[0],
-    "--prompt-kind ignoto: 'bogus' (usa none|recap|recap-task|recap-epic|preflight|run|checkpoint|regia)",
+    "--prompt-kind ignoto: 'bogus' (usa none|recap|recap-task|recap-epic|preflight|run|checkpoint|orchestrator)",
   );
   assert.match(usage(['--no-task', '--prompt-kind', 'run'])[0]!, /^--prompt-kind richiede una task/);
   assert.match(usage(['T1', '--prompt', 'x', '--prompt-kind', 'run'])[0]!, /mutuamente esclusivi/);
@@ -126,38 +126,38 @@ test('binding: LOOM_TASK sul ramo bound, mai su --no-task', () => {
   assert.deepEqual(composeTab(req(['--no-task']), ctx()).sessionEnv, {});
 });
 
-// T220 — la regia che apre la conversazione: un id di task, solo su una task,
-// esportata come LOOM_REGIA accanto a LOOM_TASK, scartata quando la
-// conversazione è a sua volta una regia.
-test('regia: --regia diventa LOOM_REGIA, anche su una ripresa', () => {
-  assert.equal(req(['T1', '--regia', 'T197']).regia, 'T197');
-  assert.equal(req(['T1', '--regia=T197']).regia, 'T197');
-  assert.deepEqual(composeTab(req(['T1', '--regia', 'T197']), ctx()).sessionEnv, { LOOM_TASK: 'T1', LOOM_REGIA: 'T197' });
-  assert.deepEqual(composeTab(req(['T1', '--resume', SID, '--regia', 'T197']), ctx()).sessionEnv, {
+// T220 — l'orchestrator che apre la conversazione: un id di task, solo su una task,
+// esportata come LOOM_ORCHESTRATOR accanto a LOOM_TASK, scartata quando la
+// conversazione è a sua volta un orchestrator.
+test('orchestrator: --orchestrator diventa LOOM_ORCHESTRATOR, anche su una ripresa', () => {
+  assert.equal(req(['T1', '--orchestrator', 'T197']).orchestrator, 'T197');
+  assert.equal(req(['T1', '--orchestrator=T197']).orchestrator, 'T197');
+  assert.deepEqual(composeTab(req(['T1', '--orchestrator', 'T197']), ctx()).sessionEnv, { LOOM_TASK: 'T1', LOOM_ORCHESTRATOR: 'T197' });
+  assert.deepEqual(composeTab(req(['T1', '--resume', SID, '--orchestrator', 'T197']), ctx()).sessionEnv, {
     LOOM_TASK: 'T1',
-    LOOM_REGIA: 'T197',
+    LOOM_ORCHESTRATOR: 'T197',
   });
   assert.match(
-    composeTab(req(['T1', '--regia', 'T197']), ctx({ config: LABELED })).inTab,
-    /^PTYXIS_PROFILE=demo LOOM_TASK=T1 LOOM_REGIA=T197 claude /,
+    composeTab(req(['T1', '--orchestrator', 'T197']), ctx({ config: LABELED })).inTab,
+    /^PTYXIS_PROFILE=demo LOOM_TASK=T1 LOOM_ORCHESTRATOR=T197 claude /,
   );
-  // Nessun --regia, nessuna variabile: la composizione non la inventa.
-  assert.equal(composeTab(req(['T1']), ctx()).sessionEnv.LOOM_REGIA, undefined);
+  // Nessun --orchestrator, nessuna variabile: la composizione non la inventa.
+  assert.equal(composeTab(req(['T1']), ctx()).sessionEnv.LOOM_ORCHESTRATOR, undefined);
 });
 
-test('regia: perimetro fuori forma e sessione nuda sono errori d’uso', () => {
-  assert.match(usage(['T1', '--regia', 'foo'])[0]!, /^--regia: perimetro non valido: 'foo'/);
-  assert.equal(req(['T1', '--regia', '']).regia, '', 'vuoto = flag non passato, come gli altri valori');
-  assert.match(usage(['--no-task', '--regia', 'T197'])[0]!, /^--regia richiede una task/);
+test('orchestrator: perimetro fuori forma e sessione nuda sono errori d’uso', () => {
+  assert.match(usage(['T1', '--orchestrator', 'foo'])[0]!, /^--orchestrator: perimetro non valido: 'foo'/);
+  assert.equal(req(['T1', '--orchestrator', '']).orchestrator, '', 'vuoto = flag non passato, come gli altri valori');
+  assert.match(usage(['--no-task', '--orchestrator', 'T197'])[0]!, /^--orchestrator richiede una task/);
 });
 
-test('regia: una conversazione che è una regia non riceve la regia che la chiede (P3)', () => {
-  assert.equal(memberRegia('regia', 'T197'), '');
-  assert.equal(memberRegia('run', 'T197'), 'T197');
-  assert.equal(memberRegia('', 'T197'), 'T197');
-  const p = composeTab(req(['T197', '--prompt-kind', 'regia', '--regia', 'T197']), ctx());
+test('orchestrator: una conversazione che è un orchestrator non riceve l’orchestrator che la chiede (P3)', () => {
+  assert.equal(memberOrchestrator('orchestrator', 'T197'), '');
+  assert.equal(memberOrchestrator('run', 'T197'), 'T197');
+  assert.equal(memberOrchestrator('', 'T197'), 'T197');
+  const p = composeTab(req(['T197', '--prompt-kind', 'orchestrator', '--orchestrator', 'T197']), ctx());
   assert.deepEqual(p.sessionEnv, { LOOM_TASK: 'T197' });
-  assert.deepEqual(p.warnings.filter((w) => /regia/i.test(w)), [], 'scartata, non rifiutata');
+  assert.deepEqual(p.warnings.filter((w) => /orchestrator/i.test(w)), [], 'scartata, non rifiutata');
 });
 
 test('continuità: la ripresa non porta prompt, il fork aggiunge --fork-session', () => {
@@ -255,7 +255,7 @@ test('Linux: env di ptyxis senza variabili di sessione né LOOM_TASK, il resto p
     ...Object.fromEntries(INHERITED_SESSION_ENV.map((m) => [m, '1'])),
     claude_pid: '42',
     LOOM_TASK: 'T9',
-    LOOM_REGIA: 'T197',
+    LOOM_ORCHESTRATOR: 'T197',
     PATH: '/usr/bin',
     WAYLAND_DISPLAY: 'wayland-0',
     DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
@@ -264,7 +264,7 @@ test('Linux: env di ptyxis senza variabili di sessione né LOOM_TASK, il resto p
     LOOM_DECK_INTAB_CMD: 'env',
   };
   const env = ptyxisEnv(parent);
-  for (const m of [...INHERITED_SESSION_ENV, 'claude_pid', 'LOOM_TASK', 'LOOM_REGIA']) {
+  for (const m of [...INHERITED_SESSION_ENV, 'claude_pid', 'LOOM_TASK', 'LOOM_ORCHESTRATOR']) {
     assert.equal(env[m], undefined, m);
   }
   assert.deepEqual(env, {

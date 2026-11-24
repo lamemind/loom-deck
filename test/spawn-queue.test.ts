@@ -37,7 +37,7 @@ const PLAN: OkPlan = {
   model: 'opus',
   note: 'preflight-titolo',
   prompt: '/loom-works:preflight-task T9',
-  regia: null,
+  orchestrator: null,
 };
 
 const req = (r: Partial<SpawnRequest> = {}): SpawnRequest => ({ verb: 'spawn', task: 'T9', kind: 'preflight', ...r });
@@ -95,7 +95,7 @@ function harness(
           prompt: plan.prompt,
           title: 't',
           inTab: 'c',
-          regia: null,
+          orchestrator: null,
         }
       );
     },
@@ -123,7 +123,7 @@ test('messa in coda: risposta col sessionId e la scadenza, attesa su compass, ne
     kind: 'preflight',
     model: 'opus',
     prompt: '/loom-works:preflight-task T9',
-    regia: null,
+    orchestrator: null,
     expiresAt: new Date(T0 + QUEUE_TTL_MS).toISOString(),
   });
   assert.match(r.reason, /^in coda: finestra del progetto non in focus \(demo\)/);

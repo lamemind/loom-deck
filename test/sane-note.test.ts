@@ -23,7 +23,7 @@ test('apici e metacaratteri di shell spariscono senza sostituto', () => {
 
 test('le otto emoji dei titoli sopravvivono, le altre no', () => {
   // T160 — 🧭 nasce col titolo della riga `rebalance`, T203 — 🎬 con quello
-  // della riga `regia`. La
+  // della riga `orchestrator`. La
   // whitelist ha tre sedi (questo lato, `deck-run`, i template del catalogo) e
   // un'emoji aggiunta a una sola sparisce fra la tabella e la tab, senza errore.
   for (const e of ['📐', '🚀', '📊', '🏁', '🧹', '📏', '🧭', '🎬']) {

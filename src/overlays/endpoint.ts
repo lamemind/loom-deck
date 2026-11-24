@@ -37,7 +37,7 @@ import { notifyDone } from '../spawn.js';
 import { SpawnQueue } from '../spawn-queue.js';
 import { awaitProjectFocus, checkProjectWindow } from '../window-check.js';
 import { awaitCompassBack, screenLockedSettled } from '../screen-lock.js';
-import { appendLive, appendOrigin, loadSessionIndex, ORIGIN_ENDPOINT, ORIGIN_REGIA } from '../task-index.js';
+import { appendLive, appendOrigin, loadSessionIndex, ORIGIN_ENDPOINT, ORIGIN_ORCHESTRATOR } from '../task-index.js';
 import { loadTaskFileText, loadTasks } from '../tasks.js';
 import type { DeckActions } from '../actions.js';
 import { POLL_MS } from '../model.js';
@@ -79,13 +79,13 @@ export function useSpawnEndpoint(deps: EndpointDeps) {
     };
     // T204 — la conversazione nasce marcata `origin: endpoint`: è ciò che la
     // rende chiudibile da un'altra conversazione (D2 preflight).
-    // T220 — e con la regia che la chiede, quando la richiesta la dichiara.
+    // T220 — e con l'orchestrator che la chiede, quando la richiesta la dichiara.
     // T229 — e col `sessionId` già annunciato, quando esce dalla coda.
-    const spawn: SpawnRequestDeps['spawn'] = (id, model, note, prompt, regia, sessionId) =>
-      latest.current.actions.spawnForTask(id, model, note, prompt, false, ORIGIN_ENDPOINT, regia, sessionId);
-    // T221 — la regia che passa le consegne diventa chiudibile dalla
-    // successora: la marca la scrive lo spawn della successora, sul `from`.
-    const markHandoff = (sid: string) => appendOrigin(cwd, sid, ORIGIN_REGIA);
+    const spawn: SpawnRequestDeps['spawn'] = (id, model, note, prompt, orchestrator, sessionId) =>
+      latest.current.actions.spawnForTask(id, model, note, prompt, false, ORIGIN_ENDPOINT, orchestrator, sessionId);
+    // T221 — l'orchestrator che passa le consegne diventa chiudibile dal
+    // successore: la marca la scrive lo spawn del successore, sul `from`.
+    const markHandoff = (sid: string) => appendOrigin(cwd, sid, ORIGIN_ORCHESTRATOR);
     // T198 — l'`id` si rilegge a ogni richiesta, come la lista task: il file di
     // progetto può cambiare a deck acceso.
     const windowCheck = isAvailable('windowCheck') ? () => checkProjectWindow(loadProjectId(cwd)) : undefined;

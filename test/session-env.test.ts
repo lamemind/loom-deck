@@ -17,7 +17,7 @@ import { SKILL_DROP_ENV, skillEnv } from '../src/spawn.js';
 
 // ── la lista ───────────────────────────────────────────────────────────────
 
-test('la lista è l’unione delle due liste di prima, le tre variabili misurate su Windows e LOOM_REGIA', () => {
+test('la lista è l’unione delle due liste di prima, le tre variabili misurate su Windows e LOOM_ORCHESTRATOR', () => {
   // Le 10 delle tab di Windows Terminal (`SESSION_MARKERS`)…
   const tabs = [
     'CLAUDECODE',
@@ -35,10 +35,10 @@ test('la lista è l’unione delle due liste di prima, le tre variabili misurate
   const headless = [...tabs, 'CLAUDE_AFK_TIMEOUT_MS', 'CLAUDE_CODE_BRIDGE_SESSION_ID'];
   // …e le 3 lette nell'env di una sessione su Windows.
   const added = ['BUN_INSPECT', 'CLAUDE_CODE_CHILD_NOTES_DIR', 'CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP'];
-  // T220 — la regia che ha aperto la conversazione che lancia: la mette solo il
-  // deck, a uno spawn chiesto da una regia.
-  const regia = ['LOOM_REGIA'];
-  assert.deepEqual([...INHERITED_SESSION_ENV].sort(), [...headless, ...added, ...regia].sort());
+  // T220 — l'orchestrator che ha aperto la conversazione che lancia: la mette solo il
+  // deck, a uno spawn chiesto da un orchestrator.
+  const orchestrator = ['LOOM_ORCHESTRATOR'];
+  assert.deepEqual([...INHERITED_SESSION_ENV].sort(), [...headless, ...added, ...orchestrator].sort());
   assert.equal(new Set(INHERITED_SESSION_ENV).size, INHERITED_SESSION_ENV.length, 'nomi doppi');
 });
 

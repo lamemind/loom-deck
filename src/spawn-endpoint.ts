@@ -153,18 +153,18 @@ export interface SpawnRequest {
   model?: ModelKind;
   /** La nota del titolo. Assente = il template di titolo dell'azione. */
   note?: string;
-  /** T220 — il perimetro della regia che chiede lo spawn (`T197`): diventa
-   *  `LOOM_REGIA` nella conversazione e il campo `regia` del sidecar. Il deck
+  /** T220 — il perimetro dell'orchestrator che chiede lo spawn (`T197`): diventa
+   *  `LOOM_ORCHESTRATOR` nella conversazione e il campo `orchestrator` del sidecar. Il deck
    *  lo rifiuta se non è un'epica né un mandato. */
-  regia?: string;
-  /** T220 — il `sessionId` della regia che chiede, letto dal client nel
+  orchestrator?: string;
+  /** T220 — il `sessionId` dell'orchestrator che chiede, letto dal client nel
    *  proprio ambiente (`CLAUDE_CODE_SESSION_ID`): solo provenienza, nel campo
-   *  `regiaSession` del sidecar. Assente se il client non lo trova. */
-  regiaSession?: string;
+   *  `orchestratorSession` del sidecar. Assente se il client non lo trova. */
+  orchestratorSession?: string;
   /** T221 — il `sessionId` intero della conversazione che chiede, solo col
-   *  kind `regia`: è la regia che passa le consegne alla regia che si apre, e
-   *  il deck le scrive la marca `origin: regia` allo spawn vero. Il client lo
-   *  legge dal proprio ambiente, come `regiaSession`: una conversazione marca
+   *  kind `orchestrator`: è l'orchestrator che passa le consegne all'orchestrator che si apre, e
+   *  il deck le scrive la marca `origin: orchestrator` allo spawn vero. Il client lo
+   *  legge dal proprio ambiente, come `orchestratorSession`: una conversazione marca
    *  solo sé stessa. */
   from?: string;
 }
@@ -183,17 +183,17 @@ export type RequestChannel = 'endpoint' | 'headless';
  * (`requestKinds`). Con due copie l'help prometterebbe un kind che il deck
  * rifiuta, o ne tacerebbe uno che accetta.
  *
- * La regia (P3 preflight T203) vale dal detail e da `deck-run` a mano. Sul
- * turno headless il rifiuto è permanente: una regia vive ore su un monitor, e
+ * L'orchestrator (P3 preflight T203) vale dal detail e da `deck-run` a mano. Sul
+ * turno headless il rifiuto è permanente: un orchestrator vivi ore su un monitor, e
  * un turno `claude -p` finisce al primo turno. Sull'endpoint vale da T221, per
- * il passaggio di consegne: una regia apre la successora, e la richiesta porta
+ * il passaggio di consegne: un orchestrator apre il successore, e la richiesta porta
  * il suo `sessionId` (`from`), che il deck marca chiudibile.
  */
 export type ChannelRefusals = Readonly<Record<RequestChannel, Partial<Record<PromptKind, string>>>>;
 
 export const CHANNEL_REFUSALS: ChannelRefusals = {
   endpoint: {},
-  headless: { regia: 'regia: si apre dal detail del deck o con deck-run, non in un turno headless' },
+  headless: { orchestrator: 'orchestrator: si apre dal detail del deck o con deck-run, non in un turno headless' },
 };
 
 /** Il motivo per cui il canale rifiuta il kind, o `null` se lo accetta. */
@@ -230,13 +230,13 @@ export type SpawnReply =
        *  fosse del progetto, e il perché: compass assente, più vecchio, o che
        *  non conosce il progetto. */
       warning?: string;
-      /** T220 — la regia impostata come `LOOM_REGIA`, `null` se nessuna. Un
-       *  deck che conosce la regia porta SEMPRE il campo: la sua assenza dice
-       *  al client che il deck acceso è più vecchio, e la regia dichiarata si
+      /** T220 — l'orchestrator impostato come `LOOM_ORCHESTRATOR`, `null` se nessuno. Un
+       *  deck che conosce l'orchestrator porta SEMPRE il campo: la sua assenza dice
+       *  al client che il deck acceso è più vecchio, e l'orchestrator dichiarato si
        *  è persa senza errore (P4 preflight). */
-      regia?: string | null;
-      /** T221 — la regia marcata `origin: regia` allo spawn della successora
-       *  (il `from` della richiesta); presente solo col kind `regia`. */
+      orchestrator?: string | null;
+      /** T221 — l'orchestrator marcato `origin: orchestrator` allo spawn del successore
+       *  (il `from` della richiesta); presente solo col kind `orchestrator`. */
       handoff?: string;
     }
   /** Rifiuto, o T229 richiesta in coda (`queued`). La coda viaggia sul ramo
@@ -259,8 +259,8 @@ export interface QueuedSpawn {
   kind: PromptKind;
   model: ModelKind;
   prompt: string;
-  /** La regia impostata come `LOOM_REGIA`, `null` se nessuna. */
-  regia: string | null;
+  /** L'orchestrator impostato come `LOOM_ORCHESTRATOR`, `null` se nessuno. */
+  orchestrator: string | null;
   /** Quando la richiesta scade senza tab, ISO 8601 in UTC. */
   expiresAt: string;
 }
@@ -310,8 +310,8 @@ export type EndpointReply = SpawnReply | CloseReply;
  *  un deck più vecchio risponde «verbo ignoto». */
 export const CLOSE_SINCE = '0.88.0';
 
-/** Il prefisso più corto che si accetta: gli 8 caratteri con cui il deck, la
- *  regia e `sessions.py` del plugin mostrano un `sessionId`. */
+/** Il prefisso più corto che si accetta: gli 8 caratteri con cui il deck,
+ *  l'orchestrator e `sessions.py` del plugin mostrano un `sessionId`. */
 export const SESSION_PREFIX_MIN = 8;
 
 const SESSION_RE = /^[0-9a-f-]+$/;
@@ -405,26 +405,26 @@ function spawnFields(r: Record<string, unknown>): SpawnRequest | { error: string
     }
     req.note = r.note;
   }
-  // T220 — la regia nella forma di un id di task; che sia un perimetro del
-  // progetto lo verifica il deck (`regiaRefusal`). La sessione della regia
-  // senza la regia non vuol dire niente, e si rifiuta.
-  if (r.regia !== undefined) {
-    if (typeof r.regia !== 'string' || !TASK_RE.test(r.regia)) {
-      return { error: `regia non valida: ${JSON.stringify(r.regia)} (forma T<numero>)` };
+  // T220 — l'orchestrator nella forma di un id di task; che sia un perimetro del
+  // progetto lo verifica il deck (`orchestratorRefusal`). La sessione dell'orchestrator
+  // senza l'orchestrator non vuol dire niente, e si rifiuta.
+  if (r.orchestrator !== undefined) {
+    if (typeof r.orchestrator !== 'string' || !TASK_RE.test(r.orchestrator)) {
+      return { error: `orchestrator non valida: ${JSON.stringify(r.orchestrator)} (forma T<numero>)` };
     }
-    req.regia = r.regia;
+    req.orchestrator = r.orchestrator;
   }
-  if (r.regiaSession !== undefined) {
-    if (req.regia === undefined) return { error: 'regiaSession senza regia' };
-    const sid = normalizeSession(r.regiaSession);
+  if (r.orchestratorSession !== undefined) {
+    if (req.orchestrator === undefined) return { error: 'orchestratorSession senza orchestrator' };
+    const sid = normalizeSession(r.orchestratorSession);
     if (sid === null || sid.length !== SESSION_MAX) {
-      return { error: `sessione della regia non valida: ${JSON.stringify(r.regiaSession)} (sessionId intero)` };
+      return { error: `sessione dell'orchestrator non valida: ${JSON.stringify(r.orchestratorSession)} (sessionId intero)` };
     }
-    req.regiaSession = sid;
+    req.orchestratorSession = sid;
   }
-  // T221 — chi passa le consegne: un sessionId intero, e solo con la regia.
+  // T221 — chi passa le consegne: un sessionId intero, e solo con l'orchestrator.
   if (r.from !== undefined) {
-    if (req.kind !== 'regia') return { error: 'from ammesso solo con kind regia' };
+    if (req.kind !== 'orchestrator') return { error: 'from ammesso solo con kind orchestrator' };
     const from = normalizeSession(r.from);
     if (from === null || from.length !== SESSION_MAX) {
       return { error: `mittente non valido: ${JSON.stringify(r.from)} (sessionId intero)` };

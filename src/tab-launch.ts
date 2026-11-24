@@ -156,7 +156,7 @@ export async function runDeckRun(argv: readonly string[], io: DeckRunIo): Promis
     env = {
       ...windowsTabEnv(
         io.env,
-        { task: req.noTask ? null : req.task, regia: plan.sessionEnv.LOOM_REGIA ?? null },
+        { task: req.noTask ? null : req.task, orchestrator: plan.sessionEnv.LOOM_ORCHESTRATOR ?? null },
         resolveGitBash(io.env, existsSync),
       ),
       [TAB_ARGV_ENV]: JSON.stringify(plan.claudeArgs),

@@ -109,10 +109,10 @@ test('catalogo reale: opus su ogni kind, fable sul solo preflight', () => {
   assert.equal(modelFor(catalog, 'preflight'), 'fable');
   assert.equal(modelFor(catalog, 'run'), 'opus');
   assert.equal(modelFor(catalog, 'checkpoint'), 'opus');
-  // T203 — la regia segue un perimetro per ore e ne decide i passi: opus (D3.C
+  // T203 — l'orchestrator segue un perimetro per ore e ne decide i passi: opus (D3.C
   // di T197).
-  assert.equal(modelFor(catalog, 'regia'), 'opus');
-  assert.equal(promptFor(catalog, 'regia', 'T42'), '/loom-works:orchestrate-mandate T42');
+  assert.equal(modelFor(catalog, 'orchestrator'), 'opus');
+  assert.equal(promptFor(catalog, 'orchestrator', 'T42'), '/loom-works:orchestrate-mandate T42');
 });
 
 // T161 — il catalogo dati e quello delle azioni sono due gradini dello stesso

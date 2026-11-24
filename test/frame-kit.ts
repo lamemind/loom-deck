@@ -196,7 +196,7 @@ export function assertBordersHold(region: Array<{ line: string; i: number }>, la
 
 /** T203 — i `D` che dalla prima riga della pagina azioni portano sulla riga
  *  `id`. Derivati dal catalogo e non contati a mano: una riga aggiunta in mezzo
- *  (la `regia` di T203, prima di `bare`) spostava di uno gli scenari sotto, che
+ *  (la `orchestrator` di T203, prima di `bare`) spostava di uno gli scenari sotto, che
  *  restavano verdi misurando la riga accanto a quella del loro nome. */
 export function toSpawnRow(id: string): string {
   const at = SPAWN_ACTIONS.findIndex((a) => a.id === id);

@@ -106,27 +106,27 @@ test('richiesta valida: verbo, task, kind e i campi opzionali', () => {
   );
 });
 
-const REGIA_SID = '0a1b2c3d-1111-2222-3333-444455556666';
+const ORCHESTRATOR_SID = '0a1b2c3d-1111-2222-3333-444455556666';
 
-// T220 — la regia che chiede lo spawn, e la sua sessione in minuscolo.
-test('richiesta con la regia: perimetro e sessione della regia', () => {
+// T220 — l'orchestrator che chiede lo spawn, e la sua sessione in minuscolo.
+test('richiesta con l’orchestrator: perimetro e sessione dell’orchestrator', () => {
   assert.deepEqual(
-    parseSpawnRequest(JSON.stringify({ verb: 'spawn', task: 'T7', kind: 'run', regia: 'T197', regiaSession: REGIA_SID.toUpperCase() })),
-    { verb: 'spawn', task: 'T7', kind: 'run', regia: 'T197', regiaSession: REGIA_SID },
+    parseSpawnRequest(JSON.stringify({ verb: 'spawn', task: 'T7', kind: 'run', orchestrator: 'T197', orchestratorSession: ORCHESTRATOR_SID.toUpperCase() })),
+    { verb: 'spawn', task: 'T7', kind: 'run', orchestrator: 'T197', orchestratorSession: ORCHESTRATOR_SID },
   );
-  assert.deepEqual(parseSpawnRequest(JSON.stringify({ verb: 'spawn', task: 'T7', kind: 'run', regia: 'T197' })), {
+  assert.deepEqual(parseSpawnRequest(JSON.stringify({ verb: 'spawn', task: 'T7', kind: 'run', orchestrator: 'T197' })), {
     verb: 'spawn',
     task: 'T7',
     kind: 'run',
-    regia: 'T197',
+    orchestrator: 'T197',
   });
 });
 
-// T221 — chi passa le consegne: solo col kind regia, un sessionId intero.
-test('richiesta di regia: chi passa le consegne, in minuscolo', () => {
+// T221 — chi passa le consegne: solo col kind orchestrator, un sessionId intero.
+test('richiesta di orchestrator: chi passa le consegne, in minuscolo', () => {
   assert.deepEqual(
-    parseSpawnRequest(JSON.stringify({ verb: 'spawn', task: 'T197', kind: 'regia', from: REGIA_SID.toUpperCase() })),
-    { verb: 'spawn', task: 'T197', kind: 'regia', from: REGIA_SID },
+    parseSpawnRequest(JSON.stringify({ verb: 'spawn', task: 'T197', kind: 'orchestrator', from: ORCHESTRATOR_SID.toUpperCase() })),
+    { verb: 'spawn', task: 'T197', kind: 'orchestrator', from: ORCHESTRATOR_SID },
   );
 });
 
@@ -142,14 +142,14 @@ test('richieste rifiutate nella forma, col motivo', () => {
     [{ verb: 'spawn', task: 'T1', kind: 'run', scope: [0] }, /perimetro non valido/],
     [{ verb: 'spawn', task: 'T1', kind: 'run', model: 'gpt' }, /modello ignoto/],
     [{ verb: 'spawn', task: 'T1', kind: 'run', note: 'a\nb' }, /nota non valida/],
-    // T220 — la regia è un id di task, la sua sessione un sessionId intero.
-    [{ verb: 'spawn', task: 'T1', kind: 'run', regia: 'epica' }, /regia non valida/],
-    [{ verb: 'spawn', task: 'T1', kind: 'run', regia: 197 }, /regia non valida/],
-    [{ verb: 'spawn', task: 'T1', kind: 'run', regiaSession: REGIA_SID }, /regiaSession senza regia/],
-    [{ verb: 'spawn', task: 'T1', kind: 'run', regia: 'T197', regiaSession: '0a1b2c3d' }, /sessione della regia non valida/],
-    // T221 — `from` solo con la regia, e intero.
-    [{ verb: 'spawn', task: 'T1', kind: 'run', from: REGIA_SID }, /from ammesso solo con kind regia/],
-    [{ verb: 'spawn', task: 'T1', kind: 'regia', from: '0a1b2c3d' }, /mittente non valido/],
+    // T220 — l'orchestrator è un id di task, la sua sessione un sessionId intero.
+    [{ verb: 'spawn', task: 'T1', kind: 'run', orchestrator: 'epica' }, /orchestrator non valida/],
+    [{ verb: 'spawn', task: 'T1', kind: 'run', orchestrator: 197 }, /orchestrator non valida/],
+    [{ verb: 'spawn', task: 'T1', kind: 'run', orchestratorSession: ORCHESTRATOR_SID }, /orchestratorSession senza orchestrator/],
+    [{ verb: 'spawn', task: 'T1', kind: 'run', orchestrator: 'T197', orchestratorSession: '0a1b2c3d' }, /sessione dell'orchestrator non valida/],
+    // T221 — `from` solo con l'orchestrator, e intero.
+    [{ verb: 'spawn', task: 'T1', kind: 'run', from: ORCHESTRATOR_SID }, /from ammesso solo con kind orchestrator/],
+    [{ verb: 'spawn', task: 'T1', kind: 'orchestrator', from: '0a1b2c3d' }, /mittente non valido/],
   ];
   for (const [raw, re] of cases) {
     const r = parseSpawnRequest(typeof raw === 'string' ? raw : JSON.stringify(raw));

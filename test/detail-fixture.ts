@@ -19,7 +19,7 @@
 //       (la apre chi collauda l'area di compilazione: ^F, ^K, rotella, hint)
 //   T5  Size: Mandate, membri T1 T2 T3 T9 (T9 senza riga), con una checklist
 //       → coda `[1/3`, campi senza run, lista DLV spenta col motivo (T212)
-//   T6  Size: Epic senza figlie né DLV            → campi, con la regia (T203)
+//   T6  Size: Epic senza figlie né DLV            → campi, con l'orchestrator (T203)
 //
 // Il blocco `spawn` sovrascrive modello e titolo di `run`: il modo DLV deve
 // ereditarli (D3), ed è il caso che un default coincidente coprirebbe.

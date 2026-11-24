@@ -43,8 +43,8 @@ recap-epic	/loom-works:recap-status-epic {TASK}	opus
 preflight	/loom-works:preflight-task {TASK}	fable
 run	/loom-works:run-task {TASK}	opus
 checkpoint	/loom-works:checkpoint-task {TASK}	opus
-# T203 — `regia` apre la regia di un perimetro, epica o mandato. Il deck la
+# T203 — `orchestrator` apre l'orchestrator di un perimetro, epica o mandato. Il deck la
 # offre solo sul detail di un perimetro; il turno headless la rifiuta, e
-# l'endpoint l'accetta solo per la successora di un passaggio di consegne
+# l'endpoint l'accetta solo per il successore di un passaggio di consegne
 # (planSpawnRequest, src/endpoint-spawn.ts).
-regia	/loom-works:orchestrate-mandate {TASK}	opus
+orchestrator	/loom-works:orchestrate-mandate {TASK}	opus

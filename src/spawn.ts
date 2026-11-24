@@ -215,20 +215,20 @@ export function onInTabCommand(child: ChildProcess, cb: (cmd: string) => void): 
 // campo svuotato a mano): si esprime col kind `none`, perché senza nessun flag
 // `deck-run` cadrebbe sul proprio default `recap`.
 //
-// T220 — `regia` è il perimetro della regia che ha chiesto lo spawn: `deck-run`
-// lo esporta come `LOOM_REGIA`. Assente su ogni spawn da tasto.
+// T220 — `orchestrator` è il perimetro dell'orchestrator che ha chiesto lo spawn: `deck-run`
+// lo esporta come `LOOM_ORCHESTRATOR`. Assente su ogni spawn da tasto.
 export function deckArgs(
   id: string,
   sessionId: string,
   model: ModelKind = MODEL_DEFAULT,
   spawnNote?: string,
   prompt = '',
-  regia?: string,
+  orchestrator?: string,
 ): string[] {
   const promptArgs = prompt ? ['--prompt', prompt] : ['--prompt-kind', 'none'];
   const args = [id, '--session-id', sessionId, ...promptArgs, '--model', model];
   if (spawnNote) args.push('--title-note', spawnNote);
-  if (regia) args.push('--regia', regia);
+  if (orchestrator) args.push('--orchestrator', orchestrator);
   return args;
 }
 
@@ -239,9 +239,9 @@ export function spawnDeck(
   model: ModelKind = MODEL_DEFAULT,
   spawnNote?: string,
   prompt = '',
-  regia?: string,
+  orchestrator?: string,
 ): Spawned {
-  return launchDeckRun(deckArgs(id, sessionId, model, spawnNote, prompt, regia), cwd);
+  return launchDeckRun(deckArgs(id, sessionId, model, spawnNote, prompt, orchestrator), cwd);
 }
 
 // T49 — resume di una sessione esistente come nuova tab Ptyxis. Scoped (taskId
@@ -280,21 +280,21 @@ export function spawnDeck(
 // ordine (un solo posizionale, il TaskID), quindi lo spostamento non cambia
 // niente per chi esegue.
 //
-// T220 — `regia` la passa solo `loom-deck-headless reply --regia`: un turno
-// headless è un processo nuovo a ogni risposta, e senza la regia dichiarata di
-// nuovo il turno nascerebbe senza `LOOM_REGIA` (P2 preflight). Le riprese del
+// T220 — `orchestrator` la passa solo `loom-deck-headless reply --orchestrator`: un turno
+// headless è un processo nuovo a ogni risposta, e senza l'orchestrator dichiarato di
+// nuovo il turno nascerebbe senza `LOOM_ORCHESTRATOR` (P2 preflight). Le riprese del
 // deck (⏎, restore) non la passano mai: la conversazione ripresa è dell'utente.
 export function resumeArgs(
   taskId: string | null,
   sessionId: string,
   model: ModelKind,
   note?: string,
-  regia?: string,
+  orchestrator?: string,
 ): string[] {
   const args = taskId ? [taskId] : ['--no-task'];
   if (note) args.push('--title-note', note);
   args.push('--resume', sessionId, '--model', model);
-  if (regia) args.push('--regia', regia);
+  if (orchestrator) args.push('--orchestrator', orchestrator);
   return args;
 }
 

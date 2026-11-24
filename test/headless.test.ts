@@ -98,18 +98,18 @@ interface Launch {
   sidecar: string;
 }
 
-/** L'ambiente di chi lancia: una regia dentro una tab del progetto. */
-const REGIA_ENV: Record<string, string> = {
+/** L'ambiente di chi lancia: un orchestrator dentro una tab del progetto. */
+const ORCHESTRATOR_ENV: Record<string, string> = {
   PATH: '/usr/bin',
   PTYXIS_PROFILE: 'demo',
   LOOM_TASK: 'T1',
   PROJECT_ROOT: '/altrove',
   CLAUDECODE: '1',
   CLAUDE_CODE_CHILD_SESSION: '1',
-  CLAUDE_CODE_SESSION_ID: 'regia',
+  CLAUDE_CODE_SESSION_ID: 'orchestrator',
   CLAUDE_EFFORT: 'xhigh',
   CLAUDE_CODE_MESSAGING_TOKEN: 'segreto',
-  // T217 — l'inspector di Bun della regia: su Windows il turno che lo eredita
+  // T217 — l'inspector di Bun dell'orchestrator: su Windows il turno che lo eredita
   // muore con EADDRINUSE prima di scrivere il transcript.
   BUN_INSPECT: 'ws://127.0.0.1:9222/',
   CLAUDE_CONFIG_DIR: '/cfg',
@@ -119,7 +119,7 @@ const REGIA_ENV: Record<string, string> = {
 function fakeIo(over: Partial<HeadlessIo> = {}): HeadlessIo & { launches: Launch[] } {
   const launches: Launch[] = [];
   return {
-    env: REGIA_ENV,
+    env: ORCHESTRATOR_ENV,
     platform: 'linux',
     claude: { cmd: 'claude', prefix: [] },
     now: () => new Date(NOW),
@@ -148,7 +148,7 @@ const req = (task: string, kind: string, extra: Record<string, unknown> = {}) =>
 // ── ambiente e argv ────────────────────────────────────────────────────────
 
 test('ambiente del turno: via i marcatori della conversazione, il profilo e il binding di chi lancia', () => {
-  const env = headlessEnv(REGIA_ENV, { task: 'T9' }, 'linux');
+  const env = headlessEnv(ORCHESTRATOR_ENV, { task: 'T9' }, 'linux');
   for (const k of HEADLESS_DROP_ENV) if (k !== 'LOOM_TASK') assert.equal(env[k], undefined, k);
   for (const k of INHERITED_SESSION_ENV) assert.ok(HEADLESS_DROP_ENV.includes(k), `${k} ereditata dal turno`);
   assert.equal(env.BUN_INSPECT, undefined);
@@ -156,7 +156,7 @@ test('ambiente del turno: via i marcatori della conversazione, il profilo e il b
   assert.equal(env.CLAUDE_CONFIG_DIR, '/cfg', 'la configurazione dell’utente passa');
   assert.equal(env.CLAUDE_CODE_GIT_BASH_PATH, 'C:\\bash.exe');
   assert.equal(env.PATH, '/usr/bin');
-  assert.equal(headlessEnv(REGIA_ENV, { task: null }, 'linux').LOOM_TASK, undefined, 'una conversazione senza task non eredita la task di chi lancia');
+  assert.equal(headlessEnv(ORCHESTRATOR_ENV, { task: null }, 'linux').LOOM_TASK, undefined, 'una conversazione senza task non eredita la task di chi lancia');
 });
 
 test('argv del turno: -p, esito json, nessuno risponde ai permessi, -- prima del testo', () => {
@@ -223,42 +223,42 @@ test('open: binding, nota e modello nel sidecar PRIMA del processo; argv e stato
   assert.equal(st.task, 'T9');
 });
 
-// T220 — un turno aperto da una regia porta LOOM_REGIA come una tab; il
-// sidecar registra la regia prima del processo; una LOOM_REGIA di chi lancia
+// T220 — un turno aperto da un orchestrator porta LOOM_ORCHESTRATOR come una tab; il
+// sidecar registra l'orchestrator prima del processo; una LOOM_ORCHESTRATOR di chi lancia
 // non passa mai.
-const REGIA_SID = '0a1b2c3d-1111-2222-3333-444455556666';
+const ORCHESTRATOR_SID = '0a1b2c3d-1111-2222-3333-444455556666';
 
-test('open --regia: LOOM_REGIA nel turno, regia e sessione nel sidecar prima del processo, regia nello stato', async () => {
+test('open --orchestrator: LOOM_ORCHESTRATOR nel turno, orchestrator e sessione nel sidecar prima del processo, orchestrator nello stato', async () => {
   const root = project();
-  const io = fakeIo({ env: { ...REGIA_ENV, LOOM_REGIA: 'T1' } });
-  const r = await openHeadless(req('T9', 'preflight', { regia: 'T10', regiaSession: REGIA_SID }), root, io);
+  const io = fakeIo({ env: { ...ORCHESTRATOR_ENV, LOOM_ORCHESTRATOR: 'T1' } });
+  const r = await openHeadless(req('T9', 'preflight', { orchestrator: 'T10', orchestratorSession: ORCHESTRATOR_SID }), root, io);
   assert.ok(r.ok, JSON.stringify(r));
   const l = io.launches[0]!;
-  assert.equal(l.opts.env.LOOM_REGIA, 'T10');
+  assert.equal(l.opts.env.LOOM_ORCHESTRATOR, 'T10');
   assert.equal(l.opts.env.LOOM_TASK, 'T9');
   const recs = l.sidecar.trim().split('\n').map((x) => JSON.parse(x));
-  const regia = recs.find((x) => 'regia' in x);
-  assert.deepEqual({ regia: regia.regia, regiaSession: regia.regiaSession, sessionId: regia.sessionId }, {
-    regia: 'T10',
-    regiaSession: REGIA_SID,
+  const orchestrator = recs.find((x) => 'orchestrator' in x);
+  assert.deepEqual({ orchestrator: orchestrator.orchestrator, orchestratorSession: orchestrator.orchestratorSession, sessionId: orchestrator.sessionId }, {
+    orchestrator: 'T10',
+    orchestratorSession: ORCHESTRATOR_SID,
     sessionId: SID,
   });
-  assert.equal(readState(root, SID)!.regia, 'T10');
+  assert.equal(readState(root, SID)!.orchestrator, 'T10');
 
-  // Senza --regia: nessuna LOOM_REGIA, nemmeno quella di chi lancia.
+  // Senza --orchestrator: nessuna LOOM_ORCHESTRATOR, nemmeno quella di chi lancia.
   const root2 = project();
-  const io2 = fakeIo({ env: { ...REGIA_ENV, LOOM_REGIA: 'T1' } });
+  const io2 = fakeIo({ env: { ...ORCHESTRATOR_ENV, LOOM_ORCHESTRATOR: 'T1' } });
   await openHeadless(req('T9', 'preflight'), root2, io2);
-  assert.equal(io2.launches[0]!.opts.env.LOOM_REGIA, undefined);
-  assert.doesNotMatch(io2.launches[0]!.sidecar, /"regia"/);
-  assert.equal(readState(root2, SID)!.regia, undefined);
+  assert.equal(io2.launches[0]!.opts.env.LOOM_ORCHESTRATOR, undefined);
+  assert.doesNotMatch(io2.launches[0]!.sidecar, /"orchestrator"/);
+  assert.equal(readState(root2, SID)!.orchestrator, undefined);
 });
 
-test('open --regia: una regia che non è un perimetro è un rifiuto, senza processo né sidecar', async () => {
+test('open --orchestrator: un orchestrator che non è un perimetro è un rifiuto, senza processo né sidecar', async () => {
   const root = project();
   const io = fakeIo();
-  const r = await openHeadless(req('T9', 'preflight', { regia: 'T9' }), root, io);
-  assert.deepEqual(r, { ok: false, reason: "regia T9: non è un'epica né un mandato" });
+  const r = await openHeadless(req('T9', 'preflight', { orchestrator: 'T9' }), root, io);
+  assert.deepEqual(r, { ok: false, reason: "orchestrator T9: non è un'epica né un mandato" });
   assert.equal(io.launches.length, 0);
   assert.throws(() => readFileSync(taskIndexPath(root)));
 });
@@ -314,7 +314,7 @@ test('open: rifiuti senza lanciare niente e senza scrivere il sidecar', async ()
     [{}, req('T9', 'none'), /senza prompt/],
     [{}, req('T99', 'preflight'), /non è nella lista task/],
     [{}, req('T10', 'run'), /mandato/],
-    [{}, req('T10', 'regia'), /regia: si apre dal detail/],
+    [{}, req('T10', 'orchestrator'), /orchestrator: si apre dal detail/],
     [{}, req('T9', 'run', { scope: [1] }), /già chiusi/],
     [{ permissionMode: 'manual' }, req('T9', 'run'), /manual: run rifiutato/],
     [{ permissionMode: 'manual' }, req('T9', 'checkpoint'), /manual: checkpoint rifiutato/],
@@ -382,33 +382,33 @@ test('reply: --resume sulla conversazione, task e nota dal sidecar, modello dal 
   assert.equal(st.prompt, 'D1: A');
 });
 
-// T220/P2 — la regia si dichiara a ogni reply: un turno è un processo nuovo, e
+// T220/P2 — l'orchestrator si dichiara a ogni reply: un turno è un processo nuovo, e
 // la variabile non si rilegge dal sidecar.
-test('reply --regia: LOOM_REGIA in quel turno; senza, il turno dopo non la porta', async () => {
+test('reply --orchestrator: LOOM_ORCHESTRATOR in quel turno; senza, il turno dopo non la porta', async () => {
   const root = project();
   const io = fakeIo();
-  await openHeadless(req('T9', 'preflight', { regia: 'T10' }), root, io);
+  await openHeadless(req('T9', 'preflight', { orchestrator: 'T10' }), root, io);
   transcript(root, SID);
-  const withRegia = await replyHeadless(SID, 'D1: A', root, io, undefined, 'T10');
-  assert.ok(withRegia.ok, JSON.stringify(withRegia));
-  assert.equal(io.launches[1]!.opts.env.LOOM_REGIA, 'T10');
-  assert.equal(readState(root, SID)!.regia, 'T10');
+  const withOrchestrator = await replyHeadless(SID, 'D1: A', root, io, undefined, 'T10');
+  assert.ok(withOrchestrator.ok, JSON.stringify(withOrchestrator));
+  assert.equal(io.launches[1]!.opts.env.LOOM_ORCHESTRATOR, 'T10');
+  assert.equal(readState(root, SID)!.orchestrator, 'T10');
   const without = await replyHeadless(SID, 'continua', root, io);
   assert.ok(without.ok);
-  assert.equal(io.launches[2]!.opts.env.LOOM_REGIA, undefined, 'il sidecar dice T10, ma la variabile segue la richiesta');
-  assert.equal(readState(root, SID)!.regia, undefined);
-  // Il sidecar non riceve un secondo record di regia dalle risposte.
-  const regiaRecs = readFileSync(taskIndexPath(root), 'utf8').split('\n').filter((x) => x.includes('"regia"'));
-  assert.equal(regiaRecs.length, 1);
+  assert.equal(io.launches[2]!.opts.env.LOOM_ORCHESTRATOR, undefined, 'il sidecar dice T10, ma la variabile segue la richiesta');
+  assert.equal(readState(root, SID)!.orchestrator, undefined);
+  // Il sidecar non riceve un secondo record di orchestrator dalle risposte.
+  const orchestratorRecs = readFileSync(taskIndexPath(root), 'utf8').split('\n').filter((x) => x.includes('"orchestrator"'));
+  assert.equal(orchestratorRecs.length, 1);
 });
 
-test('reply --regia: rifiutata su una regia che non è un perimetro e su una conversazione senza task', async () => {
+test('reply --orchestrator: rifiutata su un orchestrator che non è un perimetro e su una conversazione senza task', async () => {
   const root = project();
   const io = fakeIo();
   await openHeadless(req('T9', 'preflight'), root, io);
   transcript(root, SID);
   const bad = await replyHeadless(SID, 'x', root, io, undefined, 'T9');
-  assert.deepEqual(bad, { ok: false, reason: "regia T9: non è un'epica né un mandato" });
+  assert.deepEqual(bad, { ok: false, reason: "orchestrator T9: non è un'epica né un mandato" });
   const spot = 'deadbeef-0000-0000-0000-000000000000';
   transcript(root, spot);
   const r = await replyHeadless(spot, 'x', root, io, undefined, 'T10');
@@ -578,20 +578,20 @@ test('argomenti: sottocomandi, sessione, --wait, -- nel messaggio', () => {
     ['reply', '0a1b2c3d'],
     ['reply', '0a1b2c3d', '--model', 'gpt', 'x'],
     ['reply', '0a1b2c3d', '--boh', 'x'],
-    // T220 — la regia è un id di task, e vale solo dove parte un turno.
-    ['reply', '0a1b2c3d', 'x', '--regia', 'epica'],
-    ['reply', '0a1b2c3d', 'x', '--regia'],
-    ['status', '0a1b2c3d', '--regia', 'T10'],
+    // T220 — l'orchestrator è un id di task, e vale solo dove parte un turno.
+    ['reply', '0a1b2c3d', 'x', '--orchestrator', 'epica'],
+    ['reply', '0a1b2c3d', 'x', '--orchestrator'],
+    ['status', '0a1b2c3d', '--orchestrator', 'T10'],
   ]) {
     assert.ok('usage' in parseHeadlessArgs(bad), bad.join(' '));
   }
-  assert.deepEqual(parseHeadlessArgs(['reply', '0a1b2c3d', 'D1:', 'A', '--regia', 'T10']), {
+  assert.deepEqual(parseHeadlessArgs(['reply', '0a1b2c3d', 'D1:', 'A', '--orchestrator', 'T10']), {
     cmd: 'reply',
     session: '0a1b2c3d',
     words: ['D1:', 'A'],
     root: null,
     model: undefined,
-    regia: 'T10',
+    orchestrator: 'T10',
   });
 });
 
@@ -737,7 +737,7 @@ test(
     const errFile = join(dir, 'e.txt');
     const r = await launchDetached(process.execPath, [script, '-p', '--', 'ciao'], {
       cwd: dir,
-      env: headlessEnv(REGIA_ENV, { task: 'T9' }, 'linux') as NodeJS.ProcessEnv & { PATH: string },
+      env: headlessEnv(ORCHESTRATOR_ENV, { task: 'T9' }, 'linux') as NodeJS.ProcessEnv & { PATH: string },
       outFile,
       errFile,
     });

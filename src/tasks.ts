@@ -291,7 +291,7 @@ export function taskSizeWord(id: string, text: string | null): string {
 /**
  * T212 — la task è un MANDATO (`Size: Mandate`)?
  *
- * Un mandato è il perimetro di una regia: elenca nel proprio file, in
+ * Un mandato è il perimetro di un orchestrator: elenca nel proprio file, in
  * `## Membri`, task di epiche diverse o senza padre. Come l'epica non ha lavoro
  * eseguibile proprio; a differenza dell'epica i suoi membri non sono figlie, e
  * la sua Prog in `tasks.md` è il suo dato di chiusura.
@@ -312,7 +312,7 @@ export function taskIsMandate(id: string, text: string | null): boolean {
  * proprio, il lavoro sta nei membri.
  *
  * Predicato unico per chi tratta le due forme allo stesso modo — il recap
- * specializzato, l'azione di regia di T203. Chi le distingue (la coda della
+ * specializzato, l'azione di orchestrator di T203. Chi le distingue (la coda della
  * riga, il run del detail) chiama `taskIsEpic` o `taskIsMandate`.
  */
 export function taskIsPerimeter(id: string, text: string | null): boolean {

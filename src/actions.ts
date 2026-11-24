@@ -26,11 +26,11 @@ import {
   appendOrigin,
   appendPin,
   appendPriority,
-  appendRegia,
+  appendOrchestrator,
   appendSessionRecord,
   appendTaskBinding,
 } from './task-index.js';
-import type { RegiaOrigin } from './endpoint-spawn.js';
+import type { OrchestratorOrigin } from './endpoint-spawn.js';
 import { neighborId } from './session-list.js';
 import { cut, cutMiddle, sanitize } from './width.js';
 import { idList } from './ui/modals.js';
@@ -220,9 +220,9 @@ export function useDeckActions({
   // T204 — `origin` marca nel sidecar da dove è nata la conversazione; lo passa
   // solo l'endpoint (`endpoint`), e rende la conversazione chiudibile col verbo
   // `close`.
-  // T220 — `regia` la passa solo l'endpoint, quando la richiesta dichiara la
-  // regia che la chiede: perimetro e sessione nel sidecar, `--regia` a
-  // `deck-run`, che esporta `LOOM_REGIA`.
+  // T220 — `orchestrator` la passa solo l'endpoint, quando la richiesta dichiara
+  // l'orchestrator che la chiede: perimetro e sessione nel sidecar, `--orchestrator` a
+  // `deck-run`, che esporta `LOOM_ORCHESTRATOR`.
   function spawnForTask(
     id: string,
     modelKind: ModelKind,
@@ -230,7 +230,7 @@ export function useDeckActions({
     prompt = '',
     priority = false,
     origin?: string,
-    regia?: RegiaOrigin | null,
+    orchestrator?: OrchestratorOrigin | null,
     sessionId?: string,
   ): { sessionId: string; spawned: Spawned } | null {
     // T175 — prima del sidecar: un binding scritto per una tab che non si apre
@@ -245,7 +245,7 @@ export function useDeckActions({
     // T204 — subito dopo il binding e prima della tab (P9 preflight).
     if (origin) appendOrigin(cwd, sid, origin);
     // T220 — accanto al binding e prima della tab, come `origin`.
-    if (regia) appendRegia(cwd, sid, regia.regia, regia.session);
+    if (orchestrator) appendOrchestrator(cwd, sid, orchestrator.orchestrator, orchestrator.session);
     if (note) appendNote(cwd, sid, note);
     // T158 — la marca si appende NELLO STESSO momento del binding, prima che la
     // tab esista: il `sessionId` è già noto (lo pinna `deck-run`), quindi il primo
@@ -255,7 +255,7 @@ export function useDeckActions({
     // Solo il ramo acceso scrive: un `priority:false` allo spawn di ogni sessione
     // riempirebbe il sidecar di smarcature di conversazioni mai marcate.
     if (priority) appendPriority(cwd, sid, true);
-    const spawned = spawnDeck(id, cwd, sid, modelKind, note, prompt, regia?.regia);
+    const spawned = spawnDeck(id, cwd, sid, modelKind, note, prompt, orchestrator?.orchestrator);
     spawned.child.on('error', () => setNote(`⚠ spawn ${id} fallito (${DECK_RUN})`));
     // Il modello resta SEMPRE visibile anche quando è il default, perché è un
     // argomento esplicito del comando (T108): gli acceleratori della lista non

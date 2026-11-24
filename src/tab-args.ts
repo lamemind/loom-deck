@@ -13,8 +13,8 @@
 //   prompt         --prompt-kind none|recap|… | --prompt <testo>
 //   modello        --model fable|opus|sonnet|haiku
 // Fuori dai quattro, e volutamente non un asse: --new-window, che cambia SOLO
-// dove nasce la tab (finestra nuova invece della finestra attiva), e --regia
-// (T220), che dice alla conversazione quale regia l'ha aperta.
+// dove nasce la tab (finestra nuova invece della finestra attiva), e --orchestrator
+// (T220), che dice alla conversazione quale orchestrator l'ha aperta.
 //
 // Modulo PURO: argv in ingresso, richiesta o errore d'uso in uscita. Le regole e
 // i messaggi sono quelli dello script bash, parola per parola: il gate di parità
@@ -31,7 +31,7 @@ export const PROMPT_KINDS: readonly PromptKind[] = [
   'preflight',
   'run',
   'checkpoint',
-  'regia',
+  'orchestrator',
 ];
 
 /** La richiesta di spawn, già validata. Le stringhe vuote valgono «flag non
@@ -56,29 +56,29 @@ export interface TabRequest {
   /** Vuoto = flag non passato: la cascata (env, catalogo, default) si risolve
    *  nella composizione. */
   model: string;
-  /** T220 — il perimetro della regia che apre la conversazione (`T197`), vuoto
-   *  se nessuna regia l'ha chiesta. Diventa `LOOM_REGIA` nella sessione
-   *  (`memberRegia`). */
-  regia: string;
+  /** T220 — il perimetro dell'orchestrator che apre la conversazione (`T197`), vuoto
+   *  se nessun orchestrator l'ha chiesta. Diventa `LOOM_ORCHESTRATOR` nella sessione
+   *  (`memberOrchestrator`). */
+  orchestrator: string;
 }
 
 /**
- * T220/P3 — la regia che la conversazione riceve come `LOOM_REGIA`: quella
- * dichiarata, tranne quando la conversazione aperta È una regia (kind `regia`).
+ * T220/P3 — l'orchestrator che la conversazione riceve come `LOOM_ORCHESTRATOR`: quello
+ * dichiarato, tranne quando la conversazione aperta È un orchestrator (kind `orchestrator`).
  *
- * La successora di una regia (T221, passaggio di consegne) è una regia, non un
- * membro: con `LOOM_REGIA` si vedrebbe negare `AskUserQuestion` e leggerebbe una
+ * Il successore di un orchestrator (T221, passaggio di consegne) è un orchestrator, non un
+ * membro: con `LOOM_ORCHESTRATOR` si vedrebbe negare `AskUserQuestion` e leggerebbe una
  * riga dell'organigramma falsa. La dichiarazione si scarta e non si rifiuta,
- * perché la regia si dichiara a ogni spawn per regola generale e un rifiuto
+ * perché l'orchestrator si dichiara a ogni spawn per regola generale e un rifiuto
  * farebbe fallire il passaggio ogni volta.
  *
  * Una regola sola per due chiamanti che conoscono il kind in due momenti: la
- * composizione (`composeTab`), per chi chiede `--prompt-kind regia` a mano, e il
+ * composizione (`composeTab`), per chi chiede `--prompt-kind orchestrator` a mano, e il
  * piano di una richiesta (`planSpawnRequest`), perché dal deck il prompt viaggia
  * come testo letterale e la composizione non vede più il kind.
  */
-export function memberRegia(kind: string, regia: string): string {
-  return kind === 'regia' ? '' : regia;
+export function memberOrchestrator(kind: string, orchestrator: string): string {
+  return kind === 'orchestrator' ? '' : orchestrator;
 }
 
 /** Un errore d'uso: le righe da scrivere su stderr, e l'uscita è sempre 2. */
@@ -103,14 +103,14 @@ export const USAGE = `uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <k
      | deck-run -h | --help                        (stampa quest'uso)
 
   --prompt-kind  prompt iniziale della sessione bound (default: recap)
-       none        nessun prompt — sessione aperta sulla task, a mani nude
-       recap       /loom-works:recap-status <TaskID>       (dispatcher)
-       recap-task  /loom-works:recap-status-task <TaskID>  (task non cappello)
-       recap-epic  /loom-works:recap-status-epic <TaskID>  (Size: Epic)
-       preflight   /loom-works:preflight-task <TaskID>
-       run         /loom-works:run-task <TaskID>
-       checkpoint  /loom-works:checkpoint-task <TaskID>
-       regia       /loom-works:orchestrate-mandate <TaskID> (Size: Epic o Mandate)
+       none          nessun prompt — sessione aperta sulla task, a mani nude
+       recap         /loom-works:recap-status <TaskID>       (dispatcher)
+       recap-task    /loom-works:recap-status-task <TaskID>  (task non cappello)
+       recap-epic    /loom-works:recap-status-epic <TaskID>  (Size: Epic)
+       preflight     /loom-works:preflight-task <TaskID>
+       run           /loom-works:run-task <TaskID>
+       checkpoint    /loom-works:checkpoint-task <TaskID>
+       orchestrator  /loom-works:orchestrate-mandate <TaskID> (Size: Epic o Mandate)
 
   --prompt       prompt LETTERALE, per chi lo ha già composto (o fatto
                  modificare). Esclusivo con --prompt-kind; vuoto = nessun
@@ -127,9 +127,9 @@ export const USAGE = `uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <k
   --new-window   apre una FINESTRA nuova invece di una tab nella finestra
                  attiva. Per chi chiama da fuori dalla finestra del progetto
 
-  --regia        perimetro della regia che apre la conversazione (T<numero>):
-                 esportato come LOOM_REGIA. Ignorato con --prompt-kind regia,
-                 perché la conversazione è a sua volta una regia`;
+  --orchestrator perimetro dell'orchestrator che apre la conversazione (T<numero>):
+                 esportato come LOOM_ORCHESTRATOR. Ignorato con --prompt-kind orchestrator,
+                 perché la conversazione è a sua volta un orchestrator`;
 
 /** I flag che portano un valore, nel campo della richiesta che lo riceve. */
 const VALUED: Readonly<Record<string, keyof TabRequest>> = {
@@ -139,7 +139,7 @@ const VALUED: Readonly<Record<string, keyof TabRequest>> = {
   '--prompt': 'promptText',
   '--session-id': 'sessionId',
   '--resume': 'resumeId',
-  '--regia': 'regia',
+  '--orchestrator': 'orchestrator',
 };
 
 function usageError(...lines: string[]): UsageError {
@@ -177,7 +177,7 @@ export function parseTabArgs(argv: readonly string[]): TabRequest | UsageError |
     promptText: '',
     promptGiven: false,
     model: '',
-    regia: '',
+    orchestrator: '',
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -234,16 +234,16 @@ export function parseTabArgs(argv: readonly string[]): TabRequest | UsageError |
       '--prompt-kind richiede una task: una sessione --no-task non ha prompt iniziale',
     );
   }
-  // T220 — la regia è un id di task: il valore entra nella riga in-tab e
+  // T220 — l'orchestrator è un id di task: il valore entra nella riga in-tab e
   // nell'env di ogni processo della sessione, e un testo libero lì sarebbe una
   // riga dell'organigramma che nomina qualunque cosa.
-  if (req.regia && !/^T\d+$/.test(req.regia)) {
-    return usageError(`--regia: perimetro non valido: '${req.regia}' (forma T<numero>)`);
+  if (req.orchestrator && !/^T\d+$/.test(req.orchestrator)) {
+    return usageError(`--orchestrator: perimetro non valido: '${req.orchestrator}' (forma T<numero>)`);
   }
-  // Una regia apre conversazioni sui membri del suo perimetro, cioè su task:
-  // una sessione nuda dichiarata dalla regia non ha un membro da portare avanti.
-  if (req.regia && req.noTask) {
-    return usageError('--regia richiede una task: la regia apre conversazioni sui membri del perimetro');
+  // Un orchestrator apre conversazioni sui membri del suo perimetro, cioè su task:
+  // una sessione nuda dichiarata dall'orchestrator non ha un membro da portare avanti.
+  if (req.orchestrator && req.noTask) {
+    return usageError('--orchestrator richiede una task: l’orchestrator apre conversazioni sui membri del perimetro');
   }
   // Due modi di dire la stessa cosa: accettarli insieme obbligherebbe a
   // stabilire quale vince.
