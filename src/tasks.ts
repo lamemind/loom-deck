@@ -257,7 +257,7 @@ export function parseTaskDetail(id: string, content: string): TaskDetail {
  * domanda ha senso solo dove il file è già stato aperto (il detail).
  *
  * Il valore si legge con `taskSizeWord`, la prima parola del campo: `Size: Epic
- * (cappello)` è un cappello, come per `taskIsMandate`, `taskSize` e il plugin.
+ * (cappello)` è un cappello, come per `taskIsCustom`, `taskSize` e il plugin.
  *
  * Testo assente (`null`, task file non ancora letto) → `false`: la mancanza di
  * prova non è prova di cappello, e degradare sul caso comune è l'esito benigno.
@@ -271,7 +271,7 @@ export function taskIsEpic(id: string, text: string | null): boolean {
  * o il testo non c'è.
  *
  * Grammatica unica del deck per il `Size`, la stessa di `lw_task_members` nel
- * plugin, che definisce il formato: `Size: Mandate (perimetro)` è un mandato,
+ * plugin, che definisce il formato: `Size: Custom (membri)` è una lista custom,
  * `Size: Epic (cappello)` un'epica, `Size: l (grande)` una L. Una coda dopo la
  * parola è prosa dell'umano. Quattro lettori con due grammatiche (l'uguaglianza
  * intera per l'epica, la prima parola per gli altri) davano un cappello per il
@@ -289,39 +289,43 @@ export function taskSizeWord(id: string, text: string | null): string {
 }
 
 /**
- * T212 — la task è un MANDATO (`Size: Mandate`)?
+ * T212 — la task è una LISTA CUSTOM (`Size: Custom`)?
  *
- * Un mandato è il perimetro di un orchestrator: elenca nel proprio file, in
+ * Una lista custom è un perimetro orchestrabile: elenca nel proprio file, in
  * `## Membri`, task di epiche diverse o senza padre. Come l'epica non ha lavoro
  * eseguibile proprio; a differenza dell'epica i suoi membri non sono figlie, e
  * la sua Prog in `tasks.md` è il suo dato di chiusura.
  *
+ * `Size: Mandate` è il nome di prima e vale uguale; lo riscrive
+ * `prepare-perimeter` quando passa sul file.
+ *
  * Grammatica del valore: la prima parola del campo (`taskSizeWord`), come la
- * legge `lw_task_members` nel plugin. Il plugin definisce il formato, e un
- * mandato che `run-task` riconosce e il deck no riaprirebbe nel deck il run che
- * la skill rifiuta.
+ * legge `lw_task_members` nel plugin. Il plugin definisce il formato, e una
+ * lista custom che `run-task` riconosce e il deck no riaprirebbe nel deck il run
+ * che la skill rifiuta.
  *
  * Testo assente → `false`, per la stessa ragione di `taskIsEpic`.
  */
-export function taskIsMandate(id: string, text: string | null): boolean {
-  return taskSizeWord(id, text) === 'mandate';
+export function taskIsCustom(id: string, text: string | null): boolean {
+  const size = taskSizeWord(id, text);
+  return size === 'custom' || size === 'mandate';
 }
 
 /**
- * T212 — la task è un PERIMETRO, epica o mandato: niente lavoro eseguibile
+ * T212 — la task è un PERIMETRO ORCHESTRABILE, epica o lista custom: niente lavoro eseguibile
  * proprio, il lavoro sta nei membri.
  *
  * Predicato unico per chi tratta le due forme allo stesso modo — il recap
  * specializzato, l'azione di orchestrator di T203. Chi le distingue (la coda della
- * riga, il run del detail) chiama `taskIsEpic` o `taskIsMandate`.
+ * riga, il run del detail) chiama `taskIsEpic` o `taskIsCustom`.
  */
 export function taskIsPerimeter(id: string, text: string | null): boolean {
-  return taskIsEpic(id, text) || taskIsMandate(id, text);
+  return taskIsEpic(id, text) || taskIsCustom(id, text);
 }
 
 /** T212 — la forma di una task per chi ne compone le azioni: una task da
- *  eseguire, oppure uno dei due perimetri. */
-export type TaskShape = 'task' | 'epic' | 'mandate';
+ *  eseguire, oppure una delle due forme di perimetro orchestrabile. */
+export type TaskShape = 'task' | 'epic' | 'custom';
 
 /**
  * T212 — la forma della task, letta una volta dal testo che il detail ha già
@@ -329,7 +333,7 @@ export type TaskShape = 'task' | 'epic' | 'mandate';
  */
 export function taskShape(id: string, text: string | null): TaskShape {
   const size = taskSizeWord(id, text);
-  if (size === 'mandate') return 'mandate';
+  if (size === 'custom' || size === 'mandate') return 'custom';
   if (size === 'epic') return 'epic';
   return 'task';
 }
@@ -343,25 +347,25 @@ const SECTION_END_RE = /^#{1,2}\s/;
 const MEMBER_TOKEN_RE = /(?:^|[^A-Za-z0-9_])(T\d+)(?!\d)/;
 
 /**
- * T212 — i membri dichiarati in `## Membri` di un mandato, nell'ordine del file.
+ * T212 — i membri dichiarati in `## Membri` di una lista custom, nell'ordine del file.
  *
  * Copia della grammatica di `lw_task_members` (`scripts/utils/lib.sh` del
- * plugin, contratto in `docs/mandate-format.md`), riga per riga: una riga per
+ * plugin, contratto in `docs/perimeter-format.md`), riga per riga: una riga per
  * membro a colonna zero che comincia con `- `, vale il primo `T<numero>`;
  * righe indentate, righe dentro un blocco ```` ``` ```` e prosa non contano;
  * la sezione chiude al prossimo `#` o `##`; un id ripetuto conta alla prima
- * riga; il mandato che elenca sé stesso non conta.
+ * riga; la lista custom che elenca sé stessa non conta.
  *
  * Parser TypeScript e non lo script del plugin (P2 preflight T212): lo scan dei
- * task file ha già il testo in mano, uno spawn per mandato a ogni rilettura
+ * task file ha già il testo in mano, uno spawn per lista custom a ogni rilettura
  * costerebbe un processo, e il deck gira fuori da Claude Code, senza
  * `CLAUDE_PLUGIN_ROOT`. La parità la tengono i test sui casi del contratto.
  *
- * Non distingue un mandato da un'epica: chi chiama sa già cosa ha in mano. Un
+ * Non distingue una lista custom da un'epica: chi chiama sa già cosa ha in mano. Un
  * membro senza task file resta nella lista — il lettore del plugin lo marca
  * `TASK_MEMBER_MISSING`, il deck lo scarta dove conta le righe di `tasks.md`.
  */
-export function parseMandateMembers(id: string, text: string | null): string[] {
+export function parseCustomMembers(id: string, text: string | null): string[] {
   if (!text) return [];
   const members: string[] = [];
   let inSection = false;

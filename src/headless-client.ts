@@ -27,8 +27,8 @@ import { parseClientArgs } from './spawn-client.js';
 import { normalizeSession, requestKinds } from './spawn-endpoint.js';
 import { findProjectRoot } from './tab-launch.js';
 
-export const HEADLESS_USAGE = `uso: loom-deck-headless open <TaskID> <kind> [perimetro] [--model <alias>] [--note <testo>] [--context <testo | ->] [--orchestrator <perimetro>] [--root <dir>]
-     loom-deck-headless reply <sessionId> <messaggio… | -> [--model <alias>] [--orchestrator <perimetro>] [--root <dir>]
+export const HEADLESS_USAGE = `uso: loom-deck-headless open <TaskID> <kind> [perimetro eseguibile] [--model <alias>] [--note <testo>] [--context <testo | ->] [--orchestrator <id del perimetro orchestrabile>] [--root <dir>]
+     loom-deck-headless reply <sessionId> <messaggio… | -> [--model <alias>] [--orchestrator <id del perimetro orchestrabile>] [--root <dir>]
      loom-deck-headless status <sessionId> [--wait <secondi>] [--json] [--root <dir>]
 
 Un turno di conversazione su una task SENZA tab: un processo claude -p staccato,
@@ -38,7 +38,8 @@ status. Nessuna tab, nessun cambio di finestra o di focus.
   open     apre la conversazione con un'azione del catalogo del deck, con titolo,
            modello e binding del tasto del deck (override di progetto compresi)
              <kind>       ${requestKinds('headless').filter((k) => k !== 'none').join(' | ')}
-             [perimetro]  solo con run: DLV come in run-task, 1,3-5
+             [perimetro eseguibile]
+                          solo con run: DLV come in run-task, 1,3-5
              --context    testo in coda al prompt dell'azione, dopo una riga
                           vuota: il passo lo riceve fra le sue Note utente.
                           - lo legge da stdin. --note invece va nel titolo
@@ -55,9 +56,9 @@ status. Nessuna tab, nessun cambio di finestra o di focus.
   --model     ${MODELS.join(' | ')} (open: assente = il modello dell'azione;
               reply: assente = quello con cui la conversazione ha risposto)
   --orchestrator
-              l'orchestrator che apre o risponde, col suo perimetro (T<numero>, epica
-              o mandato): il turno nasce con LOOM_ORCHESTRATOR. Vale per QUEL turno:
-              un orchestrator lo dichiara a ogni reply
+              l'orchestrator che apre o risponde, con l'id del suo perimetro orchestrabile
+              (T<numero>, epica o lista custom): il turno nasce con LOOM_ORCHESTRATOR.
+              Vale per QUEL turno: un orchestrator lo dichiara a ogni reply
   --root      root del progetto (assente = risalita fino a .claude/loom-works.json)
 
 Un turno in corso si ferma con kill <pid>: il pid lo stampa status.
@@ -159,7 +160,7 @@ export function parseHeadlessArgs(argv: readonly string[]): Parsed {
       if (a === '--root') root = v;
       else if (a === '--orchestrator') {
         if (cmd !== 'reply') return { usage: ['--orchestrator vale con open e reply'] };
-        if (!/^T\d+$/.test(v)) return { usage: [`--orchestrator: perimetro non valido: '${v}' (forma T<numero>)`] };
+        if (!/^T\d+$/.test(v)) return { usage: [`--orchestrator: perimetro orchestrabile non valido: '${v}' (forma T<numero>)`] };
         orchestrator = v;
       } else if (a === '--model') {
         if (cmd !== 'reply') return { usage: ['--model vale con open e reply'] };

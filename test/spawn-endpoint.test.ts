@@ -109,7 +109,7 @@ test('richiesta valida: verbo, task, kind e i campi opzionali', () => {
 const ORCHESTRATOR_SID = '0a1b2c3d-1111-2222-3333-444455556666';
 
 // T220 — l'orchestrator che chiede lo spawn, e la sua sessione in minuscolo.
-test('richiesta con l’orchestrator: perimetro e sessione dell’orchestrator', () => {
+test('richiesta con l’orchestrator: perimetro orchestrabile e sessione dell’orchestrator', () => {
   assert.deepEqual(
     parseSpawnRequest(JSON.stringify({ verb: 'spawn', task: 'T7', kind: 'run', orchestrator: 'T197', orchestratorSession: ORCHESTRATOR_SID.toUpperCase() })),
     { verb: 'spawn', task: 'T7', kind: 'run', orchestrator: 'T197', orchestratorSession: ORCHESTRATOR_SID },
@@ -138,8 +138,8 @@ test('richieste rifiutate nella forma, col motivo', () => {
     [{ verb: 'spawn', task: 'T1; rm', kind: 'run' }, /task non valida/],
     [{ verb: 'spawn', task: 'T1', kind: 'bogus' }, /kind ignoto/],
     [{ verb: 'spawn', task: 'T1', kind: 'preflight', scope: [1] }, /solo con kind run/],
-    [{ verb: 'spawn', task: 'T1', kind: 'run', scope: [] }, /perimetro non valido/],
-    [{ verb: 'spawn', task: 'T1', kind: 'run', scope: [0] }, /perimetro non valido/],
+    [{ verb: 'spawn', task: 'T1', kind: 'run', scope: [] }, /perimetro eseguibile non valido/],
+    [{ verb: 'spawn', task: 'T1', kind: 'run', scope: [0] }, /perimetro eseguibile non valido/],
     [{ verb: 'spawn', task: 'T1', kind: 'run', model: 'gpt' }, /modello ignoto/],
     [{ verb: 'spawn', task: 'T1', kind: 'run', note: 'a\nb' }, /nota non valida/],
     // T220 — l'orchestrator è un id di task, la sua sessione un sessionId intero.
@@ -195,7 +195,7 @@ test('close rifiutate nella forma, col motivo; spawn passa dallo stesso smistato
   assert.ok('error' in notSpawn && /non di spawn/.test(notSpawn.error));
 });
 
-test('perimetro: la grammatica di run-task, con o senza DLV in testa', () => {
+test('perimetro eseguibile: la grammatica di run-task, con o senza DLV in testa', () => {
   assert.deepEqual(parseScope('1,3-5'), [1, 3, 4, 5]);
   assert.deepEqual(parseScope('DLV 2,4'), [2, 4]);
   assert.deepEqual(parseScope(' 5 , 1 '), [1, 5]);

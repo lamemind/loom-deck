@@ -146,16 +146,16 @@ export interface SpawnRequest {
   verb: 'spawn';
   task: string;
   kind: PromptKind;
-  /** I DLV del perimetro, solo con `kind: 'run'`. Assente = tutti gli aperti. */
+  /** I DLV del perimetro eseguibile, solo con `kind: 'run'`. Assente = tutti gli aperti. */
   scope?: number[];
   /** Assente = il modello che il deck userebbe col tasto (catalogo ← override
    *  di progetto). */
   model?: ModelKind;
   /** La nota del titolo. Assente = il template di titolo dell'azione. */
   note?: string;
-  /** T220 — il perimetro dell'orchestrator che chiede lo spawn (`T197`): diventa
+  /** T220 — l'id del perimetro orchestrabile dell'orchestrator che chiede lo spawn (`T197`): diventa
    *  `LOOM_ORCHESTRATOR` nella conversazione e il campo `orchestrator` del sidecar. Il deck
-   *  lo rifiuta se non è un'epica né un mandato. */
+   *  lo rifiuta se non è un'epica né una lista custom. */
   orchestrator?: string;
   /** T220 — il `sessionId` dell'orchestrator che chiede, letto dal client nel
    *  proprio ambiente (`CLAUDE_CODE_SESSION_ID`): solo provenienza, nel campo
@@ -385,13 +385,13 @@ function spawnFields(r: Record<string, unknown>): SpawnRequest | { error: string
   }
   const req: SpawnRequest = { verb: 'spawn', task: r.task, kind: r.kind as PromptKind };
   if (r.scope !== undefined) {
-    if (req.kind !== 'run') return { error: 'perimetro ammesso solo con kind run' };
+    if (req.kind !== 'run') return { error: 'perimetro eseguibile ammesso solo con kind run' };
     if (
       !Array.isArray(r.scope) ||
       r.scope.length === 0 ||
       !r.scope.every((n) => Number.isInteger(n) && (n as number) >= 1)
     ) {
-      return { error: 'perimetro non valido: lista non vuota di numeri di DLV ≥ 1' };
+      return { error: 'perimetro eseguibile non valido: lista non vuota di numeri di DLV ≥ 1' };
     }
     req.scope = [...new Set(r.scope as number[])].sort((a, b) => a - b);
   }
@@ -405,8 +405,8 @@ function spawnFields(r: Record<string, unknown>): SpawnRequest | { error: string
     }
     req.note = r.note;
   }
-  // T220 — l'orchestrator nella forma di un id di task; che sia un perimetro del
-  // progetto lo verifica il deck (`orchestratorRefusal`). La sessione dell'orchestrator
+  // T220 — l'orchestrator nella forma di un id di task; che sia un perimetro orchestrabile
+  // del progetto lo verifica il deck (`orchestratorRefusal`). La sessione dell'orchestrator
   // senza l'orchestrator non vuol dire niente, e si rifiuta.
   if (r.orchestrator !== undefined) {
     if (typeof r.orchestrator !== 'string' || !TASK_RE.test(r.orchestrator)) {
@@ -434,22 +434,22 @@ function spawnFields(r: Record<string, unknown>): SpawnRequest | { error: string
   return req;
 }
 
-/** Tetto dei numeri di DLV in un perimetro: oltre è un errore di battitura, e
+/** Tetto dei numeri di DLV in un perimetro eseguibile: oltre è un errore di battitura, e
  *  un range `1-100000` non deve diventare una lista di centomila numeri. */
 const SCOPE_MAX = 999;
 
 /**
- * Il perimetro scritto da chi chiama, nella grammatica di `run-task`: lista
+ * Il perimetro eseguibile scritto da chi chiama, nella grammatica di `run-task`: lista
  * `1,2,6`, range `3-8`, combinabili `1,3-5,9`. Un `DLV` in testa si accetta,
  * perché è la forma con cui il deck stesso lo scrive nel prompt.
  */
 export function parseScope(spec: string): number[] | { error: string } {
   const body = spec.trim().replace(/^DLV\s*/i, '');
-  if (!body) return { error: 'perimetro vuoto' };
+  if (!body) return { error: 'perimetro eseguibile vuoto' };
   const out = new Set<number>();
   for (const part of body.split(',')) {
     const m = /^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$/.exec(part);
-    if (!m) return { error: `perimetro malformato: '${part.trim()}' (usa 1,3-5)` };
+    if (!m) return { error: `perimetro eseguibile malformato: '${part.trim()}' (usa 1,3-5)` };
     const a = Number(m[1]);
     const b = m[2] === undefined ? a : Number(m[2]);
     if (a < 1 || b < a || b > SCOPE_MAX) return { error: `range non valido: '${part.trim()}'` };

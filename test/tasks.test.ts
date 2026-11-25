@@ -9,10 +9,10 @@ import {
   parseTasks,
   parseTaskDetail,
   headerColumns,
-  parseMandateMembers,
+  parseCustomMembers,
   taskEpicOf,
   taskIsEpic,
-  taskIsMandate,
+  taskIsCustom,
   taskIsPerimeter,
   taskShape,
   taskSizeWord,
@@ -205,7 +205,7 @@ test('taskIsEpic: `Size: Epic` marca il cappello', () => {
 });
 
 // T212/S1 — una grammatica sola per il `Size`, la prima parola, come
-// `taskIsMandate`, `taskSize` e `lw_task_members` del plugin: prima l'epica
+// `taskIsCustom`, `taskSize` e `lw_task_members` del plugin: prima l'epica
 // voleva l'uguaglianza intera, e `Size: Epic (cappello)` era un cappello per il
 // plugin e una task qualunque per il deck.
 test('taskIsEpic: la prima parola di `Size` decide, una coda dopo non conta', () => {
@@ -280,18 +280,18 @@ test('parseTaskDetail legge i bullet header', () => {
   assert.equal(detail.description, 'corpo');
 });
 
-// ── T212 · il mandato ────────────────────────────────────────────────────────
+// ── T212 · la lista custom ───────────────────────────────────────────────────
 
-const MANDATE_MD = `# Task: Mandato: convention e orchestrator insieme
+const CUSTOM_MD = `# Task: Lista custom: convention e orchestrator insieme
 
 - **ID**: T230
-- **Size**: Mandate
+- **Size**: Custom
 - **Parent Task**:
 - **Progress**: 🔵 Todo
 
 ## Description
 
-Un perimetro che nomina \`Size: Epic\` in prosa senza esserlo.
+Una lista custom che nomina \`Size: Epic\` in prosa senza esserlo.
 
 ## Membri
 
@@ -305,7 +305,7 @@ Testo fuori dalla lista con T71 dentro.
 ### Secondo gruppo
 
 - T52 ripetuto: conta alla prima riga
-- T230 il mandato che elenca sé stesso
+- T230 la lista custom che elenca sé stessa
 - XT72 coda di una parola, poi T73 vero
 
 \`\`\`
@@ -320,48 +320,61 @@ Testo fuori dalla lista con T71 dentro.
 - T76 fuori dalla sezione
 `;
 
-test('taskIsMandate: la prima parola di `Size` decide, in qualunque maiuscola', () => {
-  assert.equal(taskIsMandate('T230', MANDATE_MD), true);
-  assert.equal(taskIsMandate('T230', MANDATE_MD.replace('Mandate', 'mandate')), true);
+/** Il file della lista custom con un altro valore di `Size`. */
+const withSize = (value: string) => CUSTOM_MD.replace('- **Size**: Custom', `- **Size**: ${value}`);
+
+test('taskIsCustom: la prima parola di `Size` decide, in qualunque maiuscola', () => {
+  assert.equal(taskIsCustom('T230', CUSTOM_MD), true);
+  assert.equal(taskIsCustom('T230', withSize('custom')), true);
   // La grammatica di `lw_task_members`: una coda dopo la parola non conta.
-  assert.equal(taskIsMandate('T230', MANDATE_MD.replace('Mandate', 'Mandate (perimetro)')), true);
-  assert.equal(taskIsMandate('T230', MANDATE_MD.replace('Mandate', 'Epic')), false);
-  assert.equal(taskIsMandate('T230', MANDATE_MD.replace('Mandate', 'Mandatory')), false);
-  assert.equal(taskIsMandate('T230', null), false);
-  assert.equal(taskIsMandate('T99', '# Task: Senza size\n\n- **ID**: T99\n'), false);
+  assert.equal(taskIsCustom('T230', withSize('Custom (membri)')), true);
+  assert.equal(taskIsCustom('T230', withSize('Epic')), false);
+  assert.equal(taskIsCustom('T230', withSize('Customer')), false);
+  assert.equal(taskIsCustom('T230', null), false);
+  assert.equal(taskIsCustom('T99', '# Task: Senza size\n\n- **ID**: T99\n'), false);
 });
 
-test('taskIsMandate: un mandato non è un cappello, e un cappello non è un mandato', () => {
-  assert.equal(taskIsEpic('T230', MANDATE_MD), false);
-  assert.equal(taskIsMandate('T74', EPIC_MD), false);
+test('taskIsCustom e taskShape: `Size: Mandate`, il nome di prima, vale come `Size: Custom`', () => {
+  for (const value of ['Mandate', 'mandate', 'Mandate (orchestrator)']) {
+    assert.equal(taskIsCustom('T230', withSize(value)), true, value);
+    assert.equal(taskShape('T230', withSize(value)), 'custom', value);
+    assert.equal(taskIsPerimeter('T230', withSize(value)), true, value);
+  }
+  assert.equal(taskShape('T230', CUSTOM_MD), 'custom');
+  assert.equal(taskIsCustom('T230', withSize('Mandatory')), false);
 });
 
-test('taskIsPerimeter: vero su epica e mandato, falso su una task qualunque', () => {
-  assert.equal(taskIsPerimeter('T230', MANDATE_MD), true);
+test('taskIsCustom: una lista custom non è un cappello, e un cappello non è una lista custom', () => {
+  assert.equal(taskIsEpic('T230', CUSTOM_MD), false);
+  assert.equal(taskIsCustom('T74', EPIC_MD), false);
+});
+
+test('taskIsPerimeter: vero su epica e lista custom, falso su una task qualunque', () => {
+  assert.equal(taskIsPerimeter('T230', CUSTOM_MD), true);
   assert.equal(taskIsPerimeter('T74', EPIC_MD), true);
   assert.equal(taskIsPerimeter('T74', EPIC_MD.replace('Epic', 'M')), false);
   assert.equal(taskIsPerimeter('T74', null), false);
 });
 
-test('parseMandateMembers: i casi del contratto di mandate-format.md', () => {
-  assert.deepEqual(parseMandateMembers('T230', MANDATE_MD), ['T52', 'T61', 'T64', 'T73', 'T75']);
+test('parseCustomMembers: i casi del contratto di perimeter-format.md', () => {
+  assert.deepEqual(parseCustomMembers('T230', CUSTOM_MD), ['T52', 'T61', 'T64', 'T73', 'T75']);
 });
 
-test('parseMandateMembers: senza sezione o senza testo nessun membro', () => {
-  assert.deepEqual(parseMandateMembers('T74', EPIC_MD), []);
-  assert.deepEqual(parseMandateMembers('T230', null), []);
-  assert.deepEqual(parseMandateMembers('T230', '# Task: x\n\n## Membri\n\n## Altro\n- T1\n'), []);
+test('parseCustomMembers: senza sezione o senza testo nessun membro', () => {
+  assert.deepEqual(parseCustomMembers('T74', EPIC_MD), []);
+  assert.deepEqual(parseCustomMembers('T230', null), []);
+  assert.deepEqual(parseCustomMembers('T230', '# Task: x\n\n## Membri\n\n## Altro\n- T1\n'), []);
 });
 
-test('parseMandateMembers: un file con fine riga CRLF legge gli stessi membri', () => {
+test('parseCustomMembers: un file con fine riga CRLF legge gli stessi membri', () => {
   assert.deepEqual(
-    parseMandateMembers('T230', MANDATE_MD.replace(/\n/g, '\r\n')),
+    parseCustomMembers('T230', CUSTOM_MD.replace(/\n/g, '\r\n')),
     ['T52', 'T61', 'T64', 'T73', 'T75'],
   );
 });
 
-test('parseMandateMembers: le cifre sono greedy — T64 non si legge T6', () => {
-  assert.deepEqual(parseMandateMembers('T1', '## Membri\n\n- T64x\n- T6\n'), ['T64', 'T6']);
+test('parseCustomMembers: le cifre sono greedy — T64 non si legge T6', () => {
+  assert.deepEqual(parseCustomMembers('T1', '## Membri\n\n- T64x\n- T6\n'), ['T64', 'T6']);
 });
 
 // Il deck replica la grammatica di `## Membri` invece di lanciare lo script (P2
@@ -383,7 +396,7 @@ test('parità con lw_task_members del plugin sui casi del contratto', { skip: ME
   try {
     const dir = join(root, 'docs', 'tasks');
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'T230-mandato.md'), MANDATE_MD);
+    writeFileSync(join(dir, 'T230-lista-custom.md'), CUSTOM_MD);
     // Due membri senza task file: il lettore li marca MISSING, nello stesso
     // ordine degli altri — il deck li tiene nella lista allo stesso posto.
     for (const id of ['T52', 'T61', 'T73']) writeFileSync(join(dir, `${id}-membro.md`), `# Task: ${id}\n`);
@@ -399,8 +412,8 @@ test('parità con lw_task_members del plugin sui casi del contratto', { skip: ME
       .map((l) => /^TASK_MEMBER(?:_MISSING)?=(T\d+)/.exec(l)?.[1])
       .filter((id): id is string => Boolean(id));
     assert.match(out, /^TASK_MEMBERS_SRC=list$/m);
-    assert.deepEqual(parseMandateMembers('T230', MANDATE_MD), fromScript);
-    assert.deepEqual(parseMandateMembers('T230', sanitize(MANDATE_MD)), fromScript);
+    assert.deepEqual(parseCustomMembers('T230', CUSTOM_MD), fromScript);
+    assert.deepEqual(parseCustomMembers('T230', sanitize(CUSTOM_MD)), fromScript);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

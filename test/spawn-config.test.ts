@@ -240,20 +240,20 @@ test('senza override: un’azione con un kind prende modello e prompt dal catalo
 test('orchestrator: default opus dal catalogo dati, titolo 🎬', () => {
   const r = resolveSpawn(spawnAction('orchestrator')!, NONE, loadPromptCatalog(), { TASK: 'T6', slug: 'epica' });
   assert.equal(r.model, 'opus');
-  assert.equal(r.prompt, '/loom-works:orchestrate-mandate T6');
+  assert.equal(r.prompt, '/loom-works:orchestrate-perimeter T6');
   assert.equal(r.title, '🎬 epica');
   assert.equal(r.overridden.size, 0);
 });
 
 test('orchestrator: l’override di progetto cambia modello, titolo e prompt', () => {
   const parsed = parseSpawnOverrides({
-    [SPAWN_BLOCK]: { orchestrator: { model: 'fable', title: 'orchestrator {slug}', prompt: '/loom-works:orchestrate-mandate {TASK} a modo mio' } },
+    [SPAWN_BLOCK]: { orchestrator: { model: 'fable', title: 'orchestrator {slug}', prompt: '/loom-works:orchestrate-perimeter {TASK} a modo mio' } },
   });
   assert.deepEqual(parsed.warnings, []);
   const r = resolveSpawn(spawnAction('orchestrator')!, parsed.entries, loadPromptCatalog(), { TASK: 'T6', slug: 'epica' });
   assert.equal(r.model, 'fable');
   assert.equal(r.title, 'orchestrator epica');
-  assert.equal(r.prompt, '/loom-works:orchestrate-mandate T6 a modo mio');
+  assert.equal(r.prompt, '/loom-works:orchestrate-perimeter T6 a modo mio');
   assert.deepEqual([...r.overridden].sort(), ['model', 'prompt', 'title']);
 });
 

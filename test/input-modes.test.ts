@@ -68,7 +68,7 @@ test('un modo fuori catalogo non risulta capturing', () => {
   assert.equal(captures('normal'), false);
 });
 
-// T21 (mandata 2) — la rotella scorre il TESTO, mai una selezione (D5). I tre
+// T21 (seconda passata) — la rotella scorre il TESTO, mai una selezione (D5). I tre
 // modi scorrevoli sono quelli con un documento e nessuna lista a fuoco:
 // `search` ha un'anteprima ma il fuoco è sui risultati, che sono una scelta.
 test('i modi scorrevoli sono i viewer di testo', () => {

@@ -77,7 +77,7 @@ export const CTRL_DEROGATIONS: Partial<Record<CapturingMode, readonly string[]>>
 };
 
 /**
- * T21 (mandata 2) — i modi che SCORRONO un contenuto lungo, cioè gli unici in
+ * T21 (seconda passata) — i modi che SCORRONO un contenuto lungo, cioè gli unici in
  * cui la rotella del mouse fa qualcosa.
  *
  * La rotella scorre il TESTO, mai la selezione di una lista (D5): nelle liste

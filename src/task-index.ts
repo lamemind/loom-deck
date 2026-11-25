@@ -90,7 +90,7 @@ import { sanitize } from './width.js';
 // ha dato lanciandola —, e una conversazione può marcare solo sé stessa.
 //
 // T220 — `orchestrator` e `orchestratorSession` dicono quale orchestrator ha aperto la
-// conversazione: il perimetro (`T197`) e il `sessionId` della conversazione che
+// conversazione: il perimetro orchestrabile (`T197`) e il `sessionId` della conversazione che
 // faceva da orchestrator. Scritti in un record solo, allo spawn chiesto da un orchestrator
 // (`--orchestrator`), e mai riscritti. Sono PROVENIENZA, non sorgente (P2 preflight):
 // nessuno li rilegge per decidere l'ambiente di un processo — `LOOM_ORCHESTRATOR` segue
@@ -131,7 +131,7 @@ export interface SessionRecord {
    *  T221 — `orchestrator` = un orchestrator che ha passato le consegne: scritto
    *  sull'orchestrator vecchio allo spawn del successore. */
   origin?: string;
-  /** T220 — il perimetro dell'orchestrator che ha aperto la conversazione. Scritto
+  /** T220 — il perimetro orchestrabile dell'orchestrator che ha aperto la conversazione. Scritto
    *  una volta, allo spawn, insieme a `orchestratorSession`. */
   orchestrator?: string;
   /** T220 — il `sessionId` dell'orchestrator che ha chiesto lo spawn; assente se il
@@ -236,7 +236,7 @@ export function appendOrigin(projectRoot: string, sessionId: string, origin: str
 }
 
 /**
- * T220 — l'orchestrator che ha aperto la conversazione: perimetro e, se noto, il
+ * T220 — l'orchestrator che ha aperto la conversazione: perimetro orchestrabile e, se noto, il
  * `sessionId` dell'orchestrator, in UN record (`appendSessionMeta` spiega perché due
  * campi scritti insieme non vanno in due righe). Allo spawn si appende accanto
  * al binding della task, prima della tab. I nomi dei campi sono un contratto di

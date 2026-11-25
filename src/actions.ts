@@ -221,8 +221,8 @@ export function useDeckActions({
   // solo l'endpoint (`endpoint`), e rende la conversazione chiudibile col verbo
   // `close`.
   // T220 — `orchestrator` la passa solo l'endpoint, quando la richiesta dichiara
-  // l'orchestrator che la chiede: perimetro e sessione nel sidecar, `--orchestrator` a
-  // `deck-run`, che esporta `LOOM_ORCHESTRATOR`.
+  // l'orchestrator che la chiede: perimetro orchestrabile e sessione nel sidecar,
+  // `--orchestrator` a `deck-run`, che esporta `LOOM_ORCHESTRATOR`.
   function spawnForTask(
     id: string,
     modelKind: ModelKind,
@@ -275,12 +275,12 @@ export function useDeckActions({
     if (refuse('spawn', keyLabel, setNote)) return;
     const task = selectedTaskOr(keyLabel, 'spawnare');
     if (!task) return;
-    // T212/P4 — su un mandato `run-task` rifiuta per costruzione: la nota lo dice
-    // subito, senza una tab e un turno di modello per un rifiuto certo. La lista
-    // conosce i mandati dallo stesso scan che le dà le epiche. Gli altri kind
-    // passano: `^K` resta sul dispatcher, che riconosce già `Size: Mandate`.
-    if (kind === 'run' && model.taskRowData.mandates.has(task.id)) {
-      setNote(`${keyLabel}: ${task.id} è un mandato — niente run`);
+    // T212/P4 — su una lista custom `run-task` rifiuta per costruzione: la nota lo
+    // dice subito, senza una tab e un turno di modello per un rifiuto certo. La
+    // lista delle task le conosce dallo stesso scan che le dà le epiche. Gli altri
+    // kind passano: `^K` resta sul dispatcher, che riconosce già `Size: Custom`.
+    if (kind === 'run' && model.taskRowData.customLists.has(task.id)) {
+      setNote(`${keyLabel}: ${task.id} è una lista custom — niente run`);
       return;
     }
     // T161 — stessa risoluzione del detail, sullo stesso id di catalogo: senza,

@@ -9,7 +9,7 @@ import { detailProject } from './detail-fixture.js';
 import { loadLaunch } from '../src/config.js';
 import { launchRow } from '../src/frame.js';
 
-// ── T21 · mouse (mandata 1: superfici della riga launch) ──────────────────
+// ── T21 · mouse (prima passata: superfici della riga launch) ──────────────
 
 /**
  * Click su una colonna della riga launch, che sta a riga 4 del terminale.
@@ -69,7 +69,7 @@ test('lo spazio fra due superfici non attiva la vicina', { skip: SKIP }, () => {
 });
 
 test('un click fuori dalla riga launch è inerte', { skip: SKIP }, () => {
-  // Mandata 1: le liste non sono cliccabili. Riga 6 è dentro il pane task.
+  // Prima passata: le liste non sono cliccabili. Riga 6 è dentro il pane task.
   const frame = lastFrame(capture('@4,6;'));
   assert.doesNotMatch(frame, /terminale su/i, `una riga estranea ha attivato t: ${frame}`);
 });
@@ -88,7 +88,7 @@ test('col modale aperto il click non scrive nel campo né attiva la surface', {
   assert.doesNotMatch(frame, /terminale su/i, `il click ha attivato t dal modale: ${frame}`);
 });
 
-// ── T21 · mouse (mandata 2: rotella nei contenuti lunghi) ─────────────────
+// ── T21 · mouse (seconda passata: rotella nei contenuti lunghi) ───────────
 
 /** Una tacca di rotella: `^` su, `_` giù nella mappa di `pty-frame.py`. Le
  *  coordinate sono irrilevanti per il deck — la rotella scorre il modo, non un

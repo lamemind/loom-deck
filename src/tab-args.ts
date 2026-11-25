@@ -56,7 +56,7 @@ export interface TabRequest {
   /** Vuoto = flag non passato: la cascata (env, catalogo, default) si risolve
    *  nella composizione. */
   model: string;
-  /** T220 — il perimetro dell'orchestrator che apre la conversazione (`T197`), vuoto
+  /** T220 — l'id del perimetro orchestrabile dell'orchestrator che apre la conversazione (`T197`), vuoto
    *  se nessun orchestrator l'ha chiesta. Diventa `LOOM_ORCHESTRATOR` nella sessione
    *  (`memberOrchestrator`). */
   orchestrator: string;
@@ -110,7 +110,7 @@ export const USAGE = `uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <k
        preflight     /loom-works:preflight-task <TaskID>
        run           /loom-works:run-task <TaskID>
        checkpoint    /loom-works:checkpoint-task <TaskID>
-       orchestrator  /loom-works:orchestrate-mandate <TaskID> (Size: Epic o Mandate)
+       orchestrator  /loom-works:orchestrate-perimeter <TaskID> (Size: Epic o Custom)
 
   --prompt       prompt LETTERALE, per chi lo ha già composto (o fatto
                  modificare). Esclusivo con --prompt-kind; vuoto = nessun
@@ -127,7 +127,7 @@ export const USAGE = `uso: deck-run <TaskID> [--model <alias>] [--prompt-kind <k
   --new-window   apre una FINESTRA nuova invece di una tab nella finestra
                  attiva. Per chi chiama da fuori dalla finestra del progetto
 
-  --orchestrator perimetro dell'orchestrator che apre la conversazione (T<numero>):
+  --orchestrator id del perimetro orchestrabile dell'orchestrator che apre la conversazione (T<numero>):
                  esportato come LOOM_ORCHESTRATOR. Ignorato con --prompt-kind orchestrator,
                  perché la conversazione è a sua volta un orchestrator`;
 
@@ -238,12 +238,12 @@ export function parseTabArgs(argv: readonly string[]): TabRequest | UsageError |
   // nell'env di ogni processo della sessione, e un testo libero lì sarebbe una
   // riga dell'organigramma che nomina qualunque cosa.
   if (req.orchestrator && !/^T\d+$/.test(req.orchestrator)) {
-    return usageError(`--orchestrator: perimetro non valido: '${req.orchestrator}' (forma T<numero>)`);
+    return usageError(`--orchestrator: perimetro orchestrabile non valido: '${req.orchestrator}' (forma T<numero>)`);
   }
-  // Un orchestrator apre conversazioni sui membri del suo perimetro, cioè su task:
+  // Un orchestrator apre conversazioni sui membri del suo perimetro orchestrabile, cioè su task:
   // una sessione nuda dichiarata dall'orchestrator non ha un membro da portare avanti.
   if (req.orchestrator && req.noTask) {
-    return usageError('--orchestrator richiede una task: l’orchestrator apre conversazioni sui membri del perimetro');
+    return usageError('--orchestrator richiede una task: l’orchestrator apre conversazioni sui membri del perimetro orchestrabile');
   }
   // Due modi di dire la stessa cosa: accettarli insieme obbligherebbe a
   // stabilire quale vince.

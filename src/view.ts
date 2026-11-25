@@ -1,7 +1,7 @@
 // T39 — Core della vista: ordinali, sort chain multi-chiave, filtri.
 // Modulo PURO: nessun import da ink/react, nessun I/O → testabile senza terminale.
 
-import { epicTail, mandateTail, taskTail } from './glyphs.js';
+import { epicTail, customTail, taskTail } from './glyphs.js';
 import { termWidth } from './width.js';
 import type { TaskLive } from './live-sessions.js';
 import type { Task } from './tasks.js';
@@ -168,17 +168,17 @@ export interface TaskRowData {
   /** T67/P9 — rollup {chiuse/totali} delle figlie dichiarate di un cappello,
    *  cieco a filtri e viste: chiave = id del cappello. */
   epicRollup: ReadonlyMap<string, { closed: number; total: number }>;
-  /** T212 — id il cui task file porta `Size: Mandate`: Prog accesa (è il suo
+  /** T212 — id il cui task file porta `Size: Custom`: Prog accesa (è il suo
    *  dato di chiusura) e coda sostituita dal rollup dei membri. */
-  mandates: ReadonlySet<string>;
+  customLists: ReadonlySet<string>;
   /** T212/P1 — rollup [chiusi/totali dei membri di `## Membri` con una riga in
-   *  `tasks.md`, cieco a filtri e viste: chiave = id del mandato. */
-  mandateRollup: ReadonlyMap<string, { closed: number; total: number }>;
+   *  `tasks.md`, cieco a filtri e viste: chiave = id della lista custom. */
+  customRollup: ReadonlyMap<string, { closed: number; total: number }>;
 }
 
 /**
  * La coda di una riga task — il contatore conversazioni, il rollup delle figlie
- * di un cappello o quello dei membri di un mandato.
+ * di un cappello o quello dei membri di una lista custom.
  *
  * Una funzione sola per i due consumatori: `taskColumns` la misura sulla vista
  * intera, `TaskRow` la disegna. Due copie della scelta divergerebbero al primo
@@ -186,7 +186,7 @@ export interface TaskRowData {
  * riga scrive.
  */
 export function rowTail(task: Task, data: TaskRowData): string {
-  if (data.mandates.has(task.id)) return mandateTail(data.mandateRollup.get(task.id));
+  if (data.customLists.has(task.id)) return customTail(data.customRollup.get(task.id));
   if (data.epics.has(task.id)) return epicTail(data.epicRollup.get(task.id));
   return taskTail(data.live.get(task.id)?.count ?? 0, data.childCount.get(task.id) ?? 0, data.dirty.has(task.id));
 }
@@ -209,7 +209,7 @@ export function taskColumns(
 ): { id: number; tail: number } {
   let tail = 0;
   for (const t of tasks) {
-    // T67/T212 — un cappello o un mandato scrive il proprio rollup al posto del
+    // T67/T212 — un cappello o una lista custom scrive il proprio rollup al posto del
     // contatore conversazioni: la colonna misura quello che la riga disegna
     // DAVVERO per quel task, dalla stessa funzione che lo disegna.
     tail = Math.max(tail, termWidth(rowTail(t, data)));
@@ -400,22 +400,22 @@ export function epicRollup(
 }
 
 /**
- * T212/P1 — rollup [chiusi/totali dei membri di ogni mandato, cieco a filtri e
+ * T212/P1 — rollup [chiusi/totali dei membri di ogni lista custom, cieco a filtri e
  * viste come `epicRollup`.
  *
  * Conta solo i membri con una riga in `tasks` (P2 preflight): un membro senza
  * riga non ha una Prog da leggere — è il caso di `TASK_MEMBER_MISSING` nel
- * lettore del plugin, una task purgata da `clean-tasks`. Un'epica o un mandato
- * fra i membri conta una riga sola, come nel lettore: nessuna espansione, quindi
- * nessun ciclo fra mandati.
+ * lettore del plugin, una task purgata da `clean-tasks`. Un'epica o una lista
+ * custom fra i membri conta una riga sola, come nel lettore: nessuna espansione,
+ * quindi nessun ciclo fra liste custom.
  */
-export function mandateRollup(
+export function customRollup(
   tasks: Task[],
   membersOf: ReadonlyMap<string, readonly string[]>,
 ): ReadonlyMap<string, { closed: number; total: number }> {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const rollup = new Map<string, { closed: number; total: number }>();
-  for (const [mandate, members] of membersOf) {
+  for (const [list, members] of membersOf) {
     const entry = { closed: 0, total: 0 };
     for (const id of members) {
       const t = byId.get(id);
@@ -423,7 +423,7 @@ export function mandateRollup(
       entry.total++;
       if (progName(t.prog) === 'done') entry.closed++;
     }
-    rollup.set(mandate, entry);
+    rollup.set(list, entry);
   }
   return rollup;
 }

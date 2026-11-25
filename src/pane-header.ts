@@ -1,4 +1,4 @@
-// T21 (mandata 3) — le PARTI degli header dei due pane come DATO, non come JSX.
+// T21 (terza passata) — le PARTI degli header dei due pane come DATO, non come JSX.
 //
 // Stesso principio della riga launch (`launchRow` in `frame.ts`): gli
 // stessi oggetti compongono la riga disegnata (`ui/panes.tsx`) e le colonne

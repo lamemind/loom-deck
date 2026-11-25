@@ -54,9 +54,9 @@ export type PromptKind =
  * Ogni kind diverso da `recap` passa intatto: la specializzazione è un caso, non
  * una trasformazione da applicare a tutti.
  *
- * T212 — il secondo argomento è «la task è un PERIMETRO» (`taskIsPerimeter`),
- * non più «è un'epica»: `recap-status-epic` fa il recap di un'epica e di un
- * mandato, e la riga di catalogo che lo apre è una sola.
+ * T212 — il secondo argomento è «la task è un PERIMETRO ORCHESTRABILE» (`taskIsPerimeter`),
+ * non più «è un'epica»: `recap-status-epic` fa il recap di un'epica e di una
+ * lista custom, e la riga di catalogo che lo apre è una sola.
  */
 export function specializeRecap(kind: PromptKind, perimeter: boolean): PromptKind {
   if (kind !== 'recap') return kind;
@@ -111,7 +111,7 @@ export interface DetailAction {
 // T203 — `direct` è l'orchestrator, e sta in coda: nessun bottone esistente si sposta
 // sotto le dita. L'etichetta nomina l'intenzione («fare l'orchestrator») e non il
 // kind, e la sua iniziale `d` è libera: `orchestrator` darebbe `o`, che è di `open`.
-// Sta qui e non solo nella lista di un perimetro perché questo è il catalogo
+// Sta qui e non solo nella lista di un perimetro orchestrabile perché questo è il catalogo
 // intero, cioè la lista su cui `ACTION_HOTKEYS` presidia l'unicità delle
 // lettere; `detailActions` la toglie dove non vale.
 export const DETAIL_ACTIONS: ReadonlyArray<DetailAction> = [
@@ -127,15 +127,16 @@ export const DETAIL_ACTIONS: ReadonlyArray<DetailAction> = [
  * T212 — le azioni del detail PER TASK: il catalogo intero, meno ciò che su
  * quella task non ha senso offrire.
  *
- * Su un mandato `run` non c'è (P3 preflight T212): il lavoro sta nei membri, e
+ * Su una lista custom `run` non c'è (P3 preflight T212): il lavoro sta nei membri, e
  * `run-task` lo rifiuterebbe. Voce assente e non voce che rifiuta con una nota,
  * perché il deck non deve offrire ciò che sa già che non parte. L'epica tiene
  * il suo `run`: con DLV propri resta lanciabile (T189 D2), e il rifiuto
  * eventuale è della skill.
  *
- * T203 — l'orchestrator (`direct`) c'è sui soli perimetri, epica o mandato: la skill
- * `orchestrate-mandate` segue i membri di un perimetro, e una task semplice non
- * ne ha. Voce assente per la stessa ragione del `run` sul mandato.
+ * T203 — l'orchestrator (`direct`) c'è sui soli perimetri orchestrabili, epica o lista
+ * custom: la skill `orchestrate-perimeter` segue i membri di un perimetro orchestrabile,
+ * e una task semplice non ne ha. Voce assente per la stessa ragione del `run` sulla
+ * lista custom.
  *
  * Funzione della forma e non lista fissa: è il punto dove un'azione che vale
  * solo su una forma entra senza toccare chi le disegna. L'ordine resta quello
@@ -143,7 +144,7 @@ export const DETAIL_ACTIONS: ReadonlyArray<DetailAction> = [
  */
 export function detailActions(shape: TaskShape): ReadonlyArray<DetailAction> {
   if (shape === 'task') return DETAIL_ACTIONS.filter((a) => a.kind !== 'orchestrator');
-  if (shape === 'mandate') return DETAIL_ACTIONS.filter((a) => a.kind !== 'run');
+  if (shape === 'custom') return DETAIL_ACTIONS.filter((a) => a.kind !== 'run');
   return DETAIL_ACTIONS;
 }
 
@@ -154,7 +155,7 @@ export function detailActions(shape: TaskShape): ReadonlyArray<DetailAction> {
 // Il vincolo che la derivazione impone al catalogo: le iniziali devono restare
 // DISTINTE fra loro. Due label con la stessa lettera renderebbero la seconda
 // irraggiungibile, e in silenzio — chi aggiunge una voce lo controlla qui.
-// T212 — derivate dalla lista DELLA TASK: su un mandato `r` non ha voce, quindi
+// T212 — derivate dalla lista DELLA TASK: su una lista custom `r` non ha voce, quindi
 // non fa nulla, e gli indici seguono la lista accorciata.
 export function actionHotkeys(actions: ReadonlyArray<DetailAction>): Readonly<Record<string, number>> {
   return Object.fromEntries(actions.map((a, i) => [a.label[0]!, i]));
@@ -329,8 +330,8 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     fixed: {},
   },
   {
-    // T203 — l'orchestrator di un perimetro, epica o mandato: la conversazione lancia
-    // `orchestrate-mandate`, che segue i membri per ore su un monitor. Il
+    // T203 — l'orchestrator di un perimetro orchestrabile, epica o lista custom: la
+    // conversazione lancia `orchestrate-perimeter`, che segue i membri per ore su un monitor. Il
     // modello (opus) e il prompt vengono dalla riga `orchestrator` di
     // `scripts/prompt-catalog`, come per gli altri kind.
     //
@@ -341,8 +342,8 @@ export const SPAWN_ACTIONS: readonly SpawnAction[] = [
     // `planSpawnRequest` lo rifiuta lì (P3 preflight T203). Dall'endpoint vale
     // da T221, per il successore di un passaggio di consegne.
     id: 'orchestrator',
-    label: 'orchestra un perimetro',
-    surface: 'detail d · perimetro',
+    label: 'orchestra i membri',
+    surface: 'detail d · perimetro orchestrabile',
     kind: 'orchestrator',
     title: '🎬 {slug}',
     model: null,

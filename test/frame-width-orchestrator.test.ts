@@ -1,5 +1,5 @@
-// T232 — gate di larghezza (vedi `frame-width.test.ts`): l'orchestrator dei perimetri
-// — il bottone `direct` nel detail di un'epica e di un mandato, la riga `orchestrator`
+// T232 — gate di larghezza (vedi `frame-width.test.ts`): l'orchestrator dei perimetri orchestrabili
+// — il bottone `direct` nel detail di un'epica e di una lista custom, la riga `orchestrator`
 // nella pagina delle azioni — sul progetto sintetico di `detail-fixture.ts`.
 
 import { test } from 'node:test';
@@ -9,16 +9,16 @@ import { assertFrameFits, capture, lastFrame, toSpawnRow } from './frame-kit.js'
 import { detailProject } from './detail-fixture.js';
 
 const DETAIL_SCENARIOS: Array<[string, string, number[], string]> = [
-  // T203 — l'orchestrator in coda alla riga azioni dei perimetri: sei bottoni
-  // sull'epica, cinque sul mandato. A 80 colonne la riga non ci sta intera e
+  // T203 — l'orchestrator in coda alla riga azioni dei perimetri orchestrabili: sei bottoni
+  // sull'epica, cinque sulla lista custom. A 80 colonne la riga non ci sta intera e
   // `cutParts` la taglia attorno alla selezione: il gate misura che il taglio
   // tenga il bordo; a 100 la riga entra tutta, e `direct` è l'ultimo bottone.
   ['detail · epica con l’orchestrator', 'DDDDDDD\r', [80, 100, 176], '[ checkpoint ]  [ direct ]'],
   ['detail · epica, orchestrator selezionata', 'DDDDDDD\rd', [80, 100, 176], '🎬 epica'],
-  ['detail · mandato con l’orchestrator', 'DDDDDD\r', [100, 176], '[ checkpoint ]  [ direct ]'],
+  ['detail · lista custom con l’orchestrator', 'DDDDDD\r', [100, 176], '[ checkpoint ]  [ direct ]'],
   // La riga `orchestrator` nella pagina delle azioni di spawn, con la sua area aperta:
   // la funzione nella tabella, il titolo e il prompt nei campi.
-  ['pagina azioni · riga orchestrator', `${CTRL_S}${toSpawnRow('orchestrator')}`, [100, 176], 'orchestra un perimetro'],
+  ['pagina azioni · riga orchestrator', `${CTRL_S}${toSpawnRow('orchestrator')}`, [100, 176], 'orchestra i membri'],
   ['pagina azioni · orchestrator aperto', `${CTRL_S}${toSpawnRow('orchestrator')}\r`, [80, 100, 176], '🎬 {slug}'],
 ];
 

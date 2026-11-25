@@ -2,11 +2,12 @@
 // replica per offrirli nel detail.
 //
 // Il deck non esegue niente qui: legge i DLV per mostrarli e per comporre il
-// perimetro di `run-task`. Ma il perimetro è un INDIRIZZO — `run-task T189 2,4`
-// esegue il secondo e il quarto DLV come li conta il plugin, non come li conta
-// chi ha composto il prompt. Se i due conteggi divergono l'umano seleziona DLV3
-// e `run-task` esegue un altro DLV, senza errore. Per questo le due regole sono
-// copie esatte, e la prima ha un test di parità contro lo script vero.
+// perimetro eseguibile di `run-task`. Ma il perimetro eseguibile è un INDIRIZZO
+// — `run-task T189 2,4` esegue il secondo e il quarto DLV come li conta il
+// plugin, non come li conta chi ha composto il prompt. Se i due conteggi
+// divergono l'umano seleziona DLV3 e `run-task` esegue un altro DLV, senza
+// errore. Per questo le due regole sono copie esatte, e la prima ha un test di
+// parità contro lo script vero.
 //
 //  ① NUMERAZIONE — `loom-works-plugin/scripts/task/task-deliverables.sh`:
 //     posizionale 1-based sulle sole checkbox a COLONNA ZERO dentro
@@ -24,7 +25,7 @@
 // comune.
 //
 // Logica pura, zero React/Ink.
-import { taskIsMandate, taskSizeWord } from './tasks.js';
+import { taskIsCustom, taskSizeWord } from './tasks.js';
 
 export interface Deliverable {
   /** Posizione 1-based fra le checkbox a colonna zero: l'indirizzo che
@@ -135,7 +136,7 @@ export function taskSize(id: string, text: string | null): string {
 }
 
 export const DLV_REASON = {
-  mandate: 'mandato: il lavoro sta nei membri',
+  custom: 'lista custom: il lavoro sta nei membri',
   closed: 'task chiusa',
   empty: 'nessun deliverable in ## Deliverables Checklist',
   allDone: 'tutti i deliverable sono chiusi',
@@ -159,10 +160,10 @@ export const DLV_REASON = {
  * `Size: Epic` non esclude (D2): un'epica con DLV propri resta lanciabile, e se
  * `run-task` si rifiuta il rifiuto è della skill, non del deck.
  *
- * `Size: Mandate` sì (P3 preflight T212), e per primo: un mandato non ha mai
- * lavoro proprio, anche se il file porta una checklist, e il detail gli toglie
- * già l'azione `run`. Il motivo dice dove sta il lavoro, che su un mandato
- * chiuso conta più di «chiusa».
+ * `Size: Custom` sì (P3 preflight T212), e per primo: una lista custom non ha
+ * mai lavoro proprio, anche se il file porta una checklist, e il detail le toglie
+ * già l'azione `run`. Il motivo dice dove sta il lavoro, che su una lista custom
+ * chiusa conta più di «chiusa».
  */
 export function dlvGate(
   id: string,
@@ -170,7 +171,7 @@ export function dlvGate(
   dlvs: readonly Deliverable[],
   done: boolean,
 ): DlvGate {
-  if (taskIsMandate(id, text)) return { kind: 'off', reason: DLV_REASON.mandate };
+  if (taskIsCustom(id, text)) return { kind: 'off', reason: DLV_REASON.custom };
   if (done) return { kind: 'off', reason: DLV_REASON.closed };
   if (dlvs.length === 0) return { kind: 'off', reason: DLV_REASON.empty };
   if (!dlvs.some((d) => !d.done)) return { kind: 'off', reason: DLV_REASON.allDone };
@@ -186,10 +187,11 @@ export function dlvGate(
  * D3 — il prompt che parte da `⏎` nel modo DLV.
  *
  * Con una selezione: il prompt dell'azione `run` GIÀ RISOLTO (default del deck ←
- * override di progetto, buchi riempiti) con `DLV` e il perimetro in coda, in
- * ordine crescente — `run-task T99 DLV 2,5,7`. La parola `DLV` dice alla skill
- * che i numeri sono deliverable e non un'altra cosa; l'ordine crescente serve a
- * chi legge la riga di stato prima di premere, `run-task` normalizza da sé.
+ * override di progetto, buchi riempiti) con `DLV` e il perimetro eseguibile in
+ * coda, in ordine crescente — `run-task T99 DLV 2,5,7`. La parola `DLV` dice
+ * alla skill che i numeri sono deliverable e non un'altra cosa; l'ordine
+ * crescente serve a chi legge la riga di stato prima di premere, `run-task`
+ * normalizza da sé.
  * Lista semplice e non range: la grammatica `1,3-5` di `run-task` la accetta, e
  * compattare non toglie ambiguità.
  *

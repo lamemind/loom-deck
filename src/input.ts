@@ -179,7 +179,7 @@ export function useDeckInput({
     drop: overlays.drop.onKey,
   };
 
-  // T21 (mandata 2) — la ROTELLA, per i soli modi che scorrono un contenuto
+  // T21 (seconda passata) — la ROTELLA, per i soli modi che scorrono un contenuto
   // lungo (`SCROLLING_MODES`). Stessa forma di `MODE_KEYS`: un `Record` sul
   // catalogo, quindi un modo dichiarato scorrevole senza uno scroll da chiamare
   // non compila. Il delta è in righe, col segno del verso.
@@ -276,7 +276,7 @@ export function useDeckInput({
   }
 
   /**
-   * T21 (mandata 3) — click su un elemento di lista = SOLO FUOCO (D2): il pane
+   * T21 (terza passata) — click su un elemento di lista = SOLO FUOCO (D2): il pane
    * prende il focus e la selezione va sull'elemento, nessuna azione parte. Qui
    * il click non sintetizza un tasto, perché nessun tasto nomina una riga o una
    * vista — `↑↓` e `tab` sono relativi — e chiama i setter che la tastiera

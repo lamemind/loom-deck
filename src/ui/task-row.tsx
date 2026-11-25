@@ -78,7 +78,7 @@ export function TaskRow({
   // T67/D4 — su un cappello la cella di stato descrive il cappello (non
   // eseguibile) e non le figlie, quindi resta vuota; D2/P9 — la coda diventa il
   // rollup delle figlie invece del contatore conversazioni.
-  // T212/P1 — un mandato tiene la Prog accesa, perché lì è il suo dato di
+  // T212/P1 — una lista custom tiene la Prog accesa, perché lì è il suo dato di
   // chiusura, e la coda diventa il rollup dei membri (`rowTail`).
   const isEpic = data.epics.has(task.id);
   const tail = rowTail(task, data);

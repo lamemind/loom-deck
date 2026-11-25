@@ -513,9 +513,9 @@ test('origin: orchestrator → fra gli orchestrator che hanno passato le consegn
   assert.equal(loadSessionIndex(r).orchestratorHanded.has('vecchia'), false);
 });
 
-// T220 — l'orchestrator che ha aperto la conversazione: un record solo, perimetro e
+// T220 — l'orchestrator che ha aperto la conversazione: un record solo, perimetro orchestrabile e
 // sessione insieme; la sessione manca se il client non la conosceva.
-test('appendOrchestrator: un record con perimetro e sessione, la sessione solo se c\'è', () => {
+test('appendOrchestrator: un record con perimetro orchestrabile e sessione, la sessione solo se c\'è', () => {
   const r = root();
   appendOrchestrator(r, 'sid-a', 'T197', '0a1b2c3d-1111-2222-3333-444455556666');
   appendOrchestrator(r, 'sid-b', 'T197');

@@ -3,9 +3,9 @@
 //
 // Con una selezione è una variante dell'azione `run` del detail, non un'azione
 // nuova (D3): stesso spawn, stesso modello, stesso titolo, override di progetto
-// compreso, col perimetro scelto in coda al prompt (`/loom-works:run-task T189
-// DLV 2,4`). Senza selezione è l'azione `open` dei campi: la task si apre a mani
-// nude, senza nessun prompt.
+// compreso, col perimetro eseguibile scelto in coda al prompt
+// (`/loom-works:run-task T189 DLV 2,4`). Senza selezione è l'azione `open` dei
+// campi: la task si apre a mani nude, senza nessun prompt.
 //
 // Vive fuori da `sheet.ts` (D5) e non lo importa: il detail possiede il modo,
 // questo modulo ne possiede lo stato. Le regole del plugin che decide di
@@ -83,8 +83,8 @@ export function useDlvMode() {
 
   /**
    * Azzera tutto a ogni apertura del detail, come gli altri campi: una selezione
-   * che sopravvive alla chiusura farebbe partire un perimetro che a schermo non
-   * si vede più.
+   * che sopravvive alla chiusura farebbe partire un perimetro eseguibile che a
+   * schermo non si vede più.
    *
    * Il modo di apertura è il gate: si apre sui DLV quando `⏎` lì lancia
    * qualcosa, avviso compreso — su una task chiusa o senza DLV aperti l'area di
@@ -107,7 +107,7 @@ export function useDlvMode() {
   }
 
   const prompt = dlvPrompt(run?.prompt ?? null, selected);
-  /** L'azione che `⏎` replica: `run` col perimetro, `open` senza selezione. */
+  /** L'azione che `⏎` replica: `run` col perimetro eseguibile, `open` senza selezione. */
   const action = selected.size > 0 ? run : openAction;
 
   /** Lo spawn di `⏎`. Vale su ogni gate: in `off` nessun DLV è selezionabile,

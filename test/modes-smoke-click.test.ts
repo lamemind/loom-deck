@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { CTRL_C, SKIP } from './pty-harness.js';
 import { capture, captureRaw, lastFrame } from './modes-kit.js';
 
-// ── T21 · mouse (mandata 3: focus via click sulle liste) ──────────────────
+// ── T21 · mouse (terza passata: focus via click sulle liste) ──────────────
 //
 // Le righe non sono indovinate: il frame è ancorato a riga 1 e sopra i pane
 // tutto è incondizionato in modalità normale, quindi l'header con le viste sta

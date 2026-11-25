@@ -145,8 +145,8 @@ test('orchestrator: --orchestrator diventa LOOM_ORCHESTRATOR, anche su una ripre
   assert.equal(composeTab(req(['T1']), ctx()).sessionEnv.LOOM_ORCHESTRATOR, undefined);
 });
 
-test('orchestrator: perimetro fuori forma e sessione nuda sono errori d’uso', () => {
-  assert.match(usage(['T1', '--orchestrator', 'foo'])[0]!, /^--orchestrator: perimetro non valido: 'foo'/);
+test('orchestrator: id del perimetro orchestrabile fuori forma e sessione nuda sono errori d’uso', () => {
+  assert.match(usage(['T1', '--orchestrator', 'foo'])[0]!, /^--orchestrator: perimetro orchestrabile non valido: 'foo'/);
   assert.equal(req(['T1', '--orchestrator', '']).orchestrator, '', 'vuoto = flag non passato, come gli altri valori');
   assert.match(usage(['--no-task', '--orchestrator', 'T197'])[0]!, /^--orchestrator richiede una task/);
 });

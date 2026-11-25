@@ -46,7 +46,7 @@ const CATALOG = new Map<string, CatalogEntry>([
 ]);
 const HOLES = { TASK: 'T189', slug: 'deck dlv selezionabili detail' };
 
-test('D3 — con una selezione: il prompt di run risolto, DLV e perimetro crescente in coda', () => {
+test('D3 — con una selezione: il prompt di run risolto, DLV e perimetro eseguibile crescente in coda', () => {
   const run = resolveSpawn(spawnAction('run')!, new Map(), CATALOG, HOLES);
   assert.equal(dlvPrompt(run.prompt, new Set([4, 2])), '/loom-works:run-task T189 DLV 2,4');
   assert.equal(dlvPrompt(run.prompt, [3]), '/loom-works:run-task T189 DLV 3');

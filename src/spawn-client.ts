@@ -41,7 +41,7 @@ import {
 import { PROMPT_KINDS } from './tab-args.js';
 import { findProjectRoot } from './tab-launch.js';
 
-export const CLIENT_USAGE = `uso: loom-deck-spawn <TaskID> <kind> [perimetro] [--model <alias>] [--note <testo>] [--orchestrator <perimetro>] [--root <dir>]
+export const CLIENT_USAGE = `uso: loom-deck-spawn <TaskID> <kind> [perimetro eseguibile] [--model <alias>] [--note <testo>] [--orchestrator <id del perimetro orchestrabile>] [--root <dir>]
 
 Chiede al deck acceso sul progetto di aprire una conversazione sulla task, come
 il tasto del deck: stesso binding, titolo e modello (override di progetto
@@ -51,13 +51,15 @@ compreso).
                orchestrator: il successore di un orchestrator che passa le consegne, chiesto
                dalla conversazione dell'orchestrator — il deck marca chi chiede
                (CLAUDE_CODE_SESSION_ID) chiudibile dal successore
-  [perimetro]  solo con run: DLV come in run-task, 1,3-5 (assente = tutti gli aperti)
+  [perimetro eseguibile]
+               solo con run: DLV come in run-task, 1,3-5 (assente = tutti gli aperti)
   --model      ${MODELS.join(' | ')} (assente = il modello dell'azione nel deck)
   --note       nota del titolo della tab (assente = il titolo dell'azione)
   --orchestrator
-               l'orchestrator che chiede, col suo perimetro (T<numero>, epica o
-               mandato): la conversazione nasce con LOOM_ORCHESTRATOR, e il sidecar
-               registra perimetro e sessione dell'orchestrator
+               l'orchestrator che chiede, con l'id del suo perimetro orchestrabile
+               (T<numero>, epica o lista custom): la conversazione nasce con
+               LOOM_ORCHESTRATOR, e il sidecar registra perimetro orchestrabile e
+               sessione dell'orchestrator
   --root       root del progetto (assente = risalita dalla cartella corrente
                fino a .claude/loom-works.json)
 
@@ -112,7 +114,7 @@ export function parseClientArgs(
   }
   const request: SpawnRequest = { verb: 'spawn', task, kind: kind as SpawnRequest['kind'] };
   if (scopeSpec !== undefined) {
-    if (kind !== 'run') return { usage: ['il perimetro vale solo con kind run'] };
+    if (kind !== 'run') return { usage: ['il perimetro eseguibile vale solo con kind run'] };
     const scope = parseScope(scopeSpec);
     if ('error' in scope) return { usage: [scope.error] };
     request.scope = scope;
@@ -126,7 +128,7 @@ export function parseClientArgs(
     request.note = note;
   }
   if (orchestrator !== undefined) {
-    if (!/^T\d+$/.test(orchestrator)) return { usage: [`--orchestrator: perimetro non valido: '${orchestrator}' (forma T<numero>)`] };
+    if (!/^T\d+$/.test(orchestrator)) return { usage: [`--orchestrator: perimetro orchestrabile non valido: '${orchestrator}' (forma T<numero>)`] };
     request.orchestrator = orchestrator;
     const session = orchestratorSessionOf(env);
     if (session) request.orchestratorSession = session;

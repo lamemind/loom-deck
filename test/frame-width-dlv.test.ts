@@ -1,5 +1,5 @@
 // T232 — gate di larghezza (vedi `frame-width.test.ts`): la lista DLV del detail
-// nei suoi stati, e il mandato in lista e nel detail, sul progetto sintetico di
+// nei suoi stati, e la lista custom in lista e nel detail, sul progetto sintetico di
 // `detail-fixture.ts`. Il contenuto si asserisce insieme alla larghezza: un gate
 // di sola larghezza resterebbe verde anche sul modo sbagliato.
 
@@ -13,7 +13,7 @@ const DETAIL_SCENARIOS: Array<[string, string, number[], string]> = [
   // La lista DLV all'apertura: quattordici voci più larghe della riga, glifi
   // larghi nel testo e la spunta (larga 2) dei fatti nella colonna di stato.
   ['detail DLV · apertura', 'DD\r', [80, 100, 176], '⏎ open · opus'],
-  // Due voci selezionate: la riga di stato porta il prompt col perimetro, il
+  // Due voci selezionate: la riga di stato porta il prompt col perimetro eseguibile, il
   // pezzo che il budget serve per primo.
   ['detail DLV · selezione', 'DD\r D ', [80, 176], 'run-task T1 DLV 2,4'],
   // `↑` dal primo aperto gira sull'ultimo: la finestra scende in fondo alla
@@ -29,14 +29,14 @@ const DETAIL_SCENARIOS: Array<[string, string, number[], string]> = [
   // La ricerca aperta sopra la lista: due righe fisse in più, pagate dalla
   // lista e dal testo insieme.
   ['detail DLV · ricerca aperta', `DD\r${CTRL_F}glifo`, [100], 'cerca glifo'],
-  // T212 — il mandato T5. In lista: la Prog accesa e la coda dei membri in
+  // T212 — la lista custom T5. In lista: la Prog accesa e la coda dei membri in
   // quadra, nella colonna riservata — `[1/3` e non `[1/4`, perché T9 non ha riga.
-  ['lista · riga di mandato', 'DDDDDD', [80, 100, 176], '[1/3'],
+  ['lista · riga della lista custom', 'DDDDDD', [80, 100, 176], '[1/3'],
   // Nel detail la riga azioni senza `run`: `preflight` e `status` adiacenti
   // sono la prova, perché su ogni altra task `run` sta fra i due.
-  ['detail · mandato senza run', 'DDDDDD\r', [100, 176], '[ preflight ]  [ status ]'],
+  ['detail · lista custom senza run', 'DDDDDD\r', [100, 176], '[ preflight ]  [ status ]'],
   // Il modo DLV spento col motivo, anche con una checklist nel file.
-  ['detail DLV · mandato', 'DDDDDD\rT', [80, 176], 'mandato: il lavoro sta nei membri'],
+  ['detail DLV · lista custom', 'DDDDDD\rT', [80, 176], 'lista custom: il lavoro sta nei membri'],
 ];
 
 for (const [label, keys, widths, needle] of DETAIL_SCENARIOS) {

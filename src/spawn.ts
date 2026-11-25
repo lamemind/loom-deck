@@ -215,7 +215,7 @@ export function onInTabCommand(child: ChildProcess, cb: (cmd: string) => void): 
 // campo svuotato a mano): si esprime col kind `none`, perché senza nessun flag
 // `deck-run` cadrebbe sul proprio default `recap`.
 //
-// T220 — `orchestrator` è il perimetro dell'orchestrator che ha chiesto lo spawn: `deck-run`
+// T220 — `orchestrator` è l'id del perimetro orchestrabile dell'orchestrator che ha chiesto lo spawn: `deck-run`
 // lo esporta come `LOOM_ORCHESTRATOR`. Assente su ogni spawn da tasto.
 export function deckArgs(
   id: string,

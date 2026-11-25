@@ -120,7 +120,7 @@ export const PRIORITY_CHOICES = ['no', '🚨 sì'] as const;
 /**
  * Le righe dell'area di compilazione per una lista di azioni. T212 — funzione
  * della lista e non costante: la riga azione conta le voci DELLA TASK aperta
- * (su un mandato manca `run`), e le sue iniziali seguono la stessa lista — una
+ * (su una lista custom manca `run`), e le sue iniziali seguono la stessa lista — una
  * lettera che punta all'indice di un catalogo diverso selezionerebbe la voce
  * accanto.
  */
@@ -158,7 +158,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
   // farebbe partire prioritaria la conversazione successiva, senza che nulla a
   // schermo lo dica.
   const [priority, setPriority] = useState(false);
-  /** La task aperta è un perimetro (`Size: Epic` o `Size: Mandate`)? Deciso UNA
+  /** La task aperta è un perimetro orchestrabile (`Size: Epic` o `Size: Custom`)? Deciso UNA
    *  VOLTA all'apertura, dal testo che il detail ha già in mano: rifarlo a ogni
    *  cambio di azione riparserebbe l'intero task file per un campo dell'header. */
   const [perimeter, setPerimeter] = useState(false);
@@ -250,7 +250,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
     // T152/T161 — i tre campi partono dalla terna dell'azione, risolta sul
     // catalogo e sugli override di progetto: su una task Epic la prima azione
     // specializza a `recap-epic`, che può portare valori diversi da `recap`.
-    // T212 — lo stesso su un mandato: il suo recap è `recap-status-epic`.
+    // T212 — lo stesso su una lista custom: il suo recap è `recap-status-epic`.
     const d = defaults(kind, next.id);
     setModel(d.model);
     setSpawnNote(d.title ?? '');
@@ -413,7 +413,7 @@ export function useSheetOverlay(deps: SheetOverlayDeps) {
       return;
     }
     if (key.return && dlv.active) {
-      // T189 — nel modo DLV `⏎` lancia `run` col perimetro scelto; senza
+      // T189 — nel modo DLV `⏎` lancia `run` col perimetro eseguibile scelto; senza
       // selezione apre la task a mani nude, come l'azione `open` dei campi.
       const launch = dlv.launch();
       if (!launch) return;

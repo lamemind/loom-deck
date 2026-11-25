@@ -98,7 +98,7 @@ const PROMPT_HINT = ' · nessun prompt iniziale';
  *  stessa lista di `actionHotkeys`, così una voce aggiunta compare qui senza
  *  che nessuno ci ripassi — un'etichetta che nomina dei tasti a mano è accoppiata
  *  al binding, e resta indietro appena il binding cambia. T212 — la lista è
- *  quella della task aperta: su un mandato la `r` non c'è. */
+ *  quella della task aperta: su una lista custom la `r` non c'è. */
 function actionKeys(actions: ReadonlyArray<DetailAction>): string {
   return actions.map((a) => a.label[0]).join(' ');
 }

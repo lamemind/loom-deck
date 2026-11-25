@@ -97,7 +97,7 @@ const PROMPTS: Array<[string, string | null]> = [
   ['preflight', '/loom-works:preflight-task T56'],
   ['run', '/loom-works:run-task T56'],
   ['checkpoint', '/loom-works:checkpoint-task T56'],
-  ['orchestrator', '/loom-works:orchestrate-mandate T56'],
+  ['orchestrator', '/loom-works:orchestrate-perimeter T56'],
 ];
 
 for (const [kind, prompt] of PROMPTS) {
@@ -606,7 +606,7 @@ test('--prompt-kind run con --model esplicito: il flag vince sul catalogo', () =
 test('--prompt-kind orchestrator senza --model: opus, e il prompt della skill di orchestrator', () => {
   const cmd = inTabCmd(['T56', '--prompt-kind', 'orchestrator']);
   assert.match(cmd, /--model opus\b/, `modello dell'orchestrator: ${cmd}`);
-  assert.ok(cmd.endsWith("'/loom-works:orchestrate-mandate T56'"), `prompt dell'orchestrator: ${cmd}`);
+  assert.ok(cmd.endsWith("'/loom-works:orchestrate-perimeter T56'"), `prompt dell'orchestrator: ${cmd}`);
 });
 
 test('--prompt-kind orchestrator senza task: errore d’uso, come ogni kind', () => {

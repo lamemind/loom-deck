@@ -6,7 +6,7 @@
 // binding nel sidecar scritto prima della tab, `--session-id` pinnato, titolo,
 // modello con l'override di progetto. Qui sta solo ciò che il tasto non ha
 // bisogno di fare, perché il deck lo sa già per costruzione quando c'è un umano
-// davanti: che la task esista, che i DLV del perimetro siano aperti, quale
+// davanti: che la task esista, che i DLV del perimetro eseguibile siano aperti, quale
 // azione di catalogo corrisponde al kind.
 //
 // Nessuno stato React e nessuna rete: le dipendenze arrivano come funzioni
@@ -26,7 +26,7 @@ import {
   type SpawnRequest,
 } from './spawn-endpoint.js';
 import { memberOrchestrator } from './tab-args.js';
-import { taskIsMandate, taskIsPerimeter } from './tasks.js';
+import { taskIsCustom, taskIsPerimeter } from './tasks.js';
 import type { QueueCause } from './spawn-queue.js';
 import type { WindowCheck } from './window-check.js';
 
@@ -77,7 +77,7 @@ export interface SpawnRequestDeps extends SpawnPlanDeps {
   announceTimeoutMs?: number;
 }
 
-/** T220 — l'orchestrator che chiede uno spawn: il perimetro, che diventa
+/** T220 — l'orchestrator che chiede uno spawn: l'id del perimetro orchestrabile, che diventa
  *  `LOOM_ORCHESTRATOR`, e il `sessionId` dell'orchestrator quando il client lo conosce. I
  *  due finiscono nel sidecar (`appendOrchestrator`) come provenienza. */
 export interface OrchestratorOrigin {
@@ -86,7 +86,7 @@ export interface OrchestratorOrigin {
 }
 
 /** Una richiesta risolta: il kind effettivo, la terna e il prompt col
- *  perimetro, l'orchestrator da impostare, o il rifiuto col suo motivo. */
+ *  perimetro eseguibile, l'orchestrator da impostare, o il rifiuto col suo motivo. */
 export type SpawnPlan =
   | {
       ok: true;
@@ -173,8 +173,8 @@ export async function spawnPlanned(
 
 /**
  * La richiesta contro il progetto: il kind non è l'orchestrator, la task esiste, un
- * run non cade su un mandato, il perimetro è fatto di DLV aperti; poi l'azione di catalogo, la sua
- * terna e il prompt col perimetro in coda.
+ * run non cade su una lista custom, il perimetro eseguibile è fatto di DLV aperti; poi l'azione di catalogo, la sua
+ * terna e il prompt col perimetro eseguibile in coda.
  *
  * T205 — separata dallo spawn perché la stessa richiesta apre anche un turno
  * headless (`loom-deck-headless open`): due copie di questi rifiuti
@@ -202,26 +202,26 @@ export function planSpawnRequest(
   if (!deps.taskExists(req.task)) return { ok: false, reason: `${req.task} non è nella lista task del progetto` };
   const text = deps.taskText(req.task);
   // T220/P1 — prima del resto della task chiesta: un orchestrator che non è un
-  // perimetro è un errore di chi chiama, qualunque sia il membro.
+  // perimetro orchestrabile è un errore di chi chiama, qualunque sia il membro.
   if (req.orchestrator) {
     const bad = orchestratorRefusal(req.orchestrator, deps);
     if (bad) return { ok: false, reason: bad };
   }
 
-  // T212/P4 — un mandato non ha lavoro proprio: il run si rifiuta qui, senza
+  // T212/P4 — una lista custom non ha lavoro proprio: il run si rifiuta qui, senza
   // aprire una tab che `run-task` chiuderebbe con lo stesso rifiuto un turno di
-  // modello dopo. Prima del perimetro, perché il motivo vero è questo e non i
-  // DLV che il file potrebbe portare.
-  if (req.kind === 'run' && taskIsMandate(req.task, text)) {
-    return { ok: false, reason: `${req.task} è un mandato: il lavoro sta nei membri, niente run` };
+  // modello dopo. Prima del perimetro eseguibile, perché il motivo vero è questo e
+  // non i DLV che il file potrebbe portare.
+  if (req.kind === 'run' && taskIsCustom(req.task, text)) {
+    return { ok: false, reason: `${req.task} è una lista custom: il lavoro sta nei membri, niente run` };
   }
 
   // T221 — l'orchestrator che una richiesta apre è il successore di un passaggio di
-  // consegne: un perimetro, come dal detail, e la richiesta porta chi passa le
+  // consegne: un perimetro orchestrabile, come dal detail, e la richiesta porta chi passa le
   // consegne. Senza `from` l'orchestrator vecchio resterebbe non chiudibile dalla
   // nuova, e il passaggio a metà.
   if (req.kind === 'orchestrator') {
-    if (!taskIsPerimeter(req.task, text)) return { ok: false, reason: `orchestrator ${req.task}: non è un'epica né un mandato` };
+    if (!taskIsPerimeter(req.task, text)) return { ok: false, reason: `orchestrator ${req.task}: non è un'epica né una lista custom` };
     if (channel === 'endpoint' && !req.from) {
       return {
         ok: false,
@@ -237,10 +237,10 @@ export function planSpawnRequest(
 
   // `recap` → la sotto-skill giusta, come fa il detail: il task file è già
   // letto, quindi il dispatcher non serve. Senza task file resta il dispatcher.
-  // T212 — un mandato va a `recap-epic` come un'epica: è il recap del perimetro.
+  // T212 — una lista custom va a `recap-epic` come un'epica: è il recap del perimetro orchestrabile.
   const kind = text === null ? req.kind : specializeRecap(req.kind, taskIsPerimeter(req.task, text));
   const d = deps.defaults(kind, req.task);
-  // Il perimetro in coda al prompt dell'azione `run` GIÀ RISOLTO, nella forma
+  // Il perimetro eseguibile in coda al prompt dell'azione `run` GIÀ RISOLTO, nella forma
   // del modo DLV del detail: un override di progetto sul prompt di `run` vale
   // anche qui.
   const prompt = req.scope ? dlvPrompt(d.prompt, req.scope) : (d.prompt ?? '');
@@ -259,8 +259,8 @@ export function planSpawnRequest(
 
 /**
  * T220/P1 — il motivo per cui `orchestrator` non può dichiararsi orchestrator di una
- * conversazione del progetto, o `null`. Un orchestrator è un perimetro: un'epica o un
- * mandato con la sua riga in `tasks.md`. Una dichiarazione sbagliata darebbe
+ * conversazione del progetto, o `null`. Un orchestrator è un perimetro orchestrabile: un'epica
+ * o una lista custom con la sua riga in `tasks.md`. Una dichiarazione sbagliata darebbe
  * alla conversazione una riga dell'organigramma che nomina un orchestrator che non
  * c'è, e le negherebbe `AskUserQuestion` per niente.
  *
@@ -270,15 +270,15 @@ export function planSpawnRequest(
  */
 export function orchestratorRefusal(orchestrator: string, deps: Pick<SpawnPlanDeps, 'taskExists' | 'taskText'>): string | null {
   if (!deps.taskExists(orchestrator)) return `orchestrator ${orchestrator}: non è nella lista task del progetto`;
-  if (!taskIsPerimeter(orchestrator, deps.taskText(orchestrator))) return `orchestrator ${orchestrator}: non è un'epica né un mandato`;
+  if (!taskIsPerimeter(orchestrator, deps.taskText(orchestrator))) return `orchestrator ${orchestrator}: non è un'epica né una lista custom`;
   return null;
 }
 
-/** Il perimetro chiesto contro i DLV del task file: un numero fuori lista o un
+/** Il perimetro eseguibile chiesto contro i DLV del task file: un numero fuori lista o un
  *  DLV già chiuso li rifiuterebbe `run-task` nella tab, dopo averla aperta. Il
  *  deck li rifiuta prima, con lo stesso criterio (`task-deliverables.sh`). */
 function scopeProblem(task: string, text: string | null, scope: readonly number[]): string | null {
-  if (text === null) return `task file di ${task} non trovato: perimetro non verificabile`;
+  if (text === null) return `task file di ${task} non trovato: perimetro eseguibile non verificabile`;
   const dlvs = parseDeliverables(text);
   if (dlvs.length === 0) return `${task} non ha DLV`;
   const missing = scope.filter((n) => n > dlvs.length);

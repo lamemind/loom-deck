@@ -145,7 +145,7 @@ test('hitRegion: dentro, sui bordi, e fuori', () => {
   assert.equal(hitRegion(regions, 99), null);
 });
 
-// ── mandata 3: hit-test delle liste ─────────────────────────────────────────
+// ── terza passata: hit-test delle liste ─────────────────────────────────────
 
 test('paneSpans: i due pane si dividono l\'interno, la colonna di margine non è di nessuno', () => {
   // 120 colonne, misurate sotto pty: pane task 3..60, margine 61, sessioni 62..118.

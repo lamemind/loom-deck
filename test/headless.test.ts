@@ -64,9 +64,9 @@ const TASK_TEXT = `# Task: demo
 - [ ] secondo
 `;
 
-const MANDATE_TEXT = `# Task: mandato
+const CUSTOM_TEXT = `# Task: lista custom
 
-- **Size**: Mandate
+- **Size**: Custom
 
 ## Membri
 
@@ -83,10 +83,10 @@ function project(cfg: Record<string, unknown> = {}): string {
   mkdirSync(join(root, 'docs', 'tasks'), { recursive: true });
   writeFileSync(
     join(root, 'docs', 'tasks.md'),
-    '# Tasks\n\n## Tasks Overview\n\n| ID | Pri | Prog | Task |\n| --- | --- | --- | --- |\n| T9 | ⚡ | 🔵 | Demo |\n| T10 | ⚡ | 🔵 | Mandato |\n',
+    '# Tasks\n\n## Tasks Overview\n\n| ID | Pri | Prog | Task |\n| --- | --- | --- | --- |\n| T9 | ⚡ | 🔵 | Demo |\n| T10 | ⚡ | 🔵 | Lista custom |\n',
   );
   writeFileSync(join(root, 'docs', 'tasks', 'T9-demo-task.md'), TASK_TEXT);
-  writeFileSync(join(root, 'docs', 'tasks', 'T10-mandato.md'), MANDATE_TEXT);
+  writeFileSync(join(root, 'docs', 'tasks', 'T10-lista-custom.md'), CUSTOM_TEXT);
   return root;
 }
 
@@ -254,16 +254,16 @@ test('open --orchestrator: LOOM_ORCHESTRATOR nel turno, orchestrator e sessione 
   assert.equal(readState(root2, SID)!.orchestrator, undefined);
 });
 
-test('open --orchestrator: un orchestrator che non è un perimetro è un rifiuto, senza processo né sidecar', async () => {
+test('open --orchestrator: un orchestrator che non è un perimetro orchestrabile è un rifiuto, senza processo né sidecar', async () => {
   const root = project();
   const io = fakeIo();
   const r = await openHeadless(req('T9', 'preflight', { orchestrator: 'T9' }), root, io);
-  assert.deepEqual(r, { ok: false, reason: "orchestrator T9: non è un'epica né un mandato" });
+  assert.deepEqual(r, { ok: false, reason: "orchestrator T9: non è un'epica né una lista custom" });
   assert.equal(io.launches.length, 0);
   assert.throws(() => readFileSync(taskIndexPath(root)));
 });
 
-test('open: override di progetto sul modello, perimetro del run in coda al prompt', async () => {
+test('open: override di progetto sul modello, perimetro eseguibile del run in coda al prompt', async () => {
   const root = project({ spawn: { run: { model: 'haiku' } } });
   const io = fakeIo();
   const r = await openHeadless(req('T9', 'run', { scope: [2] }), root, io);
@@ -295,7 +295,7 @@ test('open con contesto: il testo in coda al prompt del turno e nello stato, tit
   assert.equal(readState(root, SID)!.prompt, `/loom-works:preflight-task T9\n\n${context}`);
 });
 
-test('open con contesto: col perimetro di un run, il contesto viene dopo i DLV', async () => {
+test('open con contesto: col perimetro eseguibile di un run, il contesto viene dopo i DLV', async () => {
   const root = project();
   const io = fakeIo();
   await openHeadless(req('T9', 'run', { scope: [2] }), root, io, 'solo il ramo Linux');
@@ -309,11 +309,22 @@ test('open: recap si specializza come nel detail', async () => {
   assert.equal(io.launches[0]!.args.at(-1), '/loom-works:recap-status-epic T10');
 });
 
+test('open: `Size: Mandate`, il nome di prima, vale come `Size: Custom`', async () => {
+  const root = project();
+  writeFileSync(join(root, 'docs', 'tasks', 'T10-lista-custom.md'), CUSTOM_TEXT.replace('**Size**: Custom', '**Size**: Mandate'));
+  const io = fakeIo();
+  const run = await openHeadless(req('T10', 'run'), root, io);
+  assert.equal(run.ok, false);
+  if (!run.ok) assert.match(run.reason, /T10 è una lista custom/);
+  await openHeadless(req('T10', 'recap'), root, io);
+  assert.equal(io.launches[0]!.args.at(-1), '/loom-works:recap-status-epic T10');
+});
+
 test('open: rifiuti senza lanciare niente e senza scrivere il sidecar', async () => {
   const cases: Array<[Record<string, unknown>, ReturnType<typeof req>, RegExp]> = [
     [{}, req('T9', 'none'), /senza prompt/],
     [{}, req('T99', 'preflight'), /non è nella lista task/],
-    [{}, req('T10', 'run'), /mandato/],
+    [{}, req('T10', 'run'), /lista custom/],
     [{}, req('T10', 'orchestrator'), /orchestrator: si apre dal detail/],
     [{}, req('T9', 'run', { scope: [1] }), /già chiusi/],
     [{ permissionMode: 'manual' }, req('T9', 'run'), /manual: run rifiutato/],
@@ -402,13 +413,13 @@ test('reply --orchestrator: LOOM_ORCHESTRATOR in quel turno; senza, il turno dop
   assert.equal(orchestratorRecs.length, 1);
 });
 
-test('reply --orchestrator: rifiutata su un orchestrator che non è un perimetro e su una conversazione senza task', async () => {
+test('reply --orchestrator: rifiutata su un orchestrator che non è un perimetro orchestrabile e su una conversazione senza task', async () => {
   const root = project();
   const io = fakeIo();
   await openHeadless(req('T9', 'preflight'), root, io);
   transcript(root, SID);
   const bad = await replyHeadless(SID, 'x', root, io, undefined, 'T9');
-  assert.deepEqual(bad, { ok: false, reason: "orchestrator T9: non è un'epica né un mandato" });
+  assert.deepEqual(bad, { ok: false, reason: "orchestrator T9: non è un'epica né una lista custom" });
   const spot = 'deadbeef-0000-0000-0000-000000000000';
   transcript(root, spot);
   const r = await replyHeadless(spot, 'x', root, io, undefined, 'T10');

@@ -449,7 +449,7 @@ export function useDirtyFolders(idsSig: string, tasksDir: string, projectRoot: s
 // Legge il task file della task selezionata (Q1+B T20). On-id-change: navigare
 // con ↑↓ ricarica il dettaglio; leggere un singolo file 4-9KB è I/O triviale,
 // niente debounce serve per la tastiera. Il refresh del contenuto a file fermo
-// (es. checkpoint aggiorna Progress) è demandato al prossimo cambio selezione.
+// (es. checkpoint aggiorna Progress) è lasciato al prossimo cambio selezione.
 export function useTaskDetail(tasksDir: string, id: string | undefined) {
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   useEffect(() => {

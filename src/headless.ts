@@ -297,7 +297,7 @@ function clip(text: string): string {
  *
  * I rifiuti, in ordine: un'azione senza prompt (`none`, o un override che lo
  * svuota) non ha un turno da eseguire; i rifiuti di `planSpawnRequest` (la
- * orchestrator, task assente, run su un mandato, perimetro); `run` e `checkpoint` su un progetto
+ * orchestrator, task assente, run su una lista custom, perimetro eseguibile); `run` e `checkpoint` su un progetto
  * `manual` (D2 preflight) — un canale senza nessuno che guarda non allarga il
  * permesso che il progetto ha dichiarato, e in `manual` ogni comando di un run
  * sarebbe negato.
@@ -461,7 +461,7 @@ export async function replyHeadless(
   const index = loadSessionIndex(root);
   const task = index.bindings.get(sessionId) || null;
   // `--orchestrator` vuole una task (`parseTabArgs`): una conversazione spot non è un
-  // membro di nessun perimetro, e il rifiuto qui dice perché invece del guasto
+  // membro di nessun perimetro orchestrabile, e il rifiuto qui dice perché invece del guasto
   // della composizione.
   if (orchestrator && !task) return { ok: false, reason: `${short} non è legata a una task: --orchestrator vale solo su un membro` };
   const note = index.notes.get(sessionId);

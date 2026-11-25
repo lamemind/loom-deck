@@ -103,7 +103,7 @@ export interface SpawnQueueDeps {
    *  ritorna la funzione che interrompe l'attesa (`awaitCompassBack`). */
   awaitCompass: (deadlineS: number, onResult: (r: CompassBack) => void) => () => void;
   /** La richiesta contro il progetto di adesso: in trenta minuti la task può
-   *  essere cambiata — un DLV del perimetro chiuso da un'altra sessione. */
+   *  essere cambiata — un DLV del perimetro eseguibile chiuso da un'altra sessione. */
   replan: (req: SpawnRequest) => SpawnPlan;
   /** Lo spawn vero, col `sessionId` già annunciato: binding, tab, annuncio. */
   open: (req: SpawnRequest, plan: OkPlan, sessionId: string) => Promise<SpawnReply>;
@@ -136,7 +136,7 @@ interface Item {
 }
 
 /** Il nome di una richiesta nelle note e nelle notifiche: task, kind, e i DLV
- *  del perimetro quando ci sono — `T219 preflight`, `T14 run DLV 1,3`. */
+ *  del perimetro eseguibile quando ci sono — `T219 preflight`, `T14 run DLV 1,3`. */
 export function spawnLabel(req: SpawnRequest, plan: Pick<OkPlan, 'kind'>): string {
   const scope = req.scope && req.scope.length ? ` DLV ${req.scope.join(',')}` : '';
   return `${req.task} ${plan.kind}${scope}`;

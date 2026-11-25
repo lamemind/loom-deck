@@ -291,7 +291,7 @@ test('la tab che esce dalla coda non si apre: nota e notifica col motivo', async
   assert.equal(h.notified.length, 1);
 });
 
-test('spawnLabel: task, kind effettivo e perimetro', () => {
+test('spawnLabel: task, kind effettivo e perimetro eseguibile', () => {
   assert.equal(spawnLabel(req(), { kind: 'recap-task' }), 'T9 recap-task');
   assert.equal(spawnLabel(req({ kind: 'run', scope: [2, 4] }), { kind: 'run' }), 'T9 run DLV 2,4');
 });

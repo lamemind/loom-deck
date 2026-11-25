@@ -89,24 +89,27 @@ test('scanEpicHierarchy: mtime invariata → stessa istanza; edit a mano su file
   );
 });
 
-// T212 — il mandato nello stesso scan delle epiche: marcatore e membri, e
-// nessun arco di parentela. Un membro di un mandato resta sotto la sua epica.
-test('scanEpicHierarchy: un mandato porta i suoi membri e non diventa la mamma di nessuno', () => {
-  withTaskFiles(
-    {
-      'T1-cappello.md': '# Task: Cappello\n\n- **ID**: T1\n- **Size**: Epic\n',
-      'T2-figlia.md': '# Task: Figlia\n\n- **ID**: T2\n- **Parent Task**: T1\n',
-      'T3-orfana.md': '# Task: Orfana\n\n- **ID**: T3\n',
-      'T5-mandato.md':
-        '# Task: Mandato\n\n- **ID**: T5\n- **Size**: Mandate\n\n## Membri\n\n- T2 (figlia di T1)\n- T3 (orfana)\n',
-    },
-    (dir) => {
-      const { epicOf, epics, mandates, membersOf } = scanEpicHierarchy(dir);
-      assert.deepEqual([...mandates], ['T5']);
-      assert.deepEqual([...epics], ['T1'], 'un mandato non è un cappello');
-      assert.deepEqual(membersOf.get('T5'), ['T2', 'T3']);
-      assert.equal(epicOf.get('T2'), 'T1', 'il membro resta figlia della sua epica');
-      assert.equal(epicOf.has('T3'), false, 'il membro orfano resta senza mamma');
-    },
-  );
+// T212 — la lista custom nello stesso scan delle epiche: marcatore e membri, e
+// nessun arco di parentela. Un membro di una lista custom resta sotto la sua epica.
+// `Size: Mandate`, il nome di prima, dà lo stesso esito di `Size: Custom`.
+test('scanEpicHierarchy: una lista custom porta i suoi membri e non diventa la mamma di nessuno', () => {
+  for (const size of ['Custom', 'Mandate']) {
+    withTaskFiles(
+      {
+        'T1-cappello.md': '# Task: Cappello\n\n- **ID**: T1\n- **Size**: Epic\n',
+        'T2-figlia.md': '# Task: Figlia\n\n- **ID**: T2\n- **Parent Task**: T1\n',
+        'T3-orfana.md': '# Task: Orfana\n\n- **ID**: T3\n',
+        'T5-lista-custom.md':
+          `# Task: Lista custom\n\n- **ID**: T5\n- **Size**: ${size}\n\n## Membri\n\n- T2 (figlia di T1)\n- T3 (orfana)\n`,
+      },
+      (dir) => {
+        const { epicOf, epics, customLists, membersOf } = scanEpicHierarchy(dir);
+        assert.deepEqual([...customLists], ['T5'], `Size: ${size}`);
+        assert.deepEqual([...epics], ['T1'], 'una lista custom non è un cappello');
+        assert.deepEqual(membersOf.get('T5'), ['T2', 'T3']);
+        assert.equal(epicOf.get('T2'), 'T1', 'il membro resta figlia della sua epica');
+        assert.equal(epicOf.has('T3'), false, 'il membro orfano resta senza mamma');
+      },
+    );
+  }
 });

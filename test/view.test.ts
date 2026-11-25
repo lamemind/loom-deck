@@ -12,7 +12,7 @@ import {
   groupHierarchy,
   idColumnWidth,
   idNum,
-  mandateRollup,
+  customRollup,
   padId,
   priRank,
   progName,
@@ -26,7 +26,8 @@ import {
   type TaskRowData,
   type ViewState,
 } from '../src/view.js';
-import { epicTail, mandateTail, taskTail } from '../src/glyphs.js';
+import { epicTail, customTail, taskTail } from '../src/glyphs.js';
+import { scanEpicHierarchy } from '../src/epic-hierarchy.js';
 import { termWidth } from '../src/width.js';
 import { loadView, saveView, parseView } from '../src/view-store.js';
 import {
@@ -57,8 +58,8 @@ const NO_COMMITS: SortCtx = { commitAt: new Map(), epicOf: new Map(), epics: new
 const NO_EPIC_DATA = {
   epics: new Set<string>(),
   epicRollup: new Map(),
-  mandates: new Set<string>(),
-  mandateRollup: new Map(),
+  customLists: new Set<string>(),
+  customRollup: new Map(),
 };
 
 const sortOf = (tasks: Task[], sort: SortEntry[], ctx: SortCtx = NO_COMMITS) =>
@@ -438,60 +439,82 @@ test('epicTail: coda vuota senza figlie, graffa senza chiusa altrimenti', () => 
   assert.equal(epicTail({ closed: 3, total: 11 }), '{3/11');
 });
 
-// ── T212 · il mandato nella lista ────────────────────────────────────────────
+// ── T212 · la lista custom nella lista ───────────────────────────────────────
 
-test('mandateRollup: conta i membri con una riga in tasks.md, chiusi compresi', () => {
+test('customRollup: conta i membri con una riga in tasks.md, chiusi compresi', () => {
   const tasks = [t('T1', '⚡', '✔️'), t('T2', '⚡', '🟡'), t('T3', '⚡', '✔️'), t('T5', '⚡', '🔵')];
   // T9 non ha riga: è il `TASK_MEMBER_MISSING` del lettore, fuori dal conteggio.
-  const rollup = mandateRollup(tasks, new Map([['T5', ['T1', 'T2', 'T3', 'T9']]]));
+  const rollup = customRollup(tasks, new Map([['T5', ['T1', 'T2', 'T3', 'T9']]]));
   assert.deepEqual(rollup.get('T5'), { closed: 2, total: 3 });
 });
 
-test('mandateRollup: un mandato fra i membri conta una riga, senza espandersi', () => {
+test('customRollup: una lista custom fra i membri conta una riga, senza espandersi', () => {
   const tasks = [t('T5', '⚡', '🔵'), t('T6', '⚡', '🔵'), t('T7', '⚡', '✔️')];
-  const rollup = mandateRollup(tasks, new Map([['T5', ['T6']], ['T6', ['T5', 'T7']]]));
+  const rollup = customRollup(tasks, new Map([['T5', ['T6']], ['T6', ['T5', 'T7']]]));
   assert.deepEqual(rollup.get('T5'), { closed: 0, total: 1 });
   assert.deepEqual(rollup.get('T6'), { closed: 1, total: 2 });
 });
 
-test('mandateTail: quadra senza chiusa, coda vuota senza membri', () => {
-  assert.equal(mandateTail(undefined), '');
-  assert.equal(mandateTail({ closed: 0, total: 0 }), '');
-  assert.equal(mandateTail({ closed: 2, total: 5 }), '[2/5');
+test('customTail: quadra senza chiusa, coda vuota senza membri', () => {
+  assert.equal(customTail(undefined), '');
+  assert.equal(customTail({ closed: 0, total: 0 }), '');
+  assert.equal(customTail({ closed: 2, total: 5 }), '[2/5');
 });
 
-test('rowTail: il mandato scrive i membri al posto delle conversazioni, la task resta com era', () => {
+test('rowTail: la lista custom scrive i membri al posto delle conversazioni, la task resta com era', () => {
   const data: TaskRowData = {
     childCount: new Map([['T5', 4], ['T6', 4]]),
     live: new Map([['T5', { count: 1, status: 'idle' as const, tabs: 1 }]]),
     dirty: new Set(['T5']),
     ...NO_EPIC_DATA,
-    mandates: new Set(['T5']),
-    mandateRollup: new Map([['T5', { closed: 1, total: 3 }]]),
+    customLists: new Set(['T5']),
+    customRollup: new Map([['T5', { closed: 1, total: 3 }]]),
   };
   assert.equal(rowTail(t('T5', '⚡', '🔵'), data), '[1/3');
   assert.equal(rowTail(t('T6', '⚡', '🔵'), data), taskTail(0, 4, false));
 });
 
-test('taskColumns: la colonna misura la coda del mandato', () => {
+test('rowTail: `Size: Mandate`, il nome di prima, dà la riga e la coda di `Size: Custom`', () => {
+  const tasks = [t('T1', '⚡', '✔️'), t('T2', '⚡', '🔵'), t('T5', '⚡', '🔵')];
+  const tails = ['Custom', 'Mandate'].map((size) => {
+    const dir = mkdtempSync(join(tmpdir(), 'deck-view-'));
+    writeFileSync(
+      join(dir, 'T5-lista-custom.md'),
+      `# Task: Lista custom\n\n- **ID**: T5\n- **Size**: ${size}\n\n## Membri\n\n- T1\n- T2\n`,
+    );
+    const { customLists, membersOf } = scanEpicHierarchy(dir);
+    const data: TaskRowData = {
+      childCount: new Map(),
+      live: new Map(),
+      dirty: new Set<string>(),
+      ...NO_EPIC_DATA,
+      customLists,
+      customRollup: customRollup(tasks, membersOf),
+    };
+    return rowTail(t('T5', '⚡', '🔵'), data);
+  });
+  assert.deepEqual(tails, ['[1/2', '[1/2']);
+});
+
+test('taskColumns: la colonna misura la coda della lista custom', () => {
   const data: TaskRowData = {
     childCount: new Map(),
     live: new Map(),
     dirty: new Set<string>(),
     ...NO_EPIC_DATA,
-    mandates: new Set(['T5']),
-    mandateRollup: new Map([['T5', { closed: 10, total: 12 }]]),
+    customLists: new Set(['T5']),
+    customRollup: new Map([['T5', { closed: 10, total: 12 }]]),
   };
   assert.equal(taskColumns([t('T5', '⚡', '🔵')], data).tail, termWidth('[10/12') + 1);
 });
 
-test('groupHierarchy: un membro di mandato resta nel blocco della sua epica', () => {
-  // T5 è un mandato che elenca T2 e T3: la parentela la dà solo `epicOf`, e il
-  // mandato non entra nel contesto del grouping.
+test('groupHierarchy: un membro di una lista custom resta nel blocco della sua epica', () => {
+  // T5 è una lista custom che elenca T2 e T3: la parentela la dà solo `epicOf`, e la
+  // lista custom non entra nel contesto del grouping.
   const tasks = [t('T1', '⚡', '🔵'), t('T2', '⚡', '🔵'), t('T3', '⚡', '🔵'), t('T5', '🔥', '🔵')];
   const { tasks: order, blockMark } = groupHierarchy(tasks, DEFAULT_VIEW.sort, epicCtx({ T2: 'T1' }, ['T1']));
   assert.deepEqual(order.map((x) => x.id), ['T5', 'T1', 'T2', 'T3']);
-  assert.equal(blockMark.has('T5'), false, 'un mandato non apre un blocco');
+  assert.equal(blockMark.has('T5'), false, 'una lista custom non apre un blocco');
   assert.equal(blockMark.get('T2'), '└');
   assert.equal(blockMark.has('T3'), false);
 });

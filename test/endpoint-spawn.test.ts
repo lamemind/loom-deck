@@ -129,20 +129,23 @@ test('orchestrator: un’epica del progetto passa allo spawn con la sessione, e 
   assert.equal(plain.ok && plain.orchestrator, null);
 });
 
-test('orchestrator: una task che non è un perimetro, o che non c’è, è un rifiuto senza tab', async () => {
+test('orchestrator: una task che non è un perimetro orchestrabile, o che non c’è, è un rifiuto senza tab', async () => {
   const seen: unknown[] = [];
   const notPerimeter = await handleSpawnRequest(req({ orchestrator: 'T8' }), orchestratorDeps(seen));
-  assert.deepEqual(notPerimeter, { ok: false, reason: "orchestrator T8: non è un'epica né un mandato" });
+  assert.deepEqual(notPerimeter, { ok: false, reason: "orchestrator T8: non è un'epica né una lista custom" });
   const missing = await handleSpawnRequest(req({ orchestrator: 'T404' }), orchestratorDeps(seen));
   assert.deepEqual(missing, { ok: false, reason: 'orchestrator T404: non è nella lista task del progetto' });
   assert.deepEqual(seen, [], 'nessuno spawn');
-  // Un mandato è un perimetro come un'epica.
-  const mandate = planSpawnRequest(
-    req({ orchestrator: 'T197' }),
-    { ...orchestratorDeps(seen), taskText: (id) => (id === 'T197' ? '- **Size**: Mandate\n' : TASK_TEXT) },
-    'endpoint',
-  );
-  assert.equal(mandate.ok && mandate.orchestrator?.orchestrator, 'T197');
+  // Una lista custom è un perimetro orchestrabile come un'epica, col nome di prima
+  // (`Size: Mandate`) come col nuovo.
+  for (const size of ['Custom', 'Mandate']) {
+    const custom = planSpawnRequest(
+      req({ orchestrator: 'T197' }),
+      { ...orchestratorDeps(seen), taskText: (id) => (id === 'T197' ? `- **Size**: ${size}\n` : TASK_TEXT) },
+      'endpoint',
+    );
+    assert.equal(custom.ok && custom.orchestrator?.orchestrator, 'T197', `Size: ${size}`);
+  }
 });
 
 // T220/P3 — l'orchestrator dichiarato si scarta quando la conversazione aperta è a sua
@@ -165,7 +168,7 @@ test('orchestrator: con il kind orchestrator sull’endpoint, l’orchestrator d
   assert.deepEqual(asMember.ok && asMember.orchestrator, { orchestrator: 'T197', session: ORCHESTRATOR_SID });
 });
 
-test('run col perimetro: DLV in coda al prompt di run già risolto, come il modo DLV', async () => {
+test('run col perimetro eseguibile: DLV in coda al prompt di run già risolto, come il modo DLV', async () => {
   const calls: Calls = { spawned: [], defaults: [] };
   const r = await handleSpawnRequest(req({ kind: 'run', scope: [3, 2] }), deps({}, calls));
   assert.equal(r.ok, true);
@@ -186,11 +189,12 @@ test('recap su un’epica: la sotto-skill dell’epica, come il detail', async (
   assert.equal(calls.defaults[1], 'recap', 'senza task file resta il dispatcher');
 });
 
-// T212/P4 — un mandato: il run si rifiuta prima della tab, col motivo, anche
-// col perimetro; il recap è quello del perimetro; gli altri kind partono.
-const MANDATE_TEXT = `# Task: mandato
+// T212/P4 — una lista custom: il run si rifiuta prima della tab, col motivo, anche
+// col perimetro eseguibile; il recap è quello del perimetro orchestrabile; gli altri
+// kind partono.
+const CUSTOM_TEXT = `# Task: lista custom
 
-- **Size**: Mandate
+- **Size**: Custom
 
 ## Membri
 
@@ -201,30 +205,34 @@ const MANDATE_TEXT = `# Task: mandato
 
 - [ ] una checklist che non conta
 `;
+/** Lo stesso file col nome di prima del valore, che vale uguale. */
+const MANDATE_TEXT = CUSTOM_TEXT.replace('**Size**: Custom', '**Size**: Mandate');
 
-test('mandato: run rifiutato prima della tab, recap del perimetro, il resto parte', async () => {
-  const calls: Calls = { spawned: [], defaults: [] };
-  const over = { taskText: () => MANDATE_TEXT };
-  for (const r of [req({ kind: 'run' }), req({ kind: 'run', scope: [1] })]) {
-    const out = await handleSpawnRequest(r, deps(over, calls));
-    assert.equal(out.ok, false);
-    assert.match((out as { reason: string }).reason, /T9 è un mandato: il lavoro sta nei membri, niente run/);
+test('lista custom: run rifiutato prima della tab, recap del perimetro orchestrabile, il resto parte', async () => {
+  for (const text of [CUSTOM_TEXT, MANDATE_TEXT]) {
+    const calls: Calls = { spawned: [], defaults: [] };
+    const over = { taskText: () => text };
+    for (const r of [req({ kind: 'run' }), req({ kind: 'run', scope: [1] })]) {
+      const out = await handleSpawnRequest(r, deps(over, calls));
+      assert.equal(out.ok, false);
+      assert.match((out as { reason: string }).reason, /T9 è una lista custom: il lavoro sta nei membri, niente run/);
+    }
+    assert.equal(calls.spawned.length, 0, 'nessuna tab per un rifiuto certo');
+    const recap = await handleSpawnRequest(req({ kind: 'recap' }), deps(over, calls));
+    assert.equal(recap.ok, true);
+    assert.deepEqual(calls.defaults, ['recap-epic']);
+    const preflight = await handleSpawnRequest(req({ kind: 'preflight' }), deps(over, calls));
+    assert.equal(preflight.ok, true);
   }
-  assert.equal(calls.spawned.length, 0, 'nessuna tab per un rifiuto certo');
-  const recap = await handleSpawnRequest(req({ kind: 'recap' }), deps(over, calls));
-  assert.equal(recap.ok, true);
-  assert.deepEqual(calls.defaults, ['recap-epic']);
-  const preflight = await handleSpawnRequest(req({ kind: 'preflight' }), deps(over, calls));
-  assert.equal(preflight.ok, true);
 });
 
 // T221 — l'orchestrator si apre da una richiesta solo come successore di un passaggio
-// di consegne: su un perimetro, con chi passa le consegne (`from`), che il deck
+// di consegne: su un perimetro orchestrabile, con chi passa le consegne (`from`), che il deck
 // marca `origin: orchestrator` dopo l'annuncio del successore.
 const OLD_ORCHESTRATOR = '9f8e7d6c-1111-2222-3333-444455556666';
 
-test('orchestrator: successore su un’epica e su un mandato, la marca su chi passa le consegne', async () => {
-  for (const text of ['- **Size**: Epic\n', MANDATE_TEXT]) {
+test('orchestrator: successore su un’epica e su una lista custom, la marca su chi passa le consegne', async () => {
+  for (const text of ['- **Size**: Epic\n', CUSTOM_TEXT, MANDATE_TEXT]) {
     const calls: Calls = { spawned: [], defaults: [] };
     const marked: string[] = [];
     const out = await handleSpawnRequest(
@@ -240,7 +248,7 @@ test('orchestrator: successore su un’epica e su un mandato, la marca su chi pa
   }
 });
 
-test('orchestrator: senza chi passa le consegne, o su una task che non è un perimetro, nessuna tab', async () => {
+test('orchestrator: senza chi passa le consegne, o su una task che non è un perimetro orchestrabile, nessuna tab', async () => {
   const calls: Calls = { spawned: [], defaults: [] };
   const marked: string[] = [];
   const noFrom = await handleSpawnRequest(
@@ -253,13 +261,13 @@ test('orchestrator: senza chi passa le consegne, o su una task che non è un per
     req({ kind: 'orchestrator', from: OLD_ORCHESTRATOR }),
     deps({ markHandoff: (sid) => marked.push(sid) }, calls),
   );
-  assert.deepEqual(notPerimeter, { ok: false, reason: "orchestrator T9: non è un'epica né un mandato" });
+  assert.deepEqual(notPerimeter, { ok: false, reason: "orchestrator T9: non è un'epica né una lista custom" });
   assert.equal(calls.spawned.length, 0);
   assert.deepEqual(marked, [], 'nessuna marca senza successore');
 });
 
 test('orchestrator: la marca solo a successore annunciato, anche quando esce dalla coda', async () => {
-  const plan = planSpawnRequest(req({ kind: 'orchestrator', from: OLD_ORCHESTRATOR }), deps({ taskText: () => MANDATE_TEXT }), 'endpoint');
+  const plan = planSpawnRequest(req({ kind: 'orchestrator', from: OLD_ORCHESTRATOR }), deps({ taskText: () => CUSTOM_TEXT }), 'endpoint');
   assert.ok(plan.ok);
   const marked: string[] = [];
   // deck-run esce senza annunciare: la tab non c'è, l'orchestrator vecchio resta com'è.
@@ -304,7 +312,7 @@ test('requestKinds: l’orchestrator sull’endpoint e non sul turno headless, g
 });
 
 test('requestKinds e il rifiuto di planSpawnRequest sono la stessa regola', () => {
-  // L'orchestrator vuole un perimetro e chi passa le consegne: il resto della task
+  // L'orchestrator vuole un perimetro orchestrabile e chi passa le consegne: il resto della task
   // non deve decidere qui, la regola sotto misura il solo canale.
   const allow = {
     taskExists: () => true,
@@ -336,7 +344,7 @@ test('l help di loom-deck-spawn promette l’orchestrator, quello di loom-deck-h
   }
 });
 
-test('rifiuti prima della tab: piattaforma, task assente, perimetro fuori range o chiuso', async () => {
+test('rifiuti prima della tab: piattaforma, task assente, perimetro eseguibile fuori range o chiuso', async () => {
   const calls: Calls = { spawned: [], defaults: [] };
   const cases: Array<[SpawnRequest, Partial<SpawnRequestDeps>, RegExp]> = [
     [req({}), { spawnOff: () => 'apertura di tab n/d su Windows' }, /n\/d su Windows/],

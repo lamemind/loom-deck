@@ -17,7 +17,7 @@
 //   T3  Size L senza `### Preflight`               → lista DLV con l'avviso
 //   T4  nessun `## Deliverables Checklist`          → campi; lista vuota
 //       (la apre chi collauda l'area di compilazione: ^F, ^K, rotella, hint)
-//   T5  Size: Mandate, membri T1 T2 T3 T9 (T9 senza riga), con una checklist
+//   T5  Size: Custom, membri T1 T2 T3 T9 (T9 senza riga), con una checklist
 //       → coda `[1/3`, campi senza run, lista DLV spenta col motivo (T212)
 //   T6  Size: Epic senza figlie né DLV            → campi, con l'orchestrator (T203)
 //
@@ -53,7 +53,7 @@ export function detailProject(): { proj: string; env: NodeJS.ProcessEnv } {
     ['T2', '⚡', '✔️', 'chiusa'],
     ['T3', '⚡', '🔵', 'Size L senza preflight'],
     ['T4', '⚡', '🔵', 'senza deliverable'],
-    ['T5', '⚡', '🔵', 'mandato del collaudo'],
+    ['T5', '⚡', '🔵', 'lista custom del collaudo'],
     ['T6', '⚡', '🔵', 'epica del collaudo'],
   ];
   writeFileSync(
@@ -101,16 +101,16 @@ export function detailProject(): { proj: string; env: NodeJS.ProcessEnv } {
   writeFileSync(join(tasks, 'T2-chiusa.md'), file('T2', 'M', ['- [x] primo', '- [x] secondo'], preflight));
   writeFileSync(join(tasks, 'T3-size-l.md'), file('T3', 'L', ['- [ ] primo', '- [ ] secondo'], []));
   writeFileSync(join(tasks, 'T4-senza-dlv.md'), file('T4', 'M', [], preflight));
-  // T212 — il mandato: T2 è l'unico membro chiuso, T9 non ha riga in tasks.md e
+  // T212 — la lista custom: T2 è l'unico membro chiuso, T9 non ha riga in tasks.md e
   // resta fuori dal conteggio. La checklist c'è apposta: il modo DLV resta spento
   // lo stesso.
   const members = ['## Membri', '', '- T1 (eseguibile)', '- T2 (chiusa)', '- T3 (Size L)', '- T9 (purgata)', ''];
   writeFileSync(
-    join(tasks, 'T5-mandato.md'),
-    file('T5', 'Mandate', ['- [ ] una voce che il mandato non esegue'], preflight, members),
+    join(tasks, 'T5-lista-custom.md'),
+    file('T5', 'Custom', ['- [ ] una voce che la lista custom non esegue'], preflight, members),
   );
-  // T203 — l'epica: nessun DLV, così il detail si apre sui campi come sul
-  // mandato, e la riga azioni porta `direct` in coda.
+  // T203 — l'epica: nessun DLV, così il detail si apre sui campi come sulla
+  // lista custom, e la riga azioni porta `direct` in coda.
   writeFileSync(join(tasks, 'T6-epica.md'), file('T6', 'Epic', [], preflight));
   return { proj, env: { HOME: join(root, 'home') } };
 }

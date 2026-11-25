@@ -1,5 +1,5 @@
-// T232 — gate dei modi (vedi `modes-smoke.test.ts`): il modo DLV del detail, il
-// mandato e l'orchestrator, sul progetto sintetico di `detail-fixture.ts`.
+// T232 — gate dei modi (vedi `modes-smoke.test.ts`): il modo DLV del detail, la
+// lista custom e l'orchestrator, sul progetto sintetico di `detail-fixture.ts`.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +13,7 @@ import { DETAIL_RUN_MODEL, DETAIL_RUN_TITLE, detailProject } from './detail-fixt
 // dalla task, e sul cappello vero quella condizione cambia a ogni checkpoint.
 // L'argv si legge dalla riga di stato (`NO_SPAWN`), che `cutMiddle` taglia nel
 // mezzo: la coda — prompt, modello, titolo — resta a schermo, il flag
-// `--prompt` davanti a un perimetro lungo può cadere nel taglio.
+// `--prompt` davanti a un perimetro eseguibile lungo può cadere nel taglio.
 
 const RUN_TAIL = `--model ${DETAIL_RUN_MODEL} --title-note '${DETAIL_RUN_TITLE}'`;
 
@@ -22,14 +22,14 @@ function captureDetail(keys: string): string {
   return lastFrame(capture(keys, proj, env));
 }
 
-test('modo DLV: ⏎ coi DLV selezionati lancia run col perimetro, modello e titolo di run', {
+test('modo DLV: ⏎ coi DLV selezionati lancia run col perimetro eseguibile, modello e titolo di run', {
   skip: SKIP,
 }, () => {
   // Il cursore parte dal primo aperto (2); `↓` salta il 3, fatto, e va al 4.
   const frame = captureDetail('DD\r D \r');
   assert.ok(
     frame.includes(`'/loom-works:run-task T1 DLV 2,4' ${RUN_TAIL}`),
-    `perimetro, modello o titolo diversi da run: ${frame}`,
+    `perimetro eseguibile, modello o titolo diversi da run: ${frame}`,
   );
 });
 
@@ -47,7 +47,7 @@ test('modo DLV: ⏎ senza selezione → apre a vuoto, come l\'azione open dei ca
 
 test('modo DLV: la selezione non sopravvive alla chiusura del detail', { skip: SKIP }, () => {
   // Seleziona il 2, chiude con `esc`, riapre (`⏎` sulla lista) e lancia: il
-  // perimetro armato prima non deve partire.
+  // perimetro eseguibile armato prima non deve partire.
   const frame = captureDetail(`DD\r ${ESC}\r\r`);
   assert.match(frame, /--prompt-kind none/, `selezione sopravvissuta: ${frame}`);
 });
@@ -79,33 +79,33 @@ test('modo DLV: una task non eseguibile si apre sui campi, come prima', { skip: 
   assert.match(frame, /--prompt-kind none/, `non si è aperta sui campi: ${frame}`);
 });
 
-// ── T212 · il mandato ────────────────────────────────────────────────────
+// ── T212 · la lista custom ───────────────────────────────────────────────
 //
-// T5 della fixture è un mandato: `DDDDDD` lo seleziona, `\r` apre il detail.
+// T5 della fixture è una lista custom: `DDDDDD` la seleziona, `\r` apre il detail.
 
-test('mandato: ^R scrive una nota e non apre nessuna tab', { skip: SKIP }, () => {
+test('lista custom: ^R scrive una nota e non apre nessuna tab', { skip: SKIP }, () => {
   const frame = captureDetail(`DDDDDD${CTRL_R}`);
-  assert.match(frame, /\^R: T5 è un mandato — niente run/, `nota assente: ${frame}`);
+  assert.match(frame, /\^R: T5 è una lista custom — niente run/, `nota assente: ${frame}`);
   assert.doesNotMatch(frame, /--prompt-kind run/, `il run è partito: ${frame}`);
 });
 
-test('mandato: nel detail `r` non seleziona niente, ⏎ resta su open', { skip: SKIP }, () => {
-  // Sul mandato il detail si apre sui campi (modo DLV spento) con l'azione
+test('lista custom: nel detail `r` non seleziona niente, ⏎ resta su open', { skip: SKIP }, () => {
+  // Sulla lista custom il detail si apre sui campi (modo DLV spento) con l'azione
   // `open`: una `r` che puntasse ancora all'indice di `run` nel catalogo intero
   // selezionerebbe `status`, e partirebbe un recap.
   const frame = captureDetail('DDDDDD\rr\r');
   assert.match(frame, /--prompt-kind none/, `r ha selezionato un'azione: ${frame}`);
 });
 
-test('mandato: `s` nel detail apre il recap del perimetro', { skip: SKIP }, () => {
+test('lista custom: `s` nel detail apre il recap del perimetro orchestrabile', { skip: SKIP }, () => {
   const frame = captureDetail('DDDDDD\rs\r');
-  assert.match(frame, /recap-status-epic T5/, `non è il recap del mandato: ${frame}`);
+  assert.match(frame, /recap-status-epic T5/, `non è il recap della lista custom: ${frame}`);
 });
 
 // ── T203 · l'orchestrator ──────────────────────────────────────────────────────
 //
-// `d` seleziona `direct` sui soli perimetri: T6 (epica, `DDDDDDD`) e T5
-// (mandato, `DDDDDD`). Il prompt, il modello e il titolo sono quelli della riga
+// `d` seleziona `direct` sui soli perimetri orchestrabili: T6 (epica, `DDDDDDD`) e T5
+// (lista custom, `DDDDDD`). Il prompt, il modello e il titolo sono quelli della riga
 // `orchestrator` del catalogo, senza override nella fixture. Su T4 (task semplice,
 // aperta sui campi) la voce non c'è: `d` non seleziona niente e `⏎` resta su
 // open.
@@ -113,16 +113,18 @@ test('mandato: `s` nel detail apre il recap del perimetro', { skip: SKIP }, () =
 test('epica: `d` nel detail apre l’orchestrator, opus, titolo 🎬', { skip: SKIP }, () => {
   const frame = captureDetail('DDDDDDD\rd\r');
   assert.ok(
-    frame.includes(`'/loom-works:orchestrate-mandate T6' --model opus --title-note '🎬 epica'`),
+    frame.includes(`'/loom-works:orchestrate-perimeter T6' --model opus --title-note '🎬 epica'`),
     `non è l'orchestrator dell'epica: ${frame}`,
   );
 });
 
-test('mandato: `d` nel detail apre l’orchestrator, opus, titolo 🎬', { skip: SKIP }, () => {
+test('lista custom: `d` nel detail apre l’orchestrator, opus, titolo 🎬', { skip: SKIP }, () => {
   const frame = captureDetail('DDDDDD\rd\r');
+  // La coda supera quella che `cutMiddle` lascia a 120 colonne: la testa del
+  // prompt cade nel taglio, e la misura parte dalla skill.
   assert.ok(
-    frame.includes(`'/loom-works:orchestrate-mandate T5' --model opus --title-note '🎬 mandato'`),
-    `non è l'orchestrator del mandato: ${frame}`,
+    frame.includes(`orchestrate-perimeter T5' --model opus --title-note '🎬 lista custom'`),
+    `non è l'orchestrator della lista custom: ${frame}`,
   );
 });
 
@@ -133,5 +135,5 @@ test('task semplice: `d` nel detail non seleziona niente, ⏎ resta su open', { 
   assert.ok(!row.includes('direct'), `l'orchestrator su una task semplice: ${row}`);
   const frame = captureDetail('DDDDD\rd\r');
   assert.match(frame, /--prompt-kind none/, `d ha selezionato un'azione: ${frame}`);
-  assert.doesNotMatch(frame, /orchestrate-mandate/, `l'orchestrator è partito: ${frame}`);
+  assert.doesNotMatch(frame, /orchestrate-perimeter/, `l'orchestrator è partito: ${frame}`);
 });

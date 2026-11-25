@@ -44,7 +44,7 @@ async function withDeck<T>(p: { root: string; env: Record<string, string> }, han
   }
 }
 
-test('argomenti: kind, perimetro solo con run, modello e nota', () => {
+test('argomenti: kind, perimetro eseguibile solo con run, modello e nota', () => {
   assert.deepEqual(parseClientArgs(['T5', 'preflight']), {
     request: { verb: 'spawn', task: 'T5', kind: 'preflight' },
     root: null,
@@ -119,7 +119,7 @@ test('orchestrator: la marca sull’orchestrator che passa le consegne nella rig
         task: req.task,
         kind: req.kind,
         model: 'opus' as const,
-        prompt: '/loom-works:orchestrate-mandate T197',
+        prompt: '/loom-works:orchestrate-perimeter T197',
         title: 't',
         inTab: 'c',
         orchestrator: null,

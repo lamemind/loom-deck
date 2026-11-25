@@ -256,7 +256,7 @@ export const HEADER_ROW = HINT_ROW - 1;
  *  bordo + `paddingX={1}`. */
 export const FRAME_TEXT_COL = 3;
 
-// ── Hit-test delle liste (mandata 3) ────────────────────────────────────────
+// ── Hit-test delle liste (terza passata) ────────────────────────────────────
 //
 // Click su un elemento di lista = SOLO FUOCO (D2): la selezione si sposta, non
 // parte nessuna azione. A differenza della riga launch il click qui non può

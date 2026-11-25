@@ -208,15 +208,15 @@ export function epicTail(rollup: { closed: number; total: number } | undefined):
 }
 
 /**
- * T212/P1 — coda della riga MANDATO: membri chiusi sui membri elencati in
+ * T212/P1 — coda della riga LISTA CUSTOM: membri chiusi sui membri elencati in
  * `## Membri`, cieca a filtri e viste come quella del cappello.
  *
  * Quadra e non graffa: tonda = conversazioni, graffa = figlie, quadra = membri.
  * I membri non sono figlie, e due grafie per due parentele diverse evitano di
- * leggere un mandato come un'epica. Stesse regole di `epicTail`: nessuna
+ * leggere una lista custom come un'epica. Stesse regole di `epicTail`: nessuna
  * chiusa, coda vuota a zero membri.
  */
-export function mandateTail(rollup: { closed: number; total: number } | undefined): string {
+export function customTail(rollup: { closed: number; total: number } | undefined): string {
   if (!rollup || rollup.total === 0) return '';
   return `[${rollup.closed}/${rollup.total}`;
 }
