@@ -8,7 +8,9 @@ import { join } from 'node:path';
 import {
   bucketSurvivors,
   chunkPathspecs,
+  folderDeclarers,
   folderField,
+  folderShapeOk,
   foldersSurvivors,
   foldersSurvivorsAsync,
   folderSurvivors,
@@ -243,10 +245,13 @@ test('purgeTargetsAsync: stesso esito di purgeTargets, task senza folder compres
   const ids = ['T10', 'T11', 'T20', 'T12', 'T99', 'T13', 'T14'];
   const sync = purgeTargets(ids, tasksDir, dir);
   assert.deepEqual(await purgeTargetsAsync(ids, tasksDir, dir), sync);
+  // T12 dichiara `.26-01-01-a/interna`, due componenti: fuori forma, la folder
+  // resta e non si misura.
   assert.deepEqual(
     sync.map((t) => t.survivors),
-    [2, 2, 0, 1, 0, 2, 0],
+    [2, 2, 0, 0, 0, 2, 0],
   );
+  assert.equal(sync[3]!.stays, 'non ha la forma .YY-MM-DD-slug');
 });
 
 test('git muto: nessun superstite per nessuna folder, sync e async', async (t) => {
@@ -293,4 +298,79 @@ test('purgeTargets lancia un git solo per tutte le folder', () => {
     syncBuiltinESMExports();
   }
   assert.equal(gitCalls, 1);
+});
+
+// ── T250: le folder che restano mentre la task parte ───────────────────────
+//
+// Gli script del plugin tengono sul disco la folder di una task che parte in
+// due casi: un'altra task fuori dall'invocazione la dichiara, o il campo
+// `Folder` non ha la forma `.YY-MM-DD-slug`. Quella folder è fuori dal gate: il
+// deck che ne contasse i superstiti chiederebbe keep o purge per niente, e in
+// blocco scarterebbe una task che lo script poterebbe.
+
+/** Una folder con un file non tracciato, e i task file che la dichiarano. */
+function sharedRepo(declarations: Record<string, string>): { dir: string; tasksDir: string } {
+  const dir = repo();
+  const tasksDir = join(dir, 'runtime', 'tasks');
+  mkdirSync(tasksDir, { recursive: true });
+  mkdirSync(join(dir, '.26-01-01-comune'));
+  writeFileSync(join(dir, '.26-01-01-comune', 'nota.md'), 'x');
+  execFileSync('git', ['add', '-A'], { cwd: dir });
+  writeFileSync(join(dir, '.26-01-01-comune', 'scratch.txt'), 'y');
+  for (const [file, folder] of Object.entries(declarations)) {
+    writeFileSync(join(tasksDir, file), `- **Folder**: ${folder}\n`);
+  }
+  return { dir, tasksDir };
+}
+
+test('una folder dichiarata da task che restano non si misura: resta, e la task è conforme', async () => {
+  // T15 e T140 la scrivono in due grafie diverse da T01: slash finale, nota
+  // dopo il path. L'ordine è quello del `sort -V` dello script.
+  const { dir, tasksDir } = sharedRepo({
+    'T01-x.md': './.26-01-01-comune',
+    'T140-x.md': './.26-01-01-comune → passata a T140',
+    'T15-x.md': '.26-01-01-comune/',
+  });
+  const [t] = purgeTargets(['T01'], tasksDir, dir);
+  assert.equal(t!.stays, 'condivisa con T15, T140');
+  assert.equal(t!.survivors, 0);
+  assert.deepEqual(splitTargets([t!]).clean.map((c) => c.id), ['T01']);
+  assert.deepEqual(await purgeTargetsAsync(['T01'], tasksDir, dir), [t]);
+});
+
+test('una folder condivisa solo fra task che partono insieme si misura come prima', () => {
+  const { dir, tasksDir } = sharedRepo({ 'T01-x.md': './.26-01-01-comune', 'T02-x.md': '.26-01-01-comune' });
+  const targets = purgeTargets(['T01', 'T02'], tasksDir, dir);
+  assert.deepEqual(targets.map((t) => [t.stays, t.survivors]), [[null, 1], [null, 1]]);
+  assert.deepEqual(splitTargets(targets).dirty.map((t) => t.id), ['T01', 'T02']);
+});
+
+test('un campo Folder fuori forma non arriva a git: la project root non si misura', () => {
+  // `Folder: .` sarebbe `git ls-files -o -- .`, cioè i non tracciati del repo
+  // intero contati come superstiti di una task folder.
+  const { dir, tasksDir } = sharedRepo({ 'T01-x.md': '.' });
+  const [t] = purgeTargets(['T01'], tasksDir, dir);
+  assert.equal(t!.stays, 'non ha la forma .YY-MM-DD-slug');
+  assert.equal(t!.survivors, 0);
+});
+
+test('folderShapeOk: un componente solo, data a sei cifre, slug che comincia con una lettera o una cifra', () => {
+  for (const ok of ['.26-01-01-a', '.26-11-22-task_folder.v2', '.26-01-01-perché']) {
+    assert.ok(folderShapeOk(ok), ok);
+  }
+  for (const ko of ['.', 'docs', '.26-01-01-', '.26-01-01-a/interna', '26-01-01-a', '.26-1-01-a', '.26-01-01--a']) {
+    assert.ok(!folderShapeOk(ko), ko);
+  }
+});
+
+test('folderDeclarers: i file in partenza non tengono in vita niente, i campi vuoti nemmeno', () => {
+  const declarers = folderDeclarers(
+    [
+      ['T02-b.md', '- **Folder**: ./.26-01-01-x/\n'],
+      ['T01-a.md', '- **Folder**: .26-01-01-x\n'],
+      ['T03-c.md', '- **Folder**:\n- **Progress**: ✔️\n'],
+    ],
+    new Set(['T01-a.md']),
+  );
+  assert.deepEqual([...declarers], [['.26-01-01-x', ['T02']]]);
 });

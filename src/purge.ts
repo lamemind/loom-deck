@@ -18,10 +18,23 @@
 // accettato perché il canale alternativo — un dry-run via processo Claude
 // headless — non è rifacibile on-demand, cioè al momento in cui il tasto viene
 // premuto.
+//
+// Il predicato porta con sé le due eccezioni degli script: una folder che RESTA
+// sul disco mentre la sua task parte — dichiarata da una task fuori
+// dall'invocazione (`lw_folder_declarers`), o col campo `Folder` fuori dalla
+// forma `.YY-MM-DD-slug` (`lw_folder_shape_ok`) — è fuori dal gate e da
+// `--ignored-files`. Senza, il deck chiederebbe keep o purge per una folder che
+// lo script non tocca, e in blocco scarterebbe come sporca una task che parte.
+//
+// Il materiale 💎 di `## Materiale`, che fa rifiutare una task intera, qui NON
+// si legge: il deck lo scopre dall'esito (`purgeOutcomeNote` in `task-ops.ts`).
+// Il rifiuto è per task e non ferma le altre, quindi non annulla un giro come il
+// gate, e un quarto criterio duplicato non comprerebbe niente.
 
 import { execFile, execFileSync } from 'node:child_process';
-import { readFileSync, statSync } from 'node:fs';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { basename, isAbsolute, join, relative, sep } from 'node:path';
 import { setImmediate as yieldToLoop } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { findTaskFile } from './tasks.js';
@@ -51,8 +64,12 @@ export interface PurgeTarget {
   /** Path assoluto della task folder; `null` se la task non ne dichiara una o
    *  se il path dichiarato non è (più) una directory su disco. */
   folder: string | null;
+  /** Perché la folder resta sul disco mentre la task parte — `condivisa con T15,
+   *  T140` o `non ha la forma .YY-MM-DD-slug`, le parole del dry-run degli
+   *  script —; `null` = parte con la task, o non c'è. */
+  stays: string | null;
   /** Quanti file `git rm` NON rimuoverebbe. `> 0` = il gate del plugin
-   *  scatterebbe su questa task. */
+   *  scatterebbe su questa task. Una folder che resta non si misura: 0. */
   survivors: number;
 }
 
@@ -73,8 +90,35 @@ export function folderField(content: string): string {
   return m ? m[1]! : '';
 }
 
-/** Task folder della task, risolta e verificata su disco. */
-export function taskFolder(projectRoot: string, taskFilePath: string): string | null {
+/** Il campo `Folder` nella forma su cui gli script confrontano due folder: via
+ *  un `./` davanti e un `/` in coda, come in `clean-tasks.sh` e in
+ *  `lw_folder_declarers` — `./.26-x/` e `.26-x` sono la stessa folder. */
+export function normalizeFolder(field: string): string {
+  return field.replace(/^\.\//, '').replace(/\/$/, '');
+}
+
+/** La forma di una task folder, `.YY-MM-DD-slug` in un componente solo. Gemella
+ *  di `lw_folder_shape_ok` in `lib.sh`: gli script toccano una folder solo con
+ *  questa forma (`Folder: .` sarebbe la project root intera).
+ *
+ *  Lettere di ogni alfabeto, non solo ASCII: il `[A-Za-z0-9]` della regex bash
+ *  dipende dal locale, e sotto un locale UTF-8 come `it_IT.UTF-8` prende anche
+ *  `é` (sotto `LC_ALL=C` no). La forma più larga sbaglia dal lato prudente: una
+ *  folder che il deck dà in partenza si misura, e al peggio il deck chiede keep
+ *  o purge per una folder che lo script lascerebbe. */
+const FOLDER_SHAPE = /^\.[0-9]{2}-[0-9]{2}-[0-9]{2}-[\p{L}\p{N}][\p{L}\p{N}._-]*$/u;
+
+export function folderShapeOk(rel: string): boolean {
+  return FOLDER_SHAPE.test(rel);
+}
+
+interface FolderRef {
+  abs: string;
+  /** Il campo normalizzato, relativo alla project root. */
+  rel: string;
+}
+
+function folderOf(projectRoot: string, taskFilePath: string): FolderRef | null {
   let content: string;
   try {
     content = readFileSync(taskFilePath, 'utf8');
@@ -83,13 +127,71 @@ export function taskFolder(projectRoot: string, taskFilePath: string): string | 
   }
   const field = folderField(content);
   if (!field) return null;
-  const abs = join(projectRoot, field.replace(/^\.\//, ''));
+  const rel = normalizeFolder(field);
+  const abs = join(projectRoot, rel);
   try {
     if (!statSync(abs).isDirectory()) return null;
   } catch {
     return null;
   }
-  return abs;
+  return { abs, rel };
+}
+
+/** Task folder della task, risolta e verificata su disco. */
+export function taskFolder(projectRoot: string, taskFilePath: string): string | null {
+  return folderOf(projectRoot, taskFilePath)?.abs ?? null;
+}
+
+/**
+ * Chi tiene in vita quale folder: folder normalizzata → id delle task che la
+ * dichiarano, fra i task file passati meno quelli in partenza (`leaving`, per
+ * nome di file). Gemella di `lw_folder_declarers`: id dal nome del file fino al
+ * primo `-`, ordine per nome con i numeri confrontati come numeri (`T15` prima
+ * di `T140`, il `sort -V` dello script).
+ */
+export function folderDeclarers(
+  files: ReadonlyArray<readonly [name: string, content: string]>,
+  leaving: ReadonlySet<string>,
+): Map<string, string[]> {
+  const sorted = [...files].sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true }));
+  const declarers = new Map<string, string[]>();
+  for (const [name, content] of sorted) {
+    if (leaving.has(name)) continue;
+    const rel = normalizeFolder(folderField(content));
+    if (!rel) continue;
+    declarers.set(rel, [...(declarers.get(rel) ?? []), name.split('-')[0]!]);
+  }
+  return declarers;
+}
+
+function taskFileNames(tasksDir: string): string[] {
+  try {
+    return readdirSync(tasksDir).filter((name) => name.endsWith('.md'));
+  } catch {
+    return [];
+  }
+}
+
+function readTaskFiles(tasksDir: string): [string, string][] {
+  return taskFileNames(tasksDir).flatMap((name): [string, string][] => {
+    try {
+      return [[name, readFileSync(join(tasksDir, name), 'utf8')]];
+    } catch {
+      return [];
+    }
+  });
+}
+
+async function readTaskFilesAsync(tasksDir: string): Promise<[string, string][]> {
+  const files: [string, string][] = [];
+  for (const name of taskFileNames(tasksDir)) {
+    try {
+      files.push([name, await readFile(join(tasksDir, name), 'utf8')]);
+    } catch {
+      // Un task file sparito fra readdir e lettura non dichiara niente.
+    }
+  }
+  return files;
 }
 
 // ── i superstiti di N folder, da una chiamata git sola ─────────────────────
@@ -253,21 +355,66 @@ export function folderSurvivors(projectRoot: string, folder: string): string[] {
   return foldersSurvivors(projectRoot, [folder])[0]!;
 }
 
-function targetFolder(id: string, tasksDir: string, projectRoot: string): string | null {
-  const taskFile = findTaskFile(tasksDir, id);
-  return taskFile ? taskFolder(projectRoot, taskFile) : null;
+interface Located {
+  id: string;
+  /** Nome del task file; `null` = riga orfana, nessun file. */
+  file: string | null;
+  folder: FolderRef | null;
 }
 
-function toTargets(ids: string[], folders: (string | null)[], survivors: string[][]): PurgeTarget[] {
+function locate(id: string, tasksDir: string, projectRoot: string): Located {
+  const taskFile = findTaskFile(tasksDir, id);
+  if (!taskFile) return { id, file: null, folder: null };
+  return { id, file: basename(taskFile), folder: folderOf(projectRoot, taskFile) };
+}
+
+/** Le task folder si confrontano con quelle delle altre task solo se una delle
+ *  folder in partenza ha la forma giusta: senza, leggere tutti i task file non
+ *  serve. */
+function needsDeclarers(located: readonly Located[]): boolean {
+  return located.some((l) => l.folder !== null && folderShapeOk(l.folder.rel));
+}
+
+function leavingFiles(located: readonly Located[]): Set<string> {
+  return new Set(located.flatMap((l) => (l.file ? [l.file] : [])));
+}
+
+function staysOf(located: readonly Located[], declarers: Map<string, string[]>): (string | null)[] {
+  return located.map(({ folder }) => {
+    if (!folder) return null;
+    if (!folderShapeOk(folder.rel)) return 'non ha la forma .YY-MM-DD-slug';
+    const keepers = declarers.get(folder.rel);
+    return keepers ? `condivisa con ${keepers.join(', ')}` : null;
+  });
+}
+
+/** Le folder che partono con la loro task: le sole su cui il gate guarda. */
+function leavingFolders(located: readonly Located[], stays: readonly (string | null)[]): string[] {
+  return located.flatMap((l, i) => (l.folder && stays[i] === null ? [l.folder.abs] : []));
+}
+
+function toTargets(
+  located: readonly Located[],
+  stays: readonly (string | null)[],
+  survivors: string[][],
+): PurgeTarget[] {
   let next = 0;
-  return ids.map((id, i) => {
-    const folder = folders[i]!;
-    return { id, folder, survivors: folder ? survivors[next++]!.length : 0 };
+  return located.map((l, i) => {
+    const measured = l.folder !== null && stays[i] === null;
+    return {
+      id: l.id,
+      folder: l.folder?.abs ?? null,
+      stays: stays[i] ?? null,
+      survivors: measured ? survivors[next++]!.length : 0,
+    };
   });
 }
 
 /**
  * Il bersaglio, misurato ADESSO.
+ *
+ * Una folder che resta (`stays`) non si misura: il gate dello script non la
+ * guarda, e i suoi superstiti non decidono niente.
  *
  * Sincrono apposta: la dirtiness è un dato campionato (la vista `archiviabili`
  * lo mostra da uno scan periodico) e nell'istante in cui si preme il tasto può
@@ -278,9 +425,13 @@ function toTargets(ids: string[], folders: (string | null)[], survivors: string[
  * pausa per il numero delle folder.
  */
 export function purgeTargets(ids: string[], tasksDir: string, projectRoot: string): PurgeTarget[] {
-  const folders = ids.map((id) => targetFolder(id, tasksDir, projectRoot));
-  const present = folders.filter((folder): folder is string => folder !== null);
-  return toTargets(ids, folders, foldersSurvivors(projectRoot, present));
+  const located = ids.map((id) => locate(id, tasksDir, projectRoot));
+  const declarers = needsDeclarers(located)
+    ? folderDeclarers(readTaskFiles(tasksDir), leavingFiles(located))
+    : new Map<string, string[]>();
+  const stays = staysOf(located, declarers);
+  const leaving = leavingFolders(located, stays);
+  return toTargets(located, stays, foldersSurvivors(projectRoot, leaving));
 }
 
 /**
@@ -295,13 +446,17 @@ export async function purgeTargetsAsync(
   tasksDir: string,
   projectRoot: string,
 ): Promise<PurgeTarget[]> {
-  const folders: (string | null)[] = [];
+  const located: Located[] = [];
   for (const id of ids) {
-    folders.push(targetFolder(id, tasksDir, projectRoot));
+    located.push(locate(id, tasksDir, projectRoot));
     await yieldToLoop();
   }
-  const present = folders.filter((folder): folder is string => folder !== null);
-  return toTargets(ids, folders, await foldersSurvivorsAsync(projectRoot, present));
+  const declarers = needsDeclarers(located)
+    ? folderDeclarers(await readTaskFilesAsync(tasksDir), leavingFiles(located))
+    : new Map<string, string[]>();
+  const stays = staysOf(located, declarers);
+  const leaving = leavingFolders(located, stays);
+  return toTargets(located, stays, await foldersSurvivorsAsync(projectRoot, leaving));
 }
 
 /** Conformi al gate (potabili in blocco) e non conformi (da scartare a monte). */

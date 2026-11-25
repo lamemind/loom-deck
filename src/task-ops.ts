@@ -32,6 +32,37 @@ import {
 import type { EditDraft, PurgeDraft } from './model.js';
 import type { DeckModel } from './deck-model.js';
 
+/**
+ * La riga di stato a potatura finita: `survived` sono gli ID bersaglio che
+ * `tasks.md` porta ancora, `detail` il testo del result event della skill.
+ *
+ * Le task che restano hanno tre cause, e il deck non ne prevede nessuna da sé:
+ * il gate `--ignored-files` (exit 2) che scatta lo stesso — la dirtiness è un
+ * dato campionato e una folder può sporcarsi fra il ricalcolo e l'apply —; la
+ * task rifiutata per il materiale 💎 nella folder (exit 3), che il deck non
+ * legge; un errore. Il testo della skill è l'unica cosa che dice PERCHÉ, e la
+ * skill nomina in prima riga le task non rimosse col motivo: entra nella riga
+ * invece di un ⚠ muto, accanto agli ID che restano.
+ */
+export function purgeOutcomeNote(
+  ids: readonly string[],
+  survived: readonly string[],
+  ok: boolean,
+  detail: string,
+): string {
+  const removed = ids.length - survived.length;
+  if (removed === ids.length) {
+    // Il push non c'è, per scelta della skill: finché nessuno pusha, un altro
+    // worktree continua a vedere le task potate in tasks.md. Non dirlo
+    // lascerebbe leggere l'assenza di push come «fatto».
+    return `✔ ${removed} task eliminate · commit locali, nessun push`;
+  }
+  return `⚠ ${removed}/${ids.length} eliminate · restano ${idList([...survived], 4)} · ${cut(
+    detail || (ok ? '' : `${CLAUDE_CMD} -p`),
+    56,
+  )}`;
+}
+
 export function useTaskOps({
   cwd,
   tasksPath,
@@ -231,24 +262,7 @@ export function useTaskOps({
         setNote(`⚠ ${draft.ids.length} task: esito non verificabile (tasks.md illeggibile)`);
         return;
       }
-      const removed = draft.ids.length - survived.length;
-      if (removed === draft.ids.length) {
-        // Il push non c'è, per scelta della skill: finché nessuno pusha, un
-        // altro worktree continua a vedere le task potate in tasks.md. Non
-        // dirlo lascerebbe leggere l'assenza di push come «fatto».
-        setNote(`✔ ${removed} task eliminate · commit locali, nessun push`);
-      } else {
-        // Il gate `--ignored-files` (exit 2) può scattare lo stesso: la
-        // dirtiness è un dato campionato e una folder può sporcarsi fra il
-        // ricalcolo e l'apply. Il testo del result event è l'unica cosa che dice
-        // PERCHÉ, quindi entra nella riga invece di un ⚠ muto.
-        setNote(
-          `⚠ ${removed}/${draft.ids.length} eliminate · restano ${idList(survived, 4)} · ${cut(
-            detail || (ok ? '' : `${CLAUDE_CMD} -p`),
-            56,
-          )}`,
-        );
-      }
+      setNote(purgeOutcomeNote(draft.ids, survived, ok, detail));
     });
     child?.on('error', () => setNote(`⚠ clean-tasks: '${CLAUDE_CMD}' non lanciabile`));
   }
