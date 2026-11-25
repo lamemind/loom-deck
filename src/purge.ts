@@ -97,16 +97,12 @@ export function normalizeFolder(field: string): string {
   return field.replace(/^\.\//, '').replace(/\/$/, '');
 }
 
-/** La forma di una task folder, `.YY-MM-DD-slug` in un componente solo. Gemella
- *  di `lw_folder_shape_ok` in `lib.sh`: gli script toccano una folder solo con
- *  questa forma (`Folder: .` sarebbe la project root intera).
- *
- *  Lettere di ogni alfabeto, non solo ASCII: il `[A-Za-z0-9]` della regex bash
- *  dipende dal locale, e sotto un locale UTF-8 come `it_IT.UTF-8` prende anche
- *  `é` (sotto `LC_ALL=C` no). La forma più larga sbaglia dal lato prudente: una
- *  folder che il deck dà in partenza si misura, e al peggio il deck chiede keep
- *  o purge per una folder che lo script lascerebbe. */
-const FOLDER_SHAPE = /^\.[0-9]{2}-[0-9]{2}-[0-9]{2}-[\p{L}\p{N}][\p{L}\p{N}._-]*$/u;
+/** La forma di una task folder, `.YY-MM-DD-slug` in un componente solo, slug
+ *  in ASCII. Gemella di `lw_folder_shape_ok` in `lib.sh`, che la legge in locale
+ *  C: gli script toccano una folder solo con questa forma (`Folder: .` sarebbe
+ *  la project root intera), e una folder col nome fuori dall'ASCII resta sul
+ *  disco per chiunque lanci la potatura. */
+const FOLDER_SHAPE = /^\.[0-9]{2}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export function folderShapeOk(rel: string): boolean {
   return FOLDER_SHAPE.test(rel);
@@ -379,12 +375,24 @@ function leavingFiles(located: readonly Located[]): Set<string> {
   return new Set(located.flatMap((l) => (l.file ? [l.file] : [])));
 }
 
+/** Due folder si sovrappongono se sono la stessa o una contiene l'altra: un
+ *  `git rm -rf` dell'una porta via l'altra, o una sua parte. Prefisso di path a
+ *  componenti interi — `.26-x` contiene `.26-x/sub`, non `.26-xy` —, gemella di
+ *  `lw_folder_overlaps` in `lib.sh`. */
+export function foldersOverlap(a: string, b: string): boolean {
+  return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+}
+
 function staysOf(located: readonly Located[], declarers: Map<string, string[]>): (string | null)[] {
   return located.map(({ folder }) => {
     if (!folder) return null;
     if (!folderShapeOk(folder.rel)) return 'non ha la forma .YY-MM-DD-slug';
-    const keepers = declarers.get(folder.rel);
-    return keepers ? `condivisa con ${keepers.join(', ')}` : null;
+    // Una task che resta con `.26-x/sub` tiene in vita `.26-x`. L'ordine degli
+    // id è quello delle righe dello script, che li elenca per task file.
+    const keepers = [...declarers]
+      .flatMap(([rel, ids]) => (foldersOverlap(folder.rel, rel) ? ids : []))
+      .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+    return keepers.length > 0 ? `condivisa con ${keepers.join(', ')}` : null;
   });
 }
 

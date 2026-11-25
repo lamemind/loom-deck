@@ -11,6 +11,7 @@ import {
   folderDeclarers,
   folderField,
   folderShapeOk,
+  foldersOverlap,
   foldersSurvivors,
   foldersSurvivorsAsync,
   folderSurvivors,
@@ -245,13 +246,15 @@ test('purgeTargetsAsync: stesso esito di purgeTargets, task senza folder compres
   const ids = ['T10', 'T11', 'T20', 'T12', 'T99', 'T13', 'T14'];
   const sync = purgeTargets(ids, tasksDir, dir);
   assert.deepEqual(await purgeTargetsAsync(ids, tasksDir, dir), sync);
-  // T12 dichiara `.26-01-01-a/interna`, due componenti: fuori forma, la folder
-  // resta e non si misura.
+  // T12 dichiara `.26-01-01-a/interna`, due componenti, e T13
+  // `.26-01-01-perché`, fuori dall'ASCII: fuori forma, le folder restano e non
+  // si misurano.
   assert.deepEqual(
     sync.map((t) => t.survivors),
-    [2, 2, 0, 0, 0, 2, 0],
+    [2, 2, 0, 0, 0, 0, 0],
   );
   assert.equal(sync[3]!.stays, 'non ha la forma .YY-MM-DD-slug');
+  assert.equal(sync[5]!.stays, 'non ha la forma .YY-MM-DD-slug');
 });
 
 test('git muto: nessun superstite per nessuna folder, sync e async', async (t) => {
@@ -354,11 +357,13 @@ test('un campo Folder fuori forma non arriva a git: la project root non si misur
   assert.equal(t!.survivors, 0);
 });
 
-test('folderShapeOk: un componente solo, data a sei cifre, slug che comincia con una lettera o una cifra', () => {
-  for (const ok of ['.26-01-01-a', '.26-11-22-task_folder.v2', '.26-01-01-perché']) {
+test('folderShapeOk: un componente solo, data a sei cifre, slug ASCII che comincia con una lettera o una cifra', () => {
+  for (const ok of ['.26-01-01-a', '.26-11-22-task_folder.v2']) {
     assert.ok(folderShapeOk(ok), ok);
   }
-  for (const ko of ['.', 'docs', '.26-01-01-', '.26-01-01-a/interna', '26-01-01-a', '.26-1-01-a', '.26-01-01--a']) {
+  // `.26-01-01-perché`: lo script legge la forma in locale C, e fuori
+  // dall'ASCII la folder resta per chiunque lanci la potatura.
+  for (const ko of ['.', 'docs', '.26-01-01-', '.26-01-01-a/interna', '26-01-01-a', '.26-1-01-a', '.26-01-01--a', '.26-01-01-perché']) {
     assert.ok(!folderShapeOk(ko), ko);
   }
 });
@@ -373,4 +378,23 @@ test('folderDeclarers: i file in partenza non tengono in vita niente, i campi vu
     new Set(['T01-a.md']),
   );
   assert.deepEqual([...declarers], [['.26-01-01-x', ['T02']]]);
+});
+
+test('foldersOverlap: uguale, contenuta o contenitore, a componenti interi', () => {
+  assert.ok(foldersOverlap('.26-01-01-x', '.26-01-01-x'));
+  assert.ok(foldersOverlap('.26-01-01-x', '.26-01-01-x/sub'));
+  assert.ok(foldersOverlap('.26-01-01-x/sub', '.26-01-01-x'));
+  assert.ok(!foldersOverlap('.26-01-01-x', '.26-01-01-xy'));
+  assert.ok(!foldersOverlap('.26-01-01-x', '.26-01-01-y/x'));
+});
+
+test('una task che resta con una sottocartella tiene in vita la folder in partenza', () => {
+  // `git rm -rf .26-01-01-comune` porterebbe via la folder che T15 dichiara.
+  const { dir, tasksDir } = sharedRepo({
+    'T01-x.md': './.26-01-01-comune',
+    'T15-x.md': './.26-01-01-comune/figlia',
+  });
+  const [t] = purgeTargets(['T01'], tasksDir, dir);
+  assert.equal(t!.stays, 'condivisa con T15');
+  assert.equal(t!.survivors, 0);
 });
