@@ -9,13 +9,14 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseLaunch, type LaunchEntry } from '../src/config.js';
 import { saveLaunchAttrs } from '../src/launch-config.js';
-import { launchOutcome } from '../src/ui/launch-screen.js';
+import { launchLogHeading, launchOutcome } from '../src/ui/launch-screen.js';
+import { termWidth } from '../src/width.js';
 import {
   isNoOutcome,
   lastTrueRecord,
@@ -24,8 +25,12 @@ import {
   launchNotifies,
   launchExitPath,
   launchLogPath,
+  launchOutcomeLogPath,
   launchRecordPath,
   launchRunning,
+  launchStateDir,
+  outcomeLogStep,
+  pickLaunchLog,
   readLaunchLog,
   readLaunchRecord,
   runCaptured,
@@ -284,19 +289,116 @@ test('runCaptured: l\'ultimo giro vero sopravvive ai rilanci senza esito', { ski
     await waitChild(child);
     return { record, settled: settleLaunchRecord(root, e.slug!)!, e };
   };
-  const first = await run('exit 1');
+  // T258 — il log che `l` apre per il record, come lo sceglie la pagina.
+  const shown = (r: { settled: LaunchRecord; e: LaunchEntry }) => {
+    const pick = pickLaunchLog(r.settled, r.e.noOutcome, existsSync(launchOutcomeLogPath(root, r.e.slug!)));
+    return readLaunchLog(root, r.e.slug!, pick.file);
+  };
+  const outcomeLog = () => readLaunchLog(root, 'lock', 'outcome');
+  const first = await run('echo misura-1; exit 1');
   assert.equal(first.record.lastOutcome, null, 'il primo giro di sempre non ha un giro prima');
   assert.equal(first.settled.exit, 1);
-  const second = await run('exit 3');
+  assert.equal(outcomeLog(), null, 'il giro vero corrente sta in <slug>.log, nessun file a parte');
+  assert.match(shown(first)!, /misura-1/);
+  const second = await run('echo lock-preso-1; exit 3');
   assert.equal(second.settled.exit, 3, 'il record dice com\'è finito il tentativo');
   assert.equal(second.settled.lastOutcome!.exit, 1, 'e porta il giro vero di prima');
   assert.equal(second.settled.lastOutcome!.endedAt, first.settled.endedAt);
-  const third = await run('exit 3');
+  assert.match(outcomeLog()!, /misura-1/, 'l\'output del giro vero è ancora su disco');
+  assert.match(readLaunchLog(root, 'lock')!, /lock-preso-1/, 'il tentativo resta leggibile');
+  assert.match(shown(second)!, /misura-1/, '`l` apre il log del giro che la riga mostra come esito');
+  const third = await run('echo lock-preso-2; exit 3');
   assert.equal(third.settled.lastOutcome!.exit, 1, 'due tentativi di fila non perdono il giro vero');
   assert.equal(lastTrueRecord(third.settled, third.e.noOutcome)!.exit, 1);
-  const fourth = await run('exit 0');
+  assert.match(outcomeLog()!, /misura-1/, 'né il suo log');
+  assert.doesNotMatch(outcomeLog()!, /lock-preso/);
+  assert.match(readLaunchLog(root, 'lock')!, /lock-preso-2/);
+  assert.match(shown(third)!, /misura-1/);
+  const fourth = await run('echo misura-2; exit 0');
   assert.equal(fourth.settled.exit, 0);
   assert.equal(lastTrueRecord(fourth.settled, fourth.e.noOutcome), fourth.settled, 'un giro vero torna a essere il record');
+  assert.match(shown(fourth)!, /misura-2/, 'e `l` apre il suo log, l\'ultimo lanciato');
+  const fifth = await run('echo lock-preso-3; exit 3');
+  assert.equal(fifth.settled.lastOutcome!.exit, 0);
+  assert.match(outcomeLog()!, /misura-2/, 'il giro vero nuovo prende il posto di quello vecchio');
+  assert.match(shown(fifth)!, /misura-2/);
+  const files = readdirSync(launchStateDir(root)).filter((f) => f.endsWith('.log')).sort();
+  assert.deepEqual(files, ['lock.log', 'lock.outcome.log'], 'i log restano due, qualunque sia il numero di tentativi');
+});
+
+test('runCaptured: una voce senza noOutcome tiene un log solo, e toglie quello rimasto', { skip: SKIP_BASH }, async () => {
+  const root = project();
+  const e = entry('pull', 'echo pull-2; exit 3');
+  // Lo stato di quando la voce aveva `noOutcome`: un giro vero e un tentativo.
+  writeLaunchRecord(root, e.slug!, rec({ exit: 3, lastOutcome: { startedAt: 1, endedAt: 2, exit: 1 } }));
+  writeFileSync(launchLogPath(root, e.slug!), 'tentativo vecchio\n');
+  writeFileSync(launchOutcomeLogPath(root, e.slug!), 'giro vero vecchio\n');
+  const { child } = runCaptured(e, root, 'tasto');
+  await waitExit(root, e.slug!);
+  await waitChild(child);
+  const settled = settleLaunchRecord(root, e.slug!)!;
+  assert.equal(existsSync(launchOutcomeLogPath(root, e.slug!)), false, 'il file del giro vero non descrive più nessun giro');
+  assert.match(readLaunchLog(root, e.slug!)!, /pull-2/, 'il log è riscritto dal giro');
+  assert.equal(pickLaunchLog(settled, e.noOutcome, false).file, 'last');
+});
+
+test('outcomeLogStep: la regola di lastOutcome, applicata al log', () => {
+  const no = [3];
+  assert.equal(outcomeLogStep(null, no), 'drop', 'nessun giro prima: niente da descrivere');
+  assert.equal(outcomeLogStep(rec({ exit: 1 }), no), 'promote', 'un giro vero: il suo log si mette da parte');
+  assert.equal(outcomeLogStep(rec({ exit: 0 }), no), 'promote');
+  const last = { startedAt: 1, endedAt: 2, exit: 1 };
+  assert.equal(outcomeLogStep(rec({ exit: 3, lastOutcome: last }), no), 'keep', 'un tentativo: il log del giro vero resta');
+  assert.equal(outcomeLogStep(rec({ exit: 3, lastOutcome: null }), no), 'drop', 'un tentativo senza un giro vero prima');
+  // Un esito perso non dice com'è finito: si porta avanti il giro vero che il record porta.
+  assert.equal(outcomeLogStep(rec({ pid: 4_000_000, procStart: '1', endedAt: null, exit: null, lastOutcome: last }), no), 'keep');
+  assert.equal(outcomeLogStep(rec({ pid: 4_000_000, procStart: '1', endedAt: null, exit: null }), no), 'drop');
+  // Senza noOutcome la voce tiene un log solo.
+  assert.equal(outcomeLogStep(rec({ exit: 1 }), null), 'drop');
+  assert.equal(outcomeLogStep(rec({ exit: 1 }), undefined), 'drop');
+  assert.equal(outcomeLogStep(rec({ exit: 1 }), []), 'drop');
+});
+
+test('pickLaunchLog: il log del giro che la riga mostra, il tentativo dietro tab', () => {
+  const no = [3];
+  const last = { startedAt: 1, endedAt: 2, exit: 1 };
+  const attempt = rec({ exit: 3, lastOutcome: last });
+  assert.deepEqual(pickLaunchLog(attempt, no, true), { file: 'outcome', alternate: true });
+  // Il log del giro vero non è su disco (record di un deck di prima): si apre il tentativo.
+  assert.deepEqual(pickLaunchLog(attempt, no, false), { file: 'last', alternate: false });
+  // Nessun giro vero, mai: un file rimasto non va sotto un esito che la riga non mostra.
+  assert.deepEqual(pickLaunchLog(rec({ exit: 3 }), no, true), { file: 'last', alternate: false });
+  // Giro vero, in corso, esito perso, voce senza noOutcome: l'ultimo giro lanciato.
+  assert.deepEqual(pickLaunchLog(rec({ exit: 1, lastOutcome: last }), no, true), { file: 'last', alternate: false });
+  assert.deepEqual(pickLaunchLog(rec({ pid: 1, endedAt: null, exit: null, lastOutcome: last }), no, true), { file: 'last', alternate: false });
+  assert.deepEqual(pickLaunchLog(attempt, null, true), { file: 'last', alternate: false });
+  assert.deepEqual(pickLaunchLog(null, no, true), { file: 'last', alternate: false });
+});
+
+test('intestazione del log: nomina il solo giro di cui si legge il testo', () => {
+  const v = voce('custodia', { noOutcome: [3] });
+  const attempt = rec({ startedAt: 50, endedAt: 60, exit: 3, lastOutcome: { startedAt: 10, endedAt: 20, exit: 1 } });
+  const truth = launchLogHeading(v, attempt, 'outcome', true);
+  assert.match(truth.text, /^\[ exit 1 · .* \]$/);
+  assert.equal(truth.color, 'red');
+  assert.doesNotMatch(truth.text, /exit 3|tentativo/, 'sul log del giro vero il tentativo non compare');
+  const tried = launchLogHeading(v, attempt, 'last', true);
+  assert.match(tried.text, /^tentativo · senza esito: exit 3 · /);
+  assert.doesNotMatch(tried.text, /exit 1/, 'sul log del tentativo l\'esito del giro vero non compare');
+  assert.equal(tried.trueLogMissing, false);
+  // Il log del giro vero non è su disco: la schermata dice perché si legge il tentativo.
+  assert.equal(launchLogHeading(v, attempt, 'last', false).trueLogMissing, true);
+  assert.equal(launchLogHeading(v, rec({ exit: 3 }), 'last', false).trueLogMissing, false, 'nessun giro vero da cercare');
+  // Una voce senza noOutcome, o un giro vero: l'intestazione di sempre.
+  assert.match(launchLogHeading(voce('pull'), attempt, 'last', false).text, /^\[ exit 3 · /);
+  assert.match(launchLogHeading(v, rec({ exit: 0 }), 'last', false).text, /^\[ exit 0 · /);
+});
+
+test('legenda del log con tab: sta nelle 76 colonne utili di un terminale da 80', () => {
+  for (const what of ['tentativo', 'giro vero']) {
+    const legend = `↑↓ riga · PgUp/PgDn ½ pagina · g/G estremi · tab ${what} · esc torna`;
+    assert.ok(termWidth(legend) <= 76, `${termWidth(legend)} colonne: ${legend}`);
+  }
 });
 
 // ── T190 · exit 1 contro 2 ──────────────────────────────────────────────────

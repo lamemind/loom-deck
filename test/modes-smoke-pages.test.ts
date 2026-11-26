@@ -117,6 +117,68 @@ test('pagina launch: tab + spazio spegne header, w lo scrive nel file', { skip: 
   assert.equal(doc.id, 'prova');
 });
 
+// ── T258 · il log del giro vero dopo un tentativo senza esito ───────────────
+//
+// Lo stato su disco di una voce con `noOutcome` dopo un giro vero (exit 1) e un
+// tentativo (exit 3): il record, `<slug>.log` col testo del tentativo e
+// `<slug>.outcome.log` col testo del giro vero. Scritto a mano e non prodotto
+// da un giro: gli spawn del gate sono inerti. Il test misura il collegamento
+// fra il tasto e la scelta del file, che vive in un hook React e nessun test
+// puro raggiunge.
+
+function attemptProject(withTrueLog: boolean): string {
+  const root = configProject();
+  writeFileSync(
+    join(root, '.claude', 'loom-works.json'),
+    JSON.stringify({
+      id: 'prova',
+      emoji: '🧵',
+      name: 'prova',
+      launch: [{ emoji: '🔬', label: 'custodia', command: 'giro.sh', capture: true, noOutcome: [3] }],
+    }) + '\n',
+  );
+  const dir = join(root, '.claude', 'loom', 'launch');
+  mkdirSync(dir, { recursive: true });
+  const at = Date.parse('2026-11-20T14:30:00');
+  writeFileSync(
+    join(dir, 'custodia.json'),
+    JSON.stringify({
+      pid: null,
+      procStart: null,
+      startedAt: at + 60_000,
+      endedAt: at + 61_000,
+      exit: 3,
+      origin: 'every',
+      lastOutcome: { startedAt: at - 30_000, endedAt: at, exit: 1 },
+    }) + '\n',
+  );
+  writeFileSync(join(dir, 'custodia.log'), 'giro già in corso\n');
+  if (withTrueLog) writeFileSync(join(dir, 'custodia.outcome.log'), 'misura del giro vero: 4 difetti\n');
+  return root;
+}
+
+test('pagina launch: l apre il log del giro vero, tab passa al tentativo e torna', { skip: SKIP }, () => {
+  const proj = attemptProject(true);
+  const truth = lastFrame(capture(`${CTRL_L}l`, proj));
+  assert.match(truth, /:: LOG \[ exit 1 · /, `l'intestazione non nomina il giro vero: ${truth}`);
+  assert.match(truth, /misura del giro vero/, `il testo non è quello del giro vero: ${truth}`);
+  assert.doesNotMatch(truth, /giro già in corso/, `il testo del tentativo sotto l'esito del giro vero: ${truth}`);
+  assert.match(truth, /tab tentativo/, `la legenda non offre il tentativo: ${truth}`);
+  const tried = lastFrame(capture(`${CTRL_L}l\t`, proj));
+  assert.match(tried, /:: LOG tentativo · senza esito: exit 3 · /, `l'intestazione non nomina il tentativo: ${tried}`);
+  assert.match(tried, /giro già in corso/, `il testo non è quello del tentativo: ${tried}`);
+  assert.doesNotMatch(tried, /exit 1/, `l'esito del giro vero sopra il testo del tentativo: ${tried}`);
+  const back = lastFrame(capture(`${CTRL_L}l\t\t`, proj));
+  assert.match(back, /misura del giro vero/, `il secondo tab non torna al giro vero: ${back}`);
+});
+
+test('pagina launch: senza il log del giro vero, l apre il tentativo dichiarato come tale', { skip: SKIP }, () => {
+  const frame = lastFrame(capture(`${CTRL_L}l`, attemptProject(false)));
+  assert.match(frame, /:: LOG tentativo · senza esito: exit 3 · .*log del giro vero non su disco/, frame);
+  assert.match(frame, /giro già in corso/, frame);
+  assert.doesNotMatch(frame, /\[ exit 1/, `l'esito del giro vero sopra il testo del tentativo: ${frame}`);
+});
+
 test('pagina launch: la cifra dalla lista lancia la voce pinnata', { skip: SKIP }, () => {
   const proj = launchProject();
   assert.match(capture('9', proj), /9 → pull all avviato/);

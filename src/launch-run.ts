@@ -12,10 +12,13 @@
 // l'ora dell'ultimo giro deve sopravvivere al riavvio, o un deck riaperto non sa
 // se la scadenza è passata.
 //
-//   <slug>.json  pid, ora d'inizio, exit e ora di fine dell'ultimo giro, più
-//                l'ultimo giro vero quando quello è senza esito (T190)
-//   <slug>.log   stdout e stderr del giro, riscritto a ogni lancio
-//   <slug>.exit  l'exit code, scritto dal FIGLIO a fine corsa
+//   <slug>.json         pid, ora d'inizio, exit e ora di fine dell'ultimo giro,
+//                       più l'ultimo giro vero quando quello è senza esito (T190)
+//   <slug>.log          stdout e stderr dell'ultimo giro lanciato, riscritto a
+//                       ogni lancio
+//   <slug>.outcome.log  solo con `noOutcome`: l'output del giro che il record
+//                       porta in `lastOutcome` (T258, `outcomeLogStep`)
+//   <slug>.exit         l'exit code, scritto dal FIGLIO a fine corsa
 //
 // L'exit lo scrive il figlio e non il deck (P8): con stdout su un fd aperto dal
 // padre il figlio sopravvive alla chiusura del deck (misurato nel DLV1), ma
@@ -44,6 +47,8 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -70,8 +75,20 @@ export function launchLogPath(projectRoot: string, slug: string): string {
   return join(launchStateDir(projectRoot), `${slug}.log`);
 }
 
+export function launchOutcomeLogPath(projectRoot: string, slug: string): string {
+  return join(launchStateDir(projectRoot), `${slug}.outcome.log`);
+}
+
 export function launchExitPath(projectRoot: string, slug: string): string {
   return join(launchStateDir(projectRoot), `${slug}.exit`);
+}
+
+/** Uno dei due log di una voce: `last` è l'ultimo giro lanciato, `outcome`
+ *  l'ultimo giro vero di una voce con `noOutcome` (T258). */
+export type LaunchLogFile = 'last' | 'outcome';
+
+function logPathOf(projectRoot: string, slug: string, file: LaunchLogFile): string {
+  return file === 'outcome' ? launchOutcomeLogPath(projectRoot, slug) : launchLogPath(projectRoot, slug);
 }
 
 /** Da dove è partito il giro: decide la notifica (P14) e la nota a schermo. */
@@ -283,6 +300,76 @@ function carriedOutcome(prev: LaunchRecord | null, noOutcome: readonly number[] 
   return { startedAt: truth.startedAt, endedAt: truth.endedAt ?? truth.startedAt, exit: truth.exit };
 }
 
+// ── Il log dell'ultimo giro vero (T258) ────────────────────────────────────
+// Al lancio il deck non sa come finirà il giro, e `<slug>.log` si tronca per
+// accogliere il suo output: il log dell'ultimo giro vero va messo da parte
+// PRIMA, con la stessa regola con cui il record porta avanti `lastOutcome`
+// (`carriedOutcome`), e nello stesso punto. Così `<slug>.outcome.log` contiene
+// sempre l'output del giro che il record nuovo porta in `lastOutcome`, e i log
+// restano due qualunque sia il numero di tentativi di fila.
+
+/**
+ * Cosa fare di `<slug>.outcome.log` al lancio, guardando il record che sta per
+ * essere sostituito:
+ *
+ * - `promote` — il record è un giro vero: il suo output è `<slug>.log`, che
+ *   diventa `<slug>.outcome.log` prima del troncamento;
+ * - `keep` — il record è un tentativo senza esito o un esito perso, e porta
+ *   avanti un giro vero di prima: il file che lo descrive resta com'è;
+ * - `drop` — la voce non ha `noOutcome`, o nessun giro vero resta da
+ *   descrivere: un file rimasto non descriverebbe il giro di `lastOutcome`, e
+ *   comparirebbe sotto l'esito sbagliato se `noOutcome` tornasse nella voce.
+ */
+export type OutcomeLogStep = 'promote' | 'keep' | 'drop';
+
+export function outcomeLogStep(
+  prev: LaunchRecord | null,
+  noOutcome: readonly number[] | null | undefined,
+): OutcomeLogStep {
+  if (!noOutcome?.length || !prev) return 'drop';
+  if (prev.exit !== null && !isNoOutcome(prev.exit, noOutcome)) return 'promote';
+  return prev.lastOutcome ? 'keep' : 'drop';
+}
+
+function applyOutcomeLogStep(cwd: string, slug: string, step: OutcomeLogStep): void {
+  if (step === 'keep') return;
+  const outcomeLog = launchOutcomeLogPath(cwd, slug);
+  const lastLog = launchLogPath(cwd, slug);
+  // Un giro vero senza log su disco (cancellato a mano) non lascia niente da
+  // promuovere: il file vecchio descriverebbe un giro di prima.
+  if (step === 'promote' && existsSync(lastLog)) renameSync(lastLog, outcomeLog);
+  else rmSync(outcomeLog, { force: true });
+}
+
+/**
+ * Quale log apre `l` nella pagina `^L` (T258): quello del giro che la riga
+ * mostra come esito.
+ *
+ * Su un tentativo senza esito la riga mostra l'ultimo giro vero, quindi `l`
+ * apre `<slug>.outcome.log`, e `tab` passa al tentativo (`alternate`). Quando
+ * il log del giro vero non è su disco — nessun giro vero finora, o un record
+ * scritto da un deck che non lo conservava — `l` apre il tentativo, e la
+ * schermata lo dichiara come tale: il testo di un tentativo non compare mai
+ * sotto l'esito di un giro vero. Ogni altro record (in corso, esito perso,
+ * giro vero) è l'ultimo giro lanciato, `<slug>.log`.
+ */
+export interface LaunchLogPick {
+  file: LaunchLogFile;
+  /** Il log del tentativo sta su disco accanto a quello del giro vero. */
+  alternate: boolean;
+}
+
+export function pickLaunchLog(
+  rec: LaunchRecord | null,
+  noOutcome: readonly number[] | null | undefined,
+  outcomeLogOnDisk: boolean,
+): LaunchLogPick {
+  if (rec && isNoOutcome(rec.exit, noOutcome) && rec.lastOutcome && outcomeLogOnDisk) {
+    return { file: 'outcome', alternate: true };
+  }
+  return { file: 'last', alternate: false };
+}
+
 /**
  * Il giro finito merita la notifica desktop. A tasto sempre (P14): l'ha
  * chiesto l'utente, che aspetta di sapere com'è andata. Da startup e da
@@ -345,7 +432,9 @@ export function launchIndicatorOf(
  *
  * Il record nuovo porta con sé l'ultimo giro vero (`lastOutcome`), letto dal
  * record che sta per sostituire: chi lancia lo ha già fuso col suo `.exit`
- * (`settleLaunchRecord` davanti alla guardia), quindi qui basta leggerlo.
+ * (`settleLaunchRecord` davanti alla guardia), quindi qui basta leggerlo. Lo
+ * stesso record decide, prima che il log si tronchi, cosa resta del log
+ * dell'ultimo giro vero (`outcomeLogStep`).
  *
  * Con `LOOM_DECK_NO_SPAWN` niente si scrive sul disco: i gate pty girano sul
  * progetto vero, e un record scritto lì marcherebbe «in corso» una voce che non
@@ -358,6 +447,7 @@ export function runCaptured(
   now: number = Date.now(),
 ): { child: ChildProcess; record: LaunchRecord } {
   const slug = entry.slug ?? 'voce';
+  const prev = readLaunchRecord(cwd, slug);
   const record: LaunchRecord = {
     pid: null,
     procStart: null,
@@ -365,7 +455,7 @@ export function runCaptured(
     endedAt: null,
     exit: null,
     origin,
-    lastOutcome: carriedOutcome(readLaunchRecord(cwd, slug), entry.noOutcome),
+    lastOutcome: carriedOutcome(prev, entry.noOutcome),
   };
   if (NO_SPAWN) {
     const fake = new EventEmitter() as ChildProcess;
@@ -375,6 +465,7 @@ export function runCaptured(
   mkdirSync(launchStateDir(cwd), { recursive: true });
   const exitFile = launchExitPath(cwd, slug);
   if (existsSync(exitFile)) unlinkSync(exitFile);
+  applyOutcomeLogStep(cwd, slug, outcomeLogStep(prev, entry.noOutcome));
   const fd = openSync(launchLogPath(cwd, slug), 'w');
   let child: ChildProcess;
   try {
@@ -393,10 +484,15 @@ export function runCaptured(
   return { child, record };
 }
 
-/** La coda del log, al più `maxBytes` dalla fine; `null` se non c'è. */
-export function readLaunchLog(projectRoot: string, slug: string, maxBytes = 256 * 1024): string | null {
+/** La coda di uno dei due log, al più `maxBytes` dalla fine; `null` se non c'è. */
+export function readLaunchLog(
+  projectRoot: string,
+  slug: string,
+  file: LaunchLogFile = 'last',
+  maxBytes = 256 * 1024,
+): string | null {
   try {
-    const text = readFileSync(launchLogPath(projectRoot, slug), 'utf8');
+    const text = readFileSync(logPathOf(projectRoot, slug, file), 'utf8');
     return text.length > maxBytes ? text.slice(text.length - maxBytes) : text;
   } catch {
     return null;

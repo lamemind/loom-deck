@@ -409,7 +409,9 @@ export function screenFor(input: ScreensInput) {
       return (
         <LaunchLogScreen
           entry={launch.log.entry}
-          record={launch.log.entry.slug ? launch.records.get(launch.log.entry.slug) ?? null : null}
+          record={launch.log.record}
+          file={launch.log.file}
+          alternate={launch.log.alternate}
           lines={launch.logLines.slice(start, start + launch.logCapacity)}
           top={start}
           total={launch.logLines.length}

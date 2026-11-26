@@ -9,14 +9,16 @@
 // e un secondo motore in `hooks.ts` divergerebbe al primo attributo aggiunto.
 //
 // La pagina (P20): due righe per voce, tutte le voci del progetto, non solo
-// quelle con esito. `⏎` lancia, `l` apre il log, `tab` scorre gli input della
-// voce selezionata, spazio e `←→` alternano, `w` scrive gli attributi nel file
-// di progetto (P21). La BOZZA vive in memoria fino a `w`, come nella pagina di
+// quelle con esito. `⏎` lancia, `l` apre il log del giro che la riga mostra come
+// esito (T258: dopo un tentativo senza esito, `tab` nel log passa al tentativo),
+// `tab` scorre gli input della voce selezionata, spazio e `←→` alternano, `w`
+// scrive gli attributi nel file di progetto (P21). La BOZZA vive in memoria fino a `w`, come nella pagina di
 // spawn: il file è committato, e scriverci a ogni tasto sporcherebbe il working
 // tree per una prova.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Key } from 'ink';
 import type { ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { assignDigits, launchEnabled, parseEvery, type LaunchEntry } from '../config.js';
 import {
   isNoOutcome,
@@ -24,11 +26,14 @@ import {
   launchDue,
   launchIndicatorOf,
   launchNotifies,
+  launchOutcomeLogPath,
   launchRunning,
+  pickLaunchLog,
   readLaunchLog,
   runCaptured,
   settleLaunchRecord,
   type LaunchIndicator,
+  type LaunchLogFile,
   type LaunchOrigin,
   type LaunchRecord,
 } from '../launch-run.js';
@@ -52,6 +57,17 @@ export type LaunchField = 'header' | 'capture' | 'startup' | 'every';
 export const LAUNCH_FIELDS: readonly LaunchField[] = ['header', 'capture', 'startup', 'every'];
 
 export type { LaunchIndicator };
+
+/** Il log aperto da `l`: il testo, il file da cui viene e il record del giro
+ *  com'era all'apertura (T258). */
+export interface LaunchLogView {
+  entry: LaunchEntry;
+  record: LaunchRecord | null;
+  file: LaunchLogFile;
+  /** `tab` ha un secondo log da mostrare: il tentativo accanto al giro vero. */
+  alternate: boolean;
+  text: string;
+}
 
 export interface LaunchPageDeps {
   cwd: string;
@@ -83,7 +99,7 @@ export function useLaunchPage(deps: LaunchPageDeps) {
   const [top, setTop] = useState(0);
   const [field, setField] = useState<LaunchField | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [log, setLog] = useState<{ entry: LaunchEntry; text: string } | null>(null);
+  const [log, setLog] = useState<LaunchLogView | null>(null);
   const [logTop, setLogTop] = useState(0);
 
   // I figli di QUESTO deck, per l'evento `exit`; le corse degli altri deck si
@@ -297,6 +313,12 @@ export function useLaunchPage(deps: LaunchPageDeps) {
     setNote(`w → attributi di ${table.length} voc${table.length === 1 ? 'e' : 'i'} scritti nel file di progetto`);
   }
 
+  /**
+   * `l` apre il log del giro che la riga mostra come esito (`pickLaunchLog`).
+   * Il record si congela insieme al testo: l'intestazione della schermata deve
+   * nominare il giro di cui si legge il testo, anche se nel frattempo un tick
+   * ne lancia un altro.
+   */
   function openLog() {
     const e = table[sel];
     if (!e) return;
@@ -304,12 +326,26 @@ export function useLaunchPage(deps: LaunchPageDeps) {
       setNote(`l → «${e.label}» non ha esito: accendi capture`);
       return;
     }
-    const text = e.slug ? readLaunchLog(cwd, e.slug) : null;
+    const record = e.slug ? records.get(e.slug) ?? null : null;
+    const pick = e.slug
+      ? pickLaunchLog(record, e.noOutcome, existsSync(launchOutcomeLogPath(cwd, e.slug)))
+      : { file: 'last' as const, alternate: false };
+    const text = e.slug ? readLaunchLog(cwd, e.slug, pick.file) : null;
     if (text === null) {
       setNote(`l → «${e.label}» non è mai partita: nessun log`);
       return;
     }
-    setLog({ entry: e, text });
+    setLog({ entry: e, record, file: pick.file, alternate: pick.alternate, text });
+    setLogTop(0);
+  }
+
+  /** `tab` nella schermata del log: dal giro vero al tentativo e ritorno. */
+  function switchLog() {
+    if (!log || !log.alternate || !log.entry.slug) return;
+    const file = log.file === 'outcome' ? 'last' : 'outcome';
+    const text = readLaunchLog(cwd, log.entry.slug, file);
+    if (text === null) return;
+    setLog({ ...log, file, text });
     setLogTop(0);
   }
 
@@ -328,6 +364,7 @@ export function useLaunchPage(deps: LaunchPageDeps) {
     if (!open) return;
     if (log) {
       if (key.escape) setLog(null);
+      else if (key.tab) switchLog();
       else if (key.upArrow) scroll(-1);
       else if (key.downArrow) scroll(1);
       else if (key.pageUp) scroll(-pageStep(logCapacity));

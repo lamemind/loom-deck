@@ -4,7 +4,13 @@ import { Box, Text } from 'ink';
 import { cut, pad, sanitize, termWidth, type WrappedLine } from '../width.js';
 import { CARET, CARET_OFF, fmtTime } from '../glyphs.js';
 import { launchEnabled, launchShown, type LaunchEntry, type LaunchSlot } from '../config.js';
-import { isNoOutcome, lastTrueRecord, launchRunning, type LaunchRecord } from '../launch-run.js';
+import {
+  isNoOutcome,
+  lastTrueRecord,
+  launchRunning,
+  type LaunchLogFile,
+  type LaunchRecord,
+} from '../launch-run.js';
 import type { LaunchField } from '../overlays/launch.js';
 
 /** Le spunte: concordi nelle due contabilità di larghezza (`agrees`), quindi
@@ -174,18 +180,65 @@ export function LaunchScreen({
   );
 }
 
+/**
+ * T258 — l'intestazione della schermata del log: il solo giro di cui si legge
+ * il testo. Sul log del giro vero è il suo esito, `[ exit 1 · 14:30 ]`; sul log
+ * di un tentativo senza esito è `tentativo · senza esito: exit 3 · 14:31`, mai
+ * l'esito del giro vero, che quel testo non descrive. `trueLogMissing` dice
+ * perché si legge il tentativo quando la riga mostra un giro vero: il suo log
+ * non è su disco.
+ */
+export interface LaunchLogHeading {
+  text: string;
+  color?: string;
+  dim: boolean;
+  attempt: boolean;
+  trueLogMissing: boolean;
+}
+
+export function launchLogHeading(
+  e: LaunchEntry,
+  rec: LaunchRecord | null,
+  file: LaunchLogFile,
+  alternate: boolean,
+): LaunchLogHeading {
+  if (rec && file === 'outcome') {
+    const truth = lastTrueRecord(rec, e.noOutcome);
+    if (truth) {
+      const done = exitText(truth);
+      return { ...done, text: `[ ${done.text} ]`, attempt: false, trueLogMissing: false };
+    }
+  }
+  if (rec && rec.exit !== null && isNoOutcome(rec.exit, e.noOutcome)) {
+    return {
+      text: `tentativo · senza esito: exit ${rec.exit} · ${fmtTime(rec.endedAt ?? rec.startedAt)}`,
+      dim: true,
+      attempt: true,
+      trueLogMissing: !alternate && rec.lastOutcome !== null,
+    };
+  }
+  const outcome = launchOutcome(e, rec);
+  return { text: `[ ${outcome.text || 'nessun esito'} ]`, color: outcome.color, dim: outcome.dim, attempt: false, trueLogMissing: false };
+}
+
 /** Il log di una voce: testo grezzo, scorrevole, come il viewer del project
  *  status senza il markdown. */
 export function LaunchLogScreen({
   entry,
   record,
+  file,
+  alternate,
   lines,
   top,
   total,
   capacity,
 }: {
   entry: LaunchEntry;
+  /** Il record com'era all'apertura del log: descrive il giro del testo. */
   record: LaunchRecord | null;
+  file: LaunchLogFile;
+  /** `tab` passa all'altro log: il tentativo, o il giro vero. */
+  alternate: boolean;
   /** Solo la finestra visibile del testo wrappato. */
   lines: WrappedLine[];
   top: number;
@@ -193,23 +246,35 @@ export function LaunchLogScreen({
   capacity: number;
 }) {
   const last = Math.min(total, top + capacity);
-  const outcome = launchOutcome(entry, record);
+  const heading = launchLogHeading(entry, record, file, alternate);
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1}>
       <Text bold wrap="truncate-end">
         <Text color="cyan">{sanitize(`${entry.emoji} ${entry.label}`)}</Text>
         <Text dimColor> :: LOG </Text>
-        <Text color={outcome.color} dimColor={outcome.dim}>
-          [ {outcome.text || 'nessun esito'} ]
+        <Text color={heading.color} dimColor={heading.dim}>
+          {heading.text}
         </Text>
-        {outcome.aside ? <Text dimColor> {outcome.aside}</Text> : null}
+        {heading.trueLogMissing ? <Text dimColor> · log del giro vero non su disco</Text> : null}
       </Text>
       <Text dimColor wrap="truncate-end">
         {sanitize(cut(entry.command, 80))} · righe {total === 0 ? 0 : top + 1}-{last} di {total}
       </Text>
+      {/* Con `tab` la legenda supera le 76 colonne utili di un terminale da 80:
+          `esc` si accorcia, perché è il tasto che chi legge conosce già. */}
       <Text dimColor wrap="truncate-end">
         <Text color="yellow">↑↓</Text> riga · <Text color="yellow">PgUp/PgDn</Text> ½ pagina ·{' '}
-        <Text color="yellow">g/G</Text> estremi · <Text color="yellow">esc</Text> torna alla pagina
+        <Text color="yellow">g/G</Text> estremi ·{' '}
+        {alternate ? (
+          <>
+            <Text color="yellow">tab</Text> {file === 'outcome' ? 'tentativo' : 'giro vero'} ·{' '}
+            <Text color="yellow">esc</Text> torna
+          </>
+        ) : (
+          <>
+            <Text color="yellow">esc</Text> torna alla pagina
+          </>
+        )}
       </Text>
       <Box flexDirection="column" borderStyle="single" borderColor="gray" paddingX={1} marginTop={1}>
         {lines.map((l, i) => (
