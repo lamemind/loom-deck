@@ -29,19 +29,25 @@ const MAX_UP = 3;
 /**
  * Il bash di Git, o `null`.
  *
- * Cascata (P6 preflight): la variabile, se impostata — è la scelta esplicita di
- * chi ha configurato Claude Code; poi ogni `git.exe` del `PATH`, nell'ordine,
+ * Cascata (P6 preflight): la variabile, se impostata e se il file esiste — è la
+ * scelta esplicita di chi ha configurato Claude Code; poi ogni `git.exe` del
+ * `PATH`, nell'ordine,
  * risalendo da lì fino a trovare `bin\bash.exe`. Mai `bash` dal `PATH`: Git
  * aggiunge solo `Git\cmd`, e `C:\Windows\System32\bash.exe` è il lanciatore di
  * WSL. Mai un path cablato: Git può stare fuori da `C:\Program Files\Git`
  * (sulla macchina di T174 sta in `C:\Dev\Tools\Git`).
+ *
+ * T178 — una variabile che punta a un file che non c'è non chiude la cascata:
+ * restituita così, accenderebbe le funzioni che il bash richiede (`REQUIRES` in
+ * `platform.ts`) con un interprete che non parte, e l'indicatore del gitlink
+ * direbbe `?` invece di `n/d` con la causa.
  */
 export function resolveGitBash(
   env: Readonly<Record<string, string | undefined>>,
   exists: (path: string) => boolean,
 ): string | null {
   const explicit = env[GIT_BASH_ENV];
-  if (explicit) return explicit;
+  if (explicit && exists(explicit)) return explicit;
   const path = env.PATH ?? env.Path ?? '';
   for (const dir of path.split(win32.delimiter)) {
     if (!dir) continue;
