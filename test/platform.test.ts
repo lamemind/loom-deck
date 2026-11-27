@@ -17,6 +17,7 @@ import {
   refuse,
   UNAVAILABLE,
   type Feature,
+  type Tools,
 } from '../src/platform.js';
 import { gitlinkIndicator } from '../src/frame.js';
 import { sessionView } from '../src/pane-views.js';
@@ -42,17 +43,46 @@ test('su Linux nessuna funzione è spenta', () => {
 // T176 — `spawn` è la prima funzione riaccesa: tab di Windows Terminal al
 // posto di Ptyxis. T177 — la seconda è `liveSessions`: liveness senza `/proc`.
 // T180 — la terza è `notify`: toast WinRT al posto di `notify-send`.
-// Le altre due restano alle loro figlie di fase 2.
-const WIN_ON: Feature[] = ['spawn', 'liveSessions', 'notify'];
+// T178 — la quarta è `pluginScripts`: gli script `.sh` col bash di Git.
+// `launch` resta alla sua figlia di fase 2.
+const WIN_ON: Feature[] = ['spawn', 'liveSessions', 'notify', 'pluginScripts'];
 const WIN_OFF: Feature[] = ALL.filter((f) => !WIN_ON.includes(f));
 
-test('su Windows sono spente le due funzioni ancora senza figlia chiusa e il controllo della finestra (T199), spawn, liveSessions e notify sono accese', () => {
-  for (const f of WIN_OFF) assert.equal(isAvailable(f, 'win32'), false, f);
-  for (const f of WIN_ON) assert.equal(isAvailable(f, 'win32'), true, f);
+/** Gli strumenti di una macchina finta: col bash di Git, o senza. */
+const WITH_BASH: Tools = { gitBash: () => 'C:\\Git\\bin\\bash.exe' };
+const NO_BASH: Tools = { gitBash: () => null };
+
+test('su Windows col bash di Git sono spente launch e il controllo della finestra (T199), le altre sono accese', () => {
+  for (const f of WIN_OFF) assert.equal(isAvailable(f, 'win32', WITH_BASH), false, f);
+  for (const f of WIN_ON) assert.equal(isAvailable(f, 'win32', WITH_BASH), true, f);
   // La mappa è il punto che una figlia tocca per riaccendere: nessuna voce
   // doppia, o togliere una voce sola lascerebbe la funzione spenta.
   const win = UNAVAILABLE.win32 ?? [];
   assert.equal(new Set(win).size, win.length);
+});
+
+test('T178 — su Windows senza bash di Git gli script del plugin restano spenti, e le altre funzioni no', () => {
+  assert.equal(isAvailable('pluginScripts', 'win32', NO_BASH), false);
+  for (const f of ['spawn', 'liveSessions', 'notify'] as Feature[]) {
+    assert.equal(isAvailable(f, 'win32', NO_BASH), true, f);
+  }
+});
+
+test('T178 — senza bash di Git l\'avviso di ^U nomina la causa (P4)', () => {
+  assert.equal(
+    offNote('^U', 'pluginScripts', 'bump del gitlink', 'win32', NO_BASH),
+    '⚠ ^U → bump del gitlink n/d su Windows: bash di Git non trovato',
+  );
+});
+
+test('T178 — il bash di Git non conta fuori da Windows: su Linux non si cerca nemmeno', () => {
+  const never: Tools = {
+    gitBash: () => {
+      throw new Error('il bash di Git si cerca solo su win32');
+    },
+  };
+  assert.equal(isAvailable('pluginScripts', 'linux', never), true);
+  assert.equal(offText('launch', undefined, 'linux', never), 'voci launch n/d su Linux');
 });
 
 test('una piattaforma senza voce ha tutte le funzioni', () => {
@@ -68,7 +98,7 @@ test("l'avviso nomina il tasto, la funzione e la piattaforma", () => {
     offNote('CANC', 'liveSessions', 'eliminazione delle conversazioni', 'win32'),
     '⚠ CANC → eliminazione delle conversazioni n/d su Windows',
   );
-  assert.equal(offText('pluginScripts', 'pane inbox', 'win32'), 'pane inbox n/d su Windows');
+  assert.equal(offText('launch', 'voci launch all\'avvio', 'win32'), 'voci launch all\'avvio n/d su Windows');
 });
 
 test('LOOM_DECK_PLATFORM sostituisce la piattaforma vera, e si legge a ogni chiamata', () => {

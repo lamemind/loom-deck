@@ -41,9 +41,11 @@ export function useGitlink(deps: GitlinkDeps) {
    */
   const enabled = useMemo(() => hasGitmodules(cwd), [cwd]);
   /** T175 — il segmento esiste (c'è `.gitmodules`) ma lo script che lo misura
-   *  non gira su questa piattaforma: l'indicatore dice `n/d` al posto del
-   *  valore, nessun timer parte, `^U` lo spiega. Due gate e non uno, perché sono
-   *  due fatti diversi: un repo senza submodule e una piattaforma senza bash. */
+   *  non gira qui: l'indicatore dice `n/d` al posto del valore, nessun timer
+   *  parte, `^U` lo spiega. Due gate e non uno, perché sono due fatti diversi:
+   *  un repo senza submodule e una macchina senza bash. T178 — su Windows lo
+   *  script gira col bash di Git, e la funzione è spenta solo dove quel bash
+   *  non si trova: `^U` lo dice («bash di Git non trovato»). */
   const available = isAvailable('pluginScripts');
   const active = enabled && available;
 

@@ -6,9 +6,11 @@
 // dell'epica T173 riaccendono una funzione TOGLIENDO UNA VOCE da `UNAVAILABLE`:
 // i tasti, i pane e gli scan leggono la mappa, non la piattaforma.
 //
-// Modulo PURO: nessun React, nessun I/O. L'unico ingresso esterno è la
-// piattaforma stessa, letta a ogni chiamata (`platform()`), così un test può
-// cambiarla fra un caso e l'altro senza re-importare il modulo.
+// Modulo PURO: nessun React, nessun I/O proprio. Gli ingressi esterni sono la
+// piattaforma, letta a ogni chiamata (`platform()`), così un test può cambiarla
+// fra un caso e l'altro senza re-importare il modulo, e gli strumenti di
+// `REQUIRES` (T178), che arrivano come funzioni (`Tools`) e un test sostituisce.
+import { gitBash } from './git-bash.js';
 
 /** Le funzioni che una piattaforma può non avere. Una voce = un'area del deck
  *  che dipende da uno strumento che su quella piattaforma manca. */
@@ -23,7 +25,8 @@ export type Feature =
    *  aperta, e il resume e il restore (T176), che senza liveness riaprirebbero
    *  una conversazione già aperta in un'altra tab. */
   | 'liveSessions'
-  /** Gli script `.sh` del plugin: il gitlink. */
+  /** Gli script `.sh` del plugin: il gitlink. Su Windows col bash di Git (T178,
+   *  `scriptCommand`), quindi solo dove quel bash si trova (`REQUIRES`). */
   | 'pluginScripts'
   /** Le voci `launch[]` del file di progetto: comandi Linux via `bash -lic`. */
   | 'launch'
@@ -44,7 +47,6 @@ export type Feature =
  */
 export const UNAVAILABLE: Partial<Record<NodeJS.Platform, readonly Feature[]>> = {
   win32: [
-    'pluginScripts', // T178 — .sh del plugin via Git Bash
     'launch', // T179 — comando per piattaforma nelle voci launch[]
     // T199 — Windows Terminal apre una tab in una finestra per nome, e compass
     // lì non c'è: il controllo ha un'altra forma. Spento e non lasciato al ramo
@@ -52,6 +54,47 @@ export const UNAVAILABLE: Partial<Record<NodeJS.Platform, readonly Feature[]>> =
     'windowCheck',
   ],
 };
+
+/** Gli strumenti della macchina che una funzione può richiedere, come funzioni:
+ *  `platform.ts` non li cerca da sé, e un test li sostituisce. */
+export interface Tools {
+  /** Il bash di Git for Windows, o `null` (`git-bash.ts`). */
+  gitBash: () => string | null;
+}
+
+export const TOOLS: Tools = { gitBash };
+
+/** Uno strumento senza il quale una funzione resta spenta, e come si nomina la
+ *  sua assenza nell'avviso. */
+interface Requirement {
+  found: (tools: Tools) => boolean;
+  missing: string;
+}
+
+/**
+ * T178 — la seconda condizione: per piattaforma, le funzioni accese che
+ * dipendono da uno strumento che su quella macchina può mancare.
+ *
+ * Due mappe e non una, perché sono due fatti diversi. `UNAVAILABLE` dice cosa il
+ * deck non sa ancora fare su una piattaforma, ed è uguale su ogni macchina;
+ * `REQUIRES` dice cosa il deck sa fare solo dove lo strumento c'è. Su Windows il
+ * gitlink lo sa fare col bash di Git: senza, l'indicatore dice `n/d` invece di
+ * misurare a vuoto e accendere il glifo di allerta, e l'avviso di `^U` nomina la
+ * causa, perché il rimedio è installare Git for Windows o impostare
+ * `CLAUDE_CODE_GIT_BASH_PATH`.
+ */
+const REQUIRES: Partial<Record<NodeJS.Platform, Partial<Record<Feature, Requirement>>>> = {
+  win32: {
+    pluginScripts: { found: (t) => t.gitBash() !== null, missing: 'bash di Git non trovato' },
+  },
+};
+
+/** La causa per cui una funzione che la piattaforma sa fare resta spenta su
+ *  questa macchina, o `null`. */
+function missingTool(feature: Feature, p: NodeJS.Platform, tools: Tools): string | null {
+  const req = REQUIRES[p]?.[feature];
+  return req && !req.found(tools) ? req.missing : null;
+}
 
 /** Come una funzione si nomina in un avviso, quando il chiamante non ne dà un
  *  nome più preciso (il tasto che l'ha chiesta, per esempio). */
@@ -95,16 +138,31 @@ export function platformName(p: NodeJS.Platform = platform()): string {
   return PLATFORM_NAME[p] ?? p;
 }
 
-/** La funzione c'è su questa piattaforma. */
-export function isAvailable(feature: Feature, p: NodeJS.Platform = platform()): boolean {
-  return !(UNAVAILABLE[p] ?? []).includes(feature);
+/** La funzione c'è su questa piattaforma, e su questa macchina ci sono gli
+ *  strumenti che richiede (`REQUIRES`). */
+export function isAvailable(
+  feature: Feature,
+  p: NodeJS.Platform = platform(),
+  tools: Tools = TOOLS,
+): boolean {
+  if ((UNAVAILABLE[p] ?? []).includes(feature)) return false;
+  return missingTool(feature, p, tools) === null;
 }
 
 /** Il testo di una funzione spenta, per un pane o una vista: nomina la funzione
- *  e la piattaforma. `n/d` e non «non disponibile»: resta invariato davanti a un
- *  nome singolare o plurale. */
-export function offText(feature: Feature, what?: string, p: NodeJS.Platform = platform()): string {
-  return `${what ?? FEATURE_LABEL[feature]} ${OFF_MARK} su ${platformName(p)}`;
+ *  e la piattaforma, e lo strumento mancante quando è lui a spegnerla. `n/d` e
+ *  non «non disponibile»: resta invariato davanti a un nome singolare o
+ *  plurale. */
+export function offText(
+  feature: Feature,
+  what?: string,
+  p: NodeJS.Platform = platform(),
+  tools: Tools = TOOLS,
+): string {
+  const base = `${what ?? FEATURE_LABEL[feature]} ${OFF_MARK} su ${platformName(p)}`;
+  if ((UNAVAILABLE[p] ?? []).includes(feature)) return base;
+  const cause = missingTool(feature, p, tools);
+  return cause ? `${base}: ${cause}` : base;
 }
 
 /** La riga di stato di un tasto spento: il tasto, la funzione, la piattaforma. */
@@ -113,8 +171,9 @@ export function offNote(
   feature: Feature,
   what?: string,
   p: NodeJS.Platform = platform(),
+  tools: Tools = TOOLS,
 ): string {
-  return `⚠ ${key} → ${offText(feature, what, p)}`;
+  return `⚠ ${key} → ${offText(feature, what, p, tools)}`;
 }
 
 /**

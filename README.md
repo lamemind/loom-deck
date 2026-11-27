@@ -333,6 +333,7 @@ gitlink 2
 | _(assente)_ | il progetto non ha `.gitmodules`: nessun timer, nessuno spawn, nessuna colonna spesa |
 | `missing` | prima misura non ancora tornata |
 | `?` | plugin loom-works non installato su questa macchina, o script in errore |
+| `n/d` | su Windows, bash di Git non trovato: nessun timer, e `^U` nomina la causa |
 | `ok` | ogni membro coincide col proprio gitlink |
 | `2` | due membri col checkout diverso dal gitlink |
 | `⚠` in coda | l'ultimo bump è fallito, **oppure** un membro richiede un gesto che il bump non fa |
@@ -447,6 +448,8 @@ Le tab usano il profilo di Windows Terminal **`loom-deck`**, uno solo per tutti 
 `colorScheme` fissa i colori di tutte le tab del deck: è il nome di uno schema predefinito di Windows Terminal o di uno dichiarato sotto `schemes` nello stesso `settings.json`. `commandline` è la shell del tasto `t`; nelle conversazioni il comando del deck prende il suo posto. `closeOnExit` decide cosa resta della tab quando `claude` esce (il wrapper esce col suo codice). Senza il profilo la tab si apre comunque, col profilo di default. Il nome si cambia con `LOOM_DECK_WT_PROFILE` (vuota = nessun `-p`).
 
 La tab eredita tutto l'env del deck, tranne i marker che una sessione Claude Code inietta nei figli (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, …): con quelli una conversazione aperta da un deck lanciato dentro Claude Code non salverebbe il transcript. Se manca, il deck aggiunge `CLAUDE_CODE_GIT_BASH_PATH`: col `PATH` di Git Bash `claude` eseguirebbe gli hook del plugin in PowerShell, e la task non arriverebbe in contesto.
+
+Gli script `.sh` del plugin — oggi `bump-gitlink.sh`, dietro l'indicatore del gitlink e `^U` — partono col bash di Git for Windows, che il deck trova da `CLAUDE_CODE_GIT_BASH_PATH` o risalendo da ogni `git.exe` del `PATH` fino a `bin\bash.exe`; mai `bash` dal `PATH`, che può essere il lanciatore di WSL. Senza quel bash l'indicatore dice `gitlink n/d`, e `^U` risponde `bump del gitlink n/d su Windows: bash di Git non trovato`. Un giro di misura dura secondi e non centesimi, perché ogni sottoprocesso di Git Bash costa intorno ai 150 ms: gira in un figlio, e il deck resta reattivo.
 
 Su Windows il resume di una conversazione e il restore (`^T`) restano spenti con un avviso finché il deck non sa quali conversazioni sono vive: senza quella informazione un resume può riaprire una conversazione già aperta in un'altra tab. Il fork resta acceso, perché apre un transcript nuovo.
 
