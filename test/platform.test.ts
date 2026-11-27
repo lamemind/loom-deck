@@ -44,15 +44,15 @@ test('su Linux nessuna funzione è spenta', () => {
 // posto di Ptyxis. T177 — la seconda è `liveSessions`: liveness senza `/proc`.
 // T180 — la terza è `notify`: toast WinRT al posto di `notify-send`.
 // T178 — la quarta è `pluginScripts`: gli script `.sh` col bash di Git.
-// `launch` resta alla sua figlia di fase 2.
-const WIN_ON: Feature[] = ['spawn', 'liveSessions', 'notify', 'pluginScripts'];
+// T179 — la quinta è `launch`: il comando `windows` delle voci col bash di Git.
+const WIN_ON: Feature[] = ['spawn', 'liveSessions', 'notify', 'pluginScripts', 'launch'];
 const WIN_OFF: Feature[] = ALL.filter((f) => !WIN_ON.includes(f));
 
 /** Gli strumenti di una macchina finta: col bash di Git, o senza. */
 const WITH_BASH: Tools = { gitBash: () => 'C:\\Git\\bin\\bash.exe' };
 const NO_BASH: Tools = { gitBash: () => null };
 
-test('su Windows col bash di Git sono spente launch e il controllo della finestra (T199), le altre sono accese', () => {
+test('su Windows col bash di Git è spento il solo controllo della finestra (T199), le altre sono accese', () => {
   for (const f of WIN_OFF) assert.equal(isAvailable(f, 'win32', WITH_BASH), false, f);
   for (const f of WIN_ON) assert.equal(isAvailable(f, 'win32', WITH_BASH), true, f);
   // La mappa è il punto che una figlia tocca per riaccendere: nessuna voce
@@ -61,8 +61,10 @@ test('su Windows col bash di Git sono spente launch e il controllo della finestr
   assert.equal(new Set(win).size, win.length);
 });
 
-test('T178 — su Windows senza bash di Git gli script del plugin restano spenti, e le altre funzioni no', () => {
+test('T178 — su Windows senza bash di Git gli script del plugin e le voci launch restano spenti, e le altre funzioni no', () => {
   assert.equal(isAvailable('pluginScripts', 'win32', NO_BASH), false);
+  assert.equal(isAvailable('launch', 'win32', NO_BASH), false);
+  assert.equal(offText('launch', undefined, 'win32', NO_BASH), 'voci launch n/d su Windows: bash di Git non trovato');
   for (const f of ['spawn', 'liveSessions', 'notify'] as Feature[]) {
     assert.equal(isAvailable(f, 'win32', NO_BASH), true, f);
   }
@@ -98,24 +100,30 @@ test("l'avviso nomina il tasto, la funzione e la piattaforma", () => {
     offNote('CANC', 'liveSessions', 'eliminazione delle conversazioni', 'win32'),
     '⚠ CANC → eliminazione delle conversazioni n/d su Windows',
   );
-  assert.equal(offText('launch', 'voci launch all\'avvio', 'win32'), 'voci launch all\'avvio n/d su Windows');
+  assert.equal(
+    offText('windowCheck', 'finestra del progetto', 'win32'),
+    'finestra del progetto n/d su Windows',
+  );
 });
 
+// T179 — `windowCheck` e non più `launch` come funzione spenta di riferimento:
+// su Windows `launch` dipende dal bash di Git della macchina, e il caso
+// cambierebbe esito fra la macchina Windows e quella Linux.
 test('LOOM_DECK_PLATFORM sostituisce la piattaforma vera, e si legge a ogni chiamata', () => {
   const real = process.platform;
   onPlatform('win32', () => {
     assert.equal(platform(), 'win32');
-    assert.equal(isAvailable('launch'), false);
+    assert.equal(isAvailable('windowCheck'), false);
   });
-  onPlatform('linux', () => assert.equal(isAvailable('launch'), true));
+  onPlatform('linux', () => assert.equal(isAvailable('windowCheck'), true));
   if (process.env.LOOM_DECK_PLATFORM === undefined) assert.equal(platform(), real);
 });
 
 test('refuse: su una funzione spenta scrive l\'avviso e ferma il chiamante', () => {
   const notes: string[] = [];
-  const blocked = onPlatform('win32', () => refuse('launch', '3', (s) => notes.push(s)));
+  const blocked = onPlatform('win32', () => refuse('windowCheck', '3', (s) => notes.push(s)));
   assert.equal(blocked, true);
-  assert.deepEqual(notes, ['⚠ 3 → voci launch n/d su Windows']);
+  assert.deepEqual(notes, ['⚠ 3 → verifica della finestra del progetto n/d su Windows']);
 });
 
 test('refuse: su una funzione accesa non scrive niente e lascia passare', () => {

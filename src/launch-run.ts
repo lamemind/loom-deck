@@ -27,7 +27,9 @@
 // risolve uguale con o senza esito — e scrive `$?` nel file `.exit`. Il deck,
 // quando lo trova, lo fonde nel JSON e lo toglie (`settleLaunchRecord`): il
 // record resta UNO, e il file di transito vive solo fra la fine del figlio e la
-// prima lettura.
+// prima lettura. Su Windows (T179) il figlio è un `node` tramite che lancia il
+// bash di Git e scrive lui il `.exit` quando il bash esce (`launch-platform.ts`):
+// il file e la sua lettura restano gli stessi.
 //
 // ── La guardia (P4) ────────────────────────────────────────────────────────
 // Una voce non riparte mentre una sua corsa è registrata senza exit e con pid
@@ -59,6 +61,7 @@ import { EventEmitter } from 'node:events';
 import { NO_SPAWN, spawnOut } from './spawn.js';
 import { procStartOf } from './live-sessions.js';
 import type { LaunchEntry } from './config.js';
+import { launchCommand, launchSpawn } from './launch-platform.js';
 
 /** La cartella dei file di esito, relativa alla project root. */
 export const LAUNCH_STATE_DIR = join('.claude', 'loom', 'launch');
@@ -122,12 +125,9 @@ export interface LaunchRecord {
   lastOutcome: LaunchRun | null;
 }
 
-/**
- * Il wrapper: il comando dentro la stessa shell di ogni voce, poi l'exit nel
- * file. `"$1"` e `"$2"` arrivano come argomenti di `bash -c`, mai interpolati
- * nella stringa: un comando con apici o `$` resta la stringa del file.
- */
-export const LAUNCH_WRAPPER = 'bash -lic "$1"; printf \'%s\\n\' "$?" > "$2"';
+/** Il wrapper di Linux vive accanto al tramite di Windows (`launch-platform.ts`):
+ *  le due forme dello stesso lancio si leggono insieme. */
+export { LAUNCH_WRAPPER } from './launch-platform.js';
 
 function isRecord(v: unknown): v is LaunchRecord {
   if (!v || typeof v !== 'object') return false;
@@ -439,14 +439,25 @@ export function launchIndicatorOf(
  * Con `LOOM_DECK_NO_SPAWN` niente si scrive sul disco: i gate pty girano sul
  * progetto vero, e un record scritto lì marcherebbe «in corso» una voce che non
  * è mai partita.
+ *
+ * T179 — il processo è quello di `launchSpawn`: su Linux il wrapper
+ * `LAUNCH_WRAPPER`, su Windows il tramite `node`, che scrive l'exit nel file
+ * `.exit` quando il bash di Git esce. Il pid del record è quello del wrapper o
+ * del tramite, e tutti e due vivono quanto il comando. `null` quando la voce qui
+ * non ha comando o manca il bash di Git: niente si scrive, e il chiamante, che
+ * l'ha già escluso, lo dice.
  */
 export function runCaptured(
   entry: LaunchEntry,
   cwd: string,
   origin: LaunchOrigin,
   now: number = Date.now(),
-): { child: ChildProcess; record: LaunchRecord } {
+): { child: ChildProcess; record: LaunchRecord } | null {
   const slug = entry.slug ?? 'voce';
+  const command = launchCommand(entry);
+  const exitFile = launchExitPath(cwd, slug);
+  const spec = command === null ? null : launchSpawn(command, exitFile);
+  if (!spec) return null;
   const prev = readLaunchRecord(cwd, slug);
   const record: LaunchRecord = {
     pid: null,
@@ -463,16 +474,16 @@ export function runCaptured(
     return { child: fake, record };
   }
   mkdirSync(launchStateDir(cwd), { recursive: true });
-  const exitFile = launchExitPath(cwd, slug);
   if (existsSync(exitFile)) unlinkSync(exitFile);
   applyOutcomeLogStep(cwd, slug, outcomeLogStep(prev, entry.noOutcome));
   const fd = openSync(launchLogPath(cwd, slug), 'w');
   let child: ChildProcess;
   try {
-    child = spawnOut('bash', ['-c', LAUNCH_WRAPPER, 'loom-launch', entry.command, exitFile], {
+    child = spawnOut(spec.cmd, spec.args, {
       cwd,
       detached: true,
       stdio: ['ignore', fd, fd],
+      ...(spec.env ? { env: spec.env } : {}),
     });
   } finally {
     closeSync(fd);

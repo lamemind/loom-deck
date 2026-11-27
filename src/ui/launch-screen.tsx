@@ -12,6 +12,7 @@ import {
   type LaunchRecord,
 } from '../launch-run.js';
 import type { LaunchField } from '../overlays/launch.js';
+import { launchCommand, launchOffReason } from '../launch-platform.js';
 
 /** Le spunte: concordi nelle due contabilità di larghezza (`agrees`), quindi
  *  `sanitize` le lascia passare — `✔`/`✖` diventerebbero i gemelli larghi 2. */
@@ -135,6 +136,9 @@ export function LaunchScreen({
           const rec = e.slug ? records.get(e.slug) ?? null : null;
           const outcome = launchOutcome(e, rec);
           const focus = (f: LaunchField) => current && field === f;
+          // T179 — il comando di questa piattaforma; senza, al suo posto il
+          // marcatore con la causa (P4 preflight): la voce resta in tabella.
+          const command = launchCommand(e);
           return (
             <Box key={e.index ?? at} flexDirection="column">
               <Text wrap="truncate-end">
@@ -145,7 +149,11 @@ export function LaunchScreen({
                 {'  '}
                 <Flag label="header" on={e.header !== false} focused={focus('header')} />
                 {'  '}
-                <Text dimColor={off}>{cut(sanitize(e.command), cmdW)}</Text>
+                {command === null ? (
+                  <Text color="yellow">{cut(launchOffReason(), cmdW)}</Text>
+                ) : (
+                  <Text dimColor={off}>{cut(sanitize(command), cmdW)}</Text>
+                )}
               </Text>
               <Text wrap="truncate-end">
                 {CARET_OFF}
@@ -258,7 +266,7 @@ export function LaunchLogScreen({
         {heading.trueLogMissing ? <Text dimColor> · log del giro vero non su disco</Text> : null}
       </Text>
       <Text dimColor wrap="truncate-end">
-        {sanitize(cut(entry.command, 80))} · righe {total === 0 ? 0 : top + 1}-{last} di {total}
+        {sanitize(cut(launchCommand(entry) ?? launchOffReason(), 80))} · righe {total === 0 ? 0 : top + 1}-{last} di {total}
       </Text>
       {/* Con `tab` la legenda supera le 76 colonne utili di un terminale da 80:
           `esc` si accorcia, perché è il tasto che chi legge conosce già. */}

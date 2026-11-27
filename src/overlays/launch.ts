@@ -39,6 +39,7 @@ import {
 } from '../launch-run.js';
 import { notifyDone, runLaunch } from '../spawn.js';
 import { isAvailable, offNote, refuse } from '../platform.js';
+import { launchCommand, launchOffReason, launchOffText } from '../launch-platform.js';
 import { launchListCapacity, launchLogCapacity, pageStep } from '../viewport.js';
 import { cut, wrapWithOffsets } from '../width.js';
 import { fmtTime } from '../glyphs.js';
@@ -155,9 +156,21 @@ export function useLaunchPage(deps: LaunchPageDeps) {
       return;
     }
     if (refuse('launch', keyLabel, setNote)) return;
+    // T179 — la voce senza il comando di questa piattaforma: la cifra lo dice,
+    // startup e scadenza la saltano in silenzio (la nota l'ha già data il
+    // mount, una volta sola).
+    const command = launchCommand(entry);
+    if (command === null) {
+      if (origin === 'tasto') setNote(`⚠ ${keyLabel} → ${launchOffText(entry)}`);
+      return;
+    }
     if (!tracked(entry) || !entry.slug) {
       const child = runLaunch(entry, cwd);
-      child.on('error', () => setNote(`⚠ ${entry.label}: '${entry.command}' non lanciabile`));
+      if (!child) {
+        setNote(offNote(keyLabel, 'launch'));
+        return;
+      }
+      child.on('error', () => setNote(`⚠ ${entry.label}: '${command}' non lanciabile`));
       if (origin === 'tasto') setNote(`${keyLabel} → ${entry.label} su ${name}`);
       return;
     }
@@ -169,8 +182,13 @@ export function useLaunchPage(deps: LaunchPageDeps) {
       }
       return;
     }
+    const run = runCaptured(entry, cwd, origin);
+    if (!run) {
+      setNote(offNote(keyLabel, 'launch'));
+      return;
+    }
     prevExit.current.set(slug, lastTrueRecord(current, entry.noOutcome)?.exit ?? null);
-    const { child, record } = runCaptured(entry, cwd, origin);
+    const { child, record } = run;
     children.current.set(slug, child);
     setRecords((m) => new Map(m).set(slug, record));
     child.on('error', () => {
@@ -211,6 +229,12 @@ export function useLaunchPage(deps: LaunchPageDeps) {
     startedOnce.current = true;
     refresh();
     if (first) {
+      // T179 — le voci che startup o scadenza lancerebbero, ma che qui non
+      // hanno comando: una nota sola le nomina tutte, al mount (P4 preflight).
+      const skipped = entries.filter((e) => launchEnabled(e) && (e.startup || e.intervalMs) && launchCommand(e) === null);
+      if (skipped.length > 0) {
+        setNote(`⚠ startup/every → ${skipped.map((e) => e.label).join(', ')} ${launchOffReason()}`);
+      }
       for (const e of entries) if (launchEnabled(e) && e.startup) launch(e, 'startup', 'startup');
     }
     const tick = () => {

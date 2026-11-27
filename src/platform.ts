@@ -28,7 +28,10 @@ export type Feature =
   /** Gli script `.sh` del plugin: il gitlink. Su Windows col bash di Git (T178,
    *  `scriptCommand`), quindi solo dove quel bash si trova (`REQUIRES`). */
   | 'pluginScripts'
-  /** Le voci `launch[]` del file di progetto: comandi Linux via `bash -lic`. */
+  /** Le voci `launch[]` del file di progetto: su Linux `command` in `bash -lic`,
+   *  su Windows `windows` nel bash di Git (T179, `launch-platform.ts`), quindi
+   *  solo dove quel bash si trova (`REQUIRES`). Una voce senza il comando della
+   *  piattaforma è `n/d` da sola: la funzione resta accesa per le altre. */
   | 'launch'
   /** La notifica desktop di un esito (voce launch, spawn in coda): `notify-send` su Linux, un toast
    *  WinRT da Windows PowerShell su Windows (T180, `windows-notify.ts`). */
@@ -47,7 +50,6 @@ export type Feature =
  */
 export const UNAVAILABLE: Partial<Record<NodeJS.Platform, readonly Feature[]>> = {
   win32: [
-    'launch', // T179 — comando per piattaforma nelle voci launch[]
     // T199 — Windows Terminal apre una tab in una finestra per nome, e compass
     // lì non c'è: il controllo ha un'altra forma. Spento e non lasciato al ramo
     // «compass non raggiungibile», che metterebbe un avviso su ogni spawn.
@@ -86,6 +88,7 @@ interface Requirement {
 const REQUIRES: Partial<Record<NodeJS.Platform, Partial<Record<Feature, Requirement>>>> = {
   win32: {
     pluginScripts: { found: (t) => t.gitBash() !== null, missing: 'bash di Git non trovato' },
+    launch: { found: (t) => t.gitBash() !== null, missing: 'bash di Git non trovato' },
   },
 };
 

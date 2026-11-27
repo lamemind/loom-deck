@@ -13,7 +13,7 @@
 // rumore su cui poi si fa merge. Nessun commit: il file resta sporco nel
 // working tree e lo committa l'utente, come per gli override di spawn.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { configFilePath, type LaunchEntry } from './config.js';
+import { configFilePath, launchText, type LaunchEntry } from './config.js';
 
 /** Le chiavi che la pagina governa, nell'ordine in cui si scrivono. Le altre
  *  chiavi della voce restano dove sono: `noOutcome` (T190) si scrive a mano, e
@@ -25,8 +25,13 @@ const ATTRS = ['capture', 'startup', 'every', 'key', 'header', 'enabled'] as con
  *
  * La posizione è la sola chiave stabile: la label è opzionale e il comando può
  * ripetersi. Prima di scrivere si verifica che la voce a quella posizione porti
- * ancora lo stesso comando: se il file è stato riscritto a mano mentre la pagina
+ * ancora gli stessi comandi: se il file è stato riscritto a mano mentre la pagina
  * era aperta, meglio rifiutare che mettere gli attributi di una voce su un'altra.
+ *
+ * T179 — i comandi sono due, `command` e `windows`, e si confrontano tutti e
+ * due, letti con la regola del parser (`launchText`): una voce senza `command`
+ * si riconosce dal suo `windows`, e un `windows` fuori forma, che il parser ha
+ * scartato, vale assente su tutti e due i lati.
  */
 export function saveLaunchAttrs(projectRoot: string, entries: readonly LaunchEntry[]): void {
   const path = configFilePath(projectRoot);
@@ -42,7 +47,7 @@ export function saveLaunchAttrs(projectRoot: string, entries: readonly LaunchEnt
     const item = list[e.index];
     if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
     const voce = item as Record<string, unknown>;
-    if (voce.command !== e.command) {
+    if (launchText(voce.command) !== e.command || launchText(voce.windows) !== (e.windows ?? null)) {
       throw new Error(`${path}: la voce ${e.index} è cambiata sotto la pagina, riaprila`);
     }
     const next: Partial<Record<(typeof ATTRS)[number], unknown>> = {

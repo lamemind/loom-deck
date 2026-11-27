@@ -16,6 +16,7 @@ import { claudeEnv, gitBash } from './git-bash.js';
 import { dropEnv, INHERITED_SESSION_ENV } from './session-env.js';
 import { windowsTabEnv, WT_CMD, wtNewTabArgs, wtProfile } from './windows-terminal.js';
 import { relayCommand, toastCommand, type NotifyCommand } from './windows-notify.js';
+import { launchCommand, launchSpawn } from './launch-platform.js';
 
 // scripts/deck-run è un sibling della dir del bundle: src/ (dev, tsx) e dist/
 // (build, node) stanno entrambi sotto la package root → risalita di un livello.
@@ -380,11 +381,20 @@ export function spawnClaudeEmpty(cwd: string, model: ModelKind): Spawned {
 // `.claude/loom-works.json`, fidato quanto un custom-command Ptyxis (contratto
 // esplicito in project-config-architecture.md). La project root arriva via cwd,
 // non interpolata nella stringa.
-export function runLaunch(entry: LaunchEntry, cwd: string) {
-  const child = spawnOut('bash', ['-lic', entry.command], {
+//
+// T179 — il comando è quello della piattaforma (`launchCommand`), e il modo di
+// lanciarlo anche (`launchSpawn`): `bash -lic` su Linux, su Windows un `node`
+// tramite che lancia il bash di Git. `null` quando la voce qui non ha comando o
+// manca il bash di Git: il chiamante l'ha già escluso, e lo dice lui.
+export function runLaunch(entry: LaunchEntry, cwd: string): ChildProcess | null {
+  const command = launchCommand(entry);
+  const spec = command === null ? null : launchSpawn(command, null);
+  if (!spec) return null;
+  const child = spawnOut(spec.cmd, spec.args, {
     cwd,
     detached: true,
     stdio: 'ignore',
+    ...(spec.env ? { env: spec.env } : {}),
   });
   child.unref();
   return child;

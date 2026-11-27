@@ -8,11 +8,20 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sanitize } from './width.js';
 import { DEFAULT_ARCHIVABLE_DAYS } from './archivable.js';
+import { OFF_MARK } from './platform.js';
+import { launchCommand } from './launch-platform.js';
 
 export interface LaunchEntry {
   emoji: string;
   label: string;
-  command: string;
+  /** T179 — il comando di Linux, o `null` per una voce che porta solo il
+   *  comando di Windows. Quale dei due vale qui lo dice `launchCommand`
+   *  (`launch-platform.ts`), mai un chiamante. */
+  command: string | null;
+  /** T179 — il comando di Windows, eseguito nel bash di Git; `null` o assente
+   *  per una voce che porta solo il comando di Linux. Opzionale nel TIPO come
+   *  gli attributi sotto: `parseLaunch` lo scrive sempre. */
+  windows?: string | null;
   // T168 — gli ATTRIBUTI di una voce (P2/P3/P13/P17/P22/P26 preflight). Un tipo
   // solo per launcher e script: la differenza non sta nella voce ma in cosa il
   // deck fa dopo lo spawn, e gli attributi accendono quel comportamento. Sono
@@ -92,6 +101,13 @@ export function launchSlug(label: string): string {
   return s || 'voce';
 }
 
+/** Un comando del file: una stringa non vuota, presa così com'è; altrimenti
+ *  `null`. La stessa regola vale per `command` e per `windows`, e la usa anche
+ *  il saver della pagina `^L` (`launch-config.ts`) per riconoscere la voce. */
+export function launchText(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() ? v : null;
+}
+
 export interface ParsedLaunch {
   entries: LaunchEntry[];
   /** Gli attributi scartati, una frase per ognuno: la pagina e la riga di stato
@@ -119,10 +135,24 @@ export function parseLaunchConfig(raw: unknown): ParsedLaunch {
   list.forEach((item, index) => {
     if (!item || typeof item !== 'object') return;
     const src = item as Record<string, unknown>;
-    const { emoji, label, command } = src;
-    if (typeof command !== 'string' || !command.trim()) return;
-    // `label` è opzionale per contratto → fallback sul comando stesso.
-    const shown = sanitize(typeof label === 'string' && label ? label : command);
+    const { emoji, label } = src;
+    // T179 — `command` (Linux) e `windows` (Windows), almeno uno dei due. Un
+    // campo fuori forma cade con un avviso, come un attributo: la voce resta
+    // se l'altro comando c'è, ed è `n/d` sulla piattaforma del campo caduto.
+    const command = launchText(src.command);
+    const windows = launchText(src.windows);
+    if (command === null && windows === null) {
+      warnings.push(`launch[${index}]: nessun comando (command o windows), voce ignorata`);
+      return;
+    }
+    for (const [name, value] of [['command', command], ['windows', windows]] as const) {
+      if (src[name] !== undefined && value === null) {
+        warnings.push(`launch[${index}].${name}: '${String(src[name])}' non è un comando, ignorato`);
+      }
+    }
+    // `label` è opzionale per contratto → fallback sul comando stesso, quello
+    // di Linux prima: è il fallback che usa anche compass.
+    const shown = sanitize(typeof label === 'string' && label ? label : (command ?? windows)!);
     const flag = (name: 'capture' | 'startup' | 'header' | 'enabled', dflt: boolean): boolean => {
       const v = src[name];
       if (v === undefined) return dflt;
@@ -165,6 +195,7 @@ export function parseLaunchConfig(raw: unknown): ParsedLaunch {
       emoji: sanitize(typeof emoji === 'string' ? emoji : '▸'),
       label: shown,
       command,
+      windows,
       capture: flag('capture', false),
       startup: flag('startup', false),
       every,
@@ -351,7 +382,12 @@ export function launchLegend(
   const budget = Math.max(24, columns - 6 - reserved);
   // I fallback di parseLaunch (`▸` per emoji, command per label) sono già
   // applicati a monte: qui non si re-implementano né si assumono campi popolati.
-  const parts = digits.slots.map((s) => `${s.digit} ${s.entry.emoji} ${s.entry.label}`);
+  // T179 — una voce senza il comando di questa piattaforma resta in riga, con la
+  // sua cifra, e porta il marcatore `n/d` (P4 preflight): toglierla sposterebbe
+  // le cifre delle voci dopo fra Linux e Windows.
+  const parts = digits.slots.map(
+    (s) => `${s.digit} ${s.entry.emoji} ${s.entry.label}${launchCommand(s.entry) === null ? ` ${OFF_MARK}` : ''}`,
+  );
 
   const fit = (reserve: number) => {
     const taken: string[] = [];

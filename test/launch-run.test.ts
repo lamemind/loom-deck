@@ -17,6 +17,7 @@ import { parseLaunch, type LaunchEntry } from '../src/config.js';
 import { saveLaunchAttrs } from '../src/launch-config.js';
 import { launchLogHeading, launchOutcome } from '../src/ui/launch-screen.js';
 import { termWidth } from '../src/width.js';
+import { gitBash } from '../src/git-bash.js';
 import {
   isNoOutcome,
   lastTrueRecord,
@@ -39,14 +40,18 @@ import {
   type LaunchRecord,
 } from '../src/launch-run.js';
 
-const SKIP_BASH = process.platform === 'win32' ? 'bash non disponibile su Windows' : false;
+// T179 — su Windows il gate gira col bash di Git, lanciato dal tramite `node`
+// (`launch-platform.ts`): salta solo dove quel bash non c'è.
+const SKIP_BASH = process.platform === 'win32' && gitBash() === null ? 'bash di Git non trovato' : false;
 
 function project(): string {
   return mkdtempSync(join(tmpdir(), 'deck-launch-'));
 }
 
+/** Una voce con esito che porta lo stesso comando per Linux e per Windows: i
+ *  comandi del gate sono sintassi bash, che il bash di Git esegue uguale. */
 function entry(label: string, command: string, extra: Record<string, unknown> = {}) {
-  return parseLaunch({ launch: [{ label, command, capture: true, ...extra }] })[0]!;
+  return parseLaunch({ launch: [{ label, command, windows: command, capture: true, ...extra }] })[0]!;
 }
 
 const rec = (over: Partial<LaunchRecord>): LaunchRecord => ({
@@ -140,7 +145,7 @@ test('launchDue: mai girata → dovuta; finita da meno della soglia → no; da p
 test('runCaptured: exit code dal figlio, output nel log, record chiuso dopo settle', { skip: SKIP_BASH }, async () => {
   const root = project();
   const e = entry('prova', 'echo ciao; echo errore >&2; exit 7');
-  const { child, record } = runCaptured(e, root, 'tasto');
+  const { child, record } = runCaptured(e, root, 'tasto')!;
   assert.ok(record.pid !== null, 'il record porta il pid del wrapper');
   assert.equal(record.exit, null);
   await waitExit(root, e.slug!);
@@ -157,13 +162,13 @@ test('runCaptured: exit code dal figlio, output nel log, record chiuso dopo sett
 test('runCaptured: un giro in corso risulta tale, e un rilancio riscrive il log', { skip: SKIP_BASH }, async () => {
   const root = project();
   const e = entry('lenta', 'echo primo; sleep 1');
-  const { child, record } = runCaptured(e, root, 'every');
+  const { child, record } = runCaptured(e, root, 'every')!;
   assert.equal(launchRunning(record), true, 'il wrapper è vivo e il record lo dice');
   assert.equal(launchDue(record, 1, Date.now() + 10_000), false, 'una corsa in piedi non è mai dovuta');
   await waitExit(root, e.slug!);
   await waitChild(child);
   assert.equal(settleLaunchRecord(root, e.slug!)!.exit, 0);
-  const second = runCaptured(entry('lenta', 'echo secondo'), root, 'tasto');
+  const second = runCaptured(entry('lenta', 'echo secondo'), root, 'tasto')!;
   await waitExit(root, e.slug!);
   await waitChild(second.child);
   assert.doesNotMatch(readLaunchLog(root, e.slug!)!, /primo/, 'il log è del solo ultimo giro');
@@ -174,7 +179,7 @@ test('runCaptured: un giro in corso risulta tale, e un rilancio riscrive il log'
 test('runCaptured: il comando con apici e $ arriva intatto al wrapper', { skip: SKIP_BASH }, async () => {
   const root = project();
   const e = entry('quote', `printf '%s' "a'b" && echo " \${HOME:+ok}"`);
-  const { child } = runCaptured(e, root, 'tasto');
+  const { child } = runCaptured(e, root, 'tasto')!;
   await waitExit(root, e.slug!);
   await waitChild(child);
   assert.equal(settleLaunchRecord(root, e.slug!)!.exit, 0);
@@ -280,11 +285,49 @@ test('w nella pagina ^L lascia noOutcome nel file di progetto', () => {
   assert.equal(doc.launch[0].startup, true);
 });
 
+// ── T179 · comando per piattaforma ──────────────────────────────────────────
+
+test('w nella pagina ^L riconosce una voce senza command dal suo windows, e rifiuta un windows cambiato', () => {
+  const root = project();
+  mkdirSync(join(root, '.claude'), { recursive: true });
+  const file = join(root, '.claude', 'loom-works.json');
+  const voci = [
+    { emoji: '🪟', label: 'explorer', windows: 'explorer .' },
+    { emoji: '📝', label: 'editor', command: 'codium .', windows: 'code .' },
+  ];
+  writeFileSync(file, JSON.stringify({ id: 'p', launch: voci }));
+  const [win, both] = parseLaunch(JSON.parse(readFileSync(file, 'utf8')));
+  saveLaunchAttrs(root, [{ ...win!, startup: true }, { ...both!, header: false }]);
+  const doc = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(doc.launch[0].startup, true);
+  assert.equal('command' in doc.launch[0], false, 'il saver non inventa un command');
+  assert.equal(doc.launch[1].header, false);
+  assert.equal(doc.launch[1].windows, 'code .');
+  // Il windows riscritto a mano mentre la pagina era aperta: la voce è un'altra.
+  writeFileSync(file, JSON.stringify({ id: 'p', launch: [voci[0], { ...voci[1], windows: 'code-insiders .' }] }));
+  assert.throws(() => saveLaunchAttrs(root, [{ ...both!, header: true }]), /cambiata sotto la pagina/);
+});
+
+test('runCaptured: una voce senza il comando della piattaforma non parte e non scrive niente', () => {
+  const root = project();
+  const prev = process.env.LOOM_DECK_PLATFORM;
+  process.env.LOOM_DECK_PLATFORM = process.platform === 'win32' ? 'linux' : 'win32';
+  try {
+    const field = process.env.LOOM_DECK_PLATFORM === 'win32' ? 'command' : 'windows';
+    const [e] = parseLaunch({ launch: [{ label: 'solo', [field]: 'echo mai', capture: true }] });
+    assert.equal(runCaptured(e!, root, 'tasto'), null);
+    assert.equal(existsSync(launchStateDir(root)), false);
+  } finally {
+    if (prev === undefined) delete process.env.LOOM_DECK_PLATFORM;
+    else process.env.LOOM_DECK_PLATFORM = prev;
+  }
+});
+
 test('runCaptured: l\'ultimo giro vero sopravvive ai rilanci senza esito', { skip: SKIP_BASH }, async () => {
   const root = project();
   const run = async (command: string) => {
     const e = entry('lock', command, { noOutcome: [3] });
-    const { child, record } = runCaptured(e, root, 'every');
+    const { child, record } = runCaptured(e, root, 'every')!;
     await waitExit(root, e.slug!);
     await waitChild(child);
     return { record, settled: settleLaunchRecord(root, e.slug!)!, e };
@@ -333,7 +376,7 @@ test('runCaptured: una voce senza noOutcome tiene un log solo, e toglie quello r
   writeLaunchRecord(root, e.slug!, rec({ exit: 3, lastOutcome: { startedAt: 1, endedAt: 2, exit: 1 } }));
   writeFileSync(launchLogPath(root, e.slug!), 'tentativo vecchio\n');
   writeFileSync(launchOutcomeLogPath(root, e.slug!), 'giro vero vecchio\n');
-  const { child } = runCaptured(e, root, 'tasto');
+  const { child } = runCaptured(e, root, 'tasto')!;
   await waitExit(root, e.slug!);
   await waitChild(child);
   const settled = settleLaunchRecord(root, e.slug!)!;

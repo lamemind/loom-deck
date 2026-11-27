@@ -41,6 +41,7 @@ import {
   parseLaunch,
   parseLaunchConfig,
 } from '../src/config.js';
+import { launchCommand, launchOffText } from '../src/launch-platform.js';
 import type { Task } from '../src/tasks.js';
 
 const t = (id: string, pri: string, prog: string): Task => ({
@@ -615,8 +616,15 @@ test('identity: name presente → identità; owner ignorato, name mancante o vuo
 
 // ── T43 · legenda launch ─────────────────────────────────────────────────────
 
+// T179 — le voci delle legende portano il comando di Linux e quello di Windows:
+// la riga è la stessa sulle due piattaforme, senza marcatore `n/d`.
 const L = (n: number) =>
-  Array.from({ length: n }, (_, i) => ({ emoji: '📝', label: `app${i + 1}`, command: `app${i + 1}` }));
+  Array.from({ length: n }, (_, i) => ({
+    emoji: '📝',
+    label: `app${i + 1}`,
+    command: `app${i + 1}`,
+    windows: `app${i + 1}`,
+  }));
 
 test('legenda: indice base-1 + emoji + label, concorde col dispatch dei tasti', () => {
   const legend = launchLegend(L(3), 200);
@@ -636,7 +644,7 @@ test('legenda: nessuna voce → riga vuota, nessun contatore', () => {
 });
 
 test('legenda: label mancante → parseLaunch mette il comando, la legenda lo mostra', () => {
-  const entries = parseLaunch({ launch: [{ emoji: '☕', command: 'idea ud-maven-parent' }] });
+  const entries = parseLaunch({ launch: [{ emoji: '☕', command: 'idea ud-maven-parent', windows: 'idea64 ud-maven-parent' }] });
   // `☕️` con VS16: parseLaunch normalizza la larghezza dei glifi al confine
   // (vedi normalizeEmoji). Senza il timbro Ink riserva una cella sola per `☕`
   // mentre il terminale ne disegna due, e la riga della legenda va a capo.
@@ -644,8 +652,75 @@ test('legenda: label mancante → parseLaunch mette il comando, la legenda lo mo
 });
 
 test('legenda: emoji mancante → fallback ▸, non voce vuota', () => {
-  const entries = parseLaunch({ launch: [{ command: 'lazygit' }] });
+  const entries = parseLaunch({ launch: [{ command: 'lazygit', windows: 'lazygit' }] });
   assert.equal(launchLegend(entries, 200).shown, '1 ▸ lazygit');
+});
+
+// ── T179 · comando per piattaforma ───────────────────────────────────────────
+
+/** Esegue `fn` con la piattaforma delle funzioni forzata, poi la rimette. */
+function onPlatform<T>(p: NodeJS.Platform, fn: () => T): T {
+  const prev = process.env.LOOM_DECK_PLATFORM;
+  process.env.LOOM_DECK_PLATFORM = p;
+  try {
+    return fn();
+  } finally {
+    if (prev === undefined) delete process.env.LOOM_DECK_PLATFORM;
+    else process.env.LOOM_DECK_PLATFORM = prev;
+  }
+}
+
+test('launch: windows accanto a command, e una voce col solo windows', () => {
+  const { entries, warnings } = parseLaunchConfig({
+    launch: [
+      { emoji: '📝', label: 'editor', command: 'codium .', windows: 'code .' },
+      { emoji: '🪟', windows: 'explorer .' },
+      { emoji: '📝', command: 'codium .', windows: 3 },
+      { emoji: '💥', label: 'vuota', windows: '  ' },
+    ],
+  });
+  assert.equal(entries.length, 3, 'la voce senza nessun comando cade');
+  const [both, winOnly, badWin] = entries;
+  assert.equal(both!.command, 'codium .');
+  assert.equal(both!.windows, 'code .');
+  assert.equal(winOnly!.command, null);
+  assert.equal(winOnly!.windows, 'explorer .');
+  assert.equal(winOnly!.label, 'explorer .', 'senza label e senza command la label è il comando windows');
+  assert.equal(winOnly!.index, 1);
+  assert.equal(badWin!.command, 'codium .');
+  assert.equal(badWin!.windows, null, 'un windows fuori forma cade, la voce resta');
+  assert.deepEqual(warnings, [
+    "launch[2].windows: '3' non è un comando, ignorato",
+    'launch[3]: nessun comando (command o windows), voce ignorata',
+  ]);
+});
+
+test('launch: la scelta del comando segue la piattaforma, e la voce senza il suo comando è n/d', () => {
+  const [both, linuxOnly, winOnly] = parseLaunch({
+    launch: [
+      { emoji: '📝', label: 'editor', command: 'codium .', windows: 'code .' },
+      { emoji: '🔃', label: 'refresh', command: 'refresh.sh' },
+      { emoji: '🪟', label: 'explorer', windows: 'explorer .' },
+    ],
+  });
+  assert.equal(launchCommand(both!, 'linux'), 'codium .');
+  assert.equal(launchCommand(both!, 'win32'), 'code .');
+  assert.equal(launchCommand(linuxOnly!, 'win32'), null);
+  assert.equal(launchCommand(winOnly!, 'linux'), null);
+  assert.equal(launchCommand(winOnly!, 'darwin'), null, 'fuori da Windows vale command');
+  assert.equal(launchOffText(linuxOnly!, 'win32'), 'refresh n/d su Windows: manca il campo windows');
+  assert.equal(launchOffText(winOnly!, 'linux'), 'explorer n/d su Linux: manca il campo command');
+  // La riga launch tiene la voce con la sua cifra e il marcatore: le cifre
+  // delle voci dopo non cambiano fra Linux e Windows.
+  const entries = [both!, linuxOnly!, winOnly!];
+  assert.equal(
+    onPlatform('win32', () => launchLegend(entries, 200).shown),
+    '1 📝 editor · 2 🔃 refresh n/d · 3 🪟 explorer',
+  );
+  assert.equal(
+    onPlatform('linux', () => launchLegend(entries, 200).shown),
+    '1 📝 editor · 2 🔃 refresh · 3 🪟 explorer n/d',
+  );
 });
 
 test('legenda: terminale stretto → tronca a voci intere e conta le fuori riga', () => {
@@ -771,7 +846,7 @@ test('assignDigits: header spento = fuori riga ma non spenta; spenta = fuori rig
     launch: [
       { label: 'a', command: 'a', header: false },
       { label: 'b', command: 'b', enabled: false, key: '1' },
-      { label: 'c', command: 'c' },
+      { label: 'c', command: 'c', windows: 'c' },
     ],
   });
   const { slots } = assignDigits(entries);
