@@ -211,6 +211,28 @@ export interface GitlinkScan {
  * su un membro) le righe già emesse restano vere e dicono più di una schermata
  * vuota.
  */
+/**
+ * T178 — l'env di `bump-gitlink.sh`: quello del deck, con `PROJECT_ROOT` sulla
+ * root del deck.
+ *
+ * Lo script cerca la root con `lw_find_project_root`, e lì `PROJECT_ROOT` batte
+ * la cartella di lavoro. Un deck che la eredita da una shell o da una
+ * conversazione di un altro progetto misurerebbe quel progetto, e `^U`
+ * committerebbe il gitlink nel suo repo. Impostarla sulla root del deck rende
+ * la cartella di lavoro e la variabile la stessa cosa, su Linux e su Windows.
+ *
+ * Su win32 il path viaggia con le barre `/`, come quello dello script
+ * (`scriptCommand`): è la forma che `git` e ogni strumento di Git Bash leggono.
+ */
+export function gitlinkEnv(
+  projectRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
+  const root = platform === 'win32' ? projectRoot.replace(/\\/g, '/') : projectRoot;
+  return { ...env, PROJECT_ROOT: root };
+}
+
 async function run(projectRoot: string, args: string[]): Promise<GitlinkScan> {
   const script = pluginScript(GITLINK_SCRIPT);
   // T178 — su Windows lo script parte col bash di Git (`scriptCommand`), che
@@ -221,6 +243,7 @@ async function run(projectRoot: string, args: string[]): Promise<GitlinkScan> {
   try {
     const { stdout } = await execFileAsync(command.cmd, command.args, {
       cwd: projectRoot,
+      env: gitlinkEnv(projectRoot),
       maxBuffer: 1024 * 1024,
       windowsHide: true,
     });

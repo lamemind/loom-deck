@@ -5,7 +5,7 @@
 // bash che non è quello di Git passerebbero il test puro e darebbero un
 // sensore muto. Qui il vero `scanGitlink` lancia lo script — su Linux con lo
 // shebang, su Windows col bash di Git — su un cappello finto con un submodule,
-// e il test legge due stati: `allineato` e `avanti`.
+// e il test legge due stati, `allineato` e `avanti`, poi esegue il bump.
 //
 // Il plugin arriva dal sorgente del submodule fratello attraverso una cache
 // finta in `LOOM_DECK_PLUGIN_CACHE_ROOT`. Un deck clonato da solo non ha quel
@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitBash } from '../src/git-bash.js';
-import { GITLINK_SCRIPT, scanGitlink } from '../src/gitlink.js';
+import { bumpGitlink, GITLINK_SCRIPT, scanGitlink } from '../src/gitlink.js';
 import { resetPluginCache } from '../src/plugin-cache.js';
 
 const PLUGIN_SRC = fileURLToPath(new URL('../../loom-works-plugin/', import.meta.url));
@@ -36,13 +36,20 @@ function skipReason(): string | false {
   return false;
 }
 
-const GIT_ENV: NodeJS.ProcessEnv = {
-  ...process.env,
+/** Identità e firma dei commit: valgono per i `git` del test e, messe in
+ *  `process.env` per la durata del test, per il commit che il bump fa dentro lo
+ *  script. Senza, il commit dipenderebbe dalla config git della macchina. */
+const GIT_IDENTITY: Record<string, string> = {
   GIT_AUTHOR_NAME: 'test',
   GIT_AUTHOR_EMAIL: 'test@test.local',
   GIT_COMMITTER_NAME: 'test',
   GIT_COMMITTER_EMAIL: 'test@test.local',
+  GIT_CONFIG_COUNT: '1',
+  GIT_CONFIG_KEY_0: 'commit.gpgsign',
+  GIT_CONFIG_VALUE_0: 'false',
 };
+
+const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, ...GIT_IDENTITY };
 
 function git(cwd: string, ...args: string[]): void {
   execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], {
@@ -82,7 +89,7 @@ function fakeCappello(root: string): string {
   return cappello;
 }
 
-test('il deck esegue il vero bump-gitlink.sh: allineato, poi avanti dopo un commit pushato nel membro', { skip: skipReason() }, async () => {
+test('il deck esegue il vero bump-gitlink.sh: allineato, avanti dopo un commit pushato nel membro, poi il bump — col PROJECT_ROOT ereditato su un\'esca', { skip: skipReason() }, async () => {
   const root = mkdtempSync(join(tmpdir(), 'deck-gitlink-'));
   // La cache finta: una versione sola, giunzione al sorgente del plugin
   // (`junction` vale su Windows senza privilegi, su Linux è un symlink).
@@ -91,12 +98,17 @@ test('il deck esegue il vero bump-gitlink.sh: allineato, poi avanti dopo un comm
   symlinkSync(PLUGIN_SRC, join(cache, '99.0.0'), 'junction');
 
   const prevCache = process.env.LOOM_DECK_PLUGIN_CACHE_ROOT;
-  // `PROJECT_ROOT` batte la cartella di lavoro in `lw_find_project_root`: una
-  // conversazione che la porta farebbe misurare allo script il suo progetto, non
-  // il cappello finto.
+  // `PROJECT_ROOT` batte la cartella di lavoro in `lw_find_project_root`. Qui
+  // punta a un'ESCA senza `.gitmodules`: se la variabile ereditata vincesse,
+  // lo script misurerebbe l'esca e uscirebbe senza righe, e il bump
+  // committerebbe là. Il deck la imposta sulla propria root (`gitlinkEnv`).
   const prevRoot = process.env.PROJECT_ROOT;
+  const decoy = join(root, 'esca');
+  mkdirSync(decoy);
+  const prevIdentity = Object.fromEntries(Object.keys(GIT_IDENTITY).map((k) => [k, process.env[k]]));
   process.env.LOOM_DECK_PLUGIN_CACHE_ROOT = cache;
-  delete process.env.PROJECT_ROOT;
+  process.env.PROJECT_ROOT = decoy;
+  Object.assign(process.env, GIT_IDENTITY);
   resetPluginCache();
   try {
     const cappello = fakeCappello(root);
@@ -119,10 +131,27 @@ test('il deck esegue il vero bump-gitlink.sh: allineato, poi avanti dopo un comm
     assert.equal(ahead.members.length, 1);
     assert.equal(ahead.members[0]!.state, 'avanti');
     assert.match(ahead.members[0]!.detail, /→.* secondo commit del membro$/);
+
+    // Il bump vero: commit nel cappello finto, mai nell'esca.
+    const bumped = await bumpGitlink(cappello);
+    assert.equal(bumped.ok, true, 'il bump non è uscito bene');
+    assert.deepEqual(
+      bumped.members.map((m) => [m.path, m.state]),
+      [['sub', 'bumpato']],
+    );
+    const subject = execFileSync('git', ['log', '-1', '--format=%s'], { cwd: cappello, windowsHide: true })
+      .toString()
+      .trim();
+    assert.equal(subject, 'chore(sub): gitlink — secondo commit del membro');
   } finally {
     if (prevCache === undefined) delete process.env.LOOM_DECK_PLUGIN_CACHE_ROOT;
     else process.env.LOOM_DECK_PLUGIN_CACHE_ROOT = prevCache;
-    if (prevRoot !== undefined) process.env.PROJECT_ROOT = prevRoot;
+    if (prevRoot === undefined) delete process.env.PROJECT_ROOT;
+    else process.env.PROJECT_ROOT = prevRoot;
+    for (const [k, v] of Object.entries(prevIdentity)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
     resetPluginCache();
   }
 });

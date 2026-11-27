@@ -18,6 +18,7 @@ import {
   gitlinkNote,
   GITLINK_STATES,
   hasGitmodules,
+  gitlinkEnv,
   parseGitlinkTsv,
 } from '../src/gitlink.js';
 
@@ -131,4 +132,15 @@ test('il gate legge `.gitmodules`, non la lista dei submodule', () => {
   const con = mkdtempSync(join(tmpdir(), 'deck-mod-'));
   writeFileSync(join(con, '.gitmodules'), '[submodule "x"]\n\tpath = x\n\turl = ../x.git\n');
   assert.equal(hasGitmodules(con), true);
+});
+
+test('T178 — PROJECT_ROOT dello script è la root del deck: una variabile ereditata non vince', () => {
+  const env = gitlinkEnv('/home/u/cappello', { PROJECT_ROOT: '/home/u/altro', LOOM_TASK: 'T1' }, 'linux');
+  assert.equal(env.PROJECT_ROOT, '/home/u/cappello');
+  assert.equal(env.LOOM_TASK, 'T1', 'il resto dell\'env resta quello del deck');
+});
+
+test('T178 — su win32 PROJECT_ROOT viaggia con le barre /, come il path dello script', () => {
+  const env = gitlinkEnv('C:\\Users\\u\\cappello', { PROJECT_ROOT: 'C:\\altro' }, 'win32');
+  assert.equal(env.PROJECT_ROOT, 'C:/Users/u/cappello');
 });
