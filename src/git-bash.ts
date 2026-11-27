@@ -1,7 +1,9 @@
 // T175 — il bash di Git for Windows: dove sta, e come lo riceve un `claude`
 // lanciato dal deck.
 //
-// Serve già qui e non solo a T178 (gli script `.sh` del plugin), per il verdetto
+// T178 — lo stesso bash esegue gli script `.sh` del plugin (`scriptCommand`).
+//
+// Serve già qui e non solo agli script `.sh` del plugin, per il verdetto
 // 9 di T174: un `claude` che eredita il `PATH` di Git Bash esegue gli hook del
 // plugin in PowerShell — `cat` diventa `Get-Content`, lo script `.sh` una
 // stringa stampata — e la task non arriva in contesto. Con
@@ -64,6 +66,41 @@ let cached: string | null | undefined;
 export function gitBash(): string | null {
   if (cached === undefined) cached = resolveGitBash(process.env, existsSync);
   return cached;
+}
+
+/** Come si lancia un processo: l'eseguibile e i suoi argomenti. */
+export interface ScriptCommand {
+  cmd: string;
+  args: string[];
+}
+
+/**
+ * T178 — come si esegue uno script `.sh` del plugin, o `null` se qui non si può.
+ *
+ * Su Linux lo script si lancia da sé: lo shebang `#!/bin/bash` e l'exec bit
+ * scelgono l'interprete, come prima di T178 (P2 preflight). Su win32 nessuno dei
+ * due vale, e l'interprete è il bash di Git (`gitBash`), con lo script come primo
+ * argomento; senza bash di Git lo script non si può eseguire, e il chiamante lo
+ * tratta come la funzione spenta.
+ *
+ * Il path dello script viaggia con le barre `/`: gli script del plugin trovano
+ * `lib.sh` con `dirname "${BASH_SOURCE[0]}"`, e la barra è il separatore che ogni
+ * strumento di Git Bash riconosce. Le barre `\` di un path di Windows dipendono
+ * da come ogni strumento le legge.
+ *
+ * La piattaforma è quella VERA e non quella delle funzioni (`platform.ts`): il
+ * comando deve partire sul sistema che c'è, anche quando un test simula l'altro.
+ */
+export function scriptCommand(
+  script: string,
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+  bash: () => string | null = gitBash,
+): ScriptCommand | null {
+  if (platform !== 'win32') return { cmd: script, args: [...args] };
+  const found = bash();
+  if (!found) return null;
+  return { cmd: found, args: [script.replace(/\\/g, '/'), ...args] };
 }
 
 /**

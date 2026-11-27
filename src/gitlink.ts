@@ -21,6 +21,7 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { scriptCommand } from './git-bash.js';
 import { pluginScript } from './plugin-cache.js';
 
 const execFileAsync = promisify(execFile);
@@ -200,7 +201,8 @@ export interface GitlinkScan {
  * Invoca lo script e ne parsa l'output.
  *
  * I modi di non avere il dato — plugin non installato su questa macchina,
- * script in errore, git muto — collassano in un solo `ok: false`: a schermo
+ * bash di Git assente su Windows, script in errore, git muto — collassano in
+ * un solo `ok: false`: a schermo
  * non cambiano la prima mossa di chi li vede. Nessuno è un throw, un
  * indicatore informativo non può rompere il deck.
  *
@@ -211,9 +213,13 @@ export interface GitlinkScan {
  */
 async function run(projectRoot: string, args: string[]): Promise<GitlinkScan> {
   const script = pluginScript(GITLINK_SCRIPT);
-  if (!script) return { members: [], ok: false };
+  // T178 — su Windows lo script parte col bash di Git (`scriptCommand`), che
+  // eredita la console del deck: niente `detached`, o ogni `git` lanciato dallo
+  // script aprirebbe una finestra sua.
+  const command = script ? scriptCommand(script, args) : null;
+  if (!command) return { members: [], ok: false };
   try {
-    const { stdout } = await execFileAsync(script, args, {
+    const { stdout } = await execFileAsync(command.cmd, command.args, {
       cwd: projectRoot,
       maxBuffer: 1024 * 1024,
       windowsHide: true,
