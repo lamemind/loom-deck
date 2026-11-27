@@ -29,14 +29,15 @@ const execFileAsync = promisify(execFile);
 export const GITLINK_SCRIPT = 'scripts/utils/bump-gitlink.sh';
 
 /**
- * Ogni 30 secondi (P2 preflight).
+ * Ogni 30 secondi (P2 preflight), dietro un gate.
  *
- * Il gate che regge gli altri poll stretti del deck qui NON funziona: il
- * disallineamento nasce da un commit dentro il submodule, che lascia fermi sia
- * `HEAD` del cappello (`commit-times.ts`) sia la mtime dei task file
- * (`epic-hierarchy.ts`) — non c'è niente di economico da misurare prima. Resta
- * il costo nudo, misurato sul cappello a tre submodule: 0,03s per giro, dentro
- * il budget che T153 ha fissato per il loop.
+ * Il gate su `HEAD` del cappello che regge gli altri poll stretti del deck
+ * (`commit-times.ts`) qui non basta: il disallineamento nasce da un commit
+ * dentro il submodule, che lascia fermo `HEAD` del cappello. T178 — il gate del
+ * sensore legge quindi una firma sua (`gitlink-gate.ts`): HEAD, ref e indice
+ * del cappello, HEAD e ref dei membri. A firma ferma il tick non lancia niente.
+ * Su Linux un giro costa centesimi di secondo, su Windows secondi: ogni
+ * sottoprocesso di Git Bash costa intorno ai 150 ms.
  *
  * Il dry-run NON contatta la rete (P11): la guardia col `fetch` gira solo nel
  * bump. Ne discende che il sensore può contare «bumpabile» un commit che il

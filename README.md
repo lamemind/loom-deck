@@ -349,7 +349,7 @@ Il deck **non classifica da sé**: spawna `bump-gitlink.sh` del plugin (in `--dr
 
 La riga di stato dopo il tasto riporta **un esito per membro**, non un totale: nel caso misto — uno pushato, uno no — un riassunto direbbe «1 bumpato» e lascerebbe fuori proprio il comando che sblocca l'altro.
 
-La misura gira ogni 30 secondi e subito dopo un bump. Il `--dry-run` non contatta la rete: il `fetch` che precede la guardia sul remote gira solo nel bump, quindi il contatore può dire «bumpabile» di un commit che il bump poi salta perché sparito dal remote. La guardia sta sull'azione, e un contatore non è un'autorizzazione.
+Ogni 30 secondi il deck legge dal filesystem una **firma** di ciò che il dry-run legge — `.gitmodules`, HEAD, ref e indice del cappello, HEAD e remote-tracking ref di ogni membro — senza lanciare processi. Lo script parte solo quando la firma è cambiata, subito dopo un bump, e comunque ogni 10 minuti, che coprono ciò che la firma non vede. Il `--dry-run` non contatta la rete: il `fetch` che precede la guardia sul remote gira solo nel bump, quindi il contatore può dire «bumpabile» di un commit che il bump poi salta perché sparito dal remote. La guardia sta sull'azione, e un contatore non è un'autorizzazione.
 
 ## Vista: filtri e ordinamenti
 
@@ -449,7 +449,7 @@ Le tab usano il profilo di Windows Terminal **`loom-deck`**, uno solo per tutti 
 
 La tab eredita tutto l'env del deck, tranne i marker che una sessione Claude Code inietta nei figli (`CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, …): con quelli una conversazione aperta da un deck lanciato dentro Claude Code non salverebbe il transcript. Se manca, il deck aggiunge `CLAUDE_CODE_GIT_BASH_PATH`: col `PATH` di Git Bash `claude` eseguirebbe gli hook del plugin in PowerShell, e la task non arriverebbe in contesto.
 
-Gli script `.sh` del plugin — oggi `bump-gitlink.sh`, dietro l'indicatore del gitlink e `^U` — partono col bash di Git for Windows, che il deck trova da `CLAUDE_CODE_GIT_BASH_PATH` o risalendo da ogni `git.exe` del `PATH` fino a `bin\bash.exe`; mai `bash` dal `PATH`, che può essere il lanciatore di WSL. Senza quel bash l'indicatore dice `gitlink n/d`, e `^U` risponde `bump del gitlink n/d su Windows: bash di Git non trovato`. Un giro di misura dura secondi e non centesimi, perché ogni sottoprocesso di Git Bash costa intorno ai 150 ms: gira in un figlio, e il deck resta reattivo.
+Gli script `.sh` del plugin — oggi `bump-gitlink.sh`, dietro l'indicatore del gitlink e `^U` — partono col bash di Git for Windows, che il deck trova da `CLAUDE_CODE_GIT_BASH_PATH` o risalendo da ogni `git.exe` del `PATH` fino a `bin\bash.exe`; mai `bash` dal `PATH`, che può essere il lanciatore di WSL. Senza quel bash l'indicatore dice `gitlink n/d`, e `^U` risponde `bump del gitlink n/d su Windows: bash di Git non trovato`. Un giro di misura dura secondi e non centesimi, perché ogni sottoprocesso di Git Bash costa intorno ai 150 ms: gira in un figlio, e il deck resta reattivo. A repo fermi la firma non cambia, e il giro parte solo ogni 10 minuti.
 
 Su Windows il resume di una conversazione e il restore (`^T`) restano spenti con un avviso finché il deck non sa quali conversazioni sono vive: senza quella informazione un resume può riaprire una conversazione già aperta in un'altra tab. Il fork resta acceso, perché apre un transcript nuovo.
 

@@ -17,6 +17,7 @@ import {
   scanGitlink,
   type GitlinkMember,
 } from '../gitlink.js';
+import { gitlinkScanDue, gitlinkSignature, type GitlinkGateMemo } from '../gitlink-gate.js';
 import { isAvailable, refuse } from '../platform.js';
 
 export interface GitlinkDeps {
@@ -76,11 +77,33 @@ export function useGitlink(deps: GitlinkDeps) {
     };
   }, []);
 
-  const run = useCallback(() => {
+  /** T178 — la firma e l'ora dell'ultimo giro riuscito (`gitlink-gate.ts`). In
+   *  un ref: serve al giro dopo, non al render. */
+  const gate = useRef<GitlinkGateMemo | null>(null);
+
+  /**
+   * Un giro di misura. `force` lo fa partire anche a firma ferma: lo vuole il
+   * primo giro e ogni `refresh`, cioè ogni volta che qualcuno ha appena chiesto
+   * il dato, bump compreso.
+   *
+   * La firma si legge PRIMA del giro: un commit che arriva mentre lo script
+   * gira cambia la firma del tick dopo, e quel tick rimisura. Si ricorda solo
+   * dopo un giro riuscito: un giro fallito si ripete al tick dopo invece di
+   * aspettare il giro forzato.
+   */
+  const run = useCallback((force: boolean) => {
     if (busy.current) return;
     busy.current = true;
-    scanGitlink(cwd).then((res) => {
+    void (async () => {
+      const sig = await gitlinkSignature(cwd).catch(() => null);
+      const now = Date.now();
+      if (!force && !gitlinkScanDue(gate.current, sig, now)) {
+        busy.current = false;
+        return;
+      }
+      const res = await scanGitlink(cwd);
       busy.current = false;
+      gate.current = res.ok && sig !== null ? { sig, at: now } : null;
       if (!alive.current) return;
       // Un tentativo fallito NON butta via l'esito dell'ultimo riuscito: le
       // righe precedenti restano vere, e il guasto si dice col glifo di allerta
@@ -88,13 +111,13 @@ export function useGitlink(deps: GitlinkDeps) {
       setOk(res.ok);
       setScanned(true);
       if (res.ok || res.members.length > 0) setMembers(res.members);
-    });
+    })();
   }, [cwd]);
 
   useEffect(() => {
     if (!active) return;
-    run();
-    const id = setInterval(run, GITLINK_SCAN_INTERVAL_MS);
+    run(true);
+    const id = setInterval(() => run(false), GITLINK_SCAN_INTERVAL_MS);
     return () => clearInterval(id);
   }, [active, run, epoch]);
 

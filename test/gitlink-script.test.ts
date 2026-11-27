@@ -17,13 +17,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitBash } from '../src/git-bash.js';
 import { bumpGitlink, GITLINK_SCRIPT, scanGitlink } from '../src/gitlink.js';
 import { resetPluginCache } from '../src/plugin-cache.js';
+import { commitFile, fakeCappello, git, GIT_IDENTITY } from './gitlink-kit.js';
 
 const PLUGIN_SRC = fileURLToPath(new URL('../../loom-works-plugin/', import.meta.url));
 
@@ -34,59 +35,6 @@ function skipReason(): string | false {
   }
   if (process.platform === 'win32' && !gitBash()) return 'bash di Git non trovato su questa macchina';
   return false;
-}
-
-/** Identità e firma dei commit: valgono per i `git` del test e, messe in
- *  `process.env` per la durata del test, per il commit che il bump fa dentro lo
- *  script. Senza, il commit dipenderebbe dalla config git della macchina. */
-const GIT_IDENTITY: Record<string, string> = {
-  GIT_AUTHOR_NAME: 'test',
-  GIT_AUTHOR_EMAIL: 'test@test.local',
-  GIT_COMMITTER_NAME: 'test',
-  GIT_COMMITTER_EMAIL: 'test@test.local',
-  GIT_CONFIG_COUNT: '1',
-  GIT_CONFIG_KEY_0: 'commit.gpgsign',
-  GIT_CONFIG_VALUE_0: 'false',
-};
-
-const GIT_ENV: NodeJS.ProcessEnv = { ...process.env, ...GIT_IDENTITY };
-
-function git(cwd: string, ...args: string[]): void {
-  execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], {
-    cwd,
-    env: GIT_ENV,
-    stdio: 'ignore',
-    windowsHide: true,
-  });
-}
-
-function commitFile(repo: string, name: string, message: string): void {
-  writeFileSync(join(repo, name), `${message}\n`);
-  git(repo, 'add', '--', name);
-  git(repo, 'commit', '-q', '-m', message);
-}
-
-/**
- * Un cappello finto: un submodule `sub` clonato da un repo bare locale, che fa
- * da suo `origin`, e il file di progetto che ferma subito la ricerca della root
- * in `lw_find_project_root`.
- */
-function fakeCappello(root: string): string {
-  const work = join(root, 'sub-work');
-  mkdirSync(work);
-  git(work, 'init', '-q', '-b', 'main');
-  commitFile(work, 'a.txt', 'primo commit del membro');
-  const bare = join(root, 'sub.git');
-  git(root, 'clone', '-q', '--bare', work, bare);
-
-  const cappello = join(root, 'cappello');
-  mkdirSync(join(cappello, '.claude'), { recursive: true });
-  git(cappello, 'init', '-q', '-b', 'main');
-  writeFileSync(join(cappello, '.claude', 'loom-works.json'), '{"id":"cappello-finto"}\n');
-  git(cappello, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', bare, 'sub');
-  git(cappello, 'add', '--', '.claude/loom-works.json');
-  git(cappello, 'commit', '-q', '-m', 'cappello con un submodule');
-  return cappello;
 }
 
 test('il deck esegue il vero bump-gitlink.sh: allineato, avanti dopo un commit pushato nel membro, poi il bump — col PROJECT_ROOT ereditato su un\'esca', { skip: skipReason() }, async () => {
